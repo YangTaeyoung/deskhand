@@ -443,6 +443,17 @@ final class DebuggerStateTests: XCTestCase {
         }
     }
 
+    func testPreviewCandidatesShortenALongFirstStringBeforeTheBareContainer() {
+        XCTAssertEqual(Array(ValuePreview.candidates("{id: \"ORD-2026-1021-0042\", customer: {…}, total: 46800}").suffix(4)), [
+            "{id: \"ORD-2026-1021-0042\", …}", "{id: \"ORD-2026-102…\", …}", "{id: \"ORD-20…\", …}", "{…}",
+        ])
+        XCTAssertEqual(Array(ValuePreview.candidates("{note: \"반품 요청 접수 후 재고 확인 중\"}").suffix(3)), [
+            "{note: \"반품 요청 접수 후 재…\"}", "{note: \"반품 요청…\"}", "{…}",
+        ])
+        XCTAssertEqual(ValuePreview.candidates("{total: 46800, id: \"ORD-2026-1021-0042\"}"),
+                       ["{total: 46800, id: \"ORD-2026-1021-0042\"}", "{total: 46800, …}", "{…}"])
+    }
+
     // MARK: Script search
 
     func testScriptSearchMatchesFileNamesFuzzilyAndRanksTightMatchesFirst() {
@@ -454,5 +465,12 @@ final class DebuggerStateTests: XCTestCase {
         XCTAssertEqual(ScriptSearch.rank(urls, query: "").count, 4, "node:internal scripts stay hidden")
         XCTAssertEqual(ScriptSearch.rank(urls, query: "", includeInternal: true).count, 5)
         XCTAssertEqual(ScriptSearch.rank(urls, query: "CHECK").first?.url, "app://shop/renderer/checkout.js")
+    }
+
+    func testAnEmptyScriptQueryListsScriptsByPath() {
+        let urls = ["app://shop/renderer/checkout.js", "app://shop/renderer/api.js", "app://shop/lib/zip.js", "app://shop/renderer/a.js"]
+        XCTAssertEqual(ScriptSearch.rank(urls, query: " ").map(\.url), [
+            "app://shop/lib/zip.js", "app://shop/renderer/a.js", "app://shop/renderer/api.js", "app://shop/renderer/checkout.js",
+        ])
     }
 }

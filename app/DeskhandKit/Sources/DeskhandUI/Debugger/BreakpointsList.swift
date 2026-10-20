@@ -8,6 +8,8 @@ import SwiftUI
 struct BreakpointsList: View {
     let model: DebuggerModel
     let session: DebugSessionModel?
+    /// The computer is connected.
+    var enabled = true
     let add: () -> Void
     @FocusState private var focused: Bool
 
@@ -41,7 +43,7 @@ struct BreakpointsList: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .disabled(session == nil || session?.isClosed == true)
+                .disabled(!canAdd)
                 .help(String.ui("debugger.breakpoint.add.help", "스크립트와 줄로 중단점을 추가합니다"))
                 .accessibilityLabel(String.ui("debugger.breakpoint.add", "중단점 추가"))
             }
@@ -50,6 +52,8 @@ struct BreakpointsList: View {
         }
         .accessibilityElement(children: .contain)
     }
+
+    private var canAdd: Bool { enabled && session != nil && session?.isClosed == false }
 
     private var countText: String? {
         guard let session, !session.info.breakpoints.isEmpty else { return nil }
@@ -80,7 +84,6 @@ struct BreakpointsList: View {
                 .padding(DS.Space.xs)
             }
             .focusable()
-            .focusEffectDisabled()
             .focused($focused)
             .onDeleteCommand { if !session.isClosed { session.removeSelectedBreakpoint() } }
             .onKeyPress(.upArrow) {
@@ -91,7 +94,7 @@ struct BreakpointsList: View {
                 moveSelection(session, by: 1)
                 return .handled
             }
-        } else if session != nil {
+        } else if canAdd {
             DebugPaneHint(text: String.ui("debugger.breakpoints.empty.hint", "중단점이 없습니다. 소스의 줄 번호를 누르거나 +로 스크립트와 줄을 지정하세요."))
         } else {
             DebugPaneHint(text: String.ui("debugger.breakpoints.empty", "중단점이 없습니다."))
@@ -193,7 +196,7 @@ private struct BreakpointRow: View {
     }
 
     private var background: AnyShapeStyle {
-        if selected { return AnyShapeStyle(DS.Color.accent.opacity(0.16)) }
+        if selected { return AnyShapeStyle(DS.Code.selection) }
         return hovering ? AnyShapeStyle(DS.Color.neutral.opacity(0.08)) : AnyShapeStyle(.clear)
     }
 

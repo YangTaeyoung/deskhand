@@ -21,7 +21,7 @@ enum DebuggerScenes {
 
     static let recent = [
         RecentLaunch(path: Program.appPath, args: ["--env=staging"], cwd: "C:\\Shop\\desktop",
-                     breakpoints: Program.sampleBreakpoints().prefix(2).map(\.spec)),
+                     breakpoints: Program.sampleBreakpoints().prefix(2).map(\.spec), pauseOnExceptions: .all),
         RecentLaunch(path: Program.kioskPath, args: ["--kiosk", "--store=강남점"], pauseOnStart: true),
     ]
 
@@ -100,11 +100,13 @@ enum DebuggerScenes {
         return model
     }
 
-    static func scene(_ name: String, _ setup: Setup, _ tab: Tab = Tab(), size: CGSize = WorkspaceScenes.size,
+    /// A scene of `setup` with `tab` seeded into the debugger of `debuggerHost`, the selected
+    /// computer by default.
+    static func scene(_ name: String, _ setup: Setup, _ tab: Tab = Tab(), size: CGSize = WorkspaceScenes.size, debuggerHost: String? = nil,
                       sheet: ((AppStore, DebuggerModel) -> AnyView)? = nil) -> SnapshotScene {
         SnapshotScene(name: name, size: size) {
             let store = WorkspaceScenes.store(setup)
-            let model = seed(store, hostID: setup.selected, tab)
+            let model = seed(store, hostID: debuggerHost ?? setup.selected, tab)
             if let sheet, let model {
                 SheetStandIn(base: SplitStandIn(store: store)) { sheet(store, model) }
             } else {
@@ -187,6 +189,29 @@ enum DebuggerScenes {
                 ConsoleEntry(seq: 1, time: Timestamp(date: launched.addingTimeInterval(4)), targetID: info.targets[0].id, level: .info,
                              text: "키오스크 모드 · 강남점"),
             ])
+        })
+    }
+
+    /// The tray app that turns remote debugging off: only main is attached, paused on its first line.
+    static func mainOnly() -> Seeded {
+        let target = Program.mainTarget(gen: 1, paused: true)
+        let info = DebugSession(debugID: "d-sync", hostID: dev, kind: .launch, name: "Shop Sync", path: Program.syncPath, pauseOnStart: true,
+                                pid: 11904, ports: DebugPorts(inspect: 52031), state: .paused, targets: [target],
+                                rendererUnavailable: .remoteDebuggingDisabled, createdAt: Timestamp(date: launched))
+        let main = Program.Script.main
+        let frame = DebugCallFrame(frameID: "start-0", function: "", scriptID: main.scriptID, url: main.url, line: 1, column: 1,
+                                   scopeChain: [DebugScope(type: "local", objectID: "min-local")])
+        let state = DebugPauseState(targetID: target.id, gen: 1, paused: true, reason: .start, callFrames: [frame])
+        return (info, { session in
+            session.seed(pause: state, properties: properties, sources: [source(main)], scripts: scripts)
+        })
+    }
+
+    /// An attach session just detached, leaving the Node inspector it turned on open.
+    static func inspectorLeftOpen() -> Seeded {
+        let attachedSession = attached(reason: .requested)
+        return (attachedSession.info, { session in
+            session.seed(notice: DiagnosticsNotice(tone: .info, message: "PC의 검사기 포트가 열린 채 남았습니다 · 앱을 다시 시작하면 닫힙니다"))
         })
     }
 
@@ -316,6 +341,8 @@ enum DebuggerScenes {
             scene("debugger-state-failed", none, Tab(sessions: [stateFailed()])),
             scene("debugger-pause-pending", none, Tab(sessions: [pausePending()])),
             scene("debugger-renderer-only", none, Tab(sessions: [rendererOnly()])),
+            scene("debugger-main-only", none, Tab(sessions: [mainOnly()])),
+            scene("debugger-inspector-left-open", none, Tab(sessions: [running(), inspectorLeftOpen()])),
             scene("debugger-closed", none, Tab(sessions: [closed()])),
             scene("debugger-detached", none, Tab(sessions: [running(), attached(reason: .requested)])),
             scene("debugger-connection-lost", none, Tab(sessions: [attached(reason: .connectionLost)])),
@@ -329,6 +356,8 @@ enum DebuggerScenes {
                   Tab(sessions: [closed()])),
             scene("debugger-unsupported", Setup(selected: PreviewFixtures.qaLaptopID, tab: .debugger, inspector: nil)),
             scene("workspace-debugger-paused-elsewhere", Setup(selected: dev, tab: .screen, inspector: nil), Tab(sessions: [paused()])),
+            scene("workspace-debugger-paused-other-host", Setup(selected: PreviewFixtures.meetingPCID, tab: .terminal, inspector: nil),
+                  Tab(sessions: [paused()]), debuggerHost: dev),
         ]
     }
 }

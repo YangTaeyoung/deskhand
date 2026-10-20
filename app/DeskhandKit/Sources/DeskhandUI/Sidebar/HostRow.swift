@@ -2,13 +2,16 @@ import DeskhandClient
 import SwiftUI
 import struct DeskhandClient.Host
 
-/// Sidebar row for one computer: OS tile, name, connection status line and who holds control.
+/// Sidebar row for one computer: OS tile, name, connection status line, a pause dot while a
+/// debugged app on it is paused, and who holds control.
 public struct HostRow: View {
     public let host: Host
+    public var debuggerPaused: Bool
     @Environment(\.backgroundProminence) private var prominence
 
-    public init(host: Host) {
+    public init(host: Host, debuggerPaused: Bool = false) {
         self.host = host
+        self.debuggerPaused = debuggerPaused
     }
 
     public var body: some View {
@@ -29,6 +32,10 @@ public struct HostRow: View {
                 }
             }
             Spacer(minLength: 0)
+            if debuggerPaused {
+                PausedDot()
+                    .help(String.ui("sidebar.debuggerPaused", "디버거에서 일시정지된 앱이 있습니다"))
+            }
             if host.controlOwner != .none {
                 ControlBadge(owner: host.controlOwner)
             }
@@ -44,6 +51,7 @@ public struct HostRow: View {
         if host.controlOwner != .none {
             parts.append(ControlPill.label(owner: host.controlOwner, clientName: host.ownerClient))
         }
+        if debuggerPaused { parts.append(String.ui("sidebar.debuggerPaused", "디버거에서 일시정지된 앱이 있습니다")) }
         var seen = Set<String>()
         return parts.filter { seen.insert($0).inserted }.joined(separator: ", ")
     }

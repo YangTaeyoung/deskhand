@@ -25,6 +25,7 @@ public struct KillRequest: Identifiable, Equatable, Sendable {
 public struct DiagnosticsNotice: Identifiable, Equatable, Sendable {
     public enum Tone: Sendable, Equatable {
         case success
+        case info
         case warning
         case error
     }

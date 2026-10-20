@@ -115,22 +115,24 @@ extension PreviewBackend {
             throw OperationError(code: "EXITED_EARLY", message: "디버그 포트가 열리기 전에 앱이 끝났습니다 (종료 코드 0)")
         }
         let kiosk = path.caseInsensitiveCompare(Program.kioskPath) == .orderedSame
+        let sync = path.caseInsensitiveCompare(Program.syncPath) == .orderedSame
         let name = String(FilePath.lastComponent(path, style: .windows).dropLast(4))
         let created = Date.now
         let session = try debugger.state.withLock { s -> DebugSession in
             s.sessionCount += 1
             let id = "d-preview-\(s.sessionCount)"
             var info = Program.session(hostID: request.hostID, debugID: id, created: created,
-                                       targets: kiosk ? [Program.pageTarget()] : Program.targets(),
+                                       targets: kiosk ? [Program.pageTarget()] : (sync ? [Program.mainTarget()] : Program.targets()),
                                        exceptions: request.pauseOnExceptions ?? .uncaught,
-                                       mainUnavailable: kiosk ? .inspectorDisabled : nil)
+                                       mainUnavailable: kiosk ? .inspectorDisabled : nil,
+                                       rendererUnavailable: sync ? .remoteDebuggingDisabled : nil)
             info.name = name
             info.path = path
             info.args = request.args
             info.cwd = request.cwd ?? FilePath.parent(path, style: .windows)
             info.pauseOnStart = request.pauseOnStart
-            var session = PreviewDebugStore.Session(info: info, simulated: !kiosk)
-            session.loaded = kiosk ? [.index, .checkout, .api] : Set(Program.Script.loadedAtLaunch)
+            var session = PreviewDebugStore.Session(info: info, simulated: !kiosk && !sync)
+            session.loaded = kiosk ? [.index, .checkout, .api] : (sync ? [.main] : Set(Program.Script.loadedAtLaunch))
             for spec in request.breakpoints {
                 s.breakpointCount += 1
                 session.info.breakpoints.append(try Self.breakpoint(spec, id: "bp-\(s.breakpointCount)", loaded: session.loaded))
@@ -217,7 +219,7 @@ extension PreviewBackend {
         return target
     }
 
-    public func debugClose(debugID: String, keepProcess: Bool) async throws {
+    public func debugClose(debugID: String, keepProcess: Bool) async throws -> DebugCloseResult {
         let (hostID, runner, waiting, rev) = try debugger.with(debugID) { session in
             session.info.state = DebugSessionState.closed.rawValue
             session.info.closedAt = Timestamp(date: .now)
@@ -233,6 +235,7 @@ extension PreviewBackend {
         await pause(fraction: 0.3)
         emit(kind: EventKind.debugClosed, hostID: hostID,
              payload: ["debug_id": .string(debugID), "reason": .string(DebugCloseReason.requested.rawValue), "rev": .int(rev)])
+        return DebugCloseResult()
     }
 
     // MARK: Breakpoints

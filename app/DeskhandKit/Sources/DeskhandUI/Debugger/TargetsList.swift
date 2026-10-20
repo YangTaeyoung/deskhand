@@ -3,9 +3,12 @@ import SwiftUI
 
 /// The sessions of the computer, each with its targets (main and renderers) and their state; the
 /// selected target is the one execution commands act on. A launch or attach in flight shows as a
-/// pending row.
+/// pending row. New sessions start only while the computer is connected (`enabled`).
 struct TargetsList: View {
     let model: DebuggerModel
+    var enabled = true
+    /// Why new sessions cannot start, while not `enabled`.
+    var disabledReason: String?
     let launch: () -> Void
     let attach: () -> Void
 
@@ -25,8 +28,9 @@ struct TargetsList: View {
                 .buttonStyle(.plain)
                 .menuIndicator(.hidden)
                 .fixedSize()
-                .disabled(model.starting != nil)
-                .help(String.ui("debugger.new.help", "Electron 앱을 실행하거나 실행 중인 앱에 연결합니다"))
+                .disabled(model.starting != nil || !enabled)
+                .help(enabled ? String.ui("debugger.new.help", "Electron 앱을 실행하거나 실행 중인 앱에 연결합니다")
+                              : (disabledReason ?? String.ui("debugger.new.offline", "PC에 연결되어 있지 않아 새 세션을 시작할 수 없습니다")))
                 .accessibilityLabel(String.ui("debugger.new", "새 디버그 세션"))
             }
             ScrollView {
@@ -82,14 +86,10 @@ private struct SessionRow: View {
                     }
                 }
                 if let reason = session.info.mainUnavailable {
-                    Label(String.ui("debugger.main.unavailable", "메인 프로세스 디버그 불가"), systemImage: "info.circle")
-                        .font(DS.Font.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .padding(.leading, Self.iconSize + DS.Space.s + DS.Space.xs)
-                        .padding(.trailing, DS.Space.s)
-                        .help(DebugFormat.mainUnavailable(reason))
-                        .accessibilityHint(DebugFormat.mainUnavailable(reason))
+                    UnavailableLine(text: DebugFormat.mainUnavailableShort(reason), detail: DebugFormat.mainUnavailable(reason))
+                }
+                if let reason = session.info.rendererUnavailable {
+                    UnavailableLine(text: DebugFormat.rendererUnavailableShort(reason), detail: DebugFormat.rendererUnavailable(reason))
                 }
             } else {
                 Text(DebugFormat.closedShort(session.info.closeKind, exitCode: session.info.exitCode, kind: session.info.sessionKind))
@@ -188,8 +188,28 @@ private struct SessionRow: View {
     }
 }
 
-/// 일시정지됨 (orange), 실행 중 (green dot), 연결 해제됨 or 종료됨 for a session, in a column of
-/// one width.
+/// Why a session lacks main or a renderer, in one line under its targets with the full reason as
+/// its help tag.
+private struct UnavailableLine: View {
+    let text: String
+    let detail: String
+
+    var body: some View {
+        Label(text, systemImage: "info.circle")
+            .font(DS.Font.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .padding(.leading, SessionRow.iconSize + DS.Space.s + DS.Space.xs)
+            .padding(.trailing, DS.Space.s)
+            .help(detail)
+            .accessibilityLabel(detail)
+    }
+}
+
+/// 일시정지됨 (orange), 실행 중 (green dot), 연결 해제됨, 연결 끊김 or 종료됨 for a session, in a
+/// column of one width. An attach session ends without ending its app: detached, or cut off with
+/// the PC.
 struct SessionStateBadge: View {
     static let width: CGFloat = 64
 
@@ -197,8 +217,12 @@ struct SessionStateBadge: View {
 
     static func title(_ session: DebugSessionModel) -> String {
         if session.isClosed {
-            if session.info.sessionKind == .attach, session.info.closeKind == .requested {
-                return .ui("debugger.state.detached", "연결 해제됨")
+            if session.info.sessionKind == .attach {
+                switch session.info.closeKind {
+                case .requested: return .ui("debugger.state.detached", "연결 해제됨")
+                case .connectionLost: return .ui("debugger.state.connectionLost", "연결 끊김")
+                default: break
+                }
             }
             return .ui("debugger.state.closed", "종료됨")
         }
@@ -311,7 +335,10 @@ private struct TargetRow: View {
                 .font(.system(size: 9, weight: .bold))
                 .foregroundStyle(selected ? DS.Color.onFill : DS.Color.warning)
         } else if target.pausePending {
-            ProgressView().controlSize(.mini)
+            Image(systemName: "pause.circle")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(selected ? DS.Color.onFill : DS.Color.warning)
+                .help(String.ui("debugger.target.pausePending.help", "일시정지를 요청했습니다. 다음 코드가 실행되면 멈춥니다."))
         } else {
             Image(systemName: "circle.fill")
                 .font(.system(size: 6))

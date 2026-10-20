@@ -5,23 +5,46 @@ import Foundation
 /// Shorter forms of an object preview that end at a property boundary, so a narrow column shows
 /// whole properties and a single `…`.
 public enum ValuePreview {
+    /// Lengths a long string of the first element is cut to, longest first.
+    static let stringCuts = [12, 6]
+
     /// `preview` itself, then forms that keep fewer leading elements of its top-level `{…}` or
-    /// `[…]` followed by `…`, then the bare container, then the description before it.
+    /// `[…]` followed by `…`, then the first element with its string value cut to `stringCuts`,
+    /// then the bare container, then the description before it.
     public static func candidates(_ preview: String) -> [String] {
         guard let container = container(of: preview) else { return [preview] }
         var elements = container.elements
         let hadMore = elements.last == "…"
         if hadMore { elements.removeLast() }
         var forms: [String] = [preview]
-        for keep in stride(from: elements.count, through: 0, by: -1) {
-            let shown = Array(elements.prefix(keep)) + ((keep < elements.count || hadMore) && keep > 0 ? ["…"] : [])
-            let body = keep == 0 ? "…" : shown.joined(separator: ", ")
-            forms.append(container.prefix + String(container.open) + body + String(container.close))
+        func wrap(_ body: String) -> String { container.prefix + String(container.open) + body + String(container.close) }
+        for keep in stride(from: elements.count, through: 1, by: -1) {
+            let shown = Array(elements.prefix(keep)) + (keep < elements.count || hadMore ? ["…"] : [])
+            forms.append(wrap(shown.joined(separator: ", ")))
         }
+        if let first = elements.first {
+            let more = elements.count > 1 || hadMore ? ", …" : ""
+            for cut in stringCuts {
+                if let shortened = shorten(first, to: cut) { forms.append(wrap(shortened + more)) }
+            }
+        }
+        forms.append(wrap("…"))
         let description = container.prefix.trimmingCharacters(in: .whitespaces)
         if !description.isEmpty { forms.append(description) }
         var seen = Set<String>()
         return forms.filter { seen.insert($0).inserted }
+    }
+
+    /// `element` (`"text"` or `name: "text"`) with its string cut to `length` characters and `…`,
+    /// or nil when it holds no string longer than that.
+    static func shorten(_ element: String, to length: Int) -> String? {
+        guard let close = element.last, close == "\"" || close == "'" || close == "`",
+              let open = element.firstIndex(of: close), open < element.index(before: element.endIndex) else { return nil }
+        let content = element[element.index(after: open)..<element.index(before: element.endIndex)]
+        guard content.count > length else { return nil }
+        var cut = String(content.prefix(length))
+        while cut.last?.isWhitespace == true { cut.removeLast() }
+        return String(element[...open]) + cut + "…" + String(close)
     }
 
     struct Container {
@@ -75,28 +98,5 @@ public enum ValuePreview {
         }
         guard let start, depth == 0 else { return nil }
         return Container(prefix: String(chars[0..<start]), open: open, close: close, elements: elements)
-    }
-}
-
-/// The ⌘ alternates of the execution controls, next to F8, F10, F11 and ⇧F11: ⌘\ pauses or
-/// resumes, ⌘' steps over, ⌘; steps into and ⇧⌘; steps out. None apply while the console input
-/// has the keyboard.
-public enum DebuggerKeys {
-    public enum Action: Equatable, Sendable {
-        case togglePause
-        case step(DebugStepKind)
-    }
-
-    /// The action of a key press, from its characters ignoring modifiers.
-    public static func action(characters: String, modifiers: NSEvent.ModifierFlags, consoleFocused: Bool) -> Action? {
-        guard !consoleFocused else { return nil }
-        let flags = modifiers.intersection([.command, .shift, .option, .control])
-        switch (characters, flags) {
-        case ("\\", [.command]): return .togglePause
-        case ("'", [.command]): return .step(.over)
-        case (";", [.command]): return .step(.into)
-        case (";", [.command, .shift]), (":", [.command, .shift]): return .step(.out)
-        default: return nil
-        }
     }
 }

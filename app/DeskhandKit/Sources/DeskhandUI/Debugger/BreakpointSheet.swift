@@ -219,9 +219,14 @@ public struct BreakpointSheet: View {
                     .foregroundStyle(.secondary)
             } else {
                 let count = String(matched)
-                Label(String.ui("debugger.breakpoint.sheet.matches", "로드된 스크립트 \(count)개와 일치합니다"), systemImage: "checkmark.circle.fill")
-                    .font(DS.Font.caption)
-                    .foregroundStyle(DS.Color.success)
+                Label {
+                    Text(String.ui("debugger.breakpoint.sheet.matches", "로드된 스크립트 \(count)개와 일치합니다"))
+                        .foregroundStyle(.secondary)
+                } icon: {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(DS.Color.success)
+                }
+                .font(DS.Font.caption)
             }
         } else if match == .regex, !script.trimmingCharacters(in: .whitespaces).isEmpty {
             Label(String.ui("debugger.breakpoint.sheet.badRegex", "이 정규식은 이 Mac에서 읽을 수 없습니다. 추가하면 데몬이 대상에서 확인합니다."),

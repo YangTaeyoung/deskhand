@@ -107,7 +107,7 @@ struct DebugConsoleView: View {
             ZStack(alignment: .topLeading) {
                 if session.draft.isEmpty {
                     Text(placeholder(session))
-                        .font(DebugFormat.mono)
+                        .font(.system(size: DebugFormat.monoSize))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .padding(.top, ConsoleInput.inset)
@@ -286,7 +286,6 @@ private struct ConsoleList: View {
             .defaultScrollAnchor(.bottom, for: .sizeChanges)
         }
         .focusable()
-        .focusEffectDisabled()
         .focused($focused)
         .onCopyCommand {
             let text = session.selectedConsoleText
@@ -347,7 +346,7 @@ private struct ConsoleList: View {
                     GapRow()
                 }
             }
-            .background(selected ? DS.Color.accent.opacity(0.16) : .clear)
+            .background(selected ? DS.Code.selection : .clear)
             .contentShape(Rectangle())
             .onTapGesture {
                 focused = true
@@ -498,8 +497,8 @@ private struct ConsoleEntryRow: View {
 
     private var rowTint: Color {
         switch level {
-        case .error: DS.Color.danger.opacity(DS.Code.errorRowOpacity)
-        case .warning: DS.Color.warning.opacity(0.08)
+        case .error: DS.Code.errorRow
+        case .warning: DS.Code.warningRow
         default: .clear
         }
     }
@@ -542,6 +541,7 @@ private struct StackFrameLine: View {
                 }
             } label: {
                 Text(DebugFormat.location(url: frame.url, line: frame.line))
+                    .underline(frame.scriptID != nil, color: DS.Code.link.opacity(0.4))
                     .foregroundStyle(frame.scriptID != nil ? AnyShapeStyle(DS.Code.link) : AnyShapeStyle(.secondary))
             }
             .buttonStyle(.plain)

@@ -4,10 +4,11 @@ import Foundation
 // MARK: Execution
 
 extension DebugSessionModel {
-    /// Pauses the selected target, or resumes it while paused (F8, ⌘\).
+    /// Pauses the selected target, or resumes it while paused or while a pause waits for code to
+    /// run, which cancels that pause (F8, ⌘\).
     public func togglePause() {
         guard canControl else { return }
-        run(isSelectedPaused ? .resume : .pause)
+        run(isSelectedPaused || pausePending ? .resume : .pause)
     }
 
     /// Steps the paused target over, into or out of the current call (F10 ⌘', F11 ⌘;, ⇧F11 ⇧⌘;).
@@ -103,13 +104,18 @@ extension DebugSessionModel {
         }
     }
 
-    /// Ends the session; a launched app ends too unless `keepProcess`.
+    /// Ends the session; a launched app ends too unless `keepProcess`. When a Node inspector
+    /// Deskhand turned on stays open on the PC, a notice says so.
     public func close(keepProcess: Bool) async {
         guard !isClosed, command != .close else { return }
         command = .close
         do {
-            try await backend.debugClose(debugID: id, keepProcess: keepProcess)
+            let result = try await backend.debugClose(debugID: id, keepProcess: keepProcess)
+            if let session = result.session { apply(info: session) }
             applyClosed(reason: .requested, exitCode: nil)
+            if result.inspectorLeftOpen {
+                show(.info, .ui("debugger.inspectorLeftOpen", "PC의 검사기 포트가 열린 채 남았습니다 · 앱을 다시 시작하면 닫힙니다"))
+            }
         } catch {
             command = nil
             show(.error, Self.commandFailure(.close), error: OperationError(error))
@@ -334,26 +340,35 @@ extension DebugSessionModel {
         }
     }
 
+    /// Turns every breakpoint on or off. The reply's session applies by its `rev`; without one the
+    /// field changes only when no newer session arrived meanwhile.
     public func setBreakpointsActive(_ active: Bool) {
+        let asked = info.rev
         Task { [weak self] in
             guard let self else { return }
             do {
                 if let session = try await backend.debugBreakpointsActivate(debugID: id, active: active) {
                     apply(info: session)
+                } else if info.rev == asked {
+                    info.breakpointsActive = active
                 }
-                info.breakpointsActive = active
             } catch {
                 show(.error, .ui("debugger.failed.breakpoint", "중단점을 바꾸지 못했습니다"), error: OperationError(error))
             }
         }
     }
 
+    /// Changes when exceptions pause, applied like `setBreakpointsActive`.
     public func setExceptionMode(_ mode: ExceptionPauseMode) {
+        let asked = info.rev
         Task { [weak self] in
             guard let self else { return }
             do {
-                if let session = try await backend.debugExceptions(debugID: id, mode: mode) { apply(info: session) }
-                info.pauseOnExceptions = mode.rawValue
+                if let session = try await backend.debugExceptions(debugID: id, mode: mode) {
+                    apply(info: session)
+                } else if info.rev == asked {
+                    info.pauseOnExceptions = mode.rawValue
+                }
             } catch {
                 show(.error, .ui("debugger.failed.exceptions", "예외에서 멈춤 설정을 바꾸지 못했습니다"), error: OperationError(error))
             }

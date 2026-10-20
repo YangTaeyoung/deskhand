@@ -156,7 +156,19 @@ public protocol DebuggerBackend: Sendable {
     /// objects; returns the last `seq` removed.
     func debugConsoleClear(debugID: String) async throws -> Int
     /// Ends the session; a launched app ends with it unless `keepProcess`.
-    func debugClose(debugID: String, keepProcess: Bool) async throws
+    func debugClose(debugID: String, keepProcess: Bool) async throws -> DebugCloseResult
+}
+
+/// The result of `debug.close`: the closed session when the result carries it, and whether a Node
+/// inspector Deskhand turned on stayed open.
+public struct DebugCloseResult: Sendable, Equatable {
+    public var session: DebugSession?
+    public var inspectorLeftOpen: Bool
+
+    public init(session: DebugSession? = nil, inspectorLeftOpen: Bool = false) {
+        self.session = session
+        self.inspectorLeftOpen = inspectorLeftOpen
+    }
 }
 
 /// Parameters of `debug.electron.launch`.

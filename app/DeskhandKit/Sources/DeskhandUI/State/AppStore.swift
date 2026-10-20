@@ -204,6 +204,11 @@ public final class AppStore {
         return model
     }
 
+    /// A debugged app on the host is paused, for hosts whose debugger tab state exists.
+    public func debuggerPaused(hostID: String) -> Bool {
+        debuggerModels[hostID]?.openSessions.contains { !$0.pausedTargets.isEmpty } ?? false
+    }
+
     /// Shows the logs tab with a remote file selected.
     public func openLog(hostID: String, path: String) {
         logSelection = LogSelection(hostID: hostID, path: path)

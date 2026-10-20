@@ -432,5 +432,7 @@ extension GatedBackend {
     }
     func debugConsole(_ query: ConsoleQuery) async throws -> ConsolePage { try await base.debugConsole(query) }
     func debugConsoleClear(debugID: String) async throws -> Int { try await base.debugConsoleClear(debugID: debugID) }
-    func debugClose(debugID: String, keepProcess: Bool) async throws { try await base.debugClose(debugID: debugID, keepProcess: keepProcess) }
+    func debugClose(debugID: String, keepProcess: Bool) async throws -> DebugCloseResult {
+        try await base.debugClose(debugID: debugID, keepProcess: keepProcess)
+    }
 }

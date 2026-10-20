@@ -44,6 +44,37 @@ final class TokensTests: XCTestCase {
             XCTAssertLessThan(resolved.distance(to: expected), 0.01, label)
         }
     }
+
+    func testCodeTextReachesFourAndAHalfToOneOnEveryBackgroundItSitsOn() throws {
+        let colors: [(String, NSColor)] = [
+            ("keyword", DS.Code.keywordNS), ("string", DS.Code.stringNS), ("number", DS.Code.numberNS),
+            ("link", DS.Code.linkNS), ("error", DS.Code.errorTextNS),
+        ]
+        let tints: [(String, DS.Code.Tint)] = [
+            ("current line", DS.Code.currentLineTint), ("caller line", DS.Code.callerLineTint),
+            ("exception line", DS.Code.exceptionLineTint), ("focus line", DS.Code.focusLineTint),
+            ("selection", DS.Code.selectionTint), ("error row", DS.Code.errorRowTint), ("warning row", DS.Code.warningRowTint),
+        ]
+        XCTAssertEqual(DS.Code.tints.count, tints.count)
+        for name in [NSAppearance.Name.aqua, .darkAqua] {
+            let appearance = try XCTUnwrap(NSAppearance(named: name))
+            let plain = DS.Code.backgrounds(in: appearance, tints: [])
+            XCTAssertEqual(plain.count, 2)
+            var backgrounds = [("text", plain[0]), ("window", plain[1])]
+            for (label, tint) in tints {
+                let tinted = DS.Code.backgrounds(in: appearance, tints: [tint])
+                backgrounds.append((label, tinted[2]))
+            }
+            for (label, color) in colors {
+                var resolved = NSColor.black
+                appearance.performAsCurrentDrawingAppearance { resolved = color.usingColorSpace(.sRGB) ?? color }
+                for (place, background) in backgrounds {
+                    let ratio = DS.Terminal.contrast(resolved, background)
+                    XCTAssertGreaterThanOrEqual(ratio, 4.5, "\(label) on \(place) in \(name.rawValue): \(ratio)")
+                }
+            }
+        }
+    }
 }
 
 /// sRGB components of a resolved color, for comparisons in tests.
@@ -65,24 +96,5 @@ struct SRGB {
 
     func distance(to other: SRGB) -> Double {
         ((r - other.r) * (r - other.r) + (g - other.g) * (g - other.g) + (b - other.b) * (b - other.b)).squareRoot()
-    }
-
-    func testCodePaletteReachesFourAndAHalfToOneInBothAppearances() throws {
-        let colors: [(String, NSColor, (NSColor, CGFloat)?)] = [
-            ("keyword", DS.Code.keywordNS, nil), ("string", DS.Code.stringNS, nil), ("number", DS.Code.numberNS, nil),
-            ("link", DS.Code.linkNS, nil), ("error", DS.Code.errorTextNS, (.systemRed, DS.Code.errorRowOpacity)),
-        ]
-        for name in [NSAppearance.Name.aqua, .darkAqua] {
-            let appearance = try XCTUnwrap(NSAppearance(named: name))
-            for (label, color, tint) in colors {
-                var resolved = NSColor.black
-                appearance.performAsCurrentDrawingAppearance { resolved = color.usingColorSpace(.sRGB) ?? color }
-                let backgrounds = DS.Code.backgrounds(in: appearance, tint: tint)
-                XCTAssertEqual(backgrounds.count, tint == nil ? 2 : 3)
-                for background in backgrounds {
-                    XCTAssertGreaterThanOrEqual(DS.Terminal.contrast(resolved, background), 4.5, "\(label) in \(name.rawValue)")
-                }
-            }
-        }
     }
 }

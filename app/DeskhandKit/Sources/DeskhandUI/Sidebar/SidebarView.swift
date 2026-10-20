@@ -48,7 +48,7 @@ public struct SidebarView: View {
 
     @ViewBuilder
     private func row(_ host: Host) -> some View {
-        let base = HostRow(host: host)
+        let base = HostRow(host: host, debuggerPaused: host.hostID != store.selectedHostID && store.debuggerPaused(hostID: host.hostID))
             .tag(host.hostID as String?)
             .contextMenu { HostActionsMenu(store: store, host: host) }
         if selectionStyle == .drawn && host.hostID == store.selectedHostID {

@@ -29,6 +29,10 @@ final class FakeDebuggerBackend: DebuggerBackend, EventsBackend, @unchecked Send
         var removeReply: DebugBreakpoint?
         var consolePages: [ConsolePage] = []
         var clearedThrough = 0
+        var inspectorLeftOpen = false
+        /// `debug.breakpoints.activate` and `debug.exceptions` wait for `releaseSettings`.
+        var holdSettings = false
+        var heldSettings: [CheckedContinuation<Void, Never>] = []
         var evaluation = DebugEvaluation(value: RemoteValue(type: "number", valuePreview: "2"))
         var events: AsyncThrowingStream<DaemonEvent, Error>.Continuation?
         var reconnects: AsyncStream<Void>.Continuation?
@@ -50,6 +54,7 @@ final class FakeDebuggerBackend: DebuggerBackend, EventsBackend, @unchecked Send
     var heldLaunchCount: Int { withLock { $0.heldLaunches.count } }
     var heldStepCount: Int { withLock { $0.heldSteps.count } }
     var heldVariablesCount: Int { withLock { $0.heldVariables.count } }
+    var heldSettingsCount: Int { withLock { $0.heldSettings.count } }
     var launches: [DebugLaunchRequest] { withLock { $0.launches } }
 
     func configure(_ body: (inout State) -> Void) { withLock(body) }
@@ -74,6 +79,19 @@ final class FakeDebuggerBackend: DebuggerBackend, EventsBackend, @unchecked Send
             defer { s.heldSteps = [] }
             return s.heldSteps
         }
+    }
+
+    func releaseSettings() {
+        release { s in
+            s.holdSettings = false
+            defer { s.heldSettings = [] }
+            return s.heldSettings
+        }
+    }
+
+    private func holdSettingsIfAsked() async {
+        let hold = withLock { $0.holdSettings }
+        if hold { await withCheckedContinuation { c in withLock { $0.heldSettings.append(c) } } }
     }
 
     func releaseVariables() {
@@ -181,11 +199,13 @@ final class FakeDebuggerBackend: DebuggerBackend, EventsBackend, @unchecked Send
 
     func debugBreakpointsActivate(debugID: String, active: Bool) async throws -> DebugSession? {
         record("bp.activate \(active)")
+        await holdSettingsIfAsked()
         return nil
     }
 
     func debugExceptions(debugID: String, mode: ExceptionPauseMode) async throws -> DebugSession? {
         record("exceptions \(mode.rawValue)")
+        await holdSettingsIfAsked()
         return nil
     }
 
@@ -251,7 +271,10 @@ final class FakeDebuggerBackend: DebuggerBackend, EventsBackend, @unchecked Send
         return withLock { $0.clearedThrough }
     }
 
-    func debugClose(debugID: String, keepProcess: Bool) async throws { record("close \(debugID) keep=\(keepProcess)") }
+    func debugClose(debugID: String, keepProcess: Bool) async throws -> DebugCloseResult {
+        record("close \(debugID) keep=\(keepProcess)")
+        return DebugCloseResult(inspectorLeftOpen: withLock { $0.inspectorLeftOpen })
+    }
 }
 
 @MainActor
@@ -871,11 +894,68 @@ final class DebuggerModelTests: XCTestCase {
         let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.command], timestamp: 0, windowNumber: 0,
                                                    context: nil, characters: "\\", charactersIgnoringModifiers: "\\", isARepeat: false, keyCode: 42))
         model.consoleFocused = true
-        XCTAssertFalse(DebuggerKeyHandler.handle(event, model: model, enabled: true))
+        XCTAssertFalse(DebuggerKeyHandler.handle(event, model: model, enabled: true, window: nil))
         model.consoleFocused = false
-        XCTAssertTrue(DebuggerKeyHandler.handle(event, model: model, enabled: true))
+        XCTAssertTrue(DebuggerKeyHandler.handle(event, model: model, enabled: true, window: nil))
         try await waitUntil { backend.calls.contains("pause \(page)") }
-        XCTAssertTrue(DebuggerKeyHandler.handle(event, model: model, enabled: false))
+        XCTAssertTrue(DebuggerKeyHandler.handle(event, model: model, enabled: false, window: nil))
+        model.showsScriptNavigator = true
+        XCTAssertFalse(DebuggerKeyHandler.handle(event, model: model, enabled: true, window: nil))
+        model.showsScriptNavigator = false
+        let other = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: true)
+        XCTAssertFalse(DebuggerKeyHandler.handle(event, model: model, enabled: true, window: other), "keys of another window pass through")
+        let escape = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+                                                    characters: "\u{1B}", charactersIgnoringModifiers: "\u{1B}", isARepeat: false, keyCode: 53))
+        XCTAssertFalse(DebuggerKeyHandler.handle(escape, model: model, enabled: true, window: nil))
+        model.navigatorShown = true
+        model.navigatorOverlay = true
+        XCTAssertTrue(DebuggerKeyHandler.handle(escape, model: model, enabled: true, window: nil))
+        XCTAssertEqual(model.navigatorShown, false)
+    }
+
+    func testSettingsRepliesWithoutASessionDoNotOverwriteANewerSession() async throws {
+        let backend = FakeDebuggerBackend()
+        let model = try await started(backend, sessions: [session()])
+        let debug = try XCTUnwrap(model.selected)
+        backend.configure { $0.holdSettings = true }
+        debug.setBreakpointsActive(false)
+        debug.setExceptionMode(.none)
+        try await waitUntil { backend.heldSettingsCount == 2 }
+        var newer = session()
+        newer.rev = 7
+        newer.breakpointsActive = true
+        newer.pauseOnExceptions = ExceptionPauseMode.uncaught.rawValue
+        backend.send(EventKind.debugSessionChanged, ["debug_id": .string("d-1"), "session": PreviewBackend.payload(newer)])
+        try await waitUntil { debug.info.rev == 7 }
+        backend.releaseSettings()
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertTrue(debug.info.breakpointsActive)
+        XCTAssertEqual(debug.info.exceptionMode, .uncaught)
+
+        debug.setBreakpointsActive(false)
+        try await waitUntil { !debug.info.breakpointsActive }
+    }
+
+    func testPauseWaitingForCodeIsCancelledByTheToggle() async throws {
+        let backend = FakeDebuggerBackend()
+        let model = try await started(backend, sessions: [session()])
+        let debug = try XCTUnwrap(model.selected)
+        let pending = DebugTarget(id: page, role: "renderer", type: "page", url: "app://shop/index.html", title: "결제", pausePending: true, gen: 2)
+        backend.send(EventKind.debugTargetChanged, ["debug_id": .string("d-1"), "target": PreviewBackend.payload(pending), "removed": .bool(false)])
+        try await waitUntil { debug.pausePending }
+        debug.togglePause()
+        try await waitUntil { backend.calls.contains("resume \(self.page)") }
+        XCTAssertFalse(backend.calls.contains("pause \(page)"))
+    }
+
+    func testDetachingWithTheInspectorLeftOpenSaysSo() async throws {
+        let backend = FakeDebuggerBackend()
+        backend.configure { $0.inspectorLeftOpen = true }
+        let model = try await started(backend, sessions: [session()])
+        let debug = try XCTUnwrap(model.selected)
+        await debug.close(keepProcess: true)
+        XCTAssertEqual(debug.notice?.tone, .info)
+        XCTAssertEqual(debug.notice?.message, "PC의 검사기 포트가 열린 채 남았습니다 · 앱을 다시 시작하면 닫힙니다")
     }
 
     func testCloseAsksTheDaemonAndKeepsTheSessionListed() async throws {

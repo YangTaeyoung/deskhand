@@ -54,6 +54,14 @@ public enum MainUnavailableReason: String, Codable, Sendable {
     case inspectorNotResponding = "inspector_not_responding"
 }
 
+/// `renderer_unavailable_reason` of a session with main and no renderer.
+public enum RendererUnavailableReason: String, Codable, Sendable {
+    /// The remote debugging port never opened.
+    case remoteDebuggingDisabled = "remote_debugging_disabled"
+    /// The port opened but `/json/list` did not answer.
+    case remoteDebuggingNotResponding = "remote_debugging_not_responding"
+}
+
 /// `match` of a breakpoint: how its `pattern` names scripts.
 public enum BreakpointMatch: String, Codable, Sendable, CaseIterable {
     /// The URL path ends with `pattern` at a path separator, ignoring `?query` and `#hash`.
@@ -290,6 +298,7 @@ public struct DebugSession: Codable, Sendable, Equatable, Identifiable {
     public var targets: [DebugTarget]
     /// Why only renderers are attached.
     public var mainUnavailableReason: String?
+    public var rendererUnavailableReason: String?
     /// In creation order.
     public var breakpoints: [DebugBreakpoint]
     public var breakpointsActive: Bool
@@ -310,10 +319,14 @@ public struct DebugSession: Codable, Sendable, Equatable, Identifiable {
     public var mainUnavailable: MainUnavailableReason? {
         mainUnavailableReason.map { MainUnavailableReason(rawValue: $0) ?? .inspectorNotResponding }
     }
+    public var rendererUnavailable: RendererUnavailableReason? {
+        rendererUnavailableReason.map { RendererUnavailableReason(rawValue: $0) ?? .remoteDebuggingNotResponding }
+    }
 
     public init(debugID: String, hostID: String, jobID: String? = nil, kind: DebugSessionKind, name: String, path: String? = nil,
                 args: [String] = [], cwd: String? = nil, pauseOnStart: Bool = false, pid: Int? = nil, ports: DebugPorts = DebugPorts(),
                 state: DebugSessionState = .running, targets: [DebugTarget] = [], mainUnavailable: MainUnavailableReason? = nil,
+                rendererUnavailable: RendererUnavailableReason? = nil,
                 breakpoints: [DebugBreakpoint] = [], breakpointsActive: Bool = true, pauseOnExceptions: ExceptionPauseMode = .uncaught,
                 createdBy: DebugActor = .human, createdAt: Timestamp, closedAt: Timestamp? = nil, closeReason: DebugCloseReason? = nil,
                 exitCode: Int? = nil, rev: Int = 1) {
@@ -331,6 +344,7 @@ public struct DebugSession: Codable, Sendable, Equatable, Identifiable {
         self.state = state.rawValue
         self.targets = targets
         self.mainUnavailableReason = mainUnavailable?.rawValue
+        self.rendererUnavailableReason = rendererUnavailable?.rawValue
         self.breakpoints = breakpoints
         self.breakpointsActive = breakpointsActive
         self.pauseOnExceptions = pauseOnExceptions.rawValue
@@ -358,6 +372,7 @@ public struct DebugSession: Codable, Sendable, Equatable, Identifiable {
         state = try c.decode(String.self, forKey: .state)
         targets = try c.decodeIfPresent([DebugTarget].self, forKey: .targets) ?? []
         mainUnavailableReason = try c.decodeIfPresent(String.self, forKey: .mainUnavailableReason)
+        rendererUnavailableReason = try c.decodeIfPresent(String.self, forKey: .rendererUnavailableReason)
         breakpoints = try c.decodeIfPresent([DebugBreakpoint].self, forKey: .breakpoints) ?? []
         breakpointsActive = try c.decodeIfPresent(Bool.self, forKey: .breakpointsActive) ?? true
         pauseOnExceptions = try c.decodeIfPresent(String.self, forKey: .pauseOnExceptions) ?? ExceptionPauseMode.uncaught.rawValue
@@ -373,7 +388,7 @@ public struct DebugSession: Codable, Sendable, Equatable, Identifiable {
         case debugID = "debugId"
         case hostID = "hostId"
         case jobID = "jobId"
-        case kind, name, path, args, cwd, pauseOnStart, pid, ports, state, targets, mainUnavailableReason, breakpoints
+        case kind, name, path, args, cwd, pauseOnStart, pid, ports, state, targets, mainUnavailableReason, rendererUnavailableReason, breakpoints
         case breakpointsActive, pauseOnExceptions, createdBy, createdAt, closedAt, closeReason, exitCode, rev
     }
 }

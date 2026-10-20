@@ -25,14 +25,23 @@ struct DebuggerCommandContext {
     }
 }
 
-/// The ⌘ alternates of the execution controls as the debugger tab's key monitor runs them.
+/// The ⌘ alternates of the execution controls and Esc as the debugger tab's key monitor runs them.
 @MainActor
 enum DebuggerKeyHandler {
-    /// Runs the ⌘ alternate of an execution control; true when the event was one, so it goes no
-    /// further, even when the control does not apply now. Keys typed in a sheet pass through.
-    static func handle(_ event: NSEvent, model: DebuggerModel, enabled: Bool) -> Bool {
-        guard event.window?.isKeyWindow ?? true, !(event.window?.isSheet ?? false), event.window?.attachedSheet == nil,
-              let action = DebuggerKeys.action(characters: event.charactersIgnoringModifiers ?? "", modifiers: event.modifierFlags,
+    static let escapeKeyCode: UInt16 = 53
+
+    /// Handles a key press in `window`, the window of the debugger tab, while it is key and shows
+    /// no sheet and the script navigator is closed: Esc hides the navigator laid over a narrow tab,
+    /// and the ⌘ alternates run their execution control. Returns true for an event it consumed;
+    /// an alternate is consumed even when its control does not apply now.
+    static func handle(_ event: NSEvent, model: DebuggerModel, enabled: Bool, window: NSWindow?) -> Bool {
+        guard event.window === window, window?.isKeyWindow ?? true, window?.attachedSheet == nil, !model.showsScriptNavigator,
+              model.sheet == nil else { return false }
+        if event.keyCode == escapeKeyCode, model.navigatorOverlay {
+            model.navigatorShown = false
+            return true
+        }
+        guard let action = DebuggerKeys.action(characters: event.charactersIgnoringModifiers ?? "", modifiers: event.modifierFlags,
                                                consoleFocused: model.consoleFocused) else { return false }
         guard enabled, let session = model.selected, session.command == nil else { return true }
         switch action {
@@ -43,11 +52,13 @@ enum DebuggerKeyHandler {
     }
 }
 
-/// A local key monitor the debugger tab installs while it shows, for the ⌘ alternates of the
-/// execution controls; `handle` returns true for an event it consumed.
+/// A local key monitor the debugger tab installs while it shows, for its keys in `window`;
+/// `handle` returns true for an event it consumed.
 @MainActor
 final class DebuggerKeyMonitor {
     private var monitor: Any?
+    /// The window the debugger tab is in.
+    weak var window: NSWindow?
 
     func install(_ handle: @escaping @MainActor (NSEvent) -> Bool) {
         guard monitor == nil else { return }
@@ -60,6 +71,30 @@ final class DebuggerKeyMonitor {
     func remove() {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
+    }
+}
+
+/// Reports the window it is placed in, and again when it moves to another.
+struct WindowReader: NSViewRepresentable {
+    let changed: (NSWindow?) -> Void
+
+    func makeNSView(context: Context) -> ReaderView {
+        let view = ReaderView()
+        view.changed = changed
+        return view
+    }
+
+    func updateNSView(_ view: ReaderView, context: Context) {
+        view.changed = changed
+    }
+
+    final class ReaderView: NSView {
+        var changed: ((NSWindow?) -> Void)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            changed?(window)
+        }
     }
 }
 
@@ -78,7 +113,8 @@ enum FunctionKey {
 /// the script navigator (⇧⌘O), adding and switching off breakpoints (⌘Y), the exception setting,
 /// clearing the console (⌘L) and closing or detaching the session. Shortcuts apply only while the
 /// debugger tab is shown; the execution controls also wait while the console input has the
-/// keyboard. ⌘\, ⌘', ⌘; and ⇧⌘; reach them through `DebuggerKeyMonitor`.
+/// keyboard. ⌘\, ⌘', ⌘; and ⇧⌘; reach them through `DebuggerKeyMonitor` and each item names its
+/// alternate in its help tag.
 struct DebuggerMenuCommands: View {
     let store: AppStore
 
@@ -86,23 +122,28 @@ struct DebuggerMenuCommands: View {
         let context = DebuggerCommandContext(store: store)
         let session = context.session
         let paused = session?.isSelectedPaused ?? false
+        let pending = session?.pausePending ?? false
         let steppable = session?.pauseState != nil
         Button(String.ui("debugger.launch.menu", "앱 실행…")) { show(.launch) }
             .disabled(!context.canStart)
         Button(String.ui("debugger.attach.menu", "실행 중인 앱에 연결…")) { show(.attach) }
             .disabled(!context.canStart)
         Divider()
-        Button(paused ? String.ui("debugger.resume", "재개") : String.ui("debugger.pause", "일시정지")) { session?.togglePause() }
+        Button(DebugFormat.pauseTitle(paused: paused, pending: pending)) { session?.togglePause() }
             .keyboardShortcut(context.isShown ? KeyboardShortcut(FunctionKey.f8, modifiers: []) : nil)
+            .help(String.ui("debugger.alternate.pause", "⌘\\로도 할 수 있습니다"))
             .disabled(!context.canControl)
         Button(String.ui("debugger.stepOver", "건너뛰기")) { session?.step(.over) }
             .keyboardShortcut(context.isShown ? KeyboardShortcut(FunctionKey.f10, modifiers: []) : nil)
+            .help(String.ui("debugger.alternate.stepOver", "⌘'로도 할 수 있습니다"))
             .disabled(!context.canControl || !steppable)
         Button(String.ui("debugger.stepInto", "들어가기")) { session?.step(.into) }
             .keyboardShortcut(context.isShown ? KeyboardShortcut(FunctionKey.f11, modifiers: []) : nil)
+            .help(String.ui("debugger.alternate.stepInto", "⌘;로도 할 수 있습니다"))
             .disabled(!context.canControl || !steppable)
         Button(String.ui("debugger.stepOut", "나오기")) { session?.step(.out) }
             .keyboardShortcut(context.isShown ? KeyboardShortcut(FunctionKey.f11, modifiers: [.shift]) : nil)
+            .help(String.ui("debugger.alternate.stepOut", "⇧⌘;로도 할 수 있습니다"))
             .disabled(!context.canControl || !steppable)
         Divider()
         Button(String.ui("debugger.scripts.menu", "스크립트 열기…")) { context.model?.showsScriptNavigator = true }

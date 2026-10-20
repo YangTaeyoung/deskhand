@@ -326,6 +326,15 @@ final class PreviewDebuggerTests: XCTestCase {
         XCTAssertNil(session.ports.inspect)
     }
 
+    func testAnAppWithoutRemoteDebuggingAttachesItsMainOnly() async throws {
+        let backend = PreviewBackend(stepDelay: .zero)
+        let session = try await backend.debugLaunch(DebugLaunchRequest(hostID: dev, path: Program.syncPath, pauseOnStart: true))
+        XCTAssertEqual(session.targets.map(\.targetRole), [.main])
+        XCTAssertEqual(session.rendererUnavailable, .remoteDebuggingDisabled)
+        XCTAssertNil(session.mainUnavailable)
+        XCTAssertNil(session.ports.remoteDebugging)
+    }
+
     func testPauseOnAnIdlePageIsPendingUntilCodeRuns() async throws {
         let backend = PreviewBackend(stepDelay: .zero)
         let events = EventCollector(backend, kinds: EventKind.debuggerKinds)

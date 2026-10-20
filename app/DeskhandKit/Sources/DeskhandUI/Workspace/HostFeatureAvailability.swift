@@ -124,6 +124,7 @@ struct DiagnosticsNoticeToast: View {
     private var symbol: String {
         switch notice.tone {
         case .success: "checkmark.circle.fill"
+        case .info: "info.circle.fill"
         case .warning: "exclamationmark.triangle.fill"
         case .error: "exclamationmark.octagon.fill"
         }
@@ -132,6 +133,7 @@ struct DiagnosticsNoticeToast: View {
     private var tint: Color {
         switch notice.tone {
         case .success: DS.Color.success
+        case .info: DS.Color.accent
         case .warning: DS.Color.warning
         case .error: DS.Color.danger
         }

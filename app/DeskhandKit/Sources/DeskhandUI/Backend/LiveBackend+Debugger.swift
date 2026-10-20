@@ -138,6 +138,11 @@ private struct OptionalSessionResult: Decodable {
     let session: DebugSession?
 }
 
+private struct CloseResult: Decodable {
+    let session: DebugSession?
+    let inspectorLeftOpen: Bool?
+}
+
 private struct ConsoleClearResult: Decodable {
     let clearedThrough: Int
 }
@@ -256,8 +261,10 @@ extension LiveBackend {
         try await debugEnvelope("debug.console.clear", DebugIDParams(debugID: debugID), as: ConsoleClearResult.self).clearedThrough
     }
 
-    public func debugClose(debugID: String, keepProcess: Bool) async throws {
-        _ = try await debugEnvelope("debug.close", CloseParams(debugID: debugID, keepProcess: keepProcess ? true : nil), as: Empty.self)
+    public func debugClose(debugID: String, keepProcess: Bool) async throws -> DebugCloseResult {
+        let result = try await debugEnvelope("debug.close", CloseParams(debugID: debugID, keepProcess: keepProcess ? true : nil),
+                                             as: CloseResult.self)
+        return DebugCloseResult(session: result.session, inspectorLeftOpen: result.inspectorLeftOpen ?? false)
     }
 
     /// Calls a method whose result is an envelope, throws its error with the envelope's next action

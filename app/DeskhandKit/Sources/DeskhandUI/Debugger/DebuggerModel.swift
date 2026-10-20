@@ -114,6 +114,8 @@ public final class DebuggerModel {
     public var centerSplit = 0.56
     /// The navigator column shows; nil follows the window width.
     public var navigatorShown: Bool?
+    /// The navigator shows laid over a narrow tab.
+    public var navigatorOverlay = false
     /// The console's expression field has the keyboard.
     public var consoleFocused = false
     /// Pauses the person dismissed from the workspace banner, as `debugID|targetID|gen`.

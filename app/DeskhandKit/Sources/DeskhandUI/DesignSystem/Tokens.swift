@@ -51,9 +51,37 @@ public enum DS {
     }
 
     /// Colors of script source, values and console text in the debugger. The text colors are system
-    /// hues blended toward black (light) or white (dark) until they reach 4.5:1 against both the
-    /// text and the window background of the appearance; error text also against its row tint.
+    /// hues blended toward black (light) or white (dark) until they reach 4.5:1 against the text and
+    /// window backgrounds of the appearance and the text background under every tint in `tints`.
     public enum Code {
+        /// A color laid over the text background at an opacity.
+        public struct Tint: Sendable {
+            public let color: NSColor
+            public let opacity: CGFloat
+
+            public init(_ color: NSColor, _ opacity: CGFloat) {
+                self.color = color
+                self.opacity = opacity
+            }
+
+            public var swiftUI: SwiftUI.Color { SwiftUI.Color(nsColor: color).opacity(opacity) }
+        }
+
+        /// The line the paused frame is on.
+        public static let currentLineTint = Tint(.systemGreen, 0.16)
+        /// The line of a caller frame the person selected.
+        public static let callerLineTint = Tint(.systemGray, 0.16)
+        /// The line a paused exception was thrown on.
+        public static let exceptionLineTint = Tint(.systemRed, 0.14)
+        /// A location opened from the breakpoints or the console.
+        public static let focusLineTint = Tint(.systemIndigo, 0.12)
+        /// Selected console, variable and breakpoint rows.
+        public static let selectionTint = Tint(.systemIndigo, 0.16)
+        /// Console error rows and the exception row of the variables.
+        public static let errorRowTint = Tint(.systemRed, 0.06)
+        /// Console warning rows.
+        public static let warningRowTint = Tint(.systemOrange, 0.08)
+
         /// JavaScript keywords and the literals `true`, `false`, `null`, `undefined`.
         public static let keyword = SwiftUI.Color(nsColor: keywordNS)
         /// String, template and regular expression literals and string values.
@@ -66,53 +94,55 @@ public enum DS {
         public static let errorText = SwiftUI.Color(nsColor: errorTextNS)
         /// Comments, `undefined` values and internal properties.
         public static let comment = SwiftUI.Color.secondary
-        /// The line the paused frame is on.
-        public static let currentLine = SwiftUI.Color(nsColor: .systemGreen).opacity(0.16)
-        /// The line of a caller frame the person selected.
-        public static let callerLine = SwiftUI.Color.gray.opacity(0.16)
-        /// The line a paused exception was thrown on.
-        public static let exceptionLine = SwiftUI.Color(nsColor: .systemRed).opacity(0.14)
-        /// A location opened from the breakpoints or the console.
-        public static let focusLine = SwiftUI.Color.indigo.opacity(0.12)
+        public static let currentLine = currentLineTint.swiftUI
+        public static let callerLine = callerLineTint.swiftUI
+        public static let exceptionLine = exceptionLineTint.swiftUI
+        public static let focusLine = focusLineTint.swiftUI
+        public static let selection = selectionTint.swiftUI
+        public static let errorRow = errorRowTint.swiftUI
+        public static let warningRow = warningRowTint.swiftUI
         /// Breakpoint markers in the gutter and the breakpoints list.
         public static let breakpoint = SwiftUI.Color(nsColor: .systemBlue)
         /// Background of the source and console panes.
         public static let background = SwiftUI.Color(nsColor: .textBackgroundColor)
         /// The gutter beside the source lines.
         public static let gutter = SwiftUI.Color(nsColor: .underPageBackgroundColor).opacity(0.5)
-        /// Opacity of the danger tint behind console error rows.
-        public static let errorRowOpacity: CGFloat = 0.06
 
-        public static let keywordNS = readable(.systemPink)
-        public static let stringNS = readable(.systemRed)
-        public static let numberNS = readable(.systemBlue)
-        public static let linkNS = readable(.systemIndigo)
-        public static let errorTextNS = readable(.systemRed, tint: (.systemRed, errorRowOpacity))
+        /// Every tint code text sits on.
+        public static let tints = [currentLineTint, callerLineTint, exceptionLineTint, focusLineTint, selectionTint, errorRowTint,
+                                   warningRowTint]
 
-        /// The backgrounds code text sits on in `appearance`: text, window, and with `tint` the
-        /// text background under that tint.
-        static func backgrounds(in appearance: NSAppearance, tint: (NSColor, CGFloat)?) -> [NSColor] {
+        public static let keywordNS = readable(.systemPink, tints: tints)
+        public static let stringNS = readable(.systemRed, tints: tints)
+        public static let numberNS = readable(.systemBlue, tints: tints)
+        public static let linkNS = readable(.systemIndigo, tints: tints)
+        public static let errorTextNS = readable(.systemRed, tints: tints)
+
+        /// The backgrounds code text sits on in `appearance`: the text and window backgrounds, and
+        /// the text background under each of `tints`.
+        static func backgrounds(in appearance: NSAppearance, tints: [Tint]) -> [NSColor] {
             var colors: [NSColor] = []
             appearance.performAsCurrentDrawingAppearance {
                 let text = NSColor.textBackgroundColor.usingColorSpace(.sRGB) ?? .white
                 let window = NSColor.windowBackgroundColor.usingColorSpace(.sRGB) ?? .white
                 colors = [text, window]
-                if let (hue, fraction) = tint, let shade = hue.usingColorSpace(.sRGB) {
-                    colors.append(text.blended(withFraction: fraction, of: shade) ?? text)
+                for tint in tints {
+                    guard let shade = tint.color.usingColorSpace(.sRGB) else { continue }
+                    colors.append(text.blended(withFraction: tint.opacity, of: shade) ?? text)
                 }
             }
             return colors
         }
 
         /// `base` blended toward black (light) or white (dark) until it reaches 4.5:1 against every background.
-        static func readable(_ base: NSColor, tint: (NSColor, CGFloat)? = nil, ratio: Double = 4.5) -> NSColor {
+        static func readable(_ base: NSColor, tints: [Tint] = [], ratio: Double = 4.5) -> NSColor {
             NSColor(name: nil) { appearance in
                 let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
                 var resolved = base
                 appearance.performAsCurrentDrawingAppearance {
                     resolved = base.usingColorSpace(.sRGB) ?? base
                 }
-                let backgrounds = backgrounds(in: appearance, tint: tint)
+                let backgrounds = backgrounds(in: appearance, tints: tints)
                 func passes(_ color: NSColor) -> Bool {
                     backgrounds.allSatisfy { Terminal.contrast(color, $0) >= ratio }
                 }

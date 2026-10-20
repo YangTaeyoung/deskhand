@@ -39,7 +39,7 @@ final class DebugModelTests: XCTestCase {
 
         let minimal = try Wire.decode(DebugSession.self, from: Data(#"""
         {"debug_id":"d-2","host_id":"h","kind":"attach","name":"node","ports":{},"state":"closed","created_at":"2026-10-20T10:00:00.000Z",
-         "close_reason":"process_exited","exit_code":1,"closed_at":"2026-10-20T10:05:00.000Z","main_unavailable_reason":"inspector_disabled"}
+         "close_reason":"process_exited","exit_code":1,"closed_at":"2026-10-20T10:05:00.000Z","main_unavailable_reason":"inspector_disabled","renderer_unavailable_reason":"remote_debugging_disabled"}
         """#.utf8))
         XCTAssertEqual(minimal.args, [])
         XCTAssertEqual(minimal.targets, [])
@@ -51,6 +51,7 @@ final class DebugModelTests: XCTestCase {
         XCTAssertFalse(minimal.pauseOnStart)
         XCTAssertEqual(minimal.createdBy.actor, "human")
         XCTAssertEqual(minimal.mainUnavailable, .inspectorDisabled)
+        XCTAssertEqual(minimal.rendererUnavailable, .remoteDebuggingDisabled)
 
         let spec = BreakpointSpec(match: .url, pattern: "app://shop/api.js", line: 7, condition: "x > 1")
         let encoder = JSONEncoder()

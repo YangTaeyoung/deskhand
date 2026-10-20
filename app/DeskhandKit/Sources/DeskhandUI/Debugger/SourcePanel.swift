@@ -101,7 +101,7 @@ struct SourcePanel: View {
         } else if let session, session.pausePending {
             DebugPanePlaceholder(symbol: "pause.circle",
                                  title: String.ui("debugger.source.pausePending", "일시정지를 기다리는 중입니다"),
-                                 message: String.ui("debugger.source.pausePending.hint", "대상이 지금은 코드를 실행하지 않습니다. 다음 코드가 실행되는 순간 멈춥니다. 창을 클릭하거나 앱을 조작해 보세요."))
+                                 message: String.ui("debugger.source.pausePending.hint", "대상이 지금은 코드를 실행하지 않습니다. 다음 코드가 실행되는 순간 멈춥니다. 창을 클릭하거나 앱을 조작해 보세요. 그만두려면 일시정지 취소(F8 또는 ⌘\\)를 누르세요."))
         } else if let session, let target = session.selectedTarget, !target.attached {
             VStack(spacing: DS.Space.m) {
                 DebugPanePlaceholder(symbol: "cable.connector",
@@ -114,7 +114,7 @@ struct SourcePanel: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             DebugPanePlaceholder(symbol: "play.circle", title: String.ui("debugger.source.running", "실행 중입니다"),
-                                 message: String.ui("debugger.source.running.hint", "중단점에 닿거나 일시정지(F8)하면 멈춘 위치와 호출 스택, 변수가 나타납니다. 스크립트(⇧⌘O)를 열어 줄 번호를 누르면 중단점이 걸립니다."))
+                                 message: String.ui("debugger.source.running.hint", "중단점에 닿거나 일시정지(F8 또는 ⌘\\)하면 멈춘 위치와 호출 스택, 변수가 나타납니다. 스크립트(⇧⌘O)를 열어 줄 번호를 누르면 중단점이 걸립니다."))
         }
     }
 
@@ -180,7 +180,7 @@ private struct ExceptionBanner: View {
         }
         .padding(.horizontal, DS.Space.m)
         .padding(.vertical, DS.Space.s)
-        .background(DS.Color.danger.opacity(DS.Code.errorRowOpacity))
+        .background(DS.Code.errorRow)
         .overlay(alignment: .bottom) {
             Rectangle().fill(DS.Color.danger.opacity(0.25)).frame(height: 1)
         }

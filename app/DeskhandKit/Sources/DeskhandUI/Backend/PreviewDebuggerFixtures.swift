@@ -19,6 +19,8 @@ public enum PreviewDebugProgram {
     public static let notElectronPath = "C:\\Shop\\bin\\Shop.exe"
     /// A fused Electron app that ignores `--inspect`: launching it attaches its renderer only.
     public static let kioskPath = "C:\\Users\\taeyoung\\AppData\\Local\\Programs\\shop-kiosk\\Shop Kiosk.exe"
+    /// A tray Electron app that turns its remote debugging port off: launching it attaches main only.
+    public static let syncPath = "C:\\Shop\\tools\\Shop Sync.exe"
 
     public static func targets(mainGen: Int = 0, pageGen: Int = 0, mainPaused: Bool = false, pagePaused: Bool = false,
                                pagePausePending: Bool = false) -> [DebugTarget] {
@@ -862,11 +864,14 @@ public enum PreviewDebugProgram {
                                targets: [DebugTarget]? = nil, breakpoints: [DebugBreakpoint] = [], exceptions: ExceptionPauseMode = .uncaught,
                                breakpointsActive: Bool = true, closeReason: DebugCloseReason? = nil, exitCode: Int? = nil,
                                createdBy: DebugActor = DebugActor(actor: "human", clientName: "Deskhand"),
-                               mainUnavailable: MainUnavailableReason? = nil, rev: Int = 1) -> DebugSession {
+                               mainUnavailable: MainUnavailableReason? = nil, rendererUnavailable: RendererUnavailableReason? = nil,
+                               rev: Int = 1) -> DebugSession {
         DebugSession(debugID: debugID, hostID: hostID, jobID: "j-debug-1", kind: .launch, name: appName, path: appPath,
                      args: ["--env=staging"], cwd: "C:\\Shop\\desktop", pid: appPID,
-                     ports: DebugPorts(inspect: mainUnavailable == nil ? inspectPort : nil, remoteDebugging: devtoolsPort),
-                     state: state, targets: targets ?? Self.targets(), mainUnavailable: mainUnavailable, breakpoints: breakpoints,
+                     ports: DebugPorts(inspect: mainUnavailable == nil ? inspectPort : nil,
+                                       remoteDebugging: rendererUnavailable == nil ? devtoolsPort : nil),
+                     state: state, targets: targets ?? Self.targets(), mainUnavailable: mainUnavailable,
+                     rendererUnavailable: rendererUnavailable, breakpoints: breakpoints,
                      breakpointsActive: breakpointsActive, pauseOnExceptions: exceptions, createdBy: createdBy, createdAt: Timestamp(date: created),
                      closedAt: state == .closed ? Timestamp(date: created.addingTimeInterval(240)) : nil, closeReason: closeReason,
                      exitCode: exitCode, rev: rev)

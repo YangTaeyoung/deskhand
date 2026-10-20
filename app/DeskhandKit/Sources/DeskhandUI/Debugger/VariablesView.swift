@@ -42,7 +42,6 @@ struct VariablesView: View {
                 .padding(.vertical, DS.Space.xs)
             }
             .focusable()
-            .focusEffectDisabled()
             .focused($focused)
             .onKeyPress(.upArrow) {
                 session.moveVariableSelection(by: -1)
@@ -95,7 +94,7 @@ private struct ExceptionValueRow: View {
         .padding(.horizontal, DS.Space.s)
         .padding(.vertical, DS.Space.xs)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DS.Color.danger.opacity(DS.Code.errorRowOpacity))
+        .background(DS.Code.errorRow)
         .accessibilityElement(children: .combine)
     }
 }
@@ -223,8 +222,8 @@ private struct VariableRowView: View {
     }
 
     private var rowBackground: AnyShapeStyle {
-        if selected { return AnyShapeStyle(DS.Color.accent.opacity(0.16)) }
-        if isException { return AnyShapeStyle(DS.Color.danger.opacity(DS.Code.errorRowOpacity)) }
+        if selected { return AnyShapeStyle(DS.Code.selection) }
+        if isException { return AnyShapeStyle(DS.Code.errorRow) }
         return hovering ? AnyShapeStyle(DS.Color.neutral.opacity(0.08)) : AnyShapeStyle(.clear)
     }
 

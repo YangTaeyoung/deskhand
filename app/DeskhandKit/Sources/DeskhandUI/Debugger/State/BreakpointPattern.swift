@@ -157,7 +157,8 @@ public enum ArgumentSplitter {
 }
 
 /// Fuzzy file-name search over script URLs: the query's letters appear in order in the file
-/// name, ignoring case; tighter matches rank first, then shorter names.
+/// name, ignoring case; tighter matches rank first, then shorter names. An empty query lists
+/// every script by path.
 public enum ScriptSearch {
     public struct Match: Equatable, Sendable {
         public var url: String
@@ -165,9 +166,15 @@ public enum ScriptSearch {
         public var score: Int
     }
 
-    /// The URLs that match `query`, best first; `node:` scripts only with `includeInternal`.
+    /// The URLs that match `query`, best first, or all of them by path for an empty query;
+    /// `node:` scripts only with `includeInternal`.
     public static func rank(_ urls: [String], query: String, includeInternal: Bool = false) -> [Match] {
         let needle = Array(query.trimmingCharacters(in: .whitespaces).lowercased())
+        if needle.isEmpty {
+            return urls.filter { includeInternal || !ScriptURL.isInternal($0) }
+                .map { Match(url: $0, fileName: ScriptURL.fileName($0), score: 0) }
+                .sorted { ScriptURL.display($0.url).localizedStandardCompare(ScriptURL.display($1.url)) == .orderedAscending }
+        }
         return urls.compactMap { url -> Match? in
             if !includeInternal, ScriptURL.isInternal(url) { return nil }
             let name = ScriptURL.fileName(url)

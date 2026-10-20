@@ -149,5 +149,5 @@ extension SnapshotBackend {
     func debugSource(debugID: String, targetID: String, scriptID: String) async throws -> DebugSource { throw ClientError.notConnected }
     func debugConsole(_ query: ConsoleQuery) async throws -> ConsolePage { ConsolePage(entries: [], nextCursor: query.cursor ?? 0) }
     func debugConsoleClear(debugID: String) async throws -> Int { 0 }
-    func debugClose(debugID: String, keepProcess: Bool) async throws {}
+    func debugClose(debugID: String, keepProcess: Bool) async throws -> DebugCloseResult { DebugCloseResult() }
 }

@@ -164,12 +164,24 @@ public struct LaunchSheet: View {
                     Color.clear.frame(width: 1, height: 1)
                     VStack(alignment: .leading, spacing: DS.Space.xs) {
                         Toggle(String.ui("debugger.launch.pauseOnStart", "메인 프로세스 첫 줄에서 멈춤"), isOn: $draft.pauseOnStart)
-                        Text(String.ui("debugger.launch.pauseOnStart.hint", "--inspect-brk로 실행해 main.js가 시작하기 전에 멈춥니다. 앱 시작 코드를 디버그할 때 켜세요."))
+                        Text(String.ui("debugger.launch.pauseOnStart.hint", "--inspect 대신 --inspect-brk로 실행해 main.js가 시작하기 전에 멈추고, 그 전에 중단점을 겁니다. 앱 시작 코드를 디버그할 때 켜세요."))
                             .font(DS.Font.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.leading, DS.Space.l + DS.Space.xs)
                     }
+                }
+                GridRow {
+                    label(String.ui("debugger.launch.exceptions", "예외"))
+                    Picker(String.ui("debugger.exceptions", "예외에서 멈춤"), selection: Binding(
+                        get: { draft.pauseOnExceptions ?? .uncaught }, set: { draft.pauseOnExceptions = $0 })) {
+                        ForEach(ExceptionPauseMode.allCases, id: \.self) { mode in
+                            Text(DebugFormat.exceptionMode(mode)).tag(mode)
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    .help(String.ui("debugger.exceptions.help", "예외가 던져질 때 멈출지 고릅니다"))
                 }
                 if !draft.breakpoints.isEmpty {
                     GridRow {
@@ -177,7 +189,9 @@ public struct LaunchSheet: View {
                         HStack(spacing: DS.Space.s) {
                             BreakpointMarker(enabled: true, resolved: true, width: 20, height: 14)
                             let count = String(draft.breakpoints.count)
-                            Text(String.ui("debugger.launch.breakpoints", "최근 실행의 중단점 \(count)개를 앱이 시작하기 전에 겁니다"))
+                            Text(draft.pauseOnStart
+                                 ? String.ui("debugger.launch.breakpoints", "최근 실행의 중단점 \(count)개를 앱이 시작하기 전에 겁니다")
+                                 : String.ui("debugger.launch.breakpointsOnAttach", "최근 실행의 중단점 \(count)개를 연결되는 대로 겁니다"))
                                 .font(DS.Font.body)
                                 .fixedSize(horizontal: false, vertical: true)
                             Spacer(minLength: DS.Space.s)
@@ -192,7 +206,7 @@ public struct LaunchSheet: View {
             if launching {
                 StatusNotice(symbol: nil, tint: DS.Color.accent,
                              title: String.ui("debugger.launch.running", "\(launchName) 실행하는 중…"),
-                             message: String.ui("debugger.launch.running.detail", "디버그 포트가 열리고 메인·렌더러 대상이 나타나기를 기다립니다. 최대 20초 걸립니다."))
+                             message: String.ui("debugger.launch.running.detail", "디버그 포트가 열리고 메인·렌더러 대상이 나타나기를 기다립니다. 포트마다 최대 20초 기다립니다."))
             } else if let error {
                 StatusNotice(symbol: "exclamationmark.octagon.fill", tint: DS.Color.danger,
                              title: String.ui("debugger.launch.failed", "앱을 디버그 모드로 실행하지 못했습니다"),
@@ -202,7 +216,9 @@ public struct LaunchSheet: View {
                     Image(systemName: "info.circle.fill")
                         .foregroundStyle(DS.Color.accent)
                         .accessibilityHidden(true)
-                    Text(String.ui("debugger.launch.note", "빈 포트 두 개를 골라 --inspect와 --remote-debugging-port를 붙여 실행합니다. 세션을 닫으면 Deskhand가 실행한 이 앱도 종료됩니다."))
+                    Text(draft.pauseOnStart
+                         ? String.ui("debugger.launch.noteBrk", "빈 포트 두 개를 골라 --inspect-brk와 --remote-debugging-port를 붙여 실행합니다. 메인 프로세스에 먼저 연결해 중단점을 건 뒤 렌더러를 기다립니다. 세션을 닫으면 Deskhand가 실행한 이 앱도 종료됩니다.")
+                         : String.ui("debugger.launch.note", "빈 포트 두 개를 골라 --inspect와 --remote-debugging-port를 붙여 실행합니다. 연결되기 전에 실행된 코드에서는 멈추지 않습니다. 세션을 닫으면 Deskhand가 실행한 이 앱도 종료됩니다."))
                         .font(DS.Font.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -372,12 +388,14 @@ struct RemoteFilePicker: View {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(browser.rows) { item in
-                            PickerRow(item: item, chosen: chosen == item.path) {
+                            PickerRow(item: item, chosen: chosen == item.path) { clicks in
                                 if item.isFolder {
                                     chosen = nil
                                     Task { await browser.open(item.path) }
                                 } else if Self.isExecutable(item) {
+                                    let wasChosen = chosen == item.path
                                     chosen = item.path
+                                    if clicks >= 2, wasChosen { select(item.path) }
                                 }
                             }
                         }
@@ -393,17 +411,20 @@ struct RemoteFilePicker: View {
     }
 }
 
-/// A folder or file of the picker: a click opens a folder or chooses an executable; other files
-/// are dimmed and do nothing.
+/// A folder or file of the picker: a click opens a folder or chooses an executable and a double
+/// click on the chosen executable picks it; other files are dimmed and do nothing. `click` gets
+/// the click count.
 private struct PickerRow: View {
     let item: FileItem
     let chosen: Bool
-    let click: () -> Void
+    let click: (Int) -> Void
     @State private var hovering = false
 
     var body: some View {
         let usable = item.isFolder || RemoteFilePicker.isExecutable(item)
-        Button(action: click) {
+        Button {
+            click(NSApp.currentEvent?.clickCount ?? 1)
+        } label: {
             HStack(spacing: DS.Space.s) {
                 Image(systemName: item.isFolder ? "folder.fill" : (RemoteFilePicker.isExecutable(item) ? "macwindow" : "doc"))
                     .foregroundStyle(item.isFolder ? AnyShapeStyle(DS.Color.accent.opacity(0.8)) : AnyShapeStyle(.secondary))

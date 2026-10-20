@@ -21,6 +21,13 @@ enum DebugFormat {
         return "at " + name + " (" + location(url: frame.url, line: frame.line) + ")"
     }
 
+    /// 재개 while paused, 일시정지 취소 while a pause waits for code to run, else 일시정지.
+    static func pauseTitle(paused: Bool, pending: Bool) -> String {
+        if paused { return .ui("debugger.resume", "재개") }
+        if pending { return .ui("debugger.pauseCancel", "일시정지 취소") }
+        return .ui("debugger.pause", "일시정지")
+    }
+
     static func reason(_ reason: DebugPauseReason) -> String {
         switch reason {
         case .breakpoint: .ui("debugger.reason.breakpoint", "중단점")
@@ -89,6 +96,31 @@ enum DebugFormat {
         case "ai": return .ui("debugger.actor.ai", "AI")
         case "system": return .ui("debugger.actor.system", "Deskhand")
         default: return .ui("debugger.actor.human", "사람")
+        }
+    }
+
+    /// The one-line reason under the targets of a session without main.
+    static func mainUnavailableShort(_ reason: MainUnavailableReason) -> String {
+        switch reason {
+        case .inspectorDisabled: .ui("debugger.main.disabledShort", "메인: --inspect를 무시함")
+        case .inspectorNotResponding: .ui("debugger.main.notRespondingShort", "메인: 검사기 응답 없음")
+        }
+    }
+
+    static func rendererUnavailable(_ reason: RendererUnavailableReason) -> String {
+        switch reason {
+        case .remoteDebuggingDisabled:
+            .ui("debugger.renderer.disabled", "이 앱은 원격 디버깅 포트를 열지 않아 렌더러를 디버그할 수 없습니다. 메인 프로세스만 연결했습니다.")
+        case .remoteDebuggingNotResponding:
+            .ui("debugger.renderer.notResponding", "렌더러의 DevTools가 응답하지 않아 메인 프로세스만 연결했습니다. 응답하면 자동으로 연결합니다.")
+        }
+    }
+
+    /// The one-line reason under the targets of a session without a renderer.
+    static func rendererUnavailableShort(_ reason: RendererUnavailableReason) -> String {
+        switch reason {
+        case .remoteDebuggingDisabled: .ui("debugger.renderer.disabledShort", "렌더러: 원격 디버깅 꺼짐")
+        case .remoteDebuggingNotResponding: .ui("debugger.renderer.notRespondingShort", "렌더러: DevTools 응답 없음")
         }
     }
 

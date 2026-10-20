@@ -44,19 +44,25 @@ private struct DebuggerContent: View {
     let availability: HostFeatureAvailability
     let chrome: WorkspaceChrome
     @State private var keys = DebuggerKeyMonitor()
-    @State private var width: CGFloat = 1440
+    /// The tab's width once laid out.
+    @State private var width: CGFloat?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
 
-    private var narrow: Bool { width < DebuggerView.narrowWidth }
+    private var narrow: Bool { (width ?? DebuggerView.narrowWidth) < DebuggerView.narrowWidth }
     private var showsNavigator: Bool { model.navigatorShown ?? !narrow }
+    private var navigatorOverlay: Bool { narrow && showsNavigator }
+
+    private func setNavigator(_ shown: Bool) {
+        withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) { model.navigatorShown = shown }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             if !model.sessions.isEmpty || model.starting != nil {
                 DebuggerToolbar(model: model, session: model.selected, enabled: availability == .ready, chrome: chrome,
                                 navigatorShown: showsNavigator) {
-                    model.navigatorShown = !showsNavigator
+                    setNavigator(!showsNavigator)
                 }
             }
             if availability != .ready {
@@ -66,7 +72,9 @@ private struct DebuggerContent: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(DS.Color.surface)
+        .background(WindowReader { keys.window = $0 })
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        .onChange(of: navigatorOverlay, initial: true) { _, overlay in model.navigatorOverlay = overlay }
         .overlayPreferenceValue(ScriptNavigatorAnchor.self) { anchor in
             if chrome == .standIn, model.showsScriptNavigator, let anchor, let session = model.selected {
                 GeometryReader { proxy in
@@ -115,9 +123,11 @@ private struct DebuggerContent: View {
             let model = model
             let store = store
             let host = host
+            let keys = keys
             keys.install { event in
                 let current = store.host(host.hostID) ?? host
-                return DebuggerKeyHandler.handle(event, model: model, enabled: HostFeatureAvailability(host: current, capability: "tunnel") == .ready)
+                return DebuggerKeyHandler.handle(event, model: model, enabled: HostFeatureAvailability(host: current, capability: "tunnel") == .ready,
+                                                 window: keys.window)
             }
         }
         .onDisappear { keys.remove() }
@@ -169,9 +179,10 @@ private struct DebuggerContent: View {
 
     private var navigator: some View {
         DebugSplit(axis: .vertical, fraction: $model.navigatorSplit, minimumFirst: 140, minimumSecond: 120) {
-            TargetsList(model: model, launch: { model.sheet = .launch }, attach: { model.sheet = .attach })
+            TargetsList(model: model, enabled: availability == .ready, disabledReason: OfflineStrip.reason(host: host, availability: availability),
+                        launch: { model.sheet = .launch }, attach: { model.sheet = .attach })
         } second: {
-            BreakpointsList(model: model, session: model.selected) { model.sheet = .breakpoint }
+            BreakpointsList(model: model, session: model.selected, enabled: availability == .ready) { model.sheet = .breakpoint }
         }
     }
 
@@ -209,7 +220,16 @@ private struct DebuggerContent: View {
                 .clipped()
             }
             .overlay(alignment: .leading) {
-                if showsNavigator, narrow {
+                if navigatorOverlay {
+                    Color.black.opacity(colorScheme == .dark ? 0.24 : 0.08)
+                        .contentShape(Rectangle())
+                        .onTapGesture { setNavigator(false) }
+                        .transition(.opacity)
+                        .accessibilityHidden(true)
+                }
+            }
+            .overlay(alignment: .leading) {
+                if navigatorOverlay {
                     navigator
                         .frame(width: 248)
                         .background(DS.Color.surfaceRaised.opacity(0.35))
@@ -228,7 +248,6 @@ private struct DebuggerContent: View {
                 }
             }
             .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: model.selected?.notice)
-            .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: showsNavigator)
         }
     }
 }
@@ -271,6 +290,16 @@ struct OfflineStrip: View {
             return .ui("debugger.offline.strip", "\(name)에 연결되어 있지 않아 실행 제어와 평가를 쓸 수 없습니다. 이전 세션 기록만 볼 수 있습니다.")
         }
     }
+
+    /// Why sessions cannot start on `host` now, or nil while it can serve the debugger.
+    static func reason(host: Host, availability: HostFeatureAvailability) -> String? {
+        let name = host.name
+        switch availability {
+        case .ready: return nil
+        case .connecting, .reconnecting: return .ui("debugger.new.reconnecting", "\(name)에 다시 연결하는 중이라 새 세션을 시작할 수 없습니다")
+        default: return .ui("debugger.new.offlineNamed", "\(name)에 연결되어 있지 않아 새 세션을 시작할 수 없습니다")
+        }
+    }
 }
 
 // MARK: Toolbar
@@ -311,15 +340,16 @@ struct DebuggerToolbar: View {
     var body: some View {
         let canControl = enabled && (session?.canControl ?? false) && session?.command == nil
         let paused = session?.isSelectedPaused ?? false
+        let pending = session?.pausePending ?? false
         let steppable = session?.pauseState != nil
         HStack(spacing: DS.Space.s) {
             ToolbarIconButton(symbol: "sidebar.left", title: navigatorShown ? String.ui("debugger.navigator.hide", "세션 목록 숨기기")
                                                                             : String.ui("debugger.navigator.show", "세션 목록 보기"),
                               selected: navigatorShown, action: toggleNavigator)
             HStack(spacing: DS.Space.xs) {
-                ControlButton(symbol: paused ? "play.fill" : "pause.fill",
-                              title: paused ? String.ui("debugger.resume", "재개") : String.ui("debugger.pause", "일시정지"),
-                              shortcut: "F8 · ⌘\\", tint: paused ? DS.Color.success : nil, enabled: canControl) {
+                ControlButton(symbol: paused ? "play.fill" : (pending ? "pause.circle" : "pause.fill"),
+                              title: DebugFormat.pauseTitle(paused: paused, pending: pending),
+                              shortcut: "F8 · ⌘\\", tint: paused ? DS.Color.success : (pending ? DS.Color.warning : nil), enabled: canControl) {
                     session?.togglePause()
                 }
                 ControlButton(symbol: "arrow.turn.up.right", title: String.ui("debugger.stepOver", "건너뛰기"), shortcut: "F10 · ⌘'",

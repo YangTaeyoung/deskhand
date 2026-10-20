@@ -50,7 +50,6 @@ struct CallStackView: View {
                 .padding(DS.Space.xs)
             }
             .focusable()
-            .focusEffectDisabled()
             .focused($focused)
             .onKeyPress(.upArrow) {
                 session.moveFrameSelection(by: -1)
