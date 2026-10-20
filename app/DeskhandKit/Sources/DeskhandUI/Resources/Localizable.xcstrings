@@ -13997,6 +13997,39 @@
         }
       }
     },
+    "qa.note.unsupported.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이유와 바꿔 쓸 방법은 그 단계에 있습니다."
+          }
+        }
+      }
+    },
+    "qa.note.unsupported.show": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "단계 보기"
+          }
+        }
+      }
+    },
+    "qa.note.unsupported.show.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "할 수 없었던 첫 단계를 고릅니다"
+          }
+        }
+      }
+    },
     "qa.phase.a11y": {
       "extractionState": "manual",
       "localizations": {
@@ -14180,17 +14213,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "진행 중인 실행을 엽니다"
-          }
-        }
-      }
-    },
-    "qa.scope": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "보기"
           }
         }
       }

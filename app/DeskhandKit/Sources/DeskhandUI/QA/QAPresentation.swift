@@ -315,6 +315,11 @@ enum QAFormat {
         }
     }
 
+    /// Mouse and keyboard steps.
+    static func isInputAction(_ action: String) -> Bool {
+        ["click", "type", "key"].contains(action)
+    }
+
     /// The capability a step kind needs, in words.
     static func feature(of action: String) -> String {
         switch action {
@@ -502,10 +507,15 @@ enum QAFormat {
         ProcessFormat.started(date, now: now, calendar: calendar)
     }
 
-    /// `563 B`, `192.0 KB`, `4.2 MB`: binary units, one decimal, as the processes tab writes memory.
+    /// `563 B`, `2.1 KB`, `2.4 MB`, `5.0 GB`: under 1024 bytes the whole count and ` B`; otherwise the
+    /// count divided by 1024 (KB), 1024² (MB) or 1024³ (GB) — the largest whose power the count
+    /// reaches — with one decimal as printf `%.1f` rounds it, a space and the unit.
     static func bytes(_ count: Int) -> String {
-        if count < 1024 { return String(max(count, 0)) + " B" }
-        return ProcessFormat.memory(kb: count / 1024 + (count % 1024 >= 512 ? 1 : 0))
+        let value = max(count, 0)
+        if value < 1024 { return String(value) + " B" }
+        let units: [(Double, String)] = [(1_073_741_824, "GB"), (1_048_576, "MB"), (1024, "KB")]
+        let (divisor, unit) = units.first { Double(value) >= $0.0 } ?? units[2]
+        return String(format: "%.1f", Double(value) / divisor) + " " + unit
     }
 
     // MARK: Blocked steps

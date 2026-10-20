@@ -130,7 +130,7 @@ enum QAScenes {
                 step.assertions = [QAAssertion(kind: "text", expected: .string("주문 730 완료"), actual: .string("주문 730 보류"), passed: false)]
             } else if index > 731, index < 1000 {
                 step.status = QAStepStatus.notRun.rawValue
-                step.message = "731단계(주문 730 확인)가 실패여서 실행하지 않았습니다"
+                step.message = "731단계(주문 730 확인)의 결과(실패) 때문에 실행하지 않았습니다"
                 step.startedAt = nil
                 step.durationMs = nil
             }

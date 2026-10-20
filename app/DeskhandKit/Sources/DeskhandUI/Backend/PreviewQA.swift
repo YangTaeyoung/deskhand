@@ -215,10 +215,7 @@ extension PreviewBackend {
             finishStep(runID, next.index, status: outcome.status, message: outcome.message, error: outcome.error, ms: ms,
                        assertions: outcome.assertions, evidence: outcome.evidence)
             if (outcome.status == .fail || outcome.status == .blocked), !next.optional, !next.continueOnFail, next.stepPhase != .teardown {
-                let label = next.name
-                let number = String(next.index)
-                let word = outcome.status == .fail ? "실패" : "차단"
-                skipRemaining(runID, message: "\(number)단계(\(label))가 \(word)여서 실행하지 않았습니다")
+                skipRemaining(runID, message: PreviewQAFixtures.notRunMessage(index: next.index, name: next.name, status: outcome.status))
             }
         }
         finish(runID)

@@ -81,13 +81,40 @@ struct RunDetail: View {
     }
 }
 
-/// The run's status, name, verdict, counts and facts, and its actions.
+/// The run's status, name, verdict, facts and actions, and its counts: the total, then each count
+/// above zero — new ones appear after the earlier ones, animated — then the duration.
 private struct RunHeader: View {
     let store: AppStore
     let model: QAModel
     let run: QARun
     let steps: [QAStep]?
     let compact: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    struct Pill {
+        let id: String
+        let symbol: String
+        let title: String
+        let count: Int
+        let tint: Color
+        let text: Color
+    }
+
+    /// The counts above zero, in the order passed, failed, blocked, stopped by a cancel, not run.
+    static func pills(_ counts: QAStepCounts) -> [Pill] {
+        [
+            Pill(id: "pass", symbol: "checkmark", title: QAFormat.title(QAStepStatus.pass), count: counts.passed, tint: DS.Color.success,
+                 text: DS.Status.successText),
+            Pill(id: "fail", symbol: "xmark", title: QAFormat.title(QAStepStatus.fail), count: counts.failed, tint: DS.Color.danger,
+                 text: DS.Status.dangerText),
+            Pill(id: "blocked", symbol: "nosign", title: QAFormat.title(QAStepStatus.blocked), count: counts.blocked, tint: DS.Color.warning,
+                 text: DS.Status.warningText),
+            Pill(id: "stopped", symbol: "stop.fill", title: String.ui("qa.step.cancelStopped", "취소로 멈춤"), count: counts.cancelStopped,
+                 tint: DS.Color.neutral, text: DS.Status.neutralText),
+            Pill(id: "notRun", symbol: "minus", title: QAFormat.title(QAStepStatus.notRun), count: counts.notRun, tint: DS.Color.neutral,
+                 text: DS.Status.neutralText),
+        ].filter { $0.count > 0 }
+    }
 
     var body: some View {
         let verdict = QARunVerdict(run, steps: steps)
@@ -116,23 +143,14 @@ private struct RunHeader: View {
                 }
             }
             HStack(spacing: DS.Space.s) {
-                CountPill(symbol: "checkmark", title: QAFormat.title(QAStepStatus.pass), count: counts.passed, tint: DS.Color.success,
-                          text: DS.Status.successText)
-                CountPill(symbol: "xmark", title: QAFormat.title(QAStepStatus.fail), count: counts.failed, tint: DS.Color.danger,
-                          text: DS.Status.dangerText)
-                CountPill(symbol: "nosign", title: QAFormat.title(QAStepStatus.blocked), count: counts.blocked, tint: DS.Color.warning,
-                          text: DS.Status.warningText)
-                if counts.cancelStopped > 0 {
-                    CountPill(symbol: "stop.fill", title: String.ui("qa.step.cancelStopped", "취소로 멈춤"), count: counts.cancelStopped,
-                              tint: DS.Color.neutral, text: DS.Status.neutralText)
-                }
-                CountPill(symbol: "minus", title: QAFormat.title(QAStepStatus.notRun), count: counts.notRun, tint: DS.Color.neutral,
-                          text: DS.Status.neutralText)
                 Text(String.ui("qa.header.total", "전체 \(String(run.stepsTotal))단계"))
-                    .font(DS.Font.caption)
+                    .font(DS.Font.caption.weight(.semibold))
                     .foregroundStyle(DS.Status.neutralText)
-                    .padding(.leading, DS.Space.xs)
                     .fixedSize()
+                ForEach(Self.pills(counts), id: \.id) { pill in
+                    CountPill(symbol: pill.symbol, title: pill.title, count: pill.count, tint: pill.tint, text: pill.text)
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.85, anchor: .leading)))
+                }
                 HStack(spacing: DS.Space.xs) {
                     Image(systemName: "timer")
                         .accessibilityHidden(true)
@@ -142,6 +160,7 @@ private struct RunHeader: View {
                 .foregroundStyle(DS.Status.neutralText)
                 .fixedSize()
             }
+            .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: counts)
             facts
         }
         .padding(.horizontal, DS.Space.l)
@@ -182,7 +201,7 @@ private struct RunHeader: View {
     }
 }
 
-/// A count with its symbol and name on a tinted capsule; zero counts on a neutral one.
+/// A count with its symbol and name on a tinted capsule.
 private struct CountPill: View {
     let symbol: String
     let title: String
@@ -200,10 +219,10 @@ private struct CountPill: View {
                 .monospacedDigit()
         }
         .font(DS.Font.caption)
-        .foregroundStyle(count == 0 ? DS.Status.neutralText : text)
+        .foregroundStyle(text)
         .padding(.horizontal, DS.Space.s)
         .frame(height: 20)
-        .background(count == 0 ? DS.Color.neutral.opacity(0.08) : tint.opacity(DS.Status.badgeOpacity), in: Capsule())
+        .background(tint.opacity(DS.Status.badgeOpacity), in: Capsule())
         .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title + " " + String(count))
@@ -331,10 +350,17 @@ private struct RunActions: View {
 }
 
 /// Notes under the header: a re-read that failed, the cancel that came too late, the step kinds
-/// the computer could not do, and the export in progress, done or failed.
+/// the computer could not do — a pointer to their first step, which explains them — and the
+/// export in progress, done or failed.
 private struct RunNotes: View {
     let model: QAModel
     let run: QARun
+
+    /// The first blocked step of a kind the run could not do.
+    private var firstUnsupportedStep: Int? {
+        let kinds = Set(run.unsupported.map(\.action))
+        return model.record(run.runID)?.steps?.first { kinds.contains($0.action) && $0.stepStatus == .blocked }?.index
+    }
 
     var body: some View {
         let verdict = QARunVerdict(run)
@@ -352,10 +378,15 @@ private struct RunNotes: View {
                 NoteStrip(symbol: "info.circle.fill", tint: DS.Color.accent, title: note, detail: verdict.cancelDetail)
             }
             if !run.unsupported.isEmpty {
-                let kinds = run.unsupported.map { QAFormat.action($0.action) + " (" + QAFormat.feature(of: $0.action) + ")" }.joined(separator: ", ")
+                let kinds = run.unsupported.map { QAFormat.action($0.action) }.joined(separator: ", ")
                 NoteStrip(symbol: "exclamationmark.triangle.fill", tint: DS.Color.warning,
                           title: String.ui("qa.note.unsupported", "이 실행에서 할 수 없었던 단계 종류: \(kinds)"),
-                          detail: run.unsupported.first?.reason)
+                          detail: String.ui("qa.note.unsupported.detail", "이유와 바꿔 쓸 방법은 그 단계에 있습니다.")) {
+                    if let step = firstUnsupportedStep {
+                        Button(String.ui("qa.note.unsupported.show", "단계 보기")) { model.selectStep(step, of: run.runID) }
+                            .help(String.ui("qa.note.unsupported.show.help", "할 수 없었던 첫 단계를 고릅니다"))
+                    }
+                }
             }
             if let export = model.exports[run.runID] {
                 ExportStrip(model: model, run: run, state: export)

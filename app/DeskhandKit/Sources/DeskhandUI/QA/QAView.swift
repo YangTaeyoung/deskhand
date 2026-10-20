@@ -199,15 +199,7 @@ private struct QAToolbar: View {
             .buttonStyle(.borderedProminent)
             .keyboardShortcut("r", modifiers: .command)
             .help(String.ui("qa.run.help", "시나리오 YAML 파일을 골라 이 PC에서 실행합니다 (⌘R)"))
-            Picker(String.ui("qa.scope", "보기"), selection: $model.showsAllHosts) {
-                Text(host.name).tag(false)
-                Text(String.ui("qa.scope.all", "모든 PC")).tag(true)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-            .help(String.ui("qa.scope.help", "이 PC의 실행만 보거나 모든 PC의 실행을 봅니다"))
-            .accessibilityLabel(String.ui("qa.scope.a11y", "실행 목록 범위"))
+            QAScopeSwitch(hostName: host.name, showsAllHosts: $model.showsAllHosts)
             Spacer(minLength: DS.Space.s)
             if let running = runningInScope {
                 Button {
@@ -246,6 +238,55 @@ private struct QAToolbar: View {
         let total = String(run.stepsTotal)
         let hostName = store.host(run.hostID)?.name ?? run.hostID
         return .ui("qa.running", "\(hostName)에서 ‘\(run.name)’ 실행 중 · \(done)/\(total)단계")
+    }
+}
+
+/// The list scope as two segments, each as wide as its own label: the computer's name (cut in the
+/// middle past `maximumNameWidth`) and 모든 PC; the chosen one sits raised on the track.
+struct QAScopeSwitch: View {
+    static let maximumNameWidth: CGFloat = 200
+
+    let hostName: String
+    @Binding var showsAllHosts: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 2) {
+            segment(hostName, selected: !showsAllHosts, maxWidth: Self.maximumNameWidth) { showsAllHosts = false }
+            segment(String.ui("qa.scope.all", "모든 PC"), selected: showsAllHosts, maxWidth: nil) { showsAllHosts = true }
+        }
+        .padding(2)
+        .background(DS.Color.neutral.opacity(0.14), in: RoundedRectangle(cornerRadius: DS.Radius.s + 1, style: .continuous))
+        .fixedSize()
+        .animation(reduceMotion ? nil : .snappy(duration: 0.15), value: showsAllHosts)
+        .help(String.ui("qa.scope.help", "이 PC의 실행만 보거나 모든 PC의 실행을 봅니다"))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(String.ui("qa.scope.a11y", "실행 목록 범위"))
+    }
+
+    private func segment(_ title: String, selected: Bool, maxWidth: CGFloat?, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(DS.Font.body.weight(selected ? .semibold : .regular))
+                .foregroundStyle(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(DS.Status.neutralText))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: maxWidth)
+                .fixedSize(horizontal: maxWidth == nil, vertical: false)
+                .padding(.horizontal, DS.Space.m)
+                .frame(height: 22)
+                .background {
+                    if selected {
+                        RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous)
+                            .fill(DS.Color.surface)
+                            .shadow(color: .black.opacity(0.12), radius: 1, y: 0.5)
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : [.isButton])
     }
 }
 

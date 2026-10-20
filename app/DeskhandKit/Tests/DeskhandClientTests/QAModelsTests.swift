@@ -13,7 +13,7 @@ final class QAModelsTests: XCTestCase {
          "steps":[
           {"index":1,"phase":"setup","name":"fixture 올리기","action":"push","line":17,"params":{"from":"a.exe","on_conflict":"replace","mkdir":true},
            "optional":false,"continue_on_fail":false,"status":"pass","started_at":"2026-10-20T10:00:00.100Z","duration_ms":1200,
-           "message":"파일 1개(4096바이트)를 보냈습니다","assertions":null,"result":{"transfer_id":"t-1","files_total":1},"evidence":null},
+           "message":"파일 1개(4.0 KB)를 보냈습니다","assertions":null,"result":{"transfer_id":"t-1","files_total":1},"evidence":null},
           {"index":2,"phase":"steps","name":"대답 확인","action":"assert_ui","line":31,"params":{"name":"Transcript","text_contains":"[done]"},
            "optional":false,"continue_on_fail":false,"status":"fail","duration_ms":5000,"message":"기대와 다릅니다",
            "assertions":[{"kind":"exists","expected":true,"actual":true,"passed":true},
@@ -23,7 +23,7 @@ final class QAModelsTests: XCTestCase {
                         "path":"/h/artifacts/j-1/evidence/02-assert_ui-screenshot.png","size":81234,"mime":"image/png","sha256":"ab",
                         "created_at":"2026-10-20T10:01:05.000Z"}]},
           {"index":3,"phase":"teardown","name":"닫기","action":"close","line":40,"params":{},"optional":false,"continue_on_fail":false,
-           "status":"not_run","message":"2단계(대답 확인)가 실패여서 실행하지 않았습니다","assertions":[],"evidence":[]}
+           "status":"not_run","message":"2단계(대답 확인)의 결과(실패) 때문에 실행하지 않았습니다","assertions":[],"evidence":[]}
          ]}
         """#.utf8))
         XCTAssertEqual(run.runStatus, .failed)

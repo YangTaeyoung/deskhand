@@ -191,17 +191,35 @@ enum PreviewQAFixtures {
     static func defaultMessage(_ spec: Spec, _ status: QAStepStatus) -> String? {
         guard status == .pass else { return nil }
         switch spec.action {
-        case "push": return "파일 1개(2516992바이트)를 보냈습니다"
+        case "push":
+            let size = QAFormat.bytes(2_516_992)
+            return "파일 1개(\(size))를 보냈습니다"
         case "launch": return "pid 8812로 실행했습니다, 창 \"\(spec.name.contains("Shop") ? "Shop Admin" : "Deskhand Fixture")\""
         case "wait_window":
             let title = spec.params["title"]?.stringValue ?? spec.params["title_contains"]?.stringValue ?? ""
             return "창 \"\(title)\"를 찾았습니다"
         case "screenshot": return "1920×1080 화면을 저장했습니다"
-        case "collect": return "C:\\deskhand-qa\\fixture.log의 2184바이트를 모았습니다"
+        case "collect":
+            let size = QAFormat.bytes(2184)
+            return "C:\\deskhand-qa\\fixture.log의 \(size)를 모았습니다"
         case "close": return "창을 닫았습니다"
         case "exec": return "종료 코드 0"
         default: return nil
         }
+    }
+
+    /// The daemon's sentence for a step skipped because step `index` (`name`) ended as `status`.
+    static func notRunMessage(index: Int, name: String, status: QAStepStatus) -> String {
+        let label: String
+        switch status {
+        case .pass: label = "통과"
+        case .fail: label = "실패"
+        case .blocked: label = "차단"
+        case .notRun: label = "실행 안 함"
+        case .running: label = "실행 중"
+        case .pending: label = "대기"
+        }
+        return "\(index)단계(\(name))의 결과(\(label)) 때문에 실행하지 않았습니다"
     }
 
     static func passes(_ range: ClosedRange<Int>) -> [Int: Outcome] {
@@ -251,7 +269,7 @@ enum PreviewQAFixtures {
                             ],
                             evidence: [("screenshot.png", "screenshot", "image/png", .screen(.fixtureTyping)),
                                        ("ui-tree.json", "ui_tree", "application/json", .text(uiTree))])
-        failed.merge(notRun(8...11, message: "7단계(대답이 끝날 때까지 기다리기)가 실패여서 실행하지 않았습니다")) { $1 }
+        failed.merge(notRun(8...11, message: notRunMessage(index: 7, name: "대답이 끝날 때까지 기다리기", status: .fail))) { $1 }
         failed[12] = Outcome(status: .pass)
         all.append(run(id: failedID, job: "j-01JBF2K9QE", host: dev, scenario: fixtureSmoke(runID: failedID), started: ago(38),
                        status: .failed, outcomes: failed))
@@ -293,7 +311,7 @@ enum PreviewQAFixtures {
                              error: QAErrorInfo(code: "CAPABILITY_UNSUPPORTED", message: noInputMessage))
         blocked[3] = Outcome(status: .pass)
         blocked[4] = Outcome(status: .blocked, ms: 3, message: humanMessage, error: QAErrorInfo(code: "CONTROL_HELD_BY_HUMAN", message: humanMessage))
-        blocked.merge(notRun(5...6, message: "4단계(설정 열기)가 차단이어서 실행하지 않았습니다")) { $1 }
+        blocked.merge(notRun(5...6, message: notRunMessage(index: 4, name: "설정 열기", status: .blocked))) { $1 }
         blocked[7] = Outcome(status: .blocked, ms: 2, message: humanMessage, error: QAErrorInfo(code: "CONTROL_HELD_BY_HUMAN", message: humanMessage))
         all.append(run(id: "q-01JBDQ5R7K", job: "j-01JBDQ5R7M", host: dev, scenario: settingsCheck, started: ago(23 * 60 + 5), status: .blocked,
                        outcomes: blocked, unsupported: [QAUnsupported(action: "click", code: "CAPABILITY_UNSUPPORTED", reason: noInputMessage)]))
@@ -320,7 +338,7 @@ enum PreviewQAFixtures {
         let laptopID = "q-01JBF0V6PB"
         var laptop = passes(1...1)
         laptop[2] = Outcome(status: .blocked, ms: 2, message: humanMessage, error: QAErrorInfo(code: "CONTROL_HELD_BY_HUMAN", message: humanMessage))
-        laptop.merge(notRun(3...11, message: "2단계(fixture 실행)가 차단이어서 실행하지 않았습니다")) { $1 }
+        laptop.merge(notRun(3...11, message: notRunMessage(index: 2, name: "fixture 실행", status: .blocked))) { $1 }
         laptop[12] = Outcome(status: .blocked, ms: 2, message: humanMessage, error: QAErrorInfo(code: "CONTROL_HELD_BY_HUMAN", message: humanMessage))
         all.append(run(id: laptopID, job: "j-01JBF0V6PC", host: PreviewFixtures.qaLaptopID, scenario: fixtureSmoke(runID: laptopID),
                        started: ago(64), status: .blocked, outcomes: laptop))

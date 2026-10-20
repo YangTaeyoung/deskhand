@@ -94,9 +94,34 @@ final class QAPresentationTests: XCTestCase {
     }
 
     func testSizesUseBinaryUnitsWithOneDecimal() {
+        XCTAssertEqual(QAFormat.bytes(0), "0 B")
         XCTAssertEqual(QAFormat.bytes(563), "563 B")
+        XCTAssertEqual(QAFormat.bytes(1023), "1023 B")
+        XCTAssertEqual(QAFormat.bytes(1024), "1.0 KB")
+        XCTAssertEqual(QAFormat.bytes(1280), "1.2 KB", "an exact tie rounds to even")
+        XCTAssertEqual(QAFormat.bytes(2184), "2.1 KB")
         XCTAssertEqual(QAFormat.bytes(196_608), "192.0 KB")
+        XCTAssertEqual(QAFormat.bytes(1_048_575), "1024.0 KB", "the unit follows the byte count, not the rounded value")
+        XCTAssertEqual(QAFormat.bytes(2_516_992), "2.4 MB")
         XCTAssertEqual(QAFormat.bytes(4_404_019), "4.2 MB")
+        XCTAssertEqual(QAFormat.bytes(5_368_709_120), "5.0 GB")
+        XCTAssertEqual(QAFormat.bytes(3 << 40), "3072.0 GB", "GB is the largest unit")
+    }
+
+    func testNotRunMessagesOfThePreviewFollowTheDaemonsWording() {
+        XCTAssertEqual(PreviewQAFixtures.notRunMessage(index: 7, name: "대답이 끝날 때까지 기다리기", status: .fail),
+                       "7단계(대답이 끝날 때까지 기다리기)의 결과(실패) 때문에 실행하지 않았습니다")
+        XCTAssertEqual(PreviewQAFixtures.notRunMessage(index: 4, name: "설정 열기", status: .blocked),
+                       "4단계(설정 열기)의 결과(차단) 때문에 실행하지 않았습니다")
+        XCTAssertEqual(PreviewQAFixtures.notRunMessage(index: 2, name: "a", status: .notRun), "2단계(a)의 결과(실행 안 함) 때문에 실행하지 않았습니다")
+        XCTAssertEqual(PreviewQAFixtures.notRunMessage(index: 2, name: "a", status: .pass), "2단계(a)의 결과(통과) 때문에 실행하지 않았습니다")
+    }
+
+    func testPreviewMessagesWriteSizesWithTheAppsFormatter() {
+        let push = PreviewQAFixtures.Spec(phase: .setup, name: "올리기", action: "push", line: 1, params: [:], ms: 0)
+        XCTAssertEqual(PreviewQAFixtures.defaultMessage(push, .pass), "파일 1개(2.4 MB)를 보냈습니다")
+        let collect = PreviewQAFixtures.Spec(phase: .steps, name: "모으기", action: "collect", line: 1, params: [:], ms: 0)
+        XCTAssertEqual(PreviewQAFixtures.defaultMessage(collect, .pass), "C:\\deskhand-qa\\fixture.log의 2.1 KB를 모았습니다")
     }
 
     // MARK: JSON

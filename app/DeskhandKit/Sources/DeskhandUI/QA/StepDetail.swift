@@ -63,11 +63,13 @@ struct StepDetail: View {
         }
     }
 
-    /// The daemon's own sentence of a blocked step when it says more than the plain explanation.
+    /// The daemon's own sentence of a blocked step when it says more than the plain explanation:
+    /// not for a person holding control, a cancel, or mouse and keyboard input the daemon cannot send.
     static func daemonSentence(_ step: QAStep, shown: (title: String, next: String?)) -> String? {
         guard let message = step.message ?? step.error?.message, !message.isEmpty, message != shown.title else { return nil }
         switch step.error?.code {
         case "CONTROL_HELD_BY_HUMAN", "CONTROL_PREEMPTED", nil: return nil
+        case "CAPABILITY_UNSUPPORTED" where QAFormat.isInputAction(step.action): return nil
         default: return message
         }
     }
