@@ -289,14 +289,6 @@ func (p *progress) fail(e *apierr.Error) {
 	p.publish(step, "failed", e)
 }
 
-// shellWord quotes s with single quotes when it holds a space or a tab.
-func shellWord(s string) string {
-	if strings.ContainsAny(s, " \t") {
-		return "'" + s + "'"
-	}
-	return s
-}
-
 // pairError is the API error of a failed install.Pair of the host name over
 // the SSH alias; started tells whether a step began. An agent that is
 // already paired answers with the host add --force command for name and
@@ -305,8 +297,8 @@ func pairError(err error, started bool, name, alias string) *apierr.Error {
 	switch {
 	case errors.Is(err, install.ErrAlreadyPaired):
 		return apierr.New(wire.CodeInvalidArgument,
-			fmt.Sprintf("이 PC에는 이미 Deskhand 에이전트가 페어링돼 있습니다. 이 Mac과 다시 페어링하려면 deskhand host add %s --ssh %s --force 를 실행하세요",
-				shellWord(name), alias), false, apierr.NextHostAddForce)
+			"이 PC에는 이미 Deskhand 에이전트가 페어링돼 있습니다. 이 Mac과 다시 페어링하려면 "+apierr.HostAddForceCommand(name, alias)+" 를 실행하세요",
+			false, apierr.NextHostAddForce)
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return apierr.New(wire.CodeTimeout, "PC 설치가 끝나기 전에 요청이 취소됐습니다. 다시 실행하세요", true, apierr.NextRetry)
 	case !started:

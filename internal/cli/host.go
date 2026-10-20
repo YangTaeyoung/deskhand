@@ -3,11 +3,11 @@ package cli
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/client"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/apierr"
 )
 
 const installCallTimeout = 20 * time.Minute
@@ -141,18 +141,10 @@ func (r *run) hostAdd(ctx context.Context, args []string) int {
 		params["force"] = true
 	}
 	r.steps = map[string]string{
-		"host_add_force": fmt.Sprintf("deskhand host add %s --ssh %s --force 를 실행하세요", shellWord(pos[0]), *ssh),
-		"host_repair":    fmt.Sprintf("deskhand host repair %s 을 실행하세요", shellWord(pos[0])),
+		"host_add_force": apierr.HostAddForceCommand(pos[0], *ssh) + " 를 실행하세요",
+		"host_repair":    "deskhand host repair " + apierr.ShellWord(pos[0]) + " 을 실행하세요",
 	}
 	return r.install(ctx, "host.add", pos[0], params, "PC 등록")
-}
-
-// shellWord quotes s with single quotes when it holds a space or a tab.
-func shellWord(s string) string {
-	if strings.ContainsAny(s, " \t") {
-		return "'" + s + "'"
-	}
-	return s
 }
 
 func (r *run) hostRepair(ctx context.Context, args []string) int {

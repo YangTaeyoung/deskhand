@@ -421,3 +421,12 @@ func TestInitPassesTheNameAsOneArgument(t *testing.T) {
 	}
 	t.Fatalf("no init script with %q", want)
 }
+
+func TestInitAgentRejectsABadControllerFingerprint(t *testing.T) {
+	for _, fp := range []string{strings.Repeat("A", 64), strings.Repeat("a", 63), strings.Repeat("a", 62) + "' ", ""} {
+		f := newFake()
+		if _, err := initAgent(context.Background(), f.ssh(), "pc", fp, false); err == nil || len(f.calls) != 0 {
+			t.Fatalf("fingerprint %q: err = %v, calls = %d", fp, err, len(f.calls))
+		}
+	}
+}

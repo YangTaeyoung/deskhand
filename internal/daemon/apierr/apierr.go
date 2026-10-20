@@ -5,6 +5,7 @@ package apierr
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
@@ -19,6 +20,20 @@ const (
 	NextFixParams    = "fix_params"
 	NextHostDoctor   = "host_doctor"
 )
+
+// ShellWord quotes s with single quotes when it holds a space or a tab.
+func ShellWord(s string) string {
+	if strings.ContainsAny(s, " \t") {
+		return "'" + s + "'"
+	}
+	return s
+}
+
+// HostAddForceCommand is the command of NextHostAddForce for the host name
+// over the SSH alias.
+func HostAddForceCommand(name, alias string) string {
+	return "deskhand host add " + ShellWord(name) + " --ssh " + alias + " --force"
+}
 
 // Error is a daemon error with a protocol code.
 type Error struct {

@@ -230,7 +230,11 @@ func copyAgent(ctx context.Context, s SSH, local AgentFiles) error {
 }
 
 // initAgent runs `deskhand-agent init` and returns the agent fingerprint.
+// controllerFP must be 64 lowercase hex digits.
 func initAgent(ctx context.Context, s SSH, name, controllerFP string, force bool) (string, error) {
+	if !validFingerprint(controllerFP) {
+		return "", errors.New("컨트롤러 지문이 올바르지 않습니다. deskhand 데몬의 인증서를 다시 만드세요")
+	}
 	nameB64 := base64.StdEncoding.EncodeToString([]byte(name))
 	var b strings.Builder
 	b.WriteString(tempDirSetup + tempExe)
