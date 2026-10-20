@@ -1,0 +1,33 @@
+// Package clipboard reads and writes the guest's text clipboard.
+package clipboard
+
+import (
+	"runtime"
+	"sync"
+)
+
+// serialMu lets one clipboard call run at a time.
+var serialMu sync.Mutex
+
+// serial runs f while no other serial call runs, on one OS thread from start
+// to end, and returns what f returns.
+func serial[T any](f func() (T, error)) (T, error) {
+	serialMu.Lock()
+	defer serialMu.Unlock()
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	return f()
+}
+
+// Clipboard is a platform text clipboard.
+type Clipboard interface {
+	// Available reports whether a clipboard exists in this session.
+	Available() bool
+	// Text returns the current text, or "" when the clipboard holds no text.
+	Text() (string, error)
+	// SetText replaces the clipboard content.
+	SetText(string) error
+	// Sequence is a value that changes whenever the clipboard content changes
+	// (used for cheap polling); implementations without one return a hash.
+	Sequence() uint64
+}
