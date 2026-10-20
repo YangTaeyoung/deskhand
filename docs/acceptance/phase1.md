@@ -2,11 +2,23 @@
 
 Mac 컨트롤러에서 실제 Windows 11 PC로 에이전트를 설치·페어링하고 1단계 기능을 끝까지 돌린 기록이다. 재현은 `scripts/e2e/phase1.sh`(단계별 실행 가능, `CHECK <단계> PASS|FAIL` 줄로 판정, 종료 코드 = 실패한 확인 수).
 
-- 일시: 2026-10-20 15:44–16:40 (KST). 시각은 Mac 시계 기준이다. PC 시계는 Mac보다 약 0.44 s 늦다(16:37:30 측정 −446 ms: 한 SSH 세션에서 PC가 찍은 시각과 Mac 도착 시각 차의 최댓값). 5단계 시간은 이 차이를 보정했고, 보정하지 않은 두 기기 시각을 섞은 간격에는 ±0.5 s 오차가 있다.
-- 최종 판정 실행(수정 1회차 뒤): 커밋 `e949ba1`, 16:36:32–16:39:21, 확인 38개 모두 PASS. 에이전트는 이 실행이 끝난 뒤 `DESKHAND_HOME=/tmp/dh-e2e-H4bO`의 컨트롤러 인증서(SHA-256 `0e3482f1…74fb4b`)와 페어링돼 있다.
+**남은 문제 (후속 과제)** — 상세는 맨 아래 "발견 사항".
+
+| 항목 | 내용 |
+|---|---|
+| F3 | 에이전트가 강제 종료되면 자식 프로세스가 남는다(job object 없음). job은 `unknown`/`lost` |
+| F4 | `deskhand exec`는 바로 끝나는 명령도 약 0.55 s(CLI가 `jobs.output`을 500 ms 간격으로 조회) |
+| F6 | 실패한 `host add`가 `%TEMP%\deskhand-install`을 남기고, 설치된 exe로 `uninstall`하면 `%TEMP%\deskhand-agent-<pid>.exe.old`가 남는다 |
+| F7 | CLI에 `files write`가 없다 |
+| F9 | `req.status` 확정을 적는 데몬 로그 줄이 없다(4단계 증거가 간접) |
+| 재연결 | ready였던 호스트가 응답하지 않으면 backoff를 처음 값(0.5 s)에 묶어 두고 상한이 없다. PC가 꺼져 있는 동안 핸드셰이크 시간 초과(5 s) + 0.5 s 간격으로 계속 다이얼하고, 연결 거부가 오는 네트워크라면 약 0.5 s 간격이 된다 |
+
+- 일시: 2026-10-20 15:44–17:02 (KST). 시각은 Mac 시계 기준이다. PC 시계는 Mac보다 약 0.45 s 늦다(16:37:30 −446 ms, 16:59:37 −473 ms: 한 SSH 세션에서 PC가 찍은 시각과 Mac 도착 시각 차의 최댓값). 5단계 시간은 이 차이를 보정했고, 보정하지 않은 두 기기 시각을 섞은 간격에는 ±0.5 s 오차가 있다.
+- 최종 판정 실행(수정 2회차 뒤): 커밋 `e4b9eb9`, 16:58:41–17:01:23, 확인 42개 모두 PASS. 에이전트(`deskhand-agentw.exe`)는 이 실행이 끝난 뒤 `DESKHAND_HOME=/tmp/dh-e2e-KYrY`의 컨트롤러 인증서(SHA-256 `5a628e10658ce497749023ba56f7f7e9901f2c186d78b7c9704d4d7176533257`)와 페어링돼 있다.
+- 수정 1회차 판정 실행: 커밋 `e949ba1`, 16:36:32–16:39:21, 확인 38개 모두 PASS.
 - 이전 판정 실행: 커밋 `34d74d0`, `DESKHAND_HOME=/tmp/dh-e2e-V54r`, 16:18:19–16:19:38, 확인 24개 모두 PASS.
 - 첫 실행: 커밋 `c0c6e40`(Task 8 끝), `DESKHAND_HOME=/tmp/dh-e2e-nQCl`. 여기서 찾은 결함은 아래 커밋으로 고쳤다.
-- 아래 1–4·6단계에서 "최종"이라 적은 증거는 `34d74d0` 실행의 것이다. `e949ba1` 실행에서도 같은 확인이 모두 PASS였고, 5단계와 1b단계는 `e949ba1` 실행의 증거를 따로 적었다.
+- 아래 1–4·6단계에서 "최종"이라 적은 증거는 `34d74d0` 실행의 것이다. `e949ba1`·`e4b9eb9` 실행에서도 같은 확인이 모두 PASS였고, 1단계의 두 빌드 확인, 5단계, 1b단계는 해당 실행의 증거를 따로 적었다.
 
 | 커밋 | 고친 것 |
 |---|---|
@@ -16,6 +28,10 @@ Mac 컨트롤러에서 실제 Windows 11 PC로 에이전트를 설치·페어링
 | `7d1a522` fix(host): 이미 페어링된 PC는 host add --force로 다시 페어링하고 remove --uninstall은 키까지 지운다 | F1 재등록 막다른 길(수정 1회차 판정) |
 | `e8ba981` fix(transport): keep-alive 2초·idle timeout 8초, ready였던 호스트가 응답하지 않으면 재연결 대기를 처음 값으로 | F2 에이전트 재시작 뒤 재연결 22 s(목표 ≤ 15 s, 수정 1회차 판정) |
 | `e949ba1` test: E2E에 재등록 흐름과 에이전트 재시작 5회 시간 측정 추가 | `reregister` 단계, 5단계 5회 측정 |
+| `28885f1` fix(agent): 콘솔 빌드 deskhand-agent.exe와 예약 작업용 windowsgui 빌드 deskhand-agentw.exe로 나눈다 | 단일 windowsgui 빌드가 사람·SSH에 종료 코드를 돌려주지 못하던 문제(수정 2회차 판정). 설치 스크립트는 다시 `& $exe` |
+| `5954b59` fix(agent): UTF-8로 보인 출력 스트림은 끝까지 그대로 넘기고 변환 실패는 대체 문자로 | 콘솔 출력 변환의 스트림별 UTF-8 고정, `MultiByteToWideChar` 실패 대체 |
+| `80bc034` refactor: host add --force 명령 문장을 한 곳에서 만들고 initAgent가 컨트롤러 지문을 검사한다 | 명령 문장 중복 제거, init 인수의 지문 검사 |
+| `e4b9eb9` test: E2E가 deskhand-agentw.exe 실행과 콘솔 빌드 종료 코드를 확인한다 | 1단계 확인 추가 |
 
 ## 환경
 
@@ -29,22 +45,24 @@ Mac 컨트롤러에서 실제 Windows 11 PC로 에이전트를 설치·페어링
 
 ## 요약
 
-| 단계 | 첫 실행(`c0c6e40`) | `34d74d0` | 최종(`e949ba1`) |
-|---|---|---|---|
-| 1 설치·페어링 | PASS(브리프 기준) + 결함: 에이전트 창이 사용자 화면에 뜸 | PASS | PASS |
-| 2 exec 종료 코드·한글 | FAIL(종료 코드 7은 맞음, stdout 깨짐) | PASS | PASS |
-| 3 korean-path | PASS | PASS | PASS |
-| 4 결과 불명 확정(A05 근사) | PASS | PASS | PASS |
-| 5 에이전트 재시작(A04 일부) | PASS(ready까지 22.3 s) | PASS(22.3 s) | PASS(5회 p50 9.4 s ≤ 15 s) |
-| 6 MCP | PASS | PASS | PASS |
-| 1b 재등록(remove --uninstall 뒤 add, 새 홈에서 add --force) | FAIL(아래 F1) | FAIL | PASS |
-| 8 정리 | — | PASS(에이전트는 남김) | PASS(에이전트는 남김) |
-| Task 5 이월: scp 공백 경로, 종료 코드 4 전달, PS 5.1 공백 이름 argv | PASS | PASS | — (다시 돌리지 않음) |
+| 단계 | 첫 실행(`c0c6e40`) | `34d74d0` | `e949ba1` | 최종(`e4b9eb9`) |
+|---|---|---|---|---|
+| 1 설치·페어링 | PASS(브리프 기준) + 결함: 에이전트 창이 사용자 화면에 뜸 | PASS | PASS | PASS(`deskhand-agentw.exe` 세션 1, 콘솔 빌드 errorlevel 0/2) |
+| 2 exec 종료 코드·한글 | FAIL(종료 코드 7은 맞음, stdout 깨짐) | PASS | PASS | PASS |
+| 3 korean-path | PASS | PASS | PASS | PASS |
+| 4 결과 불명 확정(A05 근사) | PASS (indirect) | PASS (indirect) | PASS (indirect) | PASS (indirect) |
+| 5 에이전트 재시작(A04 일부) | PASS(ready까지 22.3 s) | PASS(22.3 s) | PASS(5회 p50 9.4 s) | PASS(5회 p50 10.2 s ≤ 15 s) |
+| 6 MCP | PASS | PASS | PASS | PASS |
+| 1b 재등록(remove --uninstall 뒤 add, 새 홈에서 add --force) | FAIL(아래 F1) | FAIL | PASS | PASS |
+| 8 정리 | — | PASS(에이전트는 남김) | PASS(에이전트는 남김) | PASS(에이전트는 남김) |
+| Task 5 이월: scp 공백 경로, 종료 코드 4 전달, PS 5.1 공백 이름 argv | PASS | PASS | — | 종료 코드 4 경로는 1b에서 다시 PASS(콘솔 빌드 `& $exe`) |
+
+4단계의 "indirect": 데몬 로그에 `req.status` 확정 줄이 없어서, 끊김 로그·세대 증가·버려진 응답의 결과가 봉투에 있음·에이전트 저널의 `done` 한 건·원격 파일 한 줄로 확정을 간접 확인했다(F9).
 
 ## 1. 설치·페어링 (`host add`)
 
 - 명령: `deskhand host add windows-dev --ssh windows` (새 `DESKHAND_HOME`, 데몬은 `deskhand daemon start`)
-- 기대: 단계 `probe→copy→init→install→verify` 출력, 사용자 세션에서 에이전트 실행(`Get-Process deskhand-agent`의 SessionId 1).
+- 기대: 단계 `probe→copy→init→install→verify` 출력, 사용자 세션에서 에이전트 실행(`Get-Process deskhand-agent`의 SessionId 1). 수정 2회차부터 실행 중인 에이전트 프로세스는 `deskhand-agentw`다.
 
 **첫 실행 15:44:49, 8.9 s, 종료 0 — PASS(브리프 기준), 결함 발견.**
 
@@ -68,7 +86,7 @@ Deskhand Agent  Inbound Allow  Profile Any  RemoteAddress LocalSubnet  UDP 47600
 
 에이전트 자식으로 `conhost.exe 0x4`가 있었고, 5단계에서 에이전트를 다시 시작한 시각(15:51:15)에 `OpenConsole`이 새로 떴다. 사용자 Windows Terminal 창의 제목이 에이전트 경로였으므로 에이전트 탭이 그 창의 활성 탭이 됐다. 탭을 닫으면 콘솔에 붙은 에이전트에 `CTRL_CLOSE_EVENT`가 가서 에이전트가 끝난다(https://learn.microsoft.com/windows/console/handlerroutine, 실기기에서는 확인 필요). 상세 줄 중복은 CLI가 `active`와 `done` 모두에서 라벨과 같은 상세를 찍었기 때문.
 
-수정(`725778f`): 에이전트를 `-H windowsgui`로 빌드(콘솔 없음). windowsgui 프로그램의 종료 코드를 PowerShell 호출 연산자(`& $exe`)가 받지 못하고, 변수로 받으면 출력도 잃는 것을 실기기에서 확인했다(아래 표). 그래서 설치·검증·제거·doctor 스크립트를 `Start-Process -NoNewWindow -Wait -PassThru` + `exit $p.ExitCode`로 바꿨다. 대화형 콘솔에서 직접 실행할 때를 위해 표준 핸들이 없으면 부모 콘솔에 붙는다(`AttachConsole`). 설치 중 `schtasks`·`netsh`·`taskkill`은 `CREATE_NO_WINDOW`.
+수정(`725778f`): 에이전트를 `-H windowsgui`로 빌드(콘솔 없음). windowsgui 프로그램의 종료 코드를 PowerShell 호출 연산자(`& $exe`)가 받지 못하고, 변수로 받으면 출력도 잃는 것을 실기기에서 확인했다(아래 표). 그래서 설치·검증·제거·doctor 스크립트를 `Start-Process -NoNewWindow -Wait -PassThru` + `exit $p.ExitCode`로 바꿨다. 대화형 콘솔에서 직접 실행할 때를 위해 표준 핸들이 없으면 부모 콘솔에 붙는다(`AttachConsole`). 설치 중 `schtasks`·`netsh`·`taskkill`은 `CREATE_NO_WINDOW`. 수정 2회차에서 이 단일 windowsgui 빌드 방식은 두 빌드로 바뀌었다(아래 "수정 2회차").
 
 | 실행 형식(windowsgui 시험 빌드, SSH `powershell -Command -`) | `version` | `bogus`(기대 2) |
 |---|---|---|
@@ -104,6 +122,33 @@ CHECK add PASS no window in the session is titled deskhand-agent (count 0)
 
 `host doctor windows-dev`: `ssh_reachable`·`agent_version 34d74d0`·`quic_connect(세대 1)`·`fingerprint`·`session(세션 1, active)`·`firewall_rule` 모두 통과. Windows Terminal 창 제목은 사용자 자신의 탭(`관리자: …powershell.exe`)으로 돌아왔다. 15:40 이후 Defender 탐지 0건(`Get-MpThreatDetection`).
 
+**수정 2회차(`28885f1`, 실행 `e4b9eb9`) 16:58:48, 10 s — PASS.** 단일 windowsgui 빌드는 사람·SSH·스크립트가 쓰는 CLI의 종료 코드를 잃으므로, 같은 소스를 두 번 빌드한다: `deskhand-agent.exe`(콘솔, 사람·SSH·Pair·doctor용)와 `deskhand-agentw.exe`(`-H windowsgui`, 예약 작업 전용). Pair는 두 파일을 `%TEMP%\deskhand-install`로 복사하고, 콘솔 빌드의 `install`이 같은 폴더의 `deskhand-agentw.exe`와 함께 `C:\Program Files\Deskhand`에 설치한다. 작업 동작은 `"C:\Program Files\Deskhand\deskhand-agentw.exe" run`. 설치 스크립트는 다시 `& $exe … ; exit $LASTEXITCODE`이고 Start-Process 우회는 없앴다. 데몬은 두 파일을 같은 폴더에서 찾고 w 파일이 없으면 `… 옆에 deskhand-agentw-windows-<arch>.exe가 없습니다` 오류를 낸다.
+
+```
+agent pid=18840 session=1 path=C:\Program Files\Deskhand\deskhand-agentw.exe
+console children=0
+console agent processes=0
+installed=deskhand-agent.exe,deskhand-agentw.exe
+task state=Running run level=Highest logon=Interactive action="C:\Program Files\Deskhand\deskhand-agentw.exe" run
+defender detections (10 min)=0
+CHECK add PASS no window in the session is titled deskhand-agent (count 0)
+```
+
+콘솔 빌드 종료 코드(17:01:46, 기본 SSH 셸 cmd.exe):
+
+```
+> cmd /v:on /c ""C:\Program Files\Deskhand\deskhand-agent.exe" version & echo errorlevel=!ERRORLEVEL!"
+{"arch":"amd64","os":"windows","version":"e4b9eb9"}
+errorlevel=0
+> cmd /v:on /c ""C:\Program Files\Deskhand\deskhand-agent.exe" bogus & echo errorlevel=!ERRORLEVEL!"
+오류: 알 수 없는 명령 "bogus"입니다. 아래 명령 중 하나를 쓰세요.
+…
+errorlevel=2
+> "C:\Program Files\Deskhand\deskhand-agent.exe" bogus   → ssh 종료 코드 2
+```
+
+한 줄에 `& echo %ERRORLEVEL%`를 쓰면 cmd가 줄을 읽을 때 `%ERRORLEVEL%`를 먼저 펼쳐서 `bogus`에도 `0`이 나온다(실측). 그래서 지연 확장(`/v:on`, `!ERRORLEVEL!`)으로 확인했다. 최종 페어링 뒤(17:01) 세션 1 창 목록에 deskhand 창은 없고 Windows Terminal 제목은 사용자 탭 그대로였다. Defender 탐지에서 `deskhand`가 들어간 자원은 전체 기간 5건이고 모두 이 작업 전 `C:\deskhand-test`의 시험 바이너리(최근 15:15:09)다. 15:40 이후 0건, `Program Files\Deskhand`·`ProgramData\Deskhand`·`deskhand-install` 경로는 0건.
+
 ## 2. exec 종료 코드와 한글 출력
 
 - 명령: `deskhand exec windows-dev -- cmd /c "echo 안녕 & exit 7"`
@@ -111,7 +156,7 @@ CHECK add PASS no window in the session is titled deskhand-agent (count 0)
 
 **첫 실행 15:45:41, 0.56 s — FAIL.** 종료 코드 7은 맞았다. stdout 바이트 `ef bf bd c8 b3 ef bf bd 20 0d 0a`: cmd가 콘솔 코드 페이지 949로 낸 `BE C8 B3 E7`(안녕)을 UTF-8로 읽어 U+FFFD·`ȳ`·U+FFFD가 됐다. 같은 이유로 `ping` 출력도 깨졌다(`Ping 127.0.0.1 32�Ʈ …`). PowerShell 셸은 접두 스크립트가 UTF-8로 바꿔서 정상이었다(`[Console]::Out.Write("한글 출력 😀")` → `한글 출력 😀`).
 
-수정(`f5992e9`): 에이전트가 명령 출력 쓰기마다 UTF-8이면 그대로 두고, 아니면 OEM 코드 페이지(새 콘솔의 코드 페이지, `GetOEMCP`)로 `MultiByteToWideChar` 변환한다. 쓰기 경계에서 잘린 DBCS 문자는 다음 쓰기와 합친다.
+수정(`f5992e9`): 에이전트가 명령 출력 쓰기마다 UTF-8이면 그대로 두고, 아니면 OEM 코드 페이지(새 콘솔의 코드 페이지, `GetOEMCP`)로 `MultiByteToWideChar` 변환한다. 쓰기 경계에서 잘린 DBCS 문자는 다음 쓰기와 합친다. 수정 2회차(`5954b59`): 한 번 올바른 다중 바이트 UTF-8을 보인 스트림은 이후 잘못된 바이트가 섞여도 UTF-8로 그대로 넘기고(읽을 때 U+FFFD로 바뀜), `MultiByteToWideChar`가 실패하면 그 부분을 잘못된 UTF-8을 대체 문자로 바꿔 넘긴다.
 
 **최종 16:18:51 — PASS.** 같은 실행을 16:10에 5회 반복해도 모두 PASS.
 
@@ -197,7 +242,7 @@ CHECK restart PASS jobs.get keeps the earlier exec.start result
 | 4 | reconnecting 07:38:20.956 → ready 07:38:21.542 | 4 → 5 | 9.3 s |
 | 5 | reconnecting 07:38:33.894 → ready 07:38:34.457 | 5 → 6 | 10.4 s |
 
-p50 9.4 s(목표 ≤ 15 s). 5회 모두 `degraded` 없이 `reconnecting → ready`. 수정 전 22.3 s의 대부분은 20 s 유휴 시간 초과를 기다린 시간이었다. 처음(5회 전)에 만든 `exec.start` job은 5번 재시작 뒤에도 `jobs.get` 결과(`failed`, `code 3`, `state exited`)가 같다. 직전 실행(16:34, 빌드 `e8ba981-dirty`: 같은 코드에 E2E 스크립트만 커밋 전)에서도 8.6 / 9.9 / 10.1 / 9.8 / 10.4 s, p50 9.9 s였다.
+p50 9.4 s(목표 ≤ 15 s). 5회 모두 `degraded` 없이 `reconnecting → ready`. 수정 2회차 실행(`e4b9eb9`, 종료 대상 `deskhand-agentw.exe`, 시계 차 −473 ms)에서는 9.3 / 10.2 / 10.3 / 8.6 / 10.3 s, **p50 10.2 s**, 5회 모두 세대 +1. 수정 전 22.3 s의 대부분은 20 s 유휴 시간 초과를 기다린 시간이었다. 처음(5회 전)에 만든 `exec.start` job은 5번 재시작 뒤에도 `jobs.get` 결과(`failed`, `code 3`, `state exited`)가 같다. 직전 실행(16:34, 빌드 `e8ba981-dirty`: 같은 코드에 E2E 스크립트만 커밋 전)에서도 8.6 / 9.9 / 10.1 / 9.8 / 10.4 s, p50 9.9 s였다.
 
 첫 실행에서는 죽일 때 돌고 있던 job(`ping -n 60 127.0.0.1`)도 봤다: 재연결 뒤 `status:"unknown"`, `result.state:"lost"`, 출력 앞부분 132바이트는 남았다(`jobs.output`). 에이전트가 죽은 뒤에도 `PING` 프로세스는 계속 돌았다(F3). 첫 실행 데몬 로그: `connection ended: timeout: no recent network activity`.
 
@@ -241,9 +286,9 @@ PC의 `agent.json` `controller_fingerprints`는 `0e3482f1f3a4a5884d8781410b7c3b9
 
 ## 8. 정리
 
-**최종 16:39:18 — PASS.** `C:\deskhand-e2e`와 `%TEMP%\deskhand-agent-*.exe.old` 삭제, 에이전트 유지(`agent running=True`), Mac 데몬 정지. 최종 PC 상태: 에이전트 pid 34512 SessionId 1(16:39:15 시작), 작업 Running, `%TEMP%\deskhand-install` 없음, `C:\deskhand-test` 없음, `windows-mcp-server` 작업 Running(건드리지 않음), 15:40 이후 Defender 탐지 0건.
+**최종(`e4b9eb9`) 17:01:23 — PASS.** `C:\deskhand-e2e`와 `%TEMP%\deskhand-agent-*.exe.old` 삭제, 에이전트 유지(`agent running=True`), Mac 데몬 정지. 최종 PC 상태(17:01:46): `deskhand-agentw.exe` pid 43556 SessionId 1(17:01:18 시작), 콘솔 빌드 프로세스 0, conhost 자식 0, 작업 Running, `%TEMP%\deskhand-install` 없음, `C:\deskhand-test` 없음, `windows-mcp-server` 작업 Running(건드리지 않음), 15:40 이후 Defender 탐지 0건.
 
-에이전트는 `/tmp/dh-e2e-H4bO/identity`의 컨트롤러 인증서와 페어링돼 있다(`/tmp`는 Mac 재부팅 때 지워질 수 있다). 다른 `DESKHAND_HOME`에서는 `deskhand host add windows-dev --ssh windows --force`로 다시 페어링한다. 이전 실행의 홈들은 지웠다.
+에이전트는 `/tmp/dh-e2e-KYrY/identity`의 컨트롤러 인증서와 페어링돼 있다(PC `agent.json`의 지문 = 그 인증서의 SHA-256, `/tmp`는 Mac 재부팅 때 지워질 수 있다). 다른 `DESKHAND_HOME`에서는 `deskhand host add windows-dev --ssh windows --force`로 다시 페어링한다. 이전 실행의 홈들은 지웠다.
 
 ## Task 5 이월 확인
 
@@ -271,17 +316,19 @@ PC의 `agent.json` `controller_fingerprints`는 `0e3482f1f3a4a5884d8781410b7c3b9
 | 연결 끊김(테스트 훅) → ready | 464 ms |
 | 에이전트 강제 종료 → degraded / reconnecting / ready (`34d74d0`) | 16.6 s / 21.8 s / 22.3 s |
 | 에이전트 강제 종료 → ready (`e949ba1`, 5회) | 8.6 / 9.4 / 9.9 / 9.3 / 10.4 s, p50 9.4 s |
+| 에이전트 강제 종료 → ready (`e4b9eb9`, 5회) | 9.3 / 10.2 / 10.3 / 8.6 / 10.3 s, p50 10.2 s |
+| `host add` 전체 (`e4b9eb9`, 두 빌드 복사) | 10 s |
 
 ## 발견 사항과 남은 문제
 
 - **F1 (해결: `7d1a522`, 1b 단계 PASS) 이미 페어링된 PC를 다시 등록할 길이 없었다.** `deskhand host remove windows-dev --uninstall`(16:05:04)은 `uninstall`을 `--purge` 없이 부르므로 `C:\ProgramData\Deskhand\agent.key`가 남는다. 이어서 `host add windows-dev`는 init 종료 4로 실패하며 `deskhand host repair <이름>`을 안내하지만, 등록에 실패한 이름이라 `host repair windows-dev`는 `'windows-dev' PC가 등록돼 있지 않습니다`로 끝난다(16:05:17). 다른 Mac·새 홈에서 페어링하는 경우도 같다. 안내 문구의 `<이름>`도 채워지지 않는다. 판정에 따라 `host add --force`(`host.add{force:true}`)가 이 Mac에 기록이 없어도 다시 페어링하고, 등록되지 않은 호스트의 이미 페어링됨 오류는 정확히 그 명령을 알려 주며(`next_action:"host_add_force"`), `host remove --uninstall`은 `uninstall --purge`로 키까지 지운다. `reset` 단계는 그대로 둔다(설치 흔적을 처음부터 지우는 용도).
 - **F2 (해결: `e8ba981`, 5회 p50 9.4 s) 죽은 에이전트를 알아차리고 다시 붙는 데 약 22 s 걸렸다.** 새 에이전트는 1 s 만에 떴지만 데몬은 QUIC 유휴 시간 초과(20 s, `no recent network activity`)까지 옛 연결을 붙잡았다. 판정대로 keep-alive 2 s·idle timeout 8 s로 줄이고, ready였던 호스트에 아무것도 답하지 않는 다이얼(핸드셰이크·다이얼 시간 초과, 연결 거부)은 backoff를 0.5 s로 되돌린다. 남은 시간의 대부분은 8 s 유휴 시간 초과다. 30 s 네트워크 단절 모의는 이번 범위가 아니다.
 - **F3 (후속 과제) 에이전트가 강제 종료되면 자식 프로세스가 남는다.** `ping`이 에이전트 사망 뒤에도 돌았고 job은 `unknown`/`lost`가 됐다. Windows의 `prepareTree`는 아무것도 하지 않는다(job object 없음).
-- **F4 (관찰) `deskhand exec`는 명령이 바로 끝나도 약 0.5 s 걸린다.** CLI가 `jobs.output`을 500 ms 간격으로 조회한다(`exec.run` 직접 호출은 51 ms).
+- **F4 (후속 과제) `deskhand exec`는 명령이 바로 끝나도 약 0.5 s 걸린다.** CLI가 `jobs.output`을 500 ms 간격으로 조회한다(`exec.run` 직접 호출은 51 ms).
 - **F5 (관찰) 세션 정보가 일부 비어 있다.** `protocol unknown`, `input_desktop unknown`. 이 브랜치 에이전트에 `session.info`가 없다(미디어 브랜치에서 추가, 병합 때 해결 예정).
-- **F6 (관찰) 실패한 `host add`가 `%TEMP%\deskhand-install` 복사본을 남긴다.** init 단계에서 실패하면 지우지 않는다(15:57 실행 뒤 `temp-left=True`, Task 5 이월 사소 항목). 설치된 exe로 `uninstall`하면 실행 중인 exe를 `%TEMP%\deskhand-agent-<pid>.exe.old`로 옮긴 채 둔다(`cmd/deskhand-agent/install_windows.go` `removeInstallDir`, 이번 실행에서 파일을 따로 보지는 않았다).
+- **F6 (후속 과제) 실패한 `host add`가 `%TEMP%\deskhand-install` 복사본을 남긴다.** init 단계에서 실패하면 지우지 않는다(15:57 실행 뒤 `temp-left=True`, Task 5 이월 사소 항목). 설치된 exe로 `uninstall`하면 실행 중인 exe를 `%TEMP%\deskhand-agent-<pid>.exe.old`로 옮긴 채 둔다(`cmd/deskhand-agent/install_windows.go` `removeInstallDir`, 이번 실행에서 파일을 따로 보지는 않았다).
 - **F7 (후속 과제) CLI에 `files write`가 없다.** 브리프 3단계의 쓰기는 로컬 API로 했다.
-- **F8 (확인 필요) windowsgui 에이전트를 대화형 콘솔에서 직접 실행할 때.** 표준 핸들이 없으면 부모 콘솔에 붙어 출력하도록 했지만, 사용자 콘솔에 입력을 넣을 수 없어 실기기에서 확인하지 못했다. SSH에서는 `& $exe`가 windowsgui 프로그램의 종료 코드를 잃는 것을 확인했다(1단계 표). 대화형 콘솔에서도 같은지는 확인 필요. 수동 복구 안내(`run deskhand-agent install again from an elevated prompt` 등)는 `Start-Process -Wait -NoNewWindow -PassThru` 형식을 알려 주도록 고칠지 결정이 필요하다.
+- **F8 (해결: `28885f1`) windowsgui 에이전트를 대화형 콘솔에서 직접 실행할 때.** 콘솔 빌드 `deskhand-agent.exe`를 사람·SSH가 쓰고 windowsgui 빌드는 예약 작업만 쓰므로, 복구 안내(`run deskhand-agent install again from an elevated prompt` 등)는 일반 명령 그대로 동작한다(위 cmd 확인). 아래는 수정 1회차까지의 기록이다. 표준 핸들이 없으면 부모 콘솔에 붙어 출력하도록 했지만, 사용자 콘솔에 입력을 넣을 수 없어 실기기에서 확인하지 못했다. SSH에서는 `& $exe`가 windowsgui 프로그램의 종료 코드를 잃는 것을 확인했다(1단계 표). 대화형 콘솔에서도 같은지는 확인 필요. 수동 복구 안내(`run deskhand-agent install again from an elevated prompt` 등)는 `Start-Process -Wait -NoNewWindow -PassThru` 형식을 알려 주도록 고칠지 결정이 필요하다.
 - **F9 (후속 과제) `req.status` 확정을 데몬 로그로 직접 볼 수 없다.** 4단계 증거는 간접이다. 확정 때 rid와 결과를 적는 데몬 로그 줄이 필요하다.
 
-수정 1회차 판정에 따라 F3·F7·F9는 이번에 고치지 않고 후속 과제로 남긴다.
+수정 1회차 판정에 따라 F3·F7·F9는 이번에 고치지 않고 후속 과제로 남긴다. F4·F6과 재연결 backoff 상한 없음도 맨 위 "남은 문제"에 모았다.
