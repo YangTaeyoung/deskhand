@@ -180,7 +180,7 @@ func TestPairAlreadyPairedWithoutForce(t *testing.T) {
 	f.initFail = true
 	f.initErr = "unrelated text\n"
 	_, _, _, err := pair(t, f)
-	if !errors.Is(err, ErrAlreadyPaired) || !strings.Contains(err.Error(), "deskhand host repair") {
+	if !errors.Is(err, ErrAlreadyPaired) || !strings.Contains(err.Error(), "--force") {
 		t.Fatalf("err = %v", err)
 	}
 	for _, c := range f.calls {

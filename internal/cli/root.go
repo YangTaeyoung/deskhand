@@ -51,6 +51,9 @@ type run struct {
 	// unknownOnErr makes a failed call exit 4 (outcome unknown) unless the
 	// request itself was invalid.
 	unknownOnErr bool
+	// steps are next-step sentences of this invocation that replace the
+	// general ones of nextSteps.
+	steps map[string]string
 }
 
 const usageText = `사용법: deskhand [--json] [--quiet] <명령> ...
@@ -171,13 +174,23 @@ func (r *run) simple(ctx context.Context, method string, params any) (obj, error
 
 // nextSteps are the sentences for the daemon's next_action values.
 var nextSteps = map[string]string{
-	"check_state":   "deskhand jobs list 로 상태를 확인하세요",
-	"host_repair":   "deskhand host repair <이름> 을 실행하세요",
-	"host_connect":  "PC가 켜져 있는지 확인하고 deskhand host doctor <이름> 으로 점검하세요",
-	"host_doctor":   "deskhand host doctor <이름> 으로 점검하세요",
-	"retry":         "잠시 뒤 같은 명령을 다시 실행하세요",
-	"fix_params":    "입력을 고쳐 다시 실행하세요",
-	"human_release": "사람이 제어권을 놓은 뒤 다시 실행하세요",
+	"check_state":    "deskhand jobs list 로 상태를 확인하세요",
+	"host_repair":    "deskhand host repair <이름> 을 실행하세요",
+	"host_add_force": "deskhand host add <이름> --ssh <별칭> --force 를 실행하세요",
+	"host_connect":   "PC가 켜져 있는지 확인하고 deskhand host doctor <이름> 으로 점검하세요",
+	"host_doctor":    "deskhand host doctor <이름> 으로 점검하세요",
+	"retry":          "잠시 뒤 같은 명령을 다시 실행하세요",
+	"fix_params":     "입력을 고쳐 다시 실행하세요",
+	"human_release":  "사람이 제어권을 놓은 뒤 다시 실행하세요",
+}
+
+// nextStep returns the sentence of the next action: the one of r.steps, or
+// the general one.
+func (r *run) nextStep(action string) string {
+	if s, ok := r.steps[action]; ok {
+		return s
+	}
+	return nextStep(action)
 }
 
 func nextStep(action string) string {
@@ -232,7 +245,7 @@ func (r *run) failCall(err error, mutating bool, host string) int {
 			}
 			fmt.Fprintf(r.Stderr, "결과를 알 수 없습니다. %s 로 최근 작업을 확인하고 deskhand files stat 또는 deskhand proc ls 로 PC 상태를 직접 살핀 뒤 필요하면 다시 실행하세요\n", list)
 		}
-	} else if n := nextStep(ae.NextAction); n != "" {
+	} else if n := r.nextStep(ae.NextAction); n != "" {
 		fmt.Fprintln(r.Stderr, "다음 단계: "+n)
 	}
 	if r.asJSON {
@@ -272,7 +285,7 @@ const (
 // unknown outcome.
 func (r *run) statusExit(res obj, what string, allow int) int {
 	e := res.sub("error")
-	next := nextStep(firstNonEmpty(res.str("next_action"), e.str("next_action")))
+	next := r.nextStep(firstNonEmpty(res.str("next_action"), e.str("next_action")))
 	hint := func() {
 		if next != "" {
 			fmt.Fprintln(r.Stderr, "다음 단계: "+next)

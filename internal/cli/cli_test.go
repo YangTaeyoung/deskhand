@@ -375,6 +375,35 @@ func TestInstallProgressShowsADifferingDetailOnce(t *testing.T) {
 	}
 }
 
+func TestHostAddForceAndItsNextStep(t *testing.T) {
+	f := startFake(t, map[string]handler{
+		"host.add": func(p map[string]any, notify func(any)) (any, *rpcFail) {
+			if p["force"] == true {
+				return envelope("succeeded", map[string]any{"host": map[string]any{"state": "ready"}}), nil
+			}
+			env := envelope("failed", nil)
+			env["action"] = map[string]any{"executed": false, "outcome": "not_started"}
+			env["error"] = map[string]any{"code": "INVALID_ARGUMENT", "message": "이 PC에는 이미 Deskhand 에이전트가 페어링돼 있습니다",
+				"next_action": "host_add_force"}
+			return env, nil
+		},
+	})
+	r := runCLI(t, false, "", "host", "add", "사무실 PC", "--ssh", "win")
+	if r.code != 1 || !strings.Contains(r.err, "다음 단계: deskhand host add '사무실 PC' --ssh win --force 를 실행하세요") {
+		t.Fatalf("code %d stderr %q", r.code, r.err)
+	}
+	if p := f.called("host.add")[0]; p["force"] != nil {
+		t.Fatalf("plain add sent force: %v", p)
+	}
+	r = runCLI(t, false, "", "host", "add", "사무실 PC", "--ssh", "win", "--force")
+	if r.code != 0 {
+		t.Fatalf("add --force: code %d stderr %q", r.code, r.err)
+	}
+	if p := f.called("host.add")[1]; p["force"] != true || p["name"] != "사무실 PC" || p["ssh"] != "win" {
+		t.Fatalf("add --force params %v", p)
+	}
+}
+
 func TestJobsWatchFollowsCursor(t *testing.T) {
 	var mu sync.Mutex
 	var cursors []string

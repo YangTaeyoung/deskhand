@@ -231,6 +231,9 @@ type AddParams struct {
 	SSH     string
 	Address string
 	Port    int
+	// Force pairs a PC whose agent is already paired again, with a new
+	// agent key.
+	Force bool
 }
 
 // installSteps describes the steps of install.Pair.
@@ -286,12 +289,24 @@ func (p *progress) fail(e *apierr.Error) {
 	p.publish(step, "failed", e)
 }
 
-// pairError is the API error of a failed install.Pair; started tells
-// whether a step began.
-func pairError(err error, started bool) *apierr.Error {
+// shellWord quotes s with single quotes when it holds a space or a tab.
+func shellWord(s string) string {
+	if strings.ContainsAny(s, " \t") {
+		return "'" + s + "'"
+	}
+	return s
+}
+
+// pairError is the API error of a failed install.Pair of the host name over
+// the SSH alias; started tells whether a step began. An agent that is
+// already paired answers with the host add --force command for name and
+// alias.
+func pairError(err error, started bool, name, alias string) *apierr.Error {
 	switch {
 	case errors.Is(err, install.ErrAlreadyPaired):
-		return apierr.New(wire.CodeInvalidArgument, err.Error(), false, apierr.NextHostRepair)
+		return apierr.New(wire.CodeInvalidArgument,
+			fmt.Sprintf("이 PC에는 이미 Deskhand 에이전트가 페어링돼 있습니다. 이 Mac과 다시 페어링하려면 deskhand host add %s --ssh %s --force 를 실행하세요",
+				shellWord(name), alias), false, apierr.NextHostAddForce)
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return apierr.New(wire.CodeTimeout, "PC 설치가 끝나기 전에 요청이 취소됐습니다. 다시 실행하세요", true, apierr.NextRetry)
 	case !started:
@@ -310,7 +325,7 @@ func (r *Registry) pair(ctx context.Context, hostID, name, alias, summary string
 	p := &progress{bus: r.opt.Bus, hostID: hostID, jobID: job.JobID, name: name}
 	res, err := install.Pair(ctx, r.ssh(alias), name, r.opt.Identity, r.opt.AgentBinary, p.step, install.PairOptions{Force: force})
 	if err != nil {
-		e := pairError(err, p.current != "")
+		e := pairError(err, p.current != "", name, alias)
 		p.fail(e)
 		job, _ = r.opt.Jobs.Finish(job.JobID, model.StatusFailed, map[string]any{"error": e})
 		_, _ = r.opt.Bus.Record(c.Entry(hostID, model.TimelineInstall, summary+" 실패: "+e.Message, model.TimelineFailed, job.JobID))
@@ -351,7 +366,7 @@ func (r *Registry) Add(ctx context.Context, p AddParams, c model.Caller) (model.
 	}
 	hostID := r.hostID(p.Name)
 	summary := "PC 추가: " + p.Name
-	res, job, err := r.pair(ctx, hostID, p.Name, p.SSH, summary, false, c)
+	res, job, err := r.pair(ctx, hostID, p.Name, p.SSH, summary, p.Force, c)
 	if err != nil {
 		return model.Host{}, job, err
 	}
@@ -423,7 +438,7 @@ func (r *Registry) Repair(ctx context.Context, ref string, c model.Caller) (mode
 }
 
 // Remove disconnects and forgets the host; with uninstall it first removes
-// the agent from the PC over SSH.
+// the agent and its key and data from the PC over SSH.
 func (r *Registry) Remove(ctx context.Context, ref string, uninstall bool, c model.Caller) error {
 	row, err := r.Resolve(ref)
 	if err != nil {
@@ -433,7 +448,7 @@ func (r *Registry) Remove(ctx context.Context, ref string, uninstall bool, c mod
 		if row.SSHAlias == "" {
 			return apierr.Invalid(fmt.Sprintf("%s에는 SSH 별칭이 없어 에이전트를 지울 수 없습니다. uninstall 없이 다시 실행하세요", row.Name))
 		}
-		if err := install.Unpair(ctx, r.ssh(row.SSHAlias), false); err != nil {
+		if err := install.Unpair(ctx, r.ssh(row.SSHAlias), true); err != nil {
 			_, _ = r.opt.Bus.Record(c.Entry(row.HostID, model.TimelineInstall, "에이전트 제거 실패: "+row.Name, model.TimelineFailed, ""))
 			return apierr.New(wire.CodeInternal, err.Error(), true, apierr.NextRetry)
 		}

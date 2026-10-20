@@ -43,6 +43,7 @@ type addParams struct {
 	SSH     string `json:"ssh"`
 	Address string `json:"address"`
 	Port    int    `json:"port"`
+	Force   bool   `json:"force"`
 }
 
 // installEnvelope is the result of host.add and host.repair: an envelope
@@ -74,7 +75,7 @@ func (s *Server) hostAdd(ctx context.Context, sess *session, raw json.RawMessage
 	}
 	actx, cancel := s.detached(installTimeout)
 	defer cancel()
-	h, job, err := s.d.Hosts.Add(actx, hosts.AddParams{Name: p.Name, SSH: p.SSH, Address: p.Address, Port: p.Port}, sess.Caller())
+	h, job, err := s.d.Hosts.Add(actx, hosts.AddParams{Name: p.Name, SSH: p.SSH, Address: p.Address, Port: p.Port, Force: p.Force}, sess.Caller())
 	return s.installEnvelope(h, job, job.HostID, err)
 }
 

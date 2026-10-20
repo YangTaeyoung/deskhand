@@ -31,6 +31,7 @@ type fakeSSH struct {
 	firewall   string
 	sshDown    bool
 	forcedInit bool
+	uninstalls []string
 }
 
 // exitCode is an error with an exit code, like *exec.ExitError.
@@ -66,6 +67,12 @@ func (f *fakeSSH) run(_ context.Context, name string, args []string, stdin strin
 		f.paired = true
 		return `{"fingerprint":"` + agentFP + `"}` + "\n", "", nil
 	case strings.Contains(stdin, "-ArgumentList 'install'"):
+		return "", "", nil
+	case strings.Contains(stdin, "-ArgumentList 'uninstall"):
+		f.uninstalls = append(f.uninstalls, stdin)
+		if strings.Contains(stdin, "--purge") {
+			f.paired = false
+		}
 		return "", "", nil
 	case strings.Contains(stdin, "-ArgumentList 'version'"):
 		return `{"version":"v1","os":"windows","arch":"amd64"}` + "\n", "", nil
@@ -183,12 +190,13 @@ func TestAddPairsStoresAndConnects(t *testing.T) {
 	}
 }
 
-func TestAddAlreadyPairedSuggestsRepair(t *testing.T) {
+func TestAddAlreadyPairedSuggestsAddForce(t *testing.T) {
 	fx := newFixture(t, nil)
 	fx.ssh.paired = true
 	_, job, err := fx.r.Add(context.Background(), AddParams{Name: "pc", SSH: "windows"}, model.System)
 	e := apierr.As(err)
-	if e == nil || e.Code != wire.CodeInvalidArgument || e.NextAction != "host_repair" || !strings.Contains(e.Message, "host repair") {
+	if e == nil || e.Code != wire.CodeInvalidArgument || e.NextAction != "host_add_force" ||
+		!strings.Contains(e.Message, "deskhand host add pc --ssh windows --force") {
 		t.Fatalf("error %#v", err)
 	}
 	if job.Status != model.StatusFailed {
@@ -205,20 +213,41 @@ func TestAddAlreadyPairedSuggestsRepair(t *testing.T) {
 	for _, ev := range evs {
 		if ev.Kind == events.InstallProgress && ev.Fields["status"] == "failed" {
 			ef := ev.Fields["error"].(map[string]any)
-			if ef["code"] != wire.CodeInvalidArgument || ef["next_action"] != "host_repair" {
+			if ef["code"] != wire.CodeInvalidArgument || ef["next_action"] != "host_add_force" {
 				t.Fatalf("failed step error %v", ef)
 			}
 		}
 	}
 
-	fx.ssh.paired = false
+	_, _, err = fx.r.Add(context.Background(), AddParams{Name: "사무실 PC", SSH: "windows"}, model.System)
+	if e := apierr.As(err); e == nil || !strings.Contains(e.Message, "deskhand host add '사무실 PC' --ssh windows --force") {
+		t.Fatalf("error for a name with a space %#v", err)
+	}
+
+	h, _, err := fx.r.Add(context.Background(), AddParams{Name: "pc", SSH: "windows", Force: true}, model.System)
+	if err != nil || !fx.ssh.forcedInit || h.HostID != "pc" {
+		t.Fatalf("add with force %+v, %v, forced %v", h, err, fx.ssh.forcedInit)
+	}
+	fx.ssh.forcedInit = false
+	h, _, err = fx.r.Repair(context.Background(), "pc", model.System)
+	if err != nil || !fx.ssh.forcedInit || h.HostID != "pc" {
+		t.Fatalf("repair %+v, %v, forced %v", h, err, fx.ssh.forcedInit)
+	}
+}
+
+func TestRemoveUninstallPurgesTheAgent(t *testing.T) {
+	fx := newFixture(t, nil)
 	if _, _, err := fx.r.Add(context.Background(), AddParams{Name: "pc", SSH: "windows"}, model.System); err != nil {
 		t.Fatal(err)
 	}
-	fx.ssh.paired = true
-	h, _, err := fx.r.Repair(context.Background(), "pc", model.System)
-	if err != nil || !fx.ssh.forcedInit || h.HostID != "pc" {
-		t.Fatalf("repair %+v, %v, forced %v", h, err, fx.ssh.forcedInit)
+	if err := fx.r.Remove(context.Background(), "pc", true, model.System); err != nil {
+		t.Fatal(err)
+	}
+	if len(fx.ssh.uninstalls) != 1 || !strings.Contains(fx.ssh.uninstalls[0], "-ArgumentList 'uninstall --purge'") {
+		t.Fatalf("uninstall scripts %q", fx.ssh.uninstalls)
+	}
+	if _, _, err := fx.r.Add(context.Background(), AddParams{Name: "pc", SSH: "windows"}, model.System); err != nil {
+		t.Fatalf("plain add after remove --uninstall: %v", err)
 	}
 }
 

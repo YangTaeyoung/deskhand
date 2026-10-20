@@ -66,7 +66,7 @@ type PairOptions struct {
 
 // ErrAlreadyPaired is returned when the PC already has an agent key and
 // PairOptions.Force is not set.
-var ErrAlreadyPaired = errors.New("이 PC에는 이미 Deskhand 에이전트가 페어링돼 있습니다. 다시 페어링하려면 deskhand host repair <이름>을 실행하세요")
+var ErrAlreadyPaired = errors.New("이 PC에는 이미 Deskhand 에이전트가 페어링돼 있습니다. 다시 페어링하려면 deskhand host add <이름> --ssh <별칭> --force 를 실행하세요")
 
 // psQuote returns s as a PowerShell single-quoted literal.
 func psQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }

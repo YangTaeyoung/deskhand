@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -124,18 +125,34 @@ func (r *run) hostAdd(ctx context.Context, args []string) int {
 	ssh := fs.String("ssh", "", "SSH 별칭")
 	address := fs.String("address", "", "PC 주소")
 	port := fs.Int("port", 47600, "에이전트 UDP 포트")
+	force := fs.Bool("force", false, "이미 페어링된 PC를 이 Mac과 다시 페어링")
 	pos, _, err := parseArgs(fs, args)
 	if err != nil {
 		return r.fail(err)
 	}
 	if len(pos) != 1 || *ssh == "" {
-		return r.fail(usagef("deskhand host add <이름> --ssh <별칭> [--address A] [--port 47600] 형식으로 주세요"))
+		return r.fail(usagef("deskhand host add <이름> --ssh <별칭> [--address A] [--port 47600] [--force] 형식으로 주세요"))
 	}
 	params := map[string]any{"name": pos[0], "ssh": *ssh, "port": *port}
 	if *address != "" {
 		params["address"] = *address
 	}
+	if *force {
+		params["force"] = true
+	}
+	r.steps = map[string]string{
+		"host_add_force": fmt.Sprintf("deskhand host add %s --ssh %s --force 를 실행하세요", shellWord(pos[0]), *ssh),
+		"host_repair":    fmt.Sprintf("deskhand host repair %s 을 실행하세요", shellWord(pos[0])),
+	}
 	return r.install(ctx, "host.add", pos[0], params, "PC 등록")
+}
+
+// shellWord quotes s with single quotes when it holds a space or a tab.
+func shellWord(s string) string {
+	if strings.ContainsAny(s, " \t") {
+		return "'" + s + "'"
+	}
+	return s
 }
 
 func (r *run) hostRepair(ctx context.Context, args []string) int {

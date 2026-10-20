@@ -17,13 +17,14 @@ const textLimit = 1500
 
 // nextActionHints explain the daemon's next_action values to an agent.
 var nextActionHints = map[string]string{
-	"check_state":   "check the current state (job_get, session_inspect, files_stat, proc_list) before retrying",
-	"host_repair":   "the agent on the PC needs repair; ask the user to run `deskhand host repair <name>`",
-	"host_connect":  "the PC is unreachable; run host_doctor and ask the user to check it is on",
-	"host_doctor":   "run host_doctor to find the cause",
-	"retry":         "retry the same call shortly",
-	"fix_params":    "fix the arguments and call again",
-	"human_release": "a person controls the PC; wait for them to release control and do not retry in a loop",
+	"check_state":    "check the current state (job_get, session_inspect, files_stat, proc_list) before retrying",
+	"host_repair":    "the agent on the PC needs repair; ask the user to run `deskhand host repair <name>`",
+	"host_add_force": "the PC's agent is paired with another controller; ask the user to run `deskhand host add <name> --ssh <alias> --force`",
+	"host_connect":   "the PC is unreachable; run host_doctor and ask the user to check it is on",
+	"host_doctor":    "run host_doctor to find the cause",
+	"retry":          "retry the same call shortly",
+	"fix_params":     "fix the arguments and call again",
+	"human_release":  "a person controls the PC; wait for them to release control and do not retry in a loop",
 }
 
 // hint explains a next_action; for job tools "check_state" must not send

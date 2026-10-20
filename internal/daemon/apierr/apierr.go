@@ -11,12 +11,13 @@ import (
 
 // Next actions carried in errors and result envelopes.
 const (
-	NextCheckState  = "check_state"
-	NextHostRepair  = "host_repair"
-	NextHostConnect = "host_connect"
-	NextRetry       = "retry"
-	NextFixParams   = "fix_params"
-	NextHostDoctor  = "host_doctor"
+	NextCheckState   = "check_state"
+	NextHostRepair   = "host_repair"
+	NextHostAddForce = "host_add_force"
+	NextHostConnect  = "host_connect"
+	NextRetry        = "retry"
+	NextFixParams    = "fix_params"
+	NextHostDoctor   = "host_doctor"
 )
 
 // Error is a daemon error with a protocol code.
