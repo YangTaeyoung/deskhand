@@ -182,7 +182,7 @@ func decodeUTF16LE(b []byte) string {
 func (r *run) filesMkdir(ctx context.Context, c *client.Client, t remotePath) int {
 	res, err := r.call(ctx, c, "files.mkdir", map[string]any{"host_id": t.Host, "path": t.Path}, callTimeout)
 	if err != nil {
-		return r.fail(err)
+		return r.failMut(err, t.Host)
 	}
 	code := r.settle(res, "폴더 만들기")
 	if code == exitOK {
@@ -214,7 +214,7 @@ func (r *run) filesMv(ctx context.Context, args []string) int {
 	}
 	res, err := r.simple(ctx, "files.rename", params)
 	if err != nil {
-		return r.fail(err)
+		return r.failMut(err, ts[0].Host)
 	}
 	code := r.settle(res, "이동")
 	if code == exitOK {
@@ -273,7 +273,7 @@ func (r *run) filesRm(ctx context.Context, args []string) int {
 		res, err := r.call(ctx, c, method, params, callTimeout)
 		code := exitOK
 		if err != nil {
-			code = r.fail(err)
+			code = r.failMut(err, t.Host)
 		} else if code = r.settle(res, "삭제"); code == exitOK {
 			r.say("%s: %s", done, t.Path)
 		}

@@ -41,11 +41,6 @@ func New(version string) *App {
 		Interactive: stdinIsTerminal, PollInterval: 500 * time.Millisecond}
 }
 
-func stdinIsTerminal() bool {
-	fi, err := os.Stdin.Stat()
-	return err == nil && fi.Mode()&os.ModeCharDevice != 0
-}
-
 // run is the state of one invocation: the App and the global flags.
 type run struct {
 	*App
@@ -166,30 +161,70 @@ func (r *run) simple(ctx context.Context, method string, params any) (obj, error
 	return r.call(ctx, c, method, params, callTimeout)
 }
 
+// nextSteps are the sentences for the daemon's next_action values.
+var nextSteps = map[string]string{
+	"check_state":   "deskhand jobs list 로 상태를 확인하세요",
+	"host_repair":   "deskhand host repair <이름> 을 실행하세요",
+	"host_connect":  "PC가 켜져 있는지 확인하고 deskhand host doctor <이름> 으로 점검하세요",
+	"host_doctor":   "deskhand host doctor <이름> 으로 점검하세요",
+	"retry":         "잠시 뒤 같은 명령을 다시 실행하세요",
+	"fix_params":    "입력을 고쳐 다시 실행하세요",
+	"human_release": "사람이 제어권을 놓은 뒤 다시 실행하세요",
+}
+
+func nextStep(action string) string {
+	if s, ok := nextSteps[action]; ok {
+		return s
+	}
+	if action != "" {
+		return action
+	}
+	return ""
+}
+
 // fail reports err and returns the exit code for it.
-func (r *run) fail(err error) int {
+func (r *run) fail(err error) int { return r.failCall(err, false, "") }
+
+// failMut reports the error of a call that changes the remote PC: a lost
+// connection or an unanswered call leaves the outcome unknown (exit 4).
+func (r *run) failMut(err error, host string) int { return r.failCall(err, true, host) }
+
+func (r *run) failCall(err error, mutating bool, host string) int {
 	var ue *usageError
 	if errors.As(err, &ue) {
 		fmt.Fprintln(r.Stderr, "사용법 오류: "+ue.msg)
 		return exitUsage
 	}
 	var ae *apierr.Error
-	if errors.As(err, &ae) {
-		fmt.Fprintln(r.Stderr, "오류: "+ae.Message)
-		if r.asJSON {
-			writeJSON(r.Stdout, obj{"status": model.StatusFailed, "error": obj{"code": ae.Code, "message": ae.Message,
-				"retryable": ae.Retryable, "next_action": ae.NextAction}})
-		}
-		switch ae.Code {
-		case wire.CodeOffline, wire.CodeAuthRequired:
-			return exitOffline
-		case wire.CodeExecutionOutcomeUnknown, wire.CodeTimeout:
-			return exitUnknown
-		}
+	if !errors.As(err, &ae) {
+		fmt.Fprintln(r.Stderr, "오류: "+err.Error())
 		return exitFailure
 	}
-	fmt.Fprintln(r.Stderr, "오류: "+err.Error())
-	return exitFailure
+	code := exitFailure
+	switch ae.Code {
+	case wire.CodeOffline, wire.CodeAuthRequired:
+		code = exitOffline
+	case wire.CodeExecutionOutcomeUnknown, wire.CodeTimeout:
+		code = exitUnknown
+	}
+	if mutating && client.IsConnectionLost(err) {
+		code = exitUnknown
+	}
+	fmt.Fprintln(r.Stderr, "오류: "+ae.Message)
+	if code == exitUnknown {
+		list := "deskhand jobs list"
+		if host != "" {
+			list += " --host " + host
+		}
+		fmt.Fprintf(r.Stderr, "결과를 알 수 없습니다. %s 로 작업을 확인하고 deskhand jobs get <job-id> 로 상태를 본 뒤 필요하면 다시 실행하세요\n", list)
+	} else if n := nextStep(ae.NextAction); n != "" {
+		fmt.Fprintln(r.Stderr, "다음 단계: "+n)
+	}
+	if r.asJSON {
+		writeJSON(r.Stdout, obj{"status": model.StatusFailed, "error": obj{"code": ae.Code, "message": ae.Message,
+			"retryable": ae.Retryable, "next_action": ae.NextAction}})
+	}
+	return code
 }
 
 // settle prints a result envelope in --json mode and returns the exit code
@@ -203,35 +238,56 @@ func (r *run) settle(res obj, what string) int {
 
 func (r *run) statusExit(res obj, what string) int {
 	e := res.sub("error")
+	next := nextStep(firstNonEmpty(res.str("next_action"), e.str("next_action")))
+	hint := func() {
+		if next != "" {
+			fmt.Fprintln(r.Stderr, "다음 단계: "+next)
+		}
+	}
 	switch res.str("status") {
 	case model.StatusWaitingForUser:
-		msg := e.str("message")
-		fmt.Fprintf(r.Stderr, "%s: 사람의 확인이 필요합니다. %s\n", what, dash(msg))
+		fmt.Fprintf(r.Stderr, "%s: 사람의 확인이 필요합니다. %s\n", what, dash(e.str("message")))
+		fmt.Fprintln(r.Stderr, "다음 단계: PC 화면에서 확인을 마친 뒤 같은 명령을 다시 실행하세요")
 		return exitNeedsUser
 	case model.StatusUnknown:
-		ids := "요청 " + dash(res.str("request_id"))
-		next := "같은 명령을 다시 실행하기 전에 deskhand files stat 등으로 대상 상태를 먼저 확인하세요"
-		if j := res.str("job_id"); j != "" {
-			ids += ", 작업 " + j
-			next = fmt.Sprintf("deskhand jobs watch %s 로 상태를 확인한 뒤 필요하면 다시 실행하세요", j)
-		}
-		fmt.Fprintf(r.Stderr, "%s: 결과를 알 수 없습니다(%s). %s\n", what, ids, next)
-		return exitUnknown
+		return r.unknownExit(res, what)
 	case model.StatusFailed:
-		if e != nil {
-			fmt.Fprintf(r.Stderr, "%s: %s\n", what, e.str("message"))
-			switch e.str("code") {
-			case wire.CodeOffline, wire.CodeAuthRequired:
-				return exitOffline
-			case wire.CodeExecutionOutcomeUnknown, wire.CodeTimeout:
-				return exitUnknown
-			}
-		} else {
+		if e == nil {
 			fmt.Fprintf(r.Stderr, "%s: 실패했습니다\n", what)
+			return exitFailure
 		}
+		switch e.str("code") {
+		case wire.CodeExecutionOutcomeUnknown:
+			return r.unknownExit(res, what)
+		case wire.CodeOffline, wire.CodeAuthRequired:
+			fmt.Fprintf(r.Stderr, "%s: %s\n", what, e.str("message"))
+			hint()
+			return exitOffline
+		}
+		fmt.Fprintf(r.Stderr, "%s: %s\n", what, e.str("message"))
+		hint()
 		return exitFailure
 	}
 	return exitOK
+}
+
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
+
+// unknownExit explains an unknown outcome with its ids and the next step.
+func (r *run) unknownExit(res obj, what string) int {
+	ids := "요청 " + dash(res.str("request_id"))
+	step := "같은 명령을 다시 실행하기 전에 deskhand files stat 등으로 대상 상태를 먼저 확인하세요"
+	if j := res.str("job_id"); j != "" {
+		ids += ", 작업 " + j
+		step = fmt.Sprintf("deskhand jobs get %s 로 상태를 확인한 뒤 필요하면 다시 실행하세요", j)
+	}
+	fmt.Fprintf(r.Stderr, "%s: 결과를 알 수 없습니다(%s). %s\n", what, ids, step)
+	return exitUnknown
 }
 
 // newFlags returns a flag set that reports its mistakes through errors.
@@ -283,6 +339,9 @@ func parseRemote(s string) (remotePath, error) {
 	}
 	if host == "" {
 		return remotePath{}, usagef("%q의 호스트 이름이 비었습니다. <호스트>:<경로> 형식으로 주세요", s)
+	}
+	if strings.ContainsAny(host, "/\\ \t\n") {
+		return remotePath{}, usagef("%q의 호스트 이름에 / \\ 나 공백이 있습니다. 경로 앞에 호스트 이름을 붙여 <호스트>:<경로> 형식으로 주세요", s)
 	}
 	if len(p) >= 2 && (p[0] == '\'' || p[0] == '"') && p[len(p)-1] == p[0] {
 		p = p[1 : len(p)-1]

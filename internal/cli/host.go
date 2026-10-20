@@ -108,7 +108,7 @@ func (r *run) install(ctx context.Context, method, name string, params map[strin
 	close(stop)
 	wg.Wait()
 	if err != nil {
-		return r.fail(err)
+		return r.failMut(err, name)
 	}
 	code := r.settle(res, what)
 	if code == exitOK {
@@ -190,7 +190,7 @@ func (r *run) hostRemove(ctx context.Context, args []string) int {
 	}
 	res, err := r.simple(ctx, "host.remove", map[string]any{"host_id": pos[0], "uninstall": *uninstall})
 	if err != nil {
-		return r.fail(err)
+		return r.failMut(err, pos[0])
 	}
 	if r.asJSON {
 		writeJSON(r.Stdout, res)

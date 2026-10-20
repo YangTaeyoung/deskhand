@@ -325,6 +325,10 @@ func (c *Client) Close() error {
 
 var errClosed = apierr.New(wire.CodeOffline, "데몬과의 연결이 끊겼습니다. 명령을 다시 실행하세요", true, apierr.NextRetry)
 
+// IsConnectionLost reports whether err is the loss of the daemon connection
+// during a call.
+func IsConnectionLost(err error) bool { return err == errClosed }
+
 // Call sends method with params and decodes the result into out (when not
 // nil). A daemon error is an *Error.
 func (c *Client) Call(ctx context.Context, method string, params, out any) error {

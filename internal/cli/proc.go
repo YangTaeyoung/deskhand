@@ -80,7 +80,7 @@ func (r *run) procKill(ctx context.Context, args []string) int {
 	}
 	res, err := r.simple(ctx, "proc.kill", params)
 	if err != nil {
-		return r.fail(err)
+		return r.failMut(err, pos[0])
 	}
 	code := r.settle(res, "프로세스 종료")
 	if code == exitOK {

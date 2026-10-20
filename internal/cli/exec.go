@@ -2,13 +2,14 @@ package cli
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
+	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
 const (
@@ -16,7 +17,37 @@ const (
 	execCallMargin     = time.Minute
 )
 
+const execHelp = `사용법: deskhand exec <호스트> [옵션] -- <명령...>
+
+옵션:
+  --cwd D                  원격 작업 폴더
+  --shell powershell|cmd|none
+                           none(기본): -- 뒤의 인수를 그대로 argv로 실행합니다.
+                           powershell|cmd: 명령 전체를 따옴표 하나로 묶은 문자열 하나를 셸로 실행합니다.
+  --timeout 120s           명령 제한 시간. 0이면 제한 없이 끝날 때까지 기다립니다
+                           (출력을 실시간으로 보여 주고, Ctrl-C는 종료 코드 4와 job id를 남깁니다).
+                           --detach와는 함께 쓸 수 없습니다.
+  --detach                 시작만 하고 job id를 출력합니다.
+
+종료 코드: 원격 명령의 종료 코드 1-255는 그대로 돌려줍니다. 범위 밖의 코드(0 아님)는 1입니다.
+시간 초과는 124입니다. deskhand 자체 오류는 2(사용법), 3(사람 확인), 4(결과 불명), 5(오프라인)이고
+원격 코드와 겹칠 수 있으므로 스크립트는 --json의 status와 code로 구분하세요.
+--json 출력은 결과 객체 한 줄입니다(--timeout 0에서는 JSON 줄 스트림).
+`
+
+// exitTimeout is the exit code of a command that hit its time limit.
+const exitTimeout = 124
+
 func (r *run) exec(ctx context.Context, args []string) int {
+	for _, a := range args {
+		if a == "--" {
+			break
+		}
+		if a == "-h" || a == "--help" || a == "-help" {
+			fmt.Fprint(r.Stdout, execHelp)
+			return exitOK
+		}
+	}
 	fs := newFlags("exec")
 	cwd := fs.String("cwd", "", "작업 폴더")
 	shell := fs.String("shell", "", "powershell|cmd|none")
@@ -27,12 +58,22 @@ func (r *run) exec(ctx context.Context, args []string) int {
 		return r.fail(err)
 	}
 	if len(pos) != 1 || len(argv) == 0 {
-		return r.fail(usagef("deskhand exec <호스트> [옵션] -- <명령...> 형식으로 주세요"))
+		return r.fail(usagef("deskhand exec <호스트> [옵션] -- <명령...> 형식으로 주세요(deskhand exec --help)"))
 	}
 	if *timeout < 0 {
 		return r.fail(usagef("--timeout은 0 이상이어야 합니다"))
 	}
-	params := map[string]any{"host_id": pos[0]}
+	timeoutSet := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "timeout" {
+			timeoutSet = true
+		}
+	})
+	if *detach && timeoutSet {
+		return r.fail(usagef("--detach에는 --timeout을 쓸 수 없습니다. 오래 걸리는 작업은 deskhand jobs cancel <job-id>로 끝내세요"))
+	}
+	host := pos[0]
+	params := map[string]any{"host_id": host}
 	switch *shell {
 	case "", "none":
 		params["argv"] = argv
@@ -40,7 +81,10 @@ func (r *run) exec(ctx context.Context, args []string) int {
 			params["shell"] = "none"
 		}
 	case "powershell", "cmd":
-		params["cmd"] = strings.Join(argv, " ")
+		if len(argv) != 1 {
+			return r.fail(usagef("--shell %s에는 명령 전체를 따옴표 하나로 묶어 주세요(예: -- \"Get-Date -Format o\")", *shell))
+		}
+		params["cmd"] = argv[0]
 		params["shell"] = *shell
 	default:
 		return r.fail(usagef("--shell은 powershell, cmd, none 중 하나여야 합니다"))
@@ -53,35 +97,36 @@ func (r *run) exec(ctx context.Context, args []string) int {
 		return r.fail(err)
 	}
 	defer c.Close()
-	if *detach {
+	if *detach || (*timeout == 0) {
 		res, err := r.call(ctx, c, "exec.start", params, callTimeout)
 		if err != nil {
-			return r.fail(err)
+			return r.failMut(err, host)
 		}
 		code := r.settle(res, "명령 시작")
-		if code == exitOK {
-			if id := res.str("job_id"); id != "" {
-				if r.asJSON {
-					return code
-				}
+		id := res.str("job_id")
+		if code != exitOK || id == "" {
+			return code
+		}
+		if *detach {
+			if !r.asJSON {
 				fmt.Fprintln(r.Stdout, id)
 				r.info("작업을 시작했습니다. deskhand jobs watch %s 로 출력을 따라가세요", id)
 			}
+			return code
 		}
-		return code
+		return r.follow(ctx, c, id, r.asJSON)
 	}
-	if *timeout > 0 {
-		params["timeout_ms"] = timeout.Milliseconds()
-	}
+	params["timeout_ms"] = timeout.Milliseconds()
 	res, err := r.call(ctx, c, "exec.run", params, *timeout+execCallMargin)
 	if err != nil {
-		return r.fail(err)
+		return r.failMut(err, host)
 	}
 	return r.finishExec(res)
 }
 
 // finishExec prints the outputs of an exec.run result and returns the
-// remote command's exit code, or the exit code of a failed envelope.
+// remote command's exit code, or the exit code of an envelope that carries
+// no exit code.
 func (r *run) finishExec(res obj) int {
 	if r.asJSON {
 		writeJSON(r.Stdout, res)
@@ -89,20 +134,17 @@ func (r *run) finishExec(res obj) int {
 	status := res.str("status")
 	code, hasCode := res.num("code")
 	e := res.sub("error")
-	if status == model.StatusUnknown || (status == model.StatusFailed && e != nil && !hasCode) {
+	timedOut := status == model.StatusFailed && e.str("code") == wire.CodeTimeout
+	if !timedOut && !(status == model.StatusSucceeded || (status == model.StatusFailed && e == nil && hasCode)) {
 		return r.statusExit(res, "명령 실행")
 	}
 	if !r.asJSON {
 		r.writeOutput(res, "stdout", "stdout.txt", r.Stdout)
-	}
-	if !r.asJSON {
 		r.writeOutput(res, "stderr", "stderr.txt", r.Stderr)
 	}
-	if e != nil {
+	if timedOut {
 		fmt.Fprintf(r.Stderr, "명령 실행: %s\n", e.str("message"))
-		if code == 0 {
-			return exitFailure
-		}
+		return exitTimeout
 	}
 	return remoteExitCode(code)
 }
@@ -122,13 +164,14 @@ func (r *run) writeOutput(res obj, field, artifact string, w io.Writer) {
 	_, _ = io.WriteString(w, res.str(field))
 }
 
-// remoteExitCode maps a remote exit code to a process exit code.
+// remoteExitCode maps a remote exit code to a process exit code: 0 stays
+// 0, 1-255 pass through, any other value is 1.
 func remoteExitCode(code int64) int {
-	if code == 0 {
+	switch {
+	case code == 0:
 		return exitOK
-	}
-	if c := int(code & 0xff); c != 0 {
-		return c
+	case code >= 1 && code <= 255:
+		return int(code)
 	}
 	return exitFailure
 }

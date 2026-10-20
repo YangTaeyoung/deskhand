@@ -111,6 +111,9 @@ func (f *fake) serve(nc net.Conn) {
 			continue
 		}
 		res, fail := h(req.Params, func(v any) { send(map[string]any{"jsonrpc": "2.0", "method": "event", "params": v}) })
+		if fail != nil && fail.code == "DROP" {
+			return
+		}
 		if fail != nil {
 			send(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32000, "message": fail.msg,
 				"data": map[string]any{"code": fail.code}}})
@@ -168,14 +171,17 @@ func TestExecExitCodePassthrough(t *testing.T) {
 	}
 }
 
-func TestExecShellJoinsCommand(t *testing.T) {
+func TestExecShellTakesOneCommandString(t *testing.T) {
 	f := startFake(t, map[string]handler{"exec.run": ok(envelope("succeeded", map[string]any{"code": 0, "stdout": "", "stderr": ""}))})
-	if r := runCLI(t, false, "", "exec", "h1", "--shell", "powershell", "--timeout", "5s", "--", "Get-Date", "-Format", "o"); r.code != 0 {
+	if r := runCLI(t, false, "", "exec", "h1", "--shell", "powershell", "--timeout", "5s", "--", "Get-Date -Format o"); r.code != 0 {
 		t.Fatalf("exit %d: %s", r.code, r.err)
 	}
 	p := f.called("exec.run")[0]
 	if p["cmd"] != "Get-Date -Format o" || p["shell"] != "powershell" || p["timeout_ms"] != float64(5000) || p["argv"] != nil {
 		t.Fatalf("params = %v", p)
+	}
+	if r := runCLI(t, false, "", "exec", "h1", "--shell", "cmd", "--", "dir", "C:\\"); r.code != exitUsage {
+		t.Fatalf("several args with --shell: exit %d, want 2", r.code)
 	}
 }
 
@@ -214,9 +220,10 @@ func TestStatusExitCodes(t *testing.T) {
 		want int
 		msg  string
 	}{
-		{"unknown", envelope("unknown", map[string]any{"error": map[string]any{"code": "EXECUTION_OUTCOME_UNKNOWN", "message": "응답을 잃었습니다"}}), 4, "jobs watch j-1"},
+		{"unknown", envelope("unknown", map[string]any{"error": map[string]any{"code": "EXECUTION_OUTCOME_UNKNOWN", "message": "응답을 잃었습니다"}}), 4, "jobs get j-1"},
 		{"offline", envelope("failed", map[string]any{"error": map[string]any{"code": "OFFLINE", "message": "PC가 꺼져 있습니다"}}), 5, "PC가 꺼져 있습니다"},
 		{"waiting", envelope("waiting_for_user", map[string]any{"error": map[string]any{"code": "AUTH_REQUIRED", "message": "UAC 승인이 필요합니다"}}), 3, "사람의 확인"},
+		{"failed-unknown", envelope("failed", map[string]any{"error": map[string]any{"code": "EXECUTION_OUTCOME_UNKNOWN", "message": "응답을 잃었습니다"}}), 4, "j-1"},
 		{"failed", envelope("failed", map[string]any{"error": map[string]any{"code": "INTERNAL", "message": "실패"}}), 1, "실패"},
 	}
 	for _, tc := range cases {
@@ -253,6 +260,8 @@ func TestHostPathParsing(t *testing.T) {
 		{`windows-dev:'C:\한글\파일.txt'`, "windows-dev", `C:\한글\파일.txt`},
 		{`windows-dev:"C:\Users\me\😀 folder"`, "windows-dev", `C:\Users\me\😀 folder`},
 		{`pc1:/tmp/x`, "pc1", "/tmp/x"},
+		{`host:C:\a:b`, "host", `C:\a:b`},
+		{`host:\\srv\share\x`, "host", `\\srv\share\x`},
 	}
 	for _, g := range good {
 		got, err := parseRemote(g.in)
@@ -260,7 +269,7 @@ func TestHostPathParsing(t *testing.T) {
 			t.Errorf("parseRemote(%q) = %+v, %v; want %s %s", g.in, got, err, g.host, g.path)
 		}
 	}
-	for _, bad := range []string{`C:\x`, `c:/x`, `nocolon`, `:path`, `host:`} {
+	for _, bad := range []string{`C:\x`, `c:/x`, `nocolon`, `:path`, `host:`, `pc1.local:`, `a1:`, `/tmp/a:b`, `\\server\share`, "a b:c"} {
 		if _, err := parseRemote(bad); err == nil {
 			t.Errorf("parseRemote(%q) succeeded, want usage error", bad)
 		}
@@ -389,5 +398,97 @@ func TestUsageErrorsExitTwo(t *testing.T) {
 		if r := runCLI(t, false, "", args...); r.code != exitUsage {
 			t.Errorf("%v: exit %d, want 2 (stderr %q)", args, r.code, r.err)
 		}
+	}
+}
+
+func TestExecWaitingForUserExitsThree(t *testing.T) {
+	startFake(t, map[string]handler{"exec.run": ok(envelope("waiting_for_user", map[string]any{
+		"error": map[string]any{"code": "ELEVATION_REQUIRED", "message": "UAC 승인이 필요합니다"}}))})
+	r := runCLI(t, false, "", "exec", "h1", "--", "installer.exe")
+	if r.code != exitNeedsUser || r.stdout != "" || !strings.Contains(r.err, "사람의 확인") {
+		t.Fatalf("code %d stdout %q stderr %q", r.code, r.stdout, r.err)
+	}
+	r = runCLI(t, false, "", "exec", "h1", "--json", "--", "installer.exe")
+	var m map[string]any
+	if r.code != exitNeedsUser || json.Unmarshal([]byte(r.stdout), &m) != nil || m["status"] != "waiting_for_user" {
+		t.Fatalf("json: code %d stdout %q", r.code, r.stdout)
+	}
+}
+
+func TestExecTimeoutPrintsPartialOutputAndExits124(t *testing.T) {
+	startFake(t, map[string]handler{"exec.run": ok(envelope("failed", map[string]any{"code": -1, "stdout": "partial", "stderr": "warn",
+		"timed_out": true, "error": map[string]any{"code": "TIMEOUT", "message": "명령이 2s 안에 끝나지 않아 종료했습니다"}}))})
+	r := runCLI(t, false, "", "exec", "h1", "--timeout", "2s", "--", "slow")
+	if r.code != 124 || r.stdout != "partial" || !strings.HasPrefix(r.err, "warn") || !strings.Contains(r.err, "종료했습니다") {
+		t.Fatalf("code %d stdout %q stderr %q", r.code, r.stdout, r.err)
+	}
+}
+
+func TestExecDetachRejectsTimeout(t *testing.T) {
+	if r := runCLI(t, false, "", "exec", "h1", "--detach", "--timeout", "5s", "--", "x"); r.code != exitUsage {
+		t.Fatalf("exit %d, want 2", r.code)
+	}
+}
+
+func TestExecTimeoutZeroFollowsJob(t *testing.T) {
+	f := startFake(t, map[string]handler{
+		"exec.start": ok(envelope("running", map[string]any{"pid": 1})),
+		"jobs.output": ok(map[string]any{"chunks": []any{map[string]any{"stream": "stdout", "data": "done"}},
+			"next_cursor": "4:0", "state": "exited", "status": "failed", "code": 9}),
+	})
+	r := runCLI(t, false, "", "exec", "h1", "--timeout", "0", "--", "x")
+	if r.code != 9 || r.stdout != "done" || len(f.called("exec.run")) != 0 {
+		t.Fatalf("code %d stdout %q stderr %q", r.code, r.stdout, r.err)
+	}
+}
+
+func TestLostConnectionDuringMutationExitsFour(t *testing.T) {
+	startFake(t, map[string]handler{"proc.kill": func(map[string]any, func(any)) (any, *rpcFail) {
+		return nil, &rpcFail{"EXECUTION_OUTCOME_UNKNOWN", "응답을 잃었습니다"}
+	}})
+	r := runCLI(t, false, "", "proc", "kill", "h1", "5")
+	if r.code != exitUnknown || !strings.Contains(r.err, "jobs get") {
+		t.Fatalf("code %d stderr %q", r.code, r.err)
+	}
+}
+
+func TestDroppedConnectionDuringMutationExitsFour(t *testing.T) {
+	startFake(t, map[string]handler{"files.mkdir": func(map[string]any, func(any)) (any, *rpcFail) { return nil, &rpcFail{"DROP", ""} }})
+	r := runCLI(t, false, "", "files", "mkdir", `pc1:C:\new`)
+	if r.code != exitUnknown || !strings.Contains(r.err, "jobs list --host pc1") {
+		t.Fatalf("code %d stderr %q", r.code, r.err)
+	}
+}
+
+func TestJobsWatchWaitingForUserExitsThree(t *testing.T) {
+	startFake(t, map[string]handler{"jobs.output": ok(map[string]any{"chunks": []any{}, "next_cursor": "0:0", "state": "running", "status": "waiting_for_user"})})
+	r := runCLI(t, false, "", "jobs", "watch", "j-5")
+	if r.code != exitNeedsUser || !strings.Contains(r.err, "j-5") {
+		t.Fatalf("code %d stderr %q", r.code, r.err)
+	}
+}
+
+func TestRemoteExitCodeNeverBecomesZero(t *testing.T) {
+	for in, want := range map[int64]int{0: 0, 7: 7, 255: 255, 256: 1, 512: 1, -1: 1, -256: 1, 0xC0000005: 1} {
+		if got := remoteExitCode(in); got != want {
+			t.Errorf("remoteExitCode(%d) = %d, want %d", in, got, want)
+		}
+	}
+}
+
+func TestExecHelpDocumentsExitCodes(t *testing.T) {
+	r := runCLI(t, false, "", "exec", "--help")
+	if r.code != 0 || !strings.Contains(r.stdout, "1-255") || !strings.Contains(r.stdout, "--json") {
+		t.Fatalf("code %d stdout %q", r.code, r.stdout)
+	}
+}
+
+func TestErrorShowsNextAction(t *testing.T) {
+	startFake(t, map[string]handler{"jobs.get": func(map[string]any, func(any)) (any, *rpcFail) {
+		return nil, &rpcFail{"NOT_FOUND", "job을 찾을 수 없습니다"}
+	}})
+	r := runCLI(t, false, "", "jobs", "get", "j-x")
+	if r.code != 1 || !strings.Contains(r.err, "job을 찾을 수 없습니다") {
+		t.Fatalf("code %d stderr %q", r.code, r.err)
 	}
 }
