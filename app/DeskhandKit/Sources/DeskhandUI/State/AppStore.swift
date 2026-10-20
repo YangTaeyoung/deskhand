@@ -85,6 +85,8 @@ public final class AppStore {
     public let controlActions: ControlActions
     /// Conflict policy, sorts, columns and folders of the files tab.
     public let filesPreferences: FilesPreferences
+    /// Default shell, text size and paste confirmation of the terminal tab.
+    public let terminalPreferences: TerminalPreferences
     /// A remote file the files tab asked the logs tab to show.
     public var logSelection: LogSelection?
 
@@ -97,6 +99,7 @@ public final class AppStore {
     private var timelineErrors: [String: OperationError] = [:]
     private var streamQualities: [String: StreamQuality] = [:]
     @ObservationIgnored private var filesModels: [String: FilesModel] = [:]
+    @ObservationIgnored private var terminalWorkspaces: [String: TerminalWorkspace] = [:]
     @ObservationIgnored private var eventsTask: Task<Void, Never>?
     @ObservationIgnored private var reloadTask: Task<Void, Never>?
     @ObservationIgnored private var reloadToken = 0
@@ -110,6 +113,7 @@ public final class AppStore {
         self.screenPreferences = ScreenPreferences(defaults: defaults)
         self.controlActions = ControlActions(backend: backend)
         self.filesPreferences = FilesPreferences(defaults: defaults)
+        self.terminalPreferences = TerminalPreferences(defaults: defaults)
         controlActions.store = self
     }
 
@@ -163,16 +167,27 @@ public final class AppStore {
         return model
     }
 
+    /// The terminal tab state of a host, created on first use and kept while the host is listed.
+    public func terminals(for host: Host) -> TerminalWorkspace {
+        if let workspace = terminalWorkspaces[host.hostID] { return workspace }
+        let workspace = TerminalWorkspace(hostID: host.hostID, backend: backend, preferences: terminalPreferences)
+        terminalWorkspaces[host.hostID] = workspace
+        return workspace
+    }
+
     /// Shows the logs tab with a remote file selected.
     public func openLog(hostID: String, path: String) {
         logSelection = LogSelection(hostID: hostID, path: path)
         layout.tab = .logs
     }
 
-    private func forgetFiles(_ hostID: String) {
+    /// Stops and drops the files and terminal tab state of a host that left the list.
+    private func forgetTabState(_ hostID: String) {
         filesModels[hostID]?.stop()
         filesModels[hostID] = nil
         if logSelection?.hostID == hostID { logSelection = nil }
+        terminalWorkspaces[hostID]?.stop()
+        terminalWorkspaces[hostID] = nil
     }
 
     /// Records the quality of the host's screen stream; `nil` when the stream closes.
@@ -273,7 +288,7 @@ public final class AppStore {
         let ids = Set(list.map(\.hostID))
         for host in hosts where !ids.contains(host.hostID) {
             controlActions.forget(host.hostID)
-            forgetFiles(host.hostID)
+            forgetTabState(host.hostID)
         }
         hosts = list
         for i in hosts.indices { syncOwner(at: i) }
@@ -323,7 +338,7 @@ public final class AppStore {
             guard let id = event.hostID else { return }
             hosts.removeAll { $0.hostID == id }
             controlActions.forget(id)
-            forgetFiles(id)
+            forgetTabState(id)
             controls[id] = nil
             controlsToRevalidate.remove(id)
             timelines[id] = nil

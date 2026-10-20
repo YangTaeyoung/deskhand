@@ -363,3 +363,68 @@ extension LiveBackend {
         }
     }
 }
+
+// MARK: Terminal
+
+private struct PTYOpenParams: Encodable {
+    let hostID: String
+    let shell: String
+    let cols: Int
+    let rows: Int
+}
+
+/// `pty_id` of `pty.open` alongside the envelope.
+private struct PTYOpenResult: Decodable {
+    let ptyID: String
+
+    private enum CodingKeys: String, CodingKey {
+        case ptyID = "ptyId"
+    }
+}
+
+private struct JobsListParams: Encodable {
+    let hostID: String
+    let kind: String
+    let status: String
+}
+
+private struct JobsListResult: Decodable {
+    let jobs: [Job]
+}
+
+private struct JobIDParams: Encodable {
+    let jobID: String
+}
+
+extension LiveBackend {
+    public func ptyOpen(hostID: String, shell: TerminalShell, cols: Int, rows: Int) async throws -> PTYOpening {
+        let value: JSONValue = try await client.call(
+            "pty.open", PTYOpenParams(hostID: hostID, shell: shell.rawValue, cols: cols, rows: rows))
+        var jobID: String?
+        if value["status"] != nil {
+            let envelope = try Self.decode(Envelope<Empty>.self, from: value)
+            try Self.check(envelope)
+            jobID = envelope.jobID
+        }
+        return PTYOpening(ptyID: try Self.decode(PTYOpenResult.self, from: value).ptyID, jobID: jobID)
+    }
+
+    public func ptyAttach(_ target: PTYTarget) async throws -> any FrameStream {
+        try await StreamConnection.attach(
+            kind: "pty", params: target.attachParams, socketPath: client.socketPath, clientName: "Deskhand",
+            clientVersion: clientVersion)
+    }
+
+    public func ptyJobs(hostID: String) async throws -> [Job] {
+        let result: JobsListResult = try await client.call(
+            "jobs.list", JobsListParams(hostID: hostID, kind: "pty", status: EnvelopeStatus.running.rawValue))
+        return result.jobs.filter { $0.kind == "pty" && $0.status == EnvelopeStatus.running.rawValue }
+    }
+
+    /// `jobs.cancel`, whose envelope reports `cancelled` when the shell ended.
+    public func ptyKill(jobID: String) async throws {
+        let envelope: Envelope<Empty> = try await client.call("jobs.cancel", JobIDParams(jobID: jobID))
+        if envelope.status == .cancelled || envelope.status == .succeeded { return }
+        try Self.check(envelope)
+    }
+}

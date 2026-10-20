@@ -2,10 +2,11 @@ import DeskhandClient
 import struct DeskhandClient.Host
 import SwiftUI
 
-/// Menu bar commands: add a computer (⌘N), the workspace tabs (⌘1–⌘7) and inspector (⌥⌘0) in
-/// the View menu, and the 컴퓨터 menu with the control actions (emergency stop ⇧⌘.) and host
-/// actions for the selected computer. In the files tab 제거… has no shortcut; ⌘⌫ there moves
-/// remote files to the recycle bin.
+/// Menu bar commands: add a computer (⌘N) and a new terminal tab (⌘T), closing (⌘W closes the
+/// terminal tab while the terminal tab shows shells, ⇧⌘W the window), the workspace tabs
+/// (⌘1–⌘7) and inspector (⌥⌘0) in the View menu, the 컴퓨터 menu with the control actions
+/// (emergency stop ⇧⌘.) and host actions for the selected computer, and the 터미널 menu. In the
+/// files tab 제거… has no shortcut; ⌘⌫ there moves remote files to the recycle bin.
 public struct DeskhandCommands: Commands {
     let store: AppStore
 
@@ -18,6 +19,12 @@ public struct DeskhandCommands: Commands {
             Button(String.ui("menu.addHost", "컴퓨터 추가…")) { store.presentAddHost() }
                 .keyboardShortcut("n")
                 .disabled(store.phase != .ready)
+        }
+        CommandGroup(after: .newItem) {
+            NewTerminalCommand(store: store)
+        }
+        CommandGroup(replacing: .saveItem) {
+            CloseCommands(store: store)
         }
         CommandGroup(before: .toolbar) {
             WorkspaceViewCommands(store: store, layout: store.layout)
@@ -47,6 +54,9 @@ public struct DeskhandCommands: Commands {
                 Button(String.ui("action.doctor", "진단 실행")) {}
                     .disabled(true)
             }
+        }
+        CommandMenu(String.ui("menu.terminal", "터미널")) {
+            TerminalMenuCommands(store: store)
         }
     }
 }

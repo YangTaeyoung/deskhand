@@ -4899,6 +4899,28 @@
         }
       }
     },
+    "menu.close": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "닫기"
+          }
+        }
+      }
+    },
+    "menu.closeWindow": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "윈도우 닫기"
+          }
+        }
+      }
+    },
     "menu.computer": {
       "comment": "Menu bar item: computer",
       "extractionState": "manual",
@@ -4955,6 +4977,83 @@
           "stringUnit": {
             "state": "translated",
             "value": "인스펙터 보기"
+          }
+        }
+      }
+    },
+    "menu.terminal": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "터미널"
+          }
+        }
+      }
+    },
+    "menu.terminal.closeTab": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "탭 닫기"
+          }
+        }
+      }
+    },
+    "menu.terminal.newTab": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 터미널 탭"
+          }
+        }
+      }
+    },
+    "menu.terminal.newWith": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 탭에서 열기"
+          }
+        }
+      }
+    },
+    "menu.terminal.next": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다음 탭"
+          }
+        }
+      }
+    },
+    "menu.terminal.previous": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이전 탭"
+          }
+        }
+      }
+    },
+    "menu.terminal.reopen": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "분리된 셸 다시 열기"
           }
         }
       }
@@ -7101,6 +7200,908 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@에게서 제어권을 가져올까요?"
+          }
+        }
+      }
+    },
+    "terminal.a11y.surface": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@의 %2$@ 터미널"
+          }
+        }
+      }
+    },
+    "terminal.actions.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "터미널 동작"
+          }
+        }
+      }
+    },
+    "terminal.attaching": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "셸에 연결하는 중…"
+          }
+        }
+      }
+    },
+    "terminal.attaching.replay": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 놓친 출력을 함께 가져옵니다"
+          }
+        }
+      }
+    },
+    "terminal.clearScrollback": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스크롤백 지우기"
+          }
+        }
+      }
+    },
+    "terminal.close.detach": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "분리만 하기"
+          }
+        }
+      }
+    },
+    "terminal.close.end": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "셸 종료"
+          }
+        }
+      }
+    },
+    "terminal.close.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 프로세스도 끝납니다. 분리만 하면 셸은 %@에서 계속 실행되고, + 메뉴에서 다시 열 수 있습니다."
+          }
+        }
+      }
+    },
+    "terminal.close.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "셸을 종료할까요?"
+          }
+        }
+      }
+    },
+    "terminal.detach": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "분리하기"
+          }
+        }
+      }
+    },
+    "terminal.detached.hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 PC에서 계속 실행 중"
+          }
+        }
+      }
+    },
+    "terminal.detached.reopen": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 열기"
+          }
+        }
+      }
+    },
+    "terminal.detached.reopen.a11y": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 다시 열기"
+          }
+        }
+      }
+    },
+    "terminal.detached.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "분리된 셸"
+          }
+        }
+      }
+    },
+    "terminal.empty.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에서 PowerShell이나 명령 프롬프트를 엽니다. 연결이 끊겨도 셸은 원격 PC에서 계속 실행되고, 다시 연결하면 놓친 출력이 이어집니다."
+          }
+        }
+      }
+    },
+    "terminal.empty.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 터미널"
+          }
+        }
+      }
+    },
+    "terminal.end": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "셸 종료…"
+          }
+        }
+      }
+    },
+    "terminal.exited.code": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "종료 코드 %lld"
+          }
+        }
+      }
+    },
+    "terminal.exited.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@이(가) 종료되었습니다"
+          }
+        }
+      }
+    },
+    "terminal.failed.open": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@을(를) 열지 못했습니다"
+          }
+        }
+      }
+    },
+    "terminal.failed.openNew": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 셸 열기"
+          }
+        }
+      }
+    },
+    "terminal.failed.openPowerShell": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PowerShell 열기"
+          }
+        }
+      }
+    },
+    "terminal.failed.reattach": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "셸에 다시 연결하지 못했습니다"
+          }
+        }
+      }
+    },
+    "terminal.font.bigger": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "글자 크게"
+          }
+        }
+      }
+    },
+    "terminal.font.reset": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본 크기"
+          }
+        }
+      }
+    },
+    "terminal.font.smaller": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "글자 작게"
+          }
+        }
+      }
+    },
+    "terminal.host.blocked": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 페어링해야 합니다"
+          }
+        }
+      }
+    },
+    "terminal.host.blockedMessage": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트 인증서가 페어링 때와 달라 연결을 막았습니다. 위 배너에서 다시 페어링한 뒤 셸을 열 수 있습니다."
+          }
+        }
+      }
+    },
+    "terminal.host.connecting": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에 연결하는 중…"
+          }
+        }
+      }
+    },
+    "terminal.host.offline": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결되어 있지 않습니다"
+          }
+        }
+      }
+    },
+    "terminal.host.offlineMessage": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "위 배너의 ‘연결’로 %@에 연결하면 셸을 열 수 있습니다."
+          }
+        }
+      }
+    },
+    "terminal.host.reconnecting": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에 다시 연결하는 중…"
+          }
+        }
+      }
+    },
+    "terminal.host.unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지금은 터미널을 열 수 없습니다"
+          }
+        }
+      }
+    },
+    "terminal.host.unavailableMessage": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트가 터미널 기능이 준비되지 않았다고 알렸습니다. 진단을 실행해 원인을 확인하세요."
+          }
+        }
+      }
+    },
+    "terminal.host.unsupported": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 PC는 터미널을 지원하지 않습니다"
+          }
+        }
+      }
+    },
+    "terminal.host.waiting": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결되면 셸을 열 수 있습니다. 원격 PC에서 실행 중이던 셸은 분리된 셸에서 다시 엽니다."
+          }
+        }
+      }
+    },
+    "terminal.job.started": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 시작"
+          }
+        }
+      }
+    },
+    "terminal.kill.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "셸을 종료하지 못했습니다"
+          }
+        }
+      }
+    },
+    "terminal.kill.failedDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "셸은 원격 PC에서 계속 실행됩니다. + 메뉴의 분리된 셸에서 다시 열 수 있습니다."
+          }
+        }
+      }
+    },
+    "terminal.menu.copy": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복사하기"
+          }
+        }
+      }
+    },
+    "terminal.menu.paste": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "붙여넣기"
+          }
+        }
+      }
+    },
+    "terminal.menu.selectAll": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모두 선택"
+          }
+        }
+      }
+    },
+    "terminal.new.a11y": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 터미널 탭"
+          }
+        }
+      }
+    },
+    "terminal.new.default": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ (기본)"
+          }
+        }
+      }
+    },
+    "terminal.new.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 %@ 탭 (⌘T) · 화살표를 누르면 셸과 분리된 셸을 고릅니다"
+          }
+        }
+      }
+    },
+    "terminal.new.section": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 탭"
+          }
+        }
+      }
+    },
+    "terminal.open": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 열기"
+          }
+        }
+      }
+    },
+    "terminal.open.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 탭에서 %@ 열기 (⌘T)"
+          }
+        }
+      }
+    },
+    "terminal.openOther.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 탭에서 %@ 열기"
+          }
+        }
+      }
+    },
+    "terminal.opening": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 여는 중…"
+          }
+        }
+      }
+    },
+    "terminal.opening.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "terminal.paste.a11y": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "붙여 넣을 텍스트, %lld줄"
+          }
+        }
+      }
+    },
+    "terminal.paste.confirm": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "붙여넣기"
+          }
+        }
+      }
+    },
+    "terminal.paste.confirmSetting": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "여러 줄을 붙여 넣기 전에 확인"
+          }
+        }
+      }
+    },
+    "terminal.paste.dontAsk": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 묻지 않기"
+          }
+        }
+      }
+    },
+    "terminal.paste.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에 붙여 넣으면 줄마다 바로 명령으로 실행될 수 있습니다."
+          }
+        }
+      }
+    },
+    "terminal.paste.more": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "외 %lld줄"
+          }
+        }
+      }
+    },
+    "terminal.paste.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld줄을 붙여 넣을까요?"
+          }
+        }
+      }
+    },
+    "terminal.paste.titleOne": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "줄바꿈이 있는 텍스트를 붙여 넣을까요?"
+          }
+        }
+      }
+    },
+    "terminal.preview.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "미리보기 셸이 아는 명령: dir, cd, Get-Process, whoami, hostname, ipconfig, Get-Date, $PSVersionTable, cls, echo, exit [코드]"
+          }
+        }
+      }
+    },
+    "terminal.preview.helpCmd": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "미리보기 셸이 아는 명령: dir, cd, whoami, hostname, ipconfig, ver, cls, echo, exit [코드]"
+          }
+        }
+      }
+    },
+    "terminal.reconnect.hostDown": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 연결이 끊겼습니다. 다시 연결되면 셸에 자동으로 다시 붙고 놓친 출력을 보여 줍니다."
+          }
+        }
+      }
+    },
+    "terminal.reconnect.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "셸은 원격 PC에서 계속 실행 중입니다. 다시 붙으면 놓친 출력이 이어집니다."
+          }
+        }
+      }
+    },
+    "terminal.reconnect.next": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld초 후 다시 시도합니다"
+          }
+        }
+      }
+    },
+    "terminal.reconnect.now": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 연결"
+          }
+        }
+      }
+    },
+    "terminal.reconnect.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결이 끊겨 다시 연결하는 중…"
+          }
+        }
+      }
+    },
+    "terminal.reconnect.trying": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 시도하는 중…"
+          }
+        }
+      }
+    },
+    "terminal.restart": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새로 시작"
+          }
+        }
+      }
+    },
+    "terminal.shell.cmd": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "명령 프롬프트"
+          }
+        }
+      }
+    },
+    "terminal.size.a11y": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "터미널 크기 %1$lld열 %2$lld행"
+          }
+        }
+      }
+    },
+    "terminal.size.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "터미널 크기 (열×행)"
+          }
+        }
+      }
+    },
+    "terminal.state.attaching": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결하는 중"
+          }
+        }
+      }
+    },
+    "terminal.state.exited": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "종료됨, 코드 %lld"
+          }
+        }
+      }
+    },
+    "terminal.state.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "열지 못함"
+          }
+        }
+      }
+    },
+    "terminal.state.live": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결됨"
+          }
+        }
+      }
+    },
+    "terminal.state.opening": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "여는 중"
+          }
+        }
+      }
+    },
+    "terminal.state.reconnecting": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 연결하는 중"
+          }
+        }
+      }
+    },
+    "terminal.tab.a11y": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@, %2$@"
+          }
+        }
+      }
+    },
+    "terminal.tab.close": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 탭 닫기"
+          }
+        }
+      }
+    },
+    "terminal.tab.close.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "탭 닫기 (⌘W)"
+          }
+        }
+      }
+    },
+    "terminal.tab.closeMenu": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "탭 닫기"
+          }
+        }
+      }
+    },
+    "terminal.tabs.a11y": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "터미널 탭"
           }
         }
       }

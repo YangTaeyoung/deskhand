@@ -178,6 +178,14 @@ final class GatedBackend: Backend, LocalOverlayProviding {
         try await base.screenAttach(hostID: hostID, display: display, preset: preset)
     }
 
+    func ptyOpen(hostID: String, shell: TerminalShell, cols: Int, rows: Int) async throws -> PTYOpening {
+        try await base.ptyOpen(hostID: hostID, shell: shell, cols: cols, rows: rows)
+    }
+
+    func ptyAttach(_ target: PTYTarget) async throws -> any FrameStream { try await base.ptyAttach(target) }
+    func ptyJobs(hostID: String) async throws -> [Job] { try await base.ptyJobs(hostID: hostID) }
+    func ptyKill(jobID: String) async throws { try await base.ptyKill(jobID: jobID) }
+
     func filesList(hostID: String, path: String, cursor: String?, limit: Int) async throws -> FileEntryPage {
         let onePage = state.withLock { s -> Bool in
             s.filesListCalls.append(FilesListCall(path: path, cursor: cursor, limit: limit))

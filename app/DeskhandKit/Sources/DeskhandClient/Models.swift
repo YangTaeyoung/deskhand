@@ -4,16 +4,20 @@ import Foundation
 public struct Capability: Codable, Sendable, Equatable {
     public var state: String
     public var reason: String?
+    /// Shells the `pty` capability can start (`powershell`, `pwsh`, `cmd`), when the agent reports them.
+    public var shells: [String]?
 
-    public init(state: String, reason: String? = nil) {
+    public init(state: String, reason: String? = nil, shells: [String]? = nil) {
         self.state = state
         self.reason = reason
+        self.shells = shells
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: AnyKey.self)
         state = try c.decode(String.self, forKey: AnyKey("state"))
         reason = try c.decodeIfPresent(String.self, forKey: AnyKey("reason"))
+        shells = try? c.decodeIfPresent([String].self, forKey: AnyKey("shells"))
     }
 }
 

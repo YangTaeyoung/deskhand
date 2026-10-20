@@ -36,7 +36,8 @@ public enum PreviewFixtures {
     public static func hosts(now: Date = .now) -> [Host] {
         [
             Host(hostID: devPCID, name: "개발 PC", os: "windows", arch: "amd64", address: "192.168.0.24", port: 47600,
-                 sshAlias: "windows", state: "ready", caps: caps("ready"),
+                 sshAlias: "windows", state: "ready",
+                 caps: caps("ready", except: ["pty": Capability(state: "ready", shells: ["powershell", "pwsh", "cmd"])]),
                  session: SessionInfo(sessionID: 1, user: "taeyoung", connectState: "active", protocolKind: "console",
                                       locked: false, inputDesktop: "Default"),
                  displays: [display(adapter: "NVIDIA GeForce RTX 2070"), display(index: 1, adapter: "NVIDIA GeForce RTX 2070")],

@@ -87,12 +87,15 @@ public struct WorkspaceView: View {
         case .screen:
             ScreenView(store: store, host: host, chrome: chrome)
                 .id(host.hostID)
+        case .terminal:
+            TerminalView(store: store, host: host, chrome: chrome)
+                .id(host.hostID)
         case .files:
             FilesView(store: store, host: host)
                 .id(host.hostID)
         case .logs:
             TabPlaceholderView(tab: .logs, logPath: store.logSelection?.hostID == host.hostID ? store.logSelection?.path : nil)
-        case .terminal, .processes, .debugger, .qa:
+        case .processes, .debugger, .qa:
             TabPlaceholderView(tab: store.layout.tab)
         }
     }

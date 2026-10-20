@@ -46,6 +46,8 @@ public enum DS {
         public static let overlayShadow = SwiftUI.Color.black.opacity(0.4)
         /// Text and symbols on `humanFill`, `aiFill` and other saturated fills.
         public static let onFill = SwiftUI.Color.white
+        /// Background of the remote terminal and of its selected tab.
+        public static let terminalBackground = SwiftUI.Color(nsColor: .textBackgroundColor)
     }
 
     /// Spacing scale in points. Layout uses only these values.
@@ -63,6 +65,71 @@ public enum DS {
         public static let s: CGFloat = 6
         public static let m: CGFloat = 10
         public static let l: CGFloat = 14
+    }
+
+    /// Remote terminal colors and type. Every color is a system color or one mixed from it,
+    /// resolved for the appearance the terminal draws in.
+    public enum Terminal {
+        /// Default text size of the terminal in points.
+        public static let fontSize: CGFloat = 13
+        public static let minimumFontSize: CGFloat = 9
+        public static let maximumFontSize: CGFloat = 28
+
+        /// SF Mono at `size`.
+        public static func font(size: CGFloat) -> NSFont {
+            NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        }
+
+        /// Colors of a terminal in one appearance.
+        public struct Palette {
+            public let background: NSColor
+            public let foreground: NSColor
+            public let caret: NSColor
+            public let selection: NSColor
+            public let selectedText: NSColor
+            /// ANSI colors 0–15: black, red, green, yellow, blue, magenta, cyan, white, then the bright variants.
+            public let ansi: [NSColor]
+        }
+
+        /// The palette for `appearance`, with every color converted to sRGB in that appearance.
+        @MainActor
+        public static func palette(for appearance: NSAppearance) -> Palette {
+            let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            var palette: Palette?
+            appearance.performAsCurrentDrawingAppearance {
+                palette = makePalette(dark: dark)
+            }
+            return palette ?? makePalette(dark: dark)
+        }
+
+        private static func makePalette(dark: Bool) -> Palette {
+            func srgb(_ color: NSColor) -> NSColor { color.usingColorSpace(.sRGB) ?? color }
+            func darker(_ color: NSColor, _ amount: CGFloat) -> NSColor {
+                srgb(color).blended(withFraction: amount, of: .black) ?? color
+            }
+            func lighter(_ color: NSColor, _ amount: CGFloat) -> NSColor {
+                srgb(color).blended(withFraction: amount, of: .white) ?? color
+            }
+            let hues: [NSColor] = [.systemRed, .systemGreen, .systemYellow, .systemBlue, .systemPurple, .systemCyan]
+            let normal: [NSColor]
+            let bright: [NSColor]
+            if dark {
+                normal = [NSColor(white: 0.1, alpha: 1)] + hues.map(srgb) + [NSColor(white: 0.8, alpha: 1)]
+                bright = [NSColor(white: 0.5, alpha: 1)] + hues.map { lighter($0, 0.3) } + [NSColor(white: 1, alpha: 1)]
+            } else {
+                let depth: [CGFloat] = [0.12, 0.3, 0.42, 0.1, 0.12, 0.3]
+                normal = [NSColor(white: 0, alpha: 1)] + zip(hues, depth).map { darker($0, $1) } + [NSColor(white: 0.42, alpha: 1)]
+                bright = [NSColor(white: 0.5, alpha: 1)] + zip(hues, depth).map { darker($0, max(0, $1 - 0.12)) }
+                    + [NSColor(white: 0.2, alpha: 1)]
+            }
+            return Palette(
+                background: srgb(.textBackgroundColor),
+                foreground: srgb(.textColor),
+                caret: srgb(NSColor(DS.Color.accent)),
+                selection: srgb(.selectedTextBackgroundColor),
+                selectedText: srgb(.selectedTextColor),
+                ansi: (normal + bright).map(srgb))
+        }
     }
 
     /// Text styles. All are system text styles, so they follow the user's text size setting.

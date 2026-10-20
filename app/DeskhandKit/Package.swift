@@ -11,6 +11,9 @@ let package = Package(
         .library(name: "DeskhandUI", targets: ["DeskhandUI"]),
         .executable(name: "DeskhandSnapshots", targets: ["DeskhandSnapshots"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", exact: "1.19.0"),
+    ],
     targets: [
         // Local API client for the deskhand daemon (docs/local-api.md).
         .target(name: "DeskhandClient"),
@@ -19,7 +22,7 @@ let package = Package(
         // Views, design system and view state shared by the app and the snapshot renderer.
         .target(
             name: "DeskhandUI",
-            dependencies: ["DeskhandClient", "DeskhandMedia"],
+            dependencies: ["DeskhandClient", "DeskhandMedia", .product(name: "SwiftTerm", package: "SwiftTerm")],
             resources: [.process("Resources")]
         ),
         // Renders registered scenes to PNG offscreen, in light and dark mode.

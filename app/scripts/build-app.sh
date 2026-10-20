@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Builds Deskhand.app (Debug) into app/build/Deskhand.app and prints its path.
 # Fails when the build emits any compiler warning. Copies the Go binaries from build/
-# (deskhand, deskhand-agent-windows-*.exe) into Contents/MacOS when they exist.
+# (deskhand, deskhand-agent-windows-*.exe) into Contents/MacOS when they exist. SwiftTerm's
+# build-information plugin runs without the interactive trust prompt.
 set -euo pipefail
 
 app_dir="$(cd "$(dirname "$0")/.." && pwd)"
@@ -18,6 +19,7 @@ if ! xcodebuild \
     -configuration Debug \
     -destination "platform=macOS,arch=$(uname -m)" \
     -derivedDataPath "$build_dir/DerivedData" \
+    -skipPackagePluginValidation \
     build >"$log" 2>&1; then
   grep -E ': (fatal )?error: ' "$log" | sort -u || true
   tail -n 30 "$log"

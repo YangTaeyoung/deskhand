@@ -49,6 +49,8 @@ public final class PreviewBackend: Backend, LocalOverlayProviding {
     let files: PreviewFileStore
     /// Items pulled to this Mac; the preview never writes to the disk.
     public let localOverlay = LocalOverlay()
+    /// Simulated shells of the terminal tab.
+    let terminals: PreviewTerminals
 
     /// `screenVideo` is an Annex-B H.264 file whose first access unit is a keyframe; screen
     /// streams play it in a loop. Without one they report the stream as paused.
@@ -60,6 +62,11 @@ public final class PreviewBackend: Backend, LocalOverlayProviding {
         let timelines = Dictionary(uniqueKeysWithValues: hosts.map { ($0.hostID, PreviewFixtures.timeline(hostID: $0.hostID)) })
         state = Mutex(State(hosts: hosts, controls: PreviewFixtures.controls(for: hosts), timelines: timelines))
         files = PreviewFileStore(hosts: hosts, includesTransfers: scenario == .standard)
+        let jobEvents = JobEventRelay()
+        terminals = PreviewTerminals(hosts: hosts, includesFixtures: scenario == .standard) { job in
+            jobEvents.backend?.emit(kind: EventKind.jobUpdated, hostID: job.hostID, payload: ["job": PreviewBackend.payload(job)])
+        }
+        jobEvents.backend = self
     }
 
     /// Ends every open `events` stream, finishing it with `error` when given, as a dropped
@@ -133,6 +140,7 @@ public final class PreviewBackend: Backend, LocalOverlayProviding {
             return s.hosts[i].connectionGeneration
         }
         guard let generation else { return }
+        if connection != .ready, connection != .degraded { terminals.dropStreams(hostID: hostID) }
         emit(kind: EventKind.connectionState, hostID: hostID,
              payload: ["state": .string(connection.rawValue), "connection_generation": .int(generation)])
     }
@@ -367,5 +375,19 @@ extension PreviewBackend {
         return PreviewScreenStream(host: host, display: display, preset: preset, units: screenUnits) { [weak self] in
             self?.state.withLock { $0.controls[hostID]?.owner } == ControlOwner.ai.rawValue
         }
+    }
+}
+
+/// Lets the simulated shells emit `job.updated` through the backend that owns them.
+private final class JobEventRelay: Sendable {
+    private struct Target {
+        weak var backend: PreviewBackend?
+    }
+
+    private let target = Mutex(Target())
+
+    var backend: PreviewBackend? {
+        get { target.withLock { $0.backend } }
+        set { target.withLock { $0.backend = newValue } }
     }
 }

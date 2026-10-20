@@ -5,7 +5,8 @@ import struct DeskhandClient.Host
 /// Everything the screens ask of the daemon, grouped by feature. A feature adds its own
 /// protocol below and joins it to this list; `LiveBackend` and `PreviewBackend` implement each
 /// feature protocol in their own extension.
-public protocol Backend: BackendLifecycle, HostsBackend, ControlBackend, TimelineBackend, EventsBackend, ScreenBackend, FilesBackend {}
+public protocol Backend: BackendLifecycle, HostsBackend, ControlBackend, TimelineBackend, EventsBackend, ScreenBackend, FilesBackend,
+    TerminalBackend {}
 
 public protocol BackendLifecycle: Sendable {
     /// Makes the daemon reachable and says hello. Throws `ClientError.daemonUnavailable` when the
@@ -80,6 +81,50 @@ public protocol FilesBackend: Sendable {
     func transferCancel(transferID: String) async throws -> Transfer
 }
 
+/// `pty.open`, `stream.attach` with kind `pty`, and the pty jobs of `jobs.*` (local-api.md §3–§5).
+/// Calls that start or end remote work throw `OperationError` when their envelope reports a failure.
+public protocol TerminalBackend: Sendable {
+    /// Starts `shell` on the computer with a `cols`×`rows` console.
+    func ptyOpen(hostID: String, shell: TerminalShell, cols: Int, rows: Int) async throws -> PTYOpening
+    /// Opens the stream of a pty. Frames follow protocol.md §7: the attached frame (`0x23`) comes
+    /// first, then the scrollback and live output as data frames (`0x20`).
+    func ptyAttach(_ target: PTYTarget) async throws -> any FrameStream
+    /// The computer's running pty jobs (`jobs.list{host_id, kind:"pty", status:"running"}`).
+    func ptyJobs(hostID: String) async throws -> [Job]
+    /// Ends the shell of a pty job (`jobs.cancel`).
+    func ptyKill(jobID: String) async throws
+}
+
+/// What `stream.attach{kind:"pty"}` attaches to.
+public enum PTYTarget: Equatable, Hashable, Sendable {
+    /// A pty that `pty.open` just started (`pty_id`).
+    case pty(String)
+    /// A running pty job, attached again with its scrollback (`job_id`).
+    case job(String)
+
+    /// `stream.attach` parameters besides `kind`.
+    public var attachParams: [String: String] {
+        switch self {
+        case .pty(let id): ["pty_id": id]
+        case .job(let id): ["job_id": id]
+        }
+    }
+}
+
+/// Result of `pty.open`: the stream target and, when the envelope carries it, the pty's job.
+public struct PTYOpening: Equatable, Sendable {
+    public var ptyID: String
+    public var jobID: String?
+
+    public init(ptyID: String, jobID: String? = nil) {
+        self.ptyID = ptyID
+        self.jobID = jobID
+    }
+}
+
+/// Any connection opened by `stream.attach`.
+public typealias FrameStream = ScreenStream
+
 /// A binary frame connection opened by `stream.attach`.
 public protocol ScreenStream: AnyObject, Sendable {
     /// Frames from the daemon in arrival order.
@@ -121,6 +166,8 @@ public enum EventKind {
     public static let installProgress = "host.install.progress"
     /// `transfer` (Transfer).
     public static let transferUpdated = "transfer.updated"
+    /// `job` (Job).
+    public static let jobUpdated = "job.updated"
 
     /// Every kind `AppStore` subscribes to.
     public static let storeKinds = [

@@ -4,8 +4,8 @@ import Foundation
 import struct DeskhandClient.Host
 
 /// `Backend` for snapshot scenes. Control and timeline reads return exactly what the scene
-/// seeded; a timeline can stay pending or fail, and control changes can fail. File changes and
-/// transfers do nothing, since scenes seed the files tab. Everything else goes to a
+/// seeded; a timeline can stay pending or fail, and control changes can fail. File changes,
+/// transfers and terminals do nothing, since scenes seed those tabs. Everything else goes to a
 /// `PreviewBackend`.
 final class SnapshotBackend: Backend {
     enum TimelineReply: Sendable {
@@ -100,4 +100,13 @@ final class SnapshotBackend: Backend {
     func screenAttach(hostID: String, display: Int, preset: StreamPreset) async throws -> any ScreenStream {
         throw ClientError.notConnected
     }
+
+    /// Terminal calls throw or return nothing; scenes seed the terminal tab with stand-in sessions.
+    func ptyOpen(hostID: String, shell: TerminalShell, cols: Int, rows: Int) async throws -> PTYOpening {
+        throw ClientError.notConnected
+    }
+
+    func ptyAttach(_ target: PTYTarget) async throws -> any FrameStream { throw ClientError.notConnected }
+    func ptyJobs(hostID: String) async throws -> [Job] { [] }
+    func ptyKill(jobID: String) async throws {}
 }
