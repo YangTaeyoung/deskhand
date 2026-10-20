@@ -79,7 +79,7 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 
 ## 4. `video` 프레임
 
-모든 바이너리 프레임: `u32 BE 길이 L` + `L바이트`. 본문 첫 바이트가 종류.
+모든 바이너리 스트림(`video`, `cursor`, `input`, `pty`)의 모든 프레임은 양방향 모두 `u32 BE 길이 L` + `L바이트`이고, 본문 첫 바이트가 종류다(`internal/wire.WriteFrame`).
 
 에이전트 → 데몬
 
@@ -90,7 +90,7 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 | `0x03` stats | JSON: `fps`, `bitrate`, `dropped`, `encode_ms_p50`, `encode_ms_p95`, `capture_ms_p50` (1초마다) |
 | `0x04` paused | JSON: `reason`(`no_viewer`/`display_unavailable`/`secure_desktop`/`session_locked`) |
 
-데몬 → 에이전트(같은 스트림 반대 방향): `u32 길이` + JSON — `{"op":"keyframe"}`, `{"op":"bitrate","bps":…}`, `{"op":"config","max_fps":…,"max_width":…}`, `{"op":"pause"}`, `{"op":"resume"}`.
+데몬 → 에이전트(같은 스트림 반대 방향): 종류 `0x40` 프레임 + JSON — `{"op":"keyframe"}`, `{"op":"bitrate","bps":…}`, `{"op":"config","max_fps":…,"max_width":…}`, `{"op":"pause"}`, `{"op":"resume"}`.
 
 ## 5. `cursor` 프레임
 
@@ -101,7 +101,7 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 
 ## 6. `input` 프레임
 
-데몬 → 에이전트: `u32 길이` + JSON 이벤트. 공통 필드 `seq`(증가), `gen`.
+데몬 → 에이전트: 종류 `0x41` 프레임 + JSON 이벤트. 공통 필드 `seq`(증가), `gen`.
 
 | `k` | 필드 |
 |---|---|
@@ -112,7 +112,7 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 | `text` | `text`(유니코드), `method`(`unicode`/`paste`) |
 | `release_all` | — |
 
-에이전트 → 데몬: `u32 길이` + JSON `{"seq":n,"ok":true,"done_mono_us":…}` 또는 `{"seq":n,"ok":false,"code":"CONTROL_PREEMPTED"|"ELEVATION_REQUIRED"|"SESSION_LOCKED"|"DISPLAY_UNAVAILABLE","error":"…"}`. 입력 스트림이 닫히면 에이전트는 눌린 키·버튼을 모두 해제한다.
+에이전트 → 데몬: 종류 `0x42` 프레임 + JSON `{"seq":n,"ok":true,"done_mono_us":…}` 또는 `{"seq":n,"ok":false,"code":"CONTROL_PREEMPTED"|"ELEVATION_REQUIRED"|"SESSION_LOCKED"|"DISPLAY_UNAVAILABLE","error":"…"}`. 입력 스트림이 닫히면 에이전트는 눌린 키·버튼을 모두 해제한다.
 
 ## 7. `pty` 프레임
 
