@@ -51,6 +51,16 @@ func (s *session) onPaused(t *targetState, raw json.RawMessage) {
 		return
 	}
 	s.mu.Lock()
+	// A pause that a resume cancelled still arrives once V8 runs code; drop
+	// it and resume without surfacing it.
+	if t.cancelPause && p.Reason != "exception" && p.Reason != "promiseRejection" && len(p.HitBreakpoints) == 0 && t.expect != pauseReasonStep {
+		t.cancelPause = false
+		tconn, sid := t.conn, t.sessionID
+		s.mu.Unlock()
+		_, _ = tconn.Call(context.Background(), sid, "Debugger.resume", nil)
+		return
+	}
+	t.cancelPause = false
 	t.info.Gen++
 	t.paused, t.pausePending = true, false
 	t.info.Paused, t.info.PausePending = true, false
@@ -186,7 +196,7 @@ func (s *session) onConsoleAPI(t *targetState, raw json.RawMessage) {
 	e := ConsoleEntry{Time: nowTime(), TargetID: t.info.ID, Source: exceptionSourceConsole, Level: consoleLevel(p.Type),
 		Text: consoleText(p.Args)}
 	s.applyFrames(&e, p.StackTrace)
-	s.appendConsole(e)
+	s.enqueueConsole(e)
 }
 
 type exceptionThrown struct {
@@ -202,7 +212,7 @@ func (s *session) onExceptionThrown(t *targetState, raw json.RawMessage) {
 	info := p.ExceptionDetails.info()
 	e := ConsoleEntry{Time: nowTime(), TargetID: t.info.ID, Source: exceptionSourceException, Level: "error", Text: info.Text,
 		ScriptID: info.ScriptID, URL: info.URL, Line: info.Line, Column: info.Column, Stack: info.Stack}
-	s.appendConsole(e)
+	s.enqueueConsole(e)
 }
 
 type logEntryAdded struct {
@@ -229,7 +239,7 @@ func (s *session) onLogEntry(t *targetState, raw json.RawMessage) {
 		e.Line = &line
 	}
 	e.Stack = p.Entry.StackTrace.stack()
-	s.appendConsole(e)
+	s.enqueueConsole(e)
 }
 
 // applyFrames sets the call site and stack of a console entry from a stack.
@@ -243,12 +253,33 @@ func (s *session) applyFrames(e *ConsoleEntry, st *stackTrace) {
 	}
 }
 
-// appendConsole numbers an entry, keeps it and publishes debug.console.
-func (s *session) appendConsole(e ConsoleEntry) {
-	s.mu.Lock()
-	stored := s.console.add(e)
-	s.mu.Unlock()
-	s.publish(evConsole, map[string]any{"debug_id": s.debugID, "entry": stored})
+// enqueueConsole hands an entry to the console pump without blocking the
+// CDP dispatch goroutine; a full channel drops the entry and counts it so
+// pause and target events are never held up behind console I/O.
+func (s *session) enqueueConsole(e ConsoleEntry) {
+	select {
+	case s.consoleCh <- e:
+	default:
+		s.mu.Lock()
+		s.console.drop(1)
+		s.mu.Unlock()
+	}
+}
+
+// consolePump stores and publishes the queued console entries off the
+// dispatch goroutine; it ends with the manager.
+func (s *session) consolePump() {
+	for {
+		select {
+		case e := <-s.consoleCh:
+			s.mu.Lock()
+			stored := s.console.add(e)
+			s.mu.Unlock()
+			s.publish(evConsole, map[string]any{"debug_id": s.debugID, "entry": stored})
+		case <-s.m.base.Done():
+			return
+		}
+	}
 }
 
 func nowTime() string { return model.Time(time.Now()) }

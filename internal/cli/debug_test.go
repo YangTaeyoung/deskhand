@@ -36,6 +36,23 @@ func TestDebugLaunchSendsInspectorRequest(t *testing.T) {
 	}
 }
 
+func TestDebugLaunchBreakSpecParsesURLWithColonsFromTheRight(t *testing.T) {
+	session := map[string]any{"debug_id": "d-1", "host_id": "windows-dev", "name": "App", "state": "running", "targets": []any{}}
+	f := startFake(t, map[string]handler{
+		"debug.electron.launch": ok(debugEnvelope(map[string]any{"session": session})),
+	})
+	runCLI(t, false, "", "debug", "launch", "windows-dev", `C:\app\App.exe`, "--bp", "url:file:///C:/app/main.js:12:4")
+	p := f.called("debug.electron.launch")[0]
+	bps, _ := p["breakpoints"].([]any)
+	if len(bps) != 1 {
+		t.Fatalf("breakpoints = %v", p["breakpoints"])
+	}
+	bp, _ := bps[0].(map[string]any)
+	if bp["match"] != "url" || bp["pattern"] != "file:///C:/app/main.js" || bp["line"].(float64) != 12 || bp["column"].(float64) != 4 {
+		t.Fatalf("breakpoint spec = %v", bp)
+	}
+}
+
 func TestDebugStepPassesKind(t *testing.T) {
 	f := startFake(t, map[string]handler{
 		"debug.step": ok(debugEnvelope(map[string]any{"target": map[string]any{"id": "node-1", "paused": true}})),
@@ -50,16 +67,14 @@ func TestDebugStepPassesKind(t *testing.T) {
 	}
 }
 
-func TestDebugConsoleRefusesCursorAndBeforeTogether(t *testing.T) {
+func TestDebugConsoleForwardsCursorAndBefore(t *testing.T) {
 	f := startFake(t, map[string]handler{
 		"debug.console": ok(map[string]any{"entries": []any{}, "next_cursor": 0}),
 	})
-	r := runCLI(t, false, "", "debug", "console", "d-1", "--cursor", "5", "--before", "9", "--json")
-	// The daemon refuses this; our fake has no such rule, so just assert the
-	// CLI forwarded both and did not crash.
-	_ = r
-	if len(f.called("debug.console")) == 0 {
-		t.Fatal("debug.console was not called")
+	runCLI(t, false, "", "debug", "console", "d-1", "--cursor", "5", "--before", "9", "--json")
+	p := f.called("debug.console")[0]
+	if p["cursor"] != float64(5) || p["before"] != float64(9) {
+		t.Fatalf("console params = %v, want cursor 5 and before 9 forwarded", p)
 	}
 }
 

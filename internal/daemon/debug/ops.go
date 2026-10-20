@@ -61,14 +61,27 @@ func (m *Manager) Pause(ctx context.Context, debugID, targetID string, c model.C
 	}
 	t.expect = pauseReasonPauseRequest
 	t.expectActor = actorOf(c)
+	t.cancelPause = false
 	if !t.pausePending {
 		t.pausePending = true
 		t.info.PausePending = true
+		t.info.Gen++
 		s.emitTargetLocked(t, false)
 	}
 	tconn, sess := t.conn, t.sessionID
 	s.mu.Unlock()
-	_, _ = tconn.Call(ctx, sess, "Debugger.pause", nil)
+	if _, err := tconn.Call(ctx, sess, "Debugger.pause", nil); err != nil {
+		s.mu.Lock()
+		if t.pausePending && !t.paused {
+			t.pausePending = false
+			t.info.PausePending = false
+			t.info.Gen++
+			t.expect = ""
+			s.emitTargetLocked(t, false)
+		}
+		s.mu.Unlock()
+		return Target{}, failed(err)
+	}
 	m.record(s, c, "일시정지 요청", model.TimelineOK)
 	return s.readTarget(targetID), nil
 }
@@ -87,11 +100,18 @@ func (m *Manager) Resume(ctx context.Context, debugID, targetID string, c model.
 	t.resumeBy = actorOf(c)
 	t.expect = ""
 	if t.pausePending {
+		// The pause had not landed; cancel it and auto-resume the spurious
+		// pause V8 still delivers when the engine next runs code.
 		t.pausePending = false
 		t.info.PausePending = false
+		t.cancelPause = true
+		t.info.Gen++
+		s.emitTargetLocked(t, false)
 	}
 	tconn, sess := t.conn, t.sessionID
 	s.mu.Unlock()
+	// Resume on a target that is not paused (e.g. a cancelled pending
+	// pause) answers an error from V8; the contract keeps resume succeeded.
 	_, _ = tconn.Call(ctx, sess, "Debugger.resume", nil)
 	m.record(s, c, "재개", model.TimelineOK)
 	return s.readTarget(targetID), nil
@@ -121,7 +141,13 @@ func (m *Manager) Step(ctx context.Context, debugID, targetID, kind string, c mo
 	t.resumeBy = actorOf(c)
 	tconn, sess := t.conn, t.sessionID
 	s.mu.Unlock()
-	_, _ = tconn.Call(ctx, sess, method, nil)
+	if _, err := tconn.Call(ctx, sess, method, nil); err != nil {
+		s.mu.Lock()
+		t.expect = ""
+		t.resumeBy = Actor{}
+		s.mu.Unlock()
+		return Target{}, failed(err)
+	}
 	m.record(s, c, "한 단계 실행: "+kind, model.TimelineOK)
 	return s.readTarget(targetID), nil
 }

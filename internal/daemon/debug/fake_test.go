@@ -36,6 +36,14 @@ type cdpServer struct {
 
 	mu    sync.Mutex
 	conns map[*ServerConn]bool
+	cmds  map[string]int
+}
+
+// commandCount returns how many times method was received.
+func (s *cdpServer) commandCount(method string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cmds[method]
 }
 
 // page is a renderer the browser endpoint auto-attaches.
@@ -53,7 +61,7 @@ func newCDPServer(t *testing.T, browser string) *cdpServer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &cdpServer{t: t, ln: ln, browser: browser, wsPathS: "/ws", conns: map[*ServerConn]bool{}}
+	s := &cdpServer{t: t, ln: ln, browser: browser, wsPathS: "/ws", conns: map[*ServerConn]bool{}, cmds: map[string]int{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/json/version", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"Browser": s.browser, "Protocol-Version": "1.3",
@@ -143,6 +151,9 @@ func (s *cdpServer) read(c *ServerConn) {
 }
 
 func (s *cdpServer) handle(c *ServerConn, sessionID, method string, params json.RawMessage) (any, *CDPError) {
+	s.mu.Lock()
+	s.cmds[method]++
+	s.mu.Unlock()
 	if s.respond != nil {
 		if r, e := s.respond(sessionID, method, params); r != nil || e != nil {
 			return r, e

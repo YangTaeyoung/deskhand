@@ -343,3 +343,22 @@ func processCmdlines() []procCmd {
 	}
 	return out
 }
+
+// startedAt returns the creation time ps lists for pid.
+func startedAt(pid int) (time.Time, bool) { return processStarted(pid) }
+
+// inspectableProcess reports whether pid is a Node or Electron process, so
+// SIGUSR1 would open an inspector.
+func inspectableProcess(pid int) bool {
+	name := strings.ToLower(processName(pid))
+	return strings.Contains(name, "node") || strings.Contains(name, "electron")
+}
+
+// processName returns the executable name ps lists for pid.
+func processName(pid int) string {
+	out, err := psOutput("-o", "comm=", "-p", strconv.Itoa(pid))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}

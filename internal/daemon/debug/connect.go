@@ -107,43 +107,68 @@ func sleep(ctx context.Context, d time.Duration) error {
 // OpError when no port responds.
 func (s *session) connectLaunch(ctx context.Context, mainAddr, rendAddr string) *OpError {
 	start := s.pauseOnStart
-	if start {
-		v, ok, openedMain := s.awaitPort(ctx, mainAddr)
+	mc := make(chan bool, 1)
+	rc := make(chan bool, 1)
+	// pause_on_start waits for P1 and attaches main first; otherwise both
+	// ports are awaited together and each side attaches as soon as it
+	// answers, applying the breakpoints and exception mode immediately.
+	go func() {
+		v, ok, opened := s.awaitPort(ctx, mainAddr)
 		if ok {
-			s.attachMain(ctx, mainAddr, v, true)
+			s.attachMain(ctx, mainAddr, v, start)
 		} else {
-			s.setMainReason(openedMain)
+			s.setMainReason(opened)
 		}
-		v2, ok2, openedR := s.awaitPort(ctx, rendAddr)
-		if ok2 {
-			s.attachRenderer(ctx, rendAddr, v2)
+		mc <- ok
+	}()
+	attachR := func() {
+		v, ok, opened := s.awaitPort(ctx, rendAddr)
+		if ok {
+			s.attachRenderer(ctx, rendAddr, v)
 		} else {
-			s.setRendererReason(openedR)
+			s.setRendererReason(opened)
+			go s.retryRenderer(rendAddr)
 		}
-		return s.launchOutcome(ok, ok2)
+		rc <- ok
 	}
-	type res struct {
-		v      jsonVersion
-		ok     bool
-		opened bool
-	}
-	mc := make(chan res, 1)
-	rc := make(chan res, 1)
-	go func() { v, ok, o := s.awaitPort(ctx, mainAddr); mc <- res{v, ok, o} }()
-	go func() { v, ok, o := s.awaitPort(ctx, rendAddr); rc <- res{v, ok, o} }()
-	m := <-mc
-	r := <-rc
-	if m.ok {
-		s.attachMain(ctx, mainAddr, m.v, false)
+	if start {
+		<-mc
+		mc <- true
+		attachR()
 	} else {
-		s.setMainReason(m.opened)
+		go attachR()
 	}
-	if r.ok {
-		s.attachRenderer(ctx, rendAddr, r.v)
-	} else {
-		s.setRendererReason(r.opened)
+	mainOK := <-mc
+	rendOK := <-rc
+	return s.launchOutcome(mainOK, rendOK)
+}
+
+// retryRenderer keeps probing the renderer port while the session is open
+// and attaches it when it answers, clearing renderer_unavailable_reason.
+func (s *session) retryRenderer(rendAddr string) {
+	t := time.NewTicker(time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-s.m.base.Done():
+			return
+		case <-t.C:
+		}
+		s.mu.Lock()
+		done := s.state == StateClosed || s.closing || s.rendConn != nil
+		s.mu.Unlock()
+		if done {
+			return
+		}
+		ctx, cancel := context.WithTimeout(s.m.base, s.m.tmo.Probe)
+		var v jsonVersion
+		if getJSON(ctx, rendAddr, "/json/version", &v) == nil {
+			s.attachRenderer(ctx, rendAddr, v)
+			cancel()
+			return
+		}
+		cancel()
 	}
-	return s.launchOutcome(m.ok, r.ok)
 }
 
 // launchOutcome returns the failure when no port responded.

@@ -10,6 +10,12 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/proto"
 )
 
+// pendingKill is a launched tree to end once its host returns.
+type pendingKill struct {
+	pid     int
+	started string
+}
+
 // Close ends a session: it closes the CDP connections and the session's
 // tunnels, ends the launched process tree unless keepProcess is set, and
 // tries to close an inspector it turned on for a pid attach.
@@ -21,14 +27,19 @@ func (m *Manager) Close(ctx context.Context, debugID string, keepProcess bool, c
 	if s.snapshot().State == StateClosed {
 		return s.snapshot(), false, nil
 	}
+	s.mu.Lock()
+	s.closing = true
+	s.mu.Unlock()
 	leftOpen := s.closeInspectorIfOpened(ctx)
-	snap := s.finishClose(CloseRequested, !keepProcess)
+	snap := s.finishClose(CloseRequested, !keepProcess, c)
 	m.record(s, c, "디버그 세션 닫기", model.TimelineOK)
 	return snap, leftOpen, nil
 }
 
 // closeInspectorIfOpened closes the Node inspector the daemon turned on for
-// a pid attach, and reports whether it could not.
+// a pid attach, and reports whether it is still open afterward. Node closes
+// the inspector by ending the WebSocket without a reply, so the connection
+// closing is the success signal.
 func (s *session) closeInspectorIfOpened(ctx context.Context) bool {
 	s.mu.Lock()
 	open := s.kind == KindAttach && s.pid != nil
@@ -43,14 +54,35 @@ func (s *session) closeInspectorIfOpened(ctx context.Context) bool {
 	if !open || main == nil {
 		return false
 	}
-	_, err := main.conn.Call(ctx, main.sessionID, "Runtime.evaluate",
-		map[string]any{"expression": "require('node:inspector').close()", "includeCommandLineAPI": true})
-	return err != nil
+	go func() {
+		_, _ = main.conn.Call(ctx, main.sessionID, "Runtime.evaluate",
+			map[string]any{"expression": "require('node:inspector').close()", "includeCommandLineAPI": true})
+	}()
+	select {
+	case <-main.conn.Done():
+		return false
+	case <-time.After(2 * time.Second):
+		return true
+	case <-ctx.Done():
+		return !connClosed(main.conn)
+	}
+}
+
+// killRootParams builds the proc.kill of a launch's process tree, with the
+// root's start time so the agent refuses a reused pid.
+func killRootParams(pid int, started string) proto.Message {
+	p := proto.Message{"pid": pid, "tree": true}
+	if started != "" {
+		p["started"] = started
+	}
+	return p
 }
 
 // finishClose closes a session once: it ends the connections, the tunnels
-// and, for a launch, the process tree, then publishes debug.closed.
-func (s *session) finishClose(reason string, killTree bool) Session {
+// and, for a launch, the process tree, then publishes debug.closed. A
+// close the session caused on its own (process exit or a lost connection)
+// is recorded on the timeline as the system.
+func (s *session) finishClose(reason string, killTree bool, c model.Caller) Session {
 	s.mu.Lock()
 	if s.closedOnce {
 		snap := s.snapshotLocked()
@@ -64,6 +96,7 @@ func (s *session) finishClose(reason string, killTree bool) Session {
 	mainConn, rendConn := s.mainConn, s.rendConn
 	kind := s.kind
 	pid := s.pid
+	started := s.started
 	s.bumpRev()
 	snap := s.snapshotLocked()
 	rev := s.rev
@@ -81,7 +114,7 @@ func (s *session) finishClose(reason string, killTree bool) Session {
 	}
 	if kind == KindLaunch && killTree && pid != nil {
 		killCtx, cancel := context.WithTimeout(s.m.base, s.m.tmo.Call)
-		_, _ = s.agent.Call(killCtx, "proc.kill", proto.Message{"pid": *pid, "tree": true}, conn.CallOpts{})
+		_, _ = s.agent.Call(killCtx, "proc.kill", killRootParams(*pid, started), conn.CallOpts{})
 		cancel()
 	}
 	if s.m.d.Jobs != nil && s.jobID != "" {
@@ -101,6 +134,9 @@ func (s *session) finishClose(reason string, killTree bool) Session {
 	}
 	s.publish(evClosed, fields)
 	s.emitSession()
+	if reason != CloseRequested {
+		s.m.record(s, c, "디버그 세션 종료: "+reason, model.TimelineUnknown)
+	}
 	return snap
 }
 
@@ -128,39 +164,40 @@ func (s *session) connectionLost() {
 	}
 	launch := s.kind == KindLaunch
 	pid := s.pid
+	started := s.started
 	s.mu.Unlock()
 	if launch && pid != nil {
-		s.m.markPendingKill(s.hostID, *pid)
+		s.m.markPendingKill(s.hostID, pendingKill{pid: *pid, started: started})
 	}
-	s.finishClose(CloseConnectionLost, false)
+	s.finishClose(CloseConnectionLost, false, model.System)
 }
 
 // markPendingKill records a launched tree to end when the host returns.
-func (m *Manager) markPendingKill(hostID string, pid int) {
+func (m *Manager) markPendingKill(hostID string, k pendingKill) {
 	m.mu.Lock()
 	if m.pendingKills == nil {
-		m.pendingKills = map[string][]int{}
+		m.pendingKills = map[string][]pendingKill{}
 	}
-	m.pendingKills[hostID] = append(m.pendingKills[hostID], pid)
+	m.pendingKills[hostID] = append(m.pendingKills[hostID], k)
 	m.mu.Unlock()
 }
 
 // HostReady ends the launched trees of the sessions that the host dropped.
 func (m *Manager) HostReady(hostID string) {
 	m.mu.Lock()
-	pids := m.pendingKills[hostID]
+	kills := m.pendingKills[hostID]
 	delete(m.pendingKills, hostID)
 	m.mu.Unlock()
-	if len(pids) == 0 {
+	if len(kills) == 0 {
 		return
 	}
 	agent, _, err := m.d.Hosts.Conn(hostID)
 	if err != nil {
 		return
 	}
-	for _, pid := range pids {
+	for _, k := range kills {
 		ctx, cancel := context.WithTimeout(m.base, m.tmo.Call)
-		_, _ = agent.Call(ctx, "proc.kill", proto.Message{"pid": pid, "tree": true}, conn.CallOpts{})
+		_, _ = agent.Call(ctx, "proc.kill", killRootParams(k.pid, k.started), conn.CallOpts{})
 		cancel()
 	}
 }

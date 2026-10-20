@@ -70,19 +70,43 @@ func (r *run) debug(ctx context.Context, args []string) int {
 	return r.fail(usagef("알 수 없는 debug 명령 %q입니다. deskhand debug help로 확인하세요", args[0]))
 }
 
-// parseBPFlags reads repeated --bp M:P:L into breakpoint specs.
+// parseBreakSpecs reads repeated --bp match:pattern:line[:col] into
+// breakpoint specs, splitting from the right so a pattern with colons (a
+// file:/// URL, a Windows drive) stays whole.
 func parseBreakSpecs(vals []string) ([]map[string]any, error) {
 	var out []map[string]any
 	for _, v := range vals {
-		parts := strings.SplitN(v, ":", 3)
-		if len(parts) != 3 {
-			return nil, usagef("--bp는 match:pattern:line 형식이어야 합니다(예: file_name:main.js:10): %q", v)
+		i := strings.IndexByte(v, ':')
+		if i < 0 {
+			return nil, usagef("--bp는 match:pattern:line[:col] 형식이어야 합니다(예: file_name:main.js:10): %q", v)
 		}
-		line, err := strconv.Atoi(parts[2])
-		if err != nil || line < 1 {
-			return nil, usagef("--bp의 line은 1 이상의 숫자여야 합니다: %q", v)
+		match, rest := v[:i], v[i+1:]
+		tokens := strings.Split(rest, ":")
+		line, col, patternEnd := 0, 0, len(tokens)
+		// Peel one or two trailing numeric tokens as line and optional col.
+		if n := len(tokens); n >= 2 {
+			if a, ea := strconv.Atoi(tokens[n-2]); ea == nil && a >= 1 {
+				if b, eb := strconv.Atoi(tokens[n-1]); eb == nil && b >= 1 {
+					line, col, patternEnd = a, b, n-2
+				}
+			}
 		}
-		out = append(out, map[string]any{"match": parts[0], "pattern": parts[1], "line": line})
+		if line == 0 {
+			last, err := strconv.Atoi(tokens[len(tokens)-1])
+			if err != nil || last < 1 {
+				return nil, usagef("--bp의 line은 1 이상의 숫자여야 합니다: %q", v)
+			}
+			line, patternEnd = last, len(tokens)-1
+		}
+		pattern := strings.Join(tokens[:patternEnd], ":")
+		if match == "" || pattern == "" {
+			return nil, usagef("--bp는 match:pattern:line[:col] 형식이어야 합니다: %q", v)
+		}
+		spec := map[string]any{"match": match, "pattern": pattern, "line": line}
+		if col > 0 {
+			spec["column"] = col
+		}
+		out = append(out, spec)
 	}
 	return out, nil
 }

@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/YangTaeyoung/deskhand/internal/daemon/apierr"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/conn"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
 	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
@@ -38,6 +40,9 @@ func (s *session) attachMain(ctx context.Context, addr string, v jsonVersion, st
 	s.enableTargetLocked(ctx, t, start, start)
 	s.mainReason = ""
 	s.bumpRev()
+	s.mu.Unlock()
+	s.emitSession()
+	s.mu.Lock()
 	s.emitTargetLocked(t, false)
 	s.mu.Unlock()
 	go s.watchConn(cdp, true)
@@ -61,6 +66,7 @@ func (s *session) attachRenderer(ctx context.Context, addr string, v jsonVersion
 	s.rendReason = ""
 	s.bumpRev()
 	s.mu.Unlock()
+	s.emitSession()
 	if _, err := cdp.Call(ctx, "", "Target.setAutoAttach",
 		map[string]any{"autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true}); err != nil {
 		s.setRendererReason(true)
@@ -187,8 +193,15 @@ func (s *session) enableTargetLocked(ctx context.Context, t *targetState, run, s
 	if !s.bpActive {
 		_, _ = t.conn.Call(ctx, t.sessionID, "Debugger.setBreakpointsActive", map[string]any{"active": false})
 	}
-	for _, b := range s.breakpoints {
-		_ = s.applyBreakpointLocked(ctx, t, b)
+	for _, b := range append([]*Breakpoint{}, s.breakpoints...) {
+		if err := s.applyBreakpointLocked(ctx, t, b); err != nil && apierr.CodeOf(err) == wire.CodeInvalidArgument && !s.breakpointBoundLocked(b.BreakpointID) {
+			s.dropBreakpointLocked(b.BreakpointID)
+			b.Rev++
+			b.Enabled = false
+			bp := *b
+			s.publish(evBreakpointChanged, map[string]any{"debug_id": s.debugID, "breakpoint": bp, "removed": true,
+				"error": map[string]any{"code": wire.CodeInvalidArgument, "message": firstLine(err.Error())}})
+		}
 	}
 	if run {
 		if start {
@@ -198,7 +211,11 @@ func (s *session) enableTargetLocked(ctx context.Context, t *targetState, run, s
 	}
 }
 
-// watchConn ends the session when a connection closes unexpectedly.
+// watchConn closes the session when a connection ends while no other side
+// is up. The host connection decides between the two self-closes: when the
+// agent is not ready it is a lost connection (and connectionLost agrees
+// with HostDropped and marks the tree); only an agent that is still ready
+// is a process that exited. A close already under way owns the session.
 func (s *session) watchConn(cdp *cdpConn, main bool) {
 	select {
 	case <-cdp.Done():
@@ -206,7 +223,7 @@ func (s *session) watchConn(cdp *cdpConn, main bool) {
 		return
 	}
 	s.mu.Lock()
-	if s.state == StateClosed {
+	if s.state == StateClosed || s.closing {
 		s.mu.Unlock()
 		return
 	}
@@ -215,13 +232,11 @@ func (s *session) watchConn(cdp *cdpConn, main bool) {
 	if otherUp {
 		return
 	}
-	ctx, cancel := context.WithTimeout(s.m.base, s.m.tmo.Call)
-	defer cancel()
-	if s.kind == KindLaunch && s.launchTreeGone(ctx) {
-		s.finishClose(CloseProcessExited, false)
+	if st := s.agent.State(); st != conn.StateReady && st != conn.StateDegraded {
+		s.connectionLost()
 		return
 	}
-	s.finishClose(CloseProcessExited, false)
+	s.finishClose(CloseProcessExited, false, model.System)
 }
 
 func connClosed(c *cdpConn) bool {
@@ -256,7 +271,7 @@ func browserName(b string) string {
 
 // TargetAttach attaches a target the session listed but did not attach on
 // its own.
-func (m *Manager) TargetAttach(ctx context.Context, debugID, targetID string) (Target, error) {
+func (m *Manager) TargetAttach(ctx context.Context, debugID, targetID string, c model.Caller) (Target, error) {
 	s, err := m.live(debugID)
 	if err != nil {
 		return Target{}, err
@@ -283,5 +298,6 @@ func (m *Manager) TargetAttach(ctx context.Context, debugID, targetID string) (T
 	s.emitTargetLocked(t, false)
 	s.mu.Unlock()
 	s.emitSession()
+	m.record(s, c, "대상 부착: "+targetID, model.TimelineOK)
 	return info, nil
 }

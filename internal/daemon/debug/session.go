@@ -35,6 +35,9 @@ type targetState struct {
 	expectActor Actor
 	// resumeBy is the actor of a resume or step, carried to debug.resumed.
 	resumeBy Actor
+	// cancelPause is set when a resume cancelled a still-pending pause; the
+	// spurious pause that then arrives is resumed without being surfaced.
+	cancelPause bool
 
 	scripts  []Script
 	scriptID map[string]bool
@@ -67,20 +70,23 @@ type session struct {
 	cwd          string
 	pauseOnStart bool
 	pid          *int
-	ports        Ports
-	state        string
-	mainReason   string
-	rendReason   string
-	breakpoints  []*Breakpoint
-	bpActive     bool
-	exceptions   string
-	createdBy    Actor
-	createdAt    time.Time
-	closedAt     time.Time
-	closeReason  string
-	exitCode     *int
-	rev          int64
-	bpSeq        int
+	// started is the root process start time (RFC 3339) a launch reported,
+	// passed to proc.kill so the agent refuses a reused pid.
+	started     string
+	ports       Ports
+	state       string
+	mainReason  string
+	rendReason  string
+	breakpoints []*Breakpoint
+	bpActive    bool
+	exceptions  string
+	createdBy   Actor
+	createdAt   time.Time
+	closedAt    time.Time
+	closeReason string
+	exitCode    *int
+	rev         int64
+	bpSeq       int
 
 	targets map[string]*targetState
 	order   []string
@@ -91,15 +97,24 @@ type session struct {
 	console consoleBuffer
 
 	tunnels []string
-	// closedOnce guards the one-time close work.
+	// closedOnce guards the one-time close work; closing marks a close in
+	// progress so watchConn does not race it to process_exited.
 	closedOnce bool
+	closing    bool
+
+	// consoleCh carries console entries off the CDP dispatch goroutine to
+	// the console pump; a full channel drops the entry.
+	consoleCh chan ConsoleEntry
 }
 
 // newSessionShell returns an empty session.
 func newSessionShell(m *Manager, id, kind string, host HostInfo, agent Agent, c model.Caller) *session {
-	return &session{m: m, debugID: id, hostID: host.HostID, host: host, agent: agent, kind: kind, name: "",
+	s := &session{m: m, debugID: id, hostID: host.HostID, host: host, agent: agent, kind: kind, name: "",
 		state: StateRunning, bpActive: true, exceptions: exceptionsDefault, createdBy: actorOf(c), createdAt: time.Now(),
-		rev: 1, args: []string{}, breakpoints: []*Breakpoint{}, targets: map[string]*targetState{}}
+		rev: 1, args: []string{}, breakpoints: []*Breakpoint{}, targets: map[string]*targetState{},
+		consoleCh: make(chan ConsoleEntry, consoleQueue)}
+	go s.consolePump()
+	return s
 }
 
 func (s *session) closedTime() time.Time {

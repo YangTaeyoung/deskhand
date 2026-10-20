@@ -8,11 +8,11 @@ import (
 )
 
 type breakpointSpecInput struct {
-	Match     string `json:"match" jsonschema:"How pattern names scripts: file_name (URL path ends with pattern), url (exact URL) or url_regex (JavaScript regex over URLs)."`
+	Match     string `json:"match" jsonschema:"How pattern names scripts: file_name (URL path ends with pattern), url (exact URL) or url_regex (JavaScript regex over URLs, validated by the target's engine)."`
 	Pattern   string `json:"pattern" jsonschema:"The script path, URL or regex to break in."`
 	Line      int    `json:"line" jsonschema:"1-based line."`
 	Column    int    `json:"column,omitempty" jsonschema:"1-based column; omit for the first executable position on the line."`
-	Condition string `json:"condition,omitempty" jsonschema:"Optional JavaScript condition; the breakpoint only stops when it is truthy."`
+	Condition string `json:"condition,omitempty" jsonschema:"Optional JavaScript condition that runs in the paused app on each hit with the PC user's rights (in the Electron main process this is Node, with fs and child_process); the breakpoint stops only when it is truthy."`
 }
 
 type debugLaunchInput struct {
@@ -96,8 +96,8 @@ type debugSourceInput struct {
 
 type debugConsoleInput struct {
 	DebugID string `json:"debug_id"`
-	Cursor  int    `json:"cursor,omitempty" jsonschema:"Return entries after this seq (next_cursor of the previous page)."`
-	Before  int    `json:"before,omitempty" jsonschema:"Return entries before this seq. Only one of cursor or before."`
+	Cursor  *int   `json:"cursor,omitempty" jsonschema:"Return entries after this seq (next_cursor of the previous page); 0 is a valid cursor."`
+	Before  *int   `json:"before,omitempty" jsonschema:"Return entries before this seq. Only one of cursor or before."`
 	Limit   int    `json:"limit,omitempty" jsonschema:"1 to 1000; default 200."`
 }
 
@@ -147,7 +147,7 @@ func (s *Server) registerDebug(srv *mcp.Server) {
 		"Read the properties of a scope or value object: name, value_preview, type and, for objects, an object_id to expand further. Accessors show (...), internal properties come last. Page with offset and limit. An object id from a finished pause is refused with STALE_TARGET. Read-only.",
 		spec{Method: "debug.variables"}, nil)
 	add[debugEvaluateInput](s, srv, "debug_evaluate",
-		"Evaluate a JavaScript expression, in a paused call frame when frame_id is given (else in the target's global scope). The result's value survives resume and stepping. When the expression throws, the envelope still succeeds and the thrown value is in exception. A frame_id on a running target is STALE_TARGET; over 30 seconds is TIMEOUT.",
+		"Run a JavaScript expression inside the remote app with the PC user's rights (in the Electron main process this is Node, with fs, child_process and the full filesystem) — treat it like running code on that PC. Evaluated in a paused call frame when frame_id is given, else in the target's global scope. The result's value survives resume and stepping. When the expression throws, the envelope still succeeds and the thrown value is in exception. A frame_id on a running target is STALE_TARGET; over 30 seconds is TIMEOUT.",
 		spec{Method: "debug.evaluate", Mutating: true, Timeout: func(map[string]any) time.Duration { return 40 * time.Second }}, nil)
 	add[debugScriptsInput](s, srv, "debug_scripts",
 		"List the loaded scripts that have a URL, in load order: script_id, target_id and url. Read-only.",

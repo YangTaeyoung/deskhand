@@ -44,6 +44,7 @@ func (m *Manager) Launch(ctx context.Context, p LaunchParams, c model.Caller) (S
 	s.setSpecsLocked(p.Breakpoints)
 	s.mu.Unlock()
 	m.startJob(s, "디버그 실행: "+s.name)
+	s.emitSession()
 
 	callCtx, cancel := context.WithTimeout(ctx, m.tmo.Call)
 	params := proto.Message{"path": p.Path, "pause_on_start": p.PauseOnStart}
@@ -62,6 +63,7 @@ func (m *Manager) Launch(ctx context.Context, p LaunchParams, c model.Caller) (S
 	pid := res.Int("pid")
 	s.mu.Lock()
 	s.pid = &pid
+	s.started = res.String("started")
 	ports, _ := res["ports"].(map[string]any)
 	s.ports = Ports{Inspect: intField(ports, "inspect"), RemoteDebugging: intField(ports, "remote_debugging")}
 	p1, p2 := s.ports.Inspect, s.ports.RemoteDebugging
@@ -231,32 +233,46 @@ func (m *Manager) startJob(s *session, summary string) {
 }
 
 // launchFailed cleans up a failed launch or attach: it ends the launched
-// process tree, closes the session's tunnels and finishes its job.
+// process tree, closes the session's tunnels, finishes its job and
+// publishes debug.closed with the real reason.
 func (m *Manager) launchFailed(s *session, c model.Caller, oe *OpError) (Session, error) {
 	s.mu.Lock()
+	reason := CloseRequested
+	if s.exitCode != nil {
+		reason = CloseProcessExited
+	}
 	s.state = StateClosed
-	s.closeReason = CloseRequested
+	s.closedOnce = true
+	s.closeReason = reason
 	s.closedAt = time.Now()
 	pid := s.pid
+	started := s.started
 	kind := s.kind
 	s.bumpRev()
 	snap := s.snapshotLocked()
+	rev := s.rev
+	exitCode := s.exitCode
 	s.mu.Unlock()
 	if m.d.Tunnels != nil {
 		m.d.Tunnels.CloseOwner(tunnel.OwnerDebugPrefix + s.debugID)
 	}
 	if kind == KindLaunch && pid != nil {
 		killCtx, cancel := context.WithTimeout(m.base, m.tmo.Call)
-		_, _ = s.agent.Call(killCtx, "proc.kill", proto.Message{"pid": *pid, "tree": true}, conn.CallOpts{})
+		_, _ = s.agent.Call(killCtx, "proc.kill", killRootParams(*pid, started), conn.CallOpts{})
 		cancel()
 	}
 	if m.d.Jobs != nil && s.jobID != "" {
 		result := map[string]any{"error": oe.Err}
-		if snap.ExitCode != nil {
-			result["exit_code"] = *snap.ExitCode
+		if exitCode != nil {
+			result["exit_code"] = *exitCode
 		}
 		_, _ = m.d.Jobs.Finish(s.jobID, model.StatusFailed, result)
 	}
+	fields := map[string]any{"debug_id": s.debugID, "reason": reason, "rev": rev}
+	if exitCode != nil {
+		fields["exit_code"] = *exitCode
+	}
+	s.publish(evClosed, fields)
 	m.record(s, c, "디버그 실행 실패: "+firstLine(oe.Err.Message), model.TimelineFailed)
 	return snap, oe
 }

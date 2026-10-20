@@ -12,6 +12,8 @@ const (
 	// consoleDefault and consoleMax are the page sizes of debug.console.
 	consoleDefault = 200
 	consoleMax     = 1000
+	// consoleQueue bounds the console entries waiting for the pump.
+	consoleQueue = 4096
 )
 
 // ConsoleEntry is a console message, an uncaught exception or a browser
@@ -58,7 +60,8 @@ type consoleBuffer struct {
 	dropped int64
 }
 
-// add numbers e, keeps it and returns it.
+// add numbers e, keeps it and returns it. It trims only when the buffer
+// reaches twice keep, so steady-state appends do not re-copy every entry.
 func (b *consoleBuffer) add(e ConsoleEntry) ConsoleEntry {
 	b.last++
 	e.Seq = b.last
@@ -67,12 +70,16 @@ func (b *consoleBuffer) add(e ConsoleEntry) ConsoleEntry {
 	if keep <= 0 {
 		keep = consoleKeep
 	}
-	if over := len(b.entries) - keep; over > 0 {
-		b.entries = append([]ConsoleEntry(nil), b.entries[over:]...)
+	if len(b.entries) > 2*keep {
+		over := len(b.entries) - keep
+		b.entries = append(b.entries[:0:0], b.entries[over:]...)
 		b.dropped += int64(over)
 	}
 	return e
 }
+
+// drop records entries dropped before the buffer, so paging reports them.
+func (b *consoleBuffer) drop(n int64) { b.dropped += n }
 
 // clear removes every entry and returns the seq of the last one.
 func (b *consoleBuffer) clear() int64 {

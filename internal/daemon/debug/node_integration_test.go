@@ -8,8 +8,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/YangTaeyoung/deskhand/internal/daemon/apierr"
+	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
 const fixtureJS = `function calcTotal(items) {
@@ -127,6 +132,83 @@ func TestRealNodeInspectorBreakpointAndScopes(t *testing.T) {
 		t.Fatalf("items.length = %q", evalRes.Result.value().ValuePreview)
 	}
 	call("Debugger.resume", nil)
+}
+
+const tickJS = "function work(){ const a = 1, b = 2; globalThis.sum = (globalThis.sum||0) + a + b; }\n" +
+	"setInterval(work, 50);\n"
+
+// TestRealNodeAttachThroughManager attaches to a running Node inspector
+// through Manager.Attach{Port} over the fake agent tunnel and exercises the
+// pause → state → evaluate → resume → STALE_TARGET path against real V8.
+func TestRealNodeAttachThroughManager(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is not installed")
+	}
+	dir := t.TempDir()
+	file := filepath.Join(dir, "tick.js")
+	if err := os.WriteFile(file, []byte(tickJS), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, node, "--inspect=127.0.0.1:0", file)
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+	var port int
+	sc := bufio.NewScanner(stderr)
+	for sc.Scan() {
+		if m := wsLine.FindStringSubmatch(sc.Text()); m != nil {
+			if h := m[1]; strings.LastIndex(h, ":") >= 0 {
+				port, _ = strconv.Atoi(h[strings.LastIndex(h, ":")+1:])
+			}
+			break
+		}
+	}
+	if port == 0 {
+		t.Fatal("node did not print its inspector port")
+	}
+	e := newDebugEnv(t, port, 0)
+	s, err := e.m.Attach(bctx(t), AttachParams{HostRef: "h", Port: port, Role: RoleMain}, testCaller)
+	if err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	main := mainTarget(t, s)
+
+	if _, oe := e.m.Pause(bctx(t), s.DebugID, main, testCaller); oe != nil {
+		t.Fatalf("pause: %v", oe.Err)
+	}
+	ev := e.waitEvent(t, evPaused)
+	var ps PauseState
+	b, _ := json.Marshal(ev.Fields["state"])
+	_ = json.Unmarshal(b, &ps)
+	st, err := e.m.State(s.DebugID, main)
+	if err != nil || !st.Paused || len(st.CallFrames) == 0 {
+		t.Fatalf("state after pause: %v %+v", err, st)
+	}
+	frame := st.CallFrames[0].FrameID
+	val, oe := e.m.Evaluate(bctx(t), s.DebugID, main, "1 + 2", frame, testCaller)
+	if oe != nil || val.ValuePreview != "3" {
+		t.Fatalf("evaluate = %+v err %v", val, oe)
+	}
+	// url_regex validity is decided by the target's own V8 engine.
+	if _, err := e.m.BreakpointSet(bctx(t), s.DebugID, BreakpointSpec{Match: matchURLRegex, Pattern: "(", Line: 1}, testCaller); apierr.CodeOf(err) != wire.CodeInvalidArgument {
+		t.Fatalf("invalid url_regex was not rejected by the engine: %v", err)
+	}
+	if _, oe := e.m.Resume(bctx(t), s.DebugID, main, testCaller); oe != nil {
+		t.Fatalf("resume: %v", oe.Err)
+	}
+	e.waitEvent(t, evResumed)
+	// A frame evaluate on the now-running target is STALE_TARGET.
+	if _, oe := e.m.Evaluate(bctx(t), s.DebugID, main, "1", "bogus-frame", testCaller); oe == nil || oe.Err.Code != wire.CodeStaleTarget {
+		t.Fatalf("frame evaluate on a running target was not STALE_TARGET: %v", oe)
+	}
 }
 
 func waitPause(t *testing.T, ch <-chan pausedEvent) pausedEvent {

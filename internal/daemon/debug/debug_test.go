@@ -67,9 +67,6 @@ func TestBreakpointPauseStackVariablesResume(t *testing.T) {
 	e, s := launchBoth(t, node, browser, false)
 	main := mainTarget(t, s)
 
-	node.emitAll("", "Debugger.scriptParsed", map[string]any{"scriptId": "s1", "url": "file:///app/main.js"})
-	time.Sleep(50 * time.Millisecond)
-
 	bp, err := e.m.BreakpointSet(bctx(t), s.DebugID, BreakpointSpec{Match: matchURL, Pattern: "file:///app/main.js", Line: 10}, testCaller)
 	if err != nil {
 		t.Fatalf("breakpoint.set: %v", err)
@@ -211,7 +208,8 @@ func TestConsoleAndExceptionsRecorded(t *testing.T) {
 	node.emitAll("", "Runtime.exceptionThrown", map[string]any{"exceptionDetails": map[string]any{
 		"text": "Uncaught", "lineNumber": 4, "columnNumber": 2, "url": "file:///app/main.js",
 		"exception": map[string]any{"type": "object", "subtype": "error", "description": "Error: 의도된 예외"}}})
-	time.Sleep(80 * time.Millisecond)
+	e.waitEvent(t, evConsole)
+	e.waitEvent(t, evConsole)
 
 	page, err := e.m.Console(s.DebugID, ConsoleQuery{})
 	if err != nil {
@@ -361,6 +359,43 @@ func TestPauseGenAdvancesPerTarget(t *testing.T) {
 			t.Fatalf("resume gen did not advance: %d <= %d", gen, last)
 		}
 		last = gen
+	}
+}
+
+func TestPausePendingResumeCancelsTheSpuriousPause(t *testing.T) {
+	node := nodeServer(t) // default Debugger.pause emits no paused: it stays pending
+	browser := newCDPServer(t, "Chrome/120")
+	e, s := launchBoth(t, node, browser, false)
+	main := mainTarget(t, s)
+
+	before, _ := e.m.State(s.DebugID, main)
+	tg, oe := e.m.Pause(bctx(t), s.DebugID, main, testCaller)
+	if oe != nil {
+		t.Fatalf("pause: %v", oe.Err)
+	}
+	if !tg.PausePending || tg.Gen <= before.Gen {
+		t.Fatalf("pause did not report pending with a new gen: %+v", tg)
+	}
+	tg2, oe := e.m.Resume(bctx(t), s.DebugID, main, testCaller)
+	if oe != nil {
+		t.Fatalf("resume: %v", oe.Err)
+	}
+	if tg2.PausePending || tg2.Gen <= tg.Gen {
+		t.Fatalf("resume did not clear pending with a new gen: %+v", tg2)
+	}
+	// The pause V8 still delivers is auto-resumed, never surfaced.
+	resumes := node.commandCount("Debugger.resume")
+	node.pauseMain(pauseReasonOther, nil)
+	deadline := time.Now().Add(2 * time.Second)
+	for node.commandCount("Debugger.resume") <= resumes {
+		if time.Now().After(deadline) {
+			t.Fatal("the cancelled pause was not auto-resumed")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	st, _ := e.m.State(s.DebugID, main)
+	if st.Paused {
+		t.Fatalf("the cancelled pause surfaced: %+v", st)
 	}
 }
 

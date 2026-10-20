@@ -101,7 +101,7 @@ type Manager struct {
 
 	mu           sync.Mutex
 	sessions     map[string]*session
-	pendingKills map[string][]int
+	pendingKills map[string][]pendingKill
 	closed       bool
 	wg           sync.WaitGroup
 }

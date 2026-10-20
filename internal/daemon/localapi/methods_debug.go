@@ -174,7 +174,7 @@ func (s *Server) debugSessionResult(out debug.Session, err error) (any, error) {
 	return s.envelope(out.HostID, out.JobID, conn.CallInfo{}, o, nil).Map(map[string]any{"session": out}), nil
 }
 
-func (s *Server) debugTargetAttach(ctx context.Context, _ *session, raw json.RawMessage) (any, error) {
+func (s *Server) debugTargetAttach(ctx context.Context, sess *session, raw json.RawMessage) (any, error) {
 	var p debugParams
 	if err := decode(raw, &p); err != nil {
 		return nil, err
@@ -184,7 +184,7 @@ func (s *Server) debugTargetAttach(ctx context.Context, _ *session, raw json.Raw
 	}
 	cctx, cancel := s.detached(remoteTimeout)
 	defer cancel()
-	t, err := s.d.Debug.TargetAttach(cctx, p.DebugID, p.TargetID)
+	t, err := s.d.Debug.TargetAttach(cctx, p.DebugID, p.TargetID, sess.Caller())
 	if err != nil {
 		if oe, ok := debug.AsOpError(err); ok {
 			return s.debugOpResult(p.DebugID, map[string]any{"target": nil}, oe)

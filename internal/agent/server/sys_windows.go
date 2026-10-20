@@ -284,3 +284,10 @@ func listeningPorts(int) map[int]bool { return map[int]bool{} }
 
 // processCmdlines is unused on Windows, where pid attach is unsupported.
 func processCmdlines() []procCmd { return nil }
+
+// startedAt returns the creation time of pid.
+func startedAt(pid int) (time.Time, bool) { return pidCreation(pid) }
+
+// inspectableProcess lets pid attach reach signalInspector, which refuses
+// on Windows with a clear reason.
+func inspectableProcess(int) bool { return true }

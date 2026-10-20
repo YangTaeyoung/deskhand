@@ -1,5 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron')
-const path = require('node:path')
+const { app, BrowserWindow } = require('electron')
 
 // calcTotal sums the prices of the items; it holds a few locals for the
 // debugger to read at a breakpoint.
@@ -19,12 +18,6 @@ function createWindow() {
     width: 720,
     height: 520,
     title: 'Deskhand 디버그 픽스처',
-    webPreferences: {
-      preload: path.join(__dirname, 'renderer.js'),
-      contextIsolation: false,
-      nodeIntegration: true,
-      sandbox: false,
-    },
   })
   win.loadFile('index.html')
 }
@@ -34,12 +27,6 @@ app.whenReady().then(() => {
   const order = { items: [{ price: 10 }, { price: 20 }, { price: 30 }], city: '서울' }
   const result = calcTotal(order.items)
   console.log('main 합계', result.total, result.label, order.city)
-
-  ipcMain.on('compute', (event, items) => {
-    const r = calcTotal(items)
-    console.log('compute 요청 처리', r.total)
-    event.returnValue = r.total
-  })
 
   createWindow()
   app.on('activate', () => {

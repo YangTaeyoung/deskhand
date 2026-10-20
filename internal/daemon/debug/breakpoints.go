@@ -42,11 +42,17 @@ func fileNameRegex(pattern string) string {
 }
 
 // applyBreakpointLocked sets b on the attached target t through CDP and
-// records its CDP id and resolved locations; the caller holds the lock. A
-// rejected urlRegex is returned so the first target's refusal can surface.
+// records its CDP id and resolved locations; the caller holds the lock. An
+// invalid url_regex (checked in the target's own engine) is returned as
+// INVALID_ARGUMENT so the first target's refusal can surface.
 func (s *session) applyBreakpointLocked(ctx context.Context, t *targetState, b *Breakpoint) error {
 	if !t.info.Attached || !b.Enabled {
 		return nil
+	}
+	if b.Match == matchURLRegex {
+		if err := s.validateRegexLocked(ctx, t, b.Pattern); err != nil {
+			return err
+		}
 	}
 	raw, err := t.conn.Call(ctx, t.sessionID, "Debugger.setBreakpointByUrl", bpParams(b))
 	if err != nil {
@@ -63,6 +69,25 @@ func (s *session) applyBreakpointLocked(ctx context.Context, t *targetState, b *
 			Line: loc.LineNumber + 1, Column: loc.ColumnNumber + 1})
 	}
 	return nil
+}
+
+// validateRegexLocked checks that pattern compiles in the target's own
+// JavaScript engine (Debugger.setBreakpointByUrl accepts an invalid
+// urlRegex silently). An engine error is INVALID_ARGUMENT with its
+// message; a transport error is not treated as invalid.
+func (s *session) validateRegexLocked(ctx context.Context, t *targetState, pattern string) error {
+	raw, err := t.conn.Call(ctx, t.sessionID, "Runtime.evaluate",
+		map[string]any{"expression": "new RegExp(" + quote(pattern) + ")", "throwOnSideEffect": true})
+	if err != nil {
+		return nil
+	}
+	var res struct {
+		ExceptionDetails *exceptionDetails `json:"exceptionDetails"`
+	}
+	if json.Unmarshal(raw, &res) != nil || res.ExceptionDetails == nil {
+		return nil
+	}
+	return apierr.Invalid("url_regex가 올바르지 않습니다: " + firstLine(res.ExceptionDetails.headline()))
 }
 
 // removeBreakpointLocked removes b's CDP breakpoint from t.
@@ -274,6 +299,17 @@ func (s *session) dropBreakpointLocked(bpID string) {
 		}
 	}
 	s.breakpoints = kept
+}
+
+// breakpointBoundLocked reports whether the breakpoint has a CDP id on any
+// attached target.
+func (s *session) breakpointBoundLocked(bpID string) bool {
+	for _, t := range s.targets {
+		if t.cdpBreakpoints[bpID] != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // attachedTargetsLocked returns the attached targets in creation order.

@@ -105,7 +105,11 @@ func (s *Server) debugElectronLaunch(_ context.Context, req proto.Message) (prot
 		return nil, fmt.Errorf("cannot start '%s': %v; check the path with fs.stat", path, err)
 	}
 	s.debug.track(pid)
-	return proto.Message{"pid": pid, "ports": proto.Message{"inspect": p1, "remote_debugging": p2}}, nil
+	out := proto.Message{"pid": pid, "ports": proto.Message{"inspect": p1, "remote_debugging": p2}}
+	if at, ok := startedAt(pid); ok {
+		out["started"] = wire.FormatDiagTime(at)
+	}
+	return out, nil
 }
 
 // debugTree reports whether the process pid or any of its descendants is
@@ -151,6 +155,10 @@ func (s *Server) debugAttachPID(ctx context.Context, req proto.Message) (proto.M
 	pid := req.Int("pid")
 	if pid <= 0 {
 		return nil, errors.New("pass the pid of the process to attach to")
+	}
+	if !inspectableProcess(pid) {
+		return nil, coded(wire.CodeCapabilityUnsupported,
+			fmt.Sprintf("pid %d is not a Node or Electron process; attach by port after starting it with --inspect", pid), false)
 	}
 	before := listeningPorts(pid)
 	opened, err := signalInspector(pid)
