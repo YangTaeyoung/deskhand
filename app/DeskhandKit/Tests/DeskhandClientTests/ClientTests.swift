@@ -40,7 +40,7 @@ final class ClientTests: XCTestCase {
     func testHelloAndCall() async throws {
         let server = try makeServer()
         server.setHandler { req in
-            req.method == "host.list" ? .result(#"{"hosts":[{"host_id":"win-1","name":"Win","state":"connected"}]}"#) : nil
+            req.method == "host.list" ? .result(#"{"hosts":[{"host_id":"win-1","name":"Win","os":"windows","arch":"amd64","address":"a","port":1,"ssh_alias":"","state":"connected","caps":{},"displays":[],"owner":"none","connection_generation":1}]}"#) : nil
         }
         let client = makeClient(server)
         try await client.connect(kind: "app", name: "Deskhand", version: "1.2.3")
@@ -110,9 +110,9 @@ final class ClientTests: XCTestCase {
         XCTAssertEqual(sub.params["kinds"] as? [String], ["control.changed"])
         XCTAssertEqual(sub.params["host_id"] as? String, "win-1")
 
-        server.emit(#"{"seq":1,"ts":"2026-10-20T10:00:00Z","host_id":"other","kind":"control.changed"}"#)
-        server.emit(#"{"seq":2,"ts":"2026-10-20T10:00:01Z","host_id":"win-1","kind":"jobs.changed"}"#)
-        server.emit(#"{"seq":3,"ts":"2026-10-20T10:00:02Z","host_id":"win-1","kind":"control.changed","owner":"human"}"#)
+        server.emit(#"{"seq":1,"ts":"2026-10-20T10:00:00.000Z","host_id":"other","kind":"control.changed"}"#)
+        server.emit(#"{"seq":2,"ts":"2026-10-20T10:00:01.000Z","host_id":"win-1","kind":"jobs.changed"}"#)
+        server.emit(#"{"seq":3,"ts":"2026-10-20T10:00:02.000Z","host_id":"win-1","kind":"control.changed","owner":"human"}"#)
         let ev = try await next(stream)
         XCTAssertEqual(ev.seq, 3)
         XCTAssertEqual(ev.hostID, "win-1")
@@ -264,22 +264,46 @@ final class ClientTests: XCTestCase {
     func testSnakeCaseModels() throws {
         let hostJSON = #"""
         {"hosts":[{"host_id":"windows-dev","name":"Windows Dev","os":"windows","arch":"amd64",
-         "address":"10.0.0.5","state":"connected",
-         "caps":{"screen":{"state":"ready"},"input":{"state":"needs_user","reason":"UAC"}},
-         "session":{"session_id":"s-1","user":"dev","connect_state":"active","protocol":"console",
+         "address":"10.0.0.5","port":47600,"ssh_alias":"win","state":"connected",
+         "caps":{"screen":{"state":"ready"},"input":{"state":"needs_user","reason":"UAC"},"future_cap":{"state":"ready"}},
+         "session":{"session_id":3,"user":"dev","connect_state":"active","protocol":"console",
                     "locked":false,"input_desktop":"Default","integrity":"medium"},
-         "owner":"human","last_seen":"2026-10-20T10:00:00Z"}]}
+         "displays":[{"index":0,"name":"D1","adapter":"GPU","x":0,"y":0,"width":1920,"height":1080,"dpi":144,"scale":1.5,"primary":true,"refresh_hz":60}],
+         "owner":"human","owner_client":"c-1","agent_version":"0.1.0","connection_generation":4,
+         "last_seen":"2026-10-20T10:00:00.123Z"}]}
         """#
         let hosts = try Wire.decode(HostListResult.self, from: Data(hostJSON.utf8))
         let h = try XCTUnwrap(hosts.hosts.first)
         XCTAssertEqual(h.hostID, "windows-dev")
-        XCTAssertEqual(h.caps?.screen?.state, "ready")
-        XCTAssertEqual(h.caps?.input?.reason, "UAC")
-        XCTAssertEqual(h.session?.sessionID, "s-1")
+        XCTAssertEqual(h.port, 47600)
+        XCTAssertEqual(h.sshAlias, "win")
+        XCTAssertEqual(h.caps.screen?.state, "ready")
+        XCTAssertEqual(h.caps.input?.reason, "UAC")
+        XCTAssertEqual(h.caps["future_cap"]?.state, "ready")
+        XCTAssertEqual(h.session?.sessionID, 3)
         XCTAssertEqual(h.session?.connectState, "active")
+        XCTAssertEqual(h.session?.protocolKind, "console")
         XCTAssertEqual(h.session?.inputDesktop, "Default")
+        XCTAssertEqual(h.displays.first?.refreshHz, 60)
+        XCTAssertEqual(h.displays.first?.scale, 1.5)
         XCTAssertEqual(h.owner, "human")
-        XCTAssertNotNil(h.lastSeen?.date)
+        XCTAssertEqual(h.ownerClient, "c-1")
+        XCTAssertEqual(h.agentVersion, "0.1.0")
+        XCTAssertEqual(h.connectionGeneration, 4)
+        XCTAssertEqual(h.lastSeen?.date.timeIntervalSince1970 ?? 0, 1_792_490_400.123, accuracy: 0.001)
+
+        XCTAssertThrowsError(try Wire.decode(Timestamp.self, from: Data(#""2026-10-20T10:00:00Z""#.utf8)))
+
+        let inspect = try Wire.decode(SessionInspect.self, from: Data(#"""
+        {"session_id":3,"user":"dev","connect_state":"active","protocol":"rdp","locked":true,"input_desktop":"Winlogon",
+         "displays":[],"caps":{"exec":{"state":"ready"}},"owner":"ai","owner_client":"c-2","gen":2,"ai_paused":false,
+         "connection_generation":7}
+        """#.utf8))
+        XCTAssertEqual(inspect.session.sessionID, 3)
+        XCTAssertEqual(inspect.session.locked, true)
+        XCTAssertEqual(inspect.caps.exec?.state, "ready")
+        XCTAssertEqual(inspect.control, ControlState(owner: "ai", ownerClient: "c-2", gen: 2, aiPaused: false))
+        XCTAssertEqual(inspect.connectionGeneration, 7)
 
         let control = try Wire.decode(ControlState.self, from: Data(#"{"owner":"ai","owner_client":"c-9","gen":4,"ai_paused":true}"#.utf8))
         XCTAssertEqual(control, ControlState(owner: "ai", ownerClient: "c-9", gen: 4, aiPaused: true))
@@ -288,36 +312,188 @@ final class ClientTests: XCTestCase {
         let env = try Wire.decode(Envelope<Payload>.self, from: Data(#"""
         {"schema_version":1,"request_id":"r-1","job_id":"j-1","host_id":"windows-dev","session_id":"s-1",
          "connection_generation":4,"status":"succeeded","action":{"executed":true,"outcome":"done"},
-         "error":null,"next_action":null,"artifacts":[{"path":"/tmp/a.png","kind":"image"}],
+         "error":null,"next_action":null,
+         "artifacts":[{"artifact_id":"a-1","job_id":"j-1","kind":"screenshot","name":"a.png","path":"/tmp/a.png","size":10,
+                       "mime":"image/png","sha256":"ab","created_at":"2026-10-20T10:00:00.000Z"}],
          "code":0,"stdout":"hi"}
         """#.utf8))
         XCTAssertEqual(env.schemaVersion, 1)
         XCTAssertEqual(env.requestID, "r-1")
         XCTAssertEqual(env.jobID, "j-1")
         XCTAssertEqual(env.hostID, "windows-dev")
-        XCTAssertEqual(env.sessionID, "s-1")
         XCTAssertEqual(env.connectionGeneration, 4)
         XCTAssertEqual(env.status, .succeeded)
-        XCTAssertEqual(env.action?.executed, true)
         XCTAssertEqual(env.action?.outcome, "done")
         XCTAssertNil(env.error)
-        XCTAssertEqual(env.artifacts.first?.path, "/tmp/a.png")
-        XCTAssertEqual(env.payload.code, 0)
+        XCTAssertEqual(env.artifacts.first?.artifactID, "a-1")
+        XCTAssertEqual(env.artifacts.first?.jobID, "j-1")
         XCTAssertEqual(env.payload.stdout, "hi")
 
-        let target = try Wire.decode(DebugLaunch.self, from: Data(#"""
-        {"debug_id":"d-1","pid":42,"targets":[{"id":"t1","role":"main","url":"file:///a","title":"A"}]}
+        let file = try Wire.decode(FileEntry.self, from: Data(#"""
+        {"name":"a","path":"C:\\a","dir":false,"size":5,"mtime":"2026-10-20T10:00:00.000Z","link":true,"hidden":true}
         """#.utf8))
-        XCTAssertEqual(target.debugID, "d-1")
-        XCTAssertEqual(target.targets.first?.role, "main")
+        XCTAssertEqual(file.link, true)
+        XCTAssertEqual(file.hidden, true)
+        XCTAssertNil(file.readonly)
+
+        let job = try Wire.decode(Job.self, from: Data(#"""
+        {"job_id":"j","host_id":"h","kind":"exec","status":"running","summary":"s","progress":0.5,
+         "created_at":"2026-10-20T10:00:00.000Z","updated_at":"2026-10-20T10:00:01.000Z","result":{"code":0}}
+        """#.utf8))
+        XCTAssertEqual(job.progress, 0.5)
+        XCTAssertEqual(job.result, .object(["code": .int(0)]))
+        XCTAssertNil(job.finishedAt)
+
+        let transfer = try Wire.decode(Transfer.self, from: Data(#"""
+        {"transfer_id":"t","host_id":"h","direction":"push","local":"/a","remote":"C:\\a","on_conflict":"rename","state":"running",
+         "bytes_done":1,"bytes_total":2,"files_done":0,"files_total":1,"rate_bps":100,
+         "files":[{"rel":"a","size":2,"bytes_done":1,"state":"running"}]}
+        """#.utf8))
+        XCTAssertEqual(transfer.onConflict, "rename")
+        XCTAssertEqual(transfer.rateBps, 100)
+        XCTAssertEqual(transfer.files.first?.rel, "a")
+
+        let proc = try Wire.decode(ProcessInfo.self, from: Data(#"""
+        {"pid":4,"ppid":1,"name":"n","mem_kb":10,"started_by_deskhand":true}
+        """#.utf8))
+        XCTAssertEqual(proc.memKb, 10)
+        XCTAssertTrue(proc.startedByDeskhand)
+
+        let diag = try Wire.decode(DiagSystem.self, from: Data(#"""
+        {"os":"windows","version":"11","build":"26100","arch":"amd64","hostname":"w",
+         "cpu":{"name":"c","cores":4,"threads":8,"load_pct":12.5},"memory":{"total_bytes":8,"available_bytes":4},
+         "disks":[{"name":"C:","total_bytes":100,"free_bytes":50}],"gpus":[{"name":"g","driver":"1.0"}],
+         "uptime_s":99,"boot_time":"2026-10-20T10:00:00.000Z"}
+        """#.utf8))
+        XCTAssertEqual(diag.cpu.loadPct, 12.5)
+        XCTAssertEqual(diag.memory.availableBytes, 4)
+        XCTAssertEqual(diag.disks.first?.freeBytes, 50)
+        XCTAssertEqual(diag.uptimeS, 99)
+
+        let launch = try Wire.decode(DebugLaunch.self, from: Data(#"""
+        {"debug_id":"d-1","pid":42,"targets":[{"id":"t1","role":"main","type":"page","url":"file:///a","title":"A"}]}
+        """#.utf8))
+        XCTAssertEqual(launch.targets.first?.type, "page")
 
         let state = try Wire.decode(DebugState.self, from: Data(#"""
-        {"paused":true,"reason":"breakpoint","call_frames":[{"function_name":"f","url":"u","line":3,"column":7}]}
+        {"paused":true,"reason":"breakpoint","call_frames":[{"id":"f1","function":"f","url":"u","line":3,"column":7,
+          "scopes":[{"type":"local","object_id":"o1"}]}]}
         """#.utf8))
-        XCTAssertEqual(state.callFrames.first, CallFrame(functionName: "f", url: "u", line: 3, column: 7))
+        XCTAssertEqual(state.callFrames.first?.function, "f")
+        XCTAssertEqual(state.callFrames.first?.scopes.first?.objectID, "o1")
+
+        let run = try Wire.decode(QARun.self, from: Data(#"""
+        {"run_id":"q","host_id":"h","name":"n","status":"passed","started_at":"2026-10-20T10:00:00.000Z",
+         "steps_total":1,"steps_passed":1,"steps_failed":0,"steps_blocked":0,
+         "steps":[{"index":0,"name":"s","action":"click","status":"pass","duration_ms":5,"artifacts":[]}]}
+        """#.utf8))
+        XCTAssertEqual(run.stepsPassed, 1)
+        XCTAssertEqual(run.steps.first?.durationMs, 5)
+
+        let entry = try Wire.decode(TimelineEntry.self, from: Data(#"""
+        {"seq":1,"ts":"2026-10-20T10:00:00.000Z","host_id":"h","actor":"ai","client_name":"mcp","kind":"input",
+         "summary":"clicked","outcome":"ok","artifacts":[]}
+        """#.utf8))
+        XCTAssertEqual(entry.clientName, "mcp")
+        XCTAssertNil(entry.clientID)
+
+        let log = try Wire.decode(EventLogEntry.self, from: Data(#"""
+        {"time":"2026-10-20T10:00:00.000Z","log":"System","level":"error","provider":"p","event_id":41,"message":"m"}
+        """#.utf8))
+        XCTAssertEqual(log.eventID, 41)
+    }
+
+    func testFrameParserLimits() throws {
+        var p = FrameParser()
+        XCTAssertThrowsError(try p.append(Data([0, 0, 0, 0])))
+
+        var big = FrameParser()
+        let over = UInt32(FrameParser.maxFrameLength + 1)
+        XCTAssertThrowsError(try big.append(Data([UInt8(over >> 24), UInt8((over >> 16) & 0xFF), UInt8((over >> 8) & 0xFF), UInt8(over & 0xFF)])))
+
+        var exact = FrameParser()
+        let cap = UInt32(FrameParser.maxFrameLength)
+        var data = Data([UInt8(cap >> 24), UInt8((cap >> 16) & 0xFF), UInt8((cap >> 8) & 0xFF), UInt8(cap & 0xFF), 0x20])
+        data.append(Data(count: FrameParser.maxFrameLength - 1))
+        let frames = try exact.append(data)
+        XCTAssertEqual(frames.count, 1)
+        XCTAssertEqual(frames[0].payload.count, FrameParser.maxFrameLength - 1)
+
+        var split = FrameParser()
+        XCTAssertEqual(try split.append(Data([0, 0])).count, 0)
+        XCTAssertEqual(try split.append(Data([0, 3, 0x21])).count, 0)
+        let done = try split.append(Data([9, 8, 0, 0, 0, 1, 0x11]))
+        XCTAssertEqual(done.count, 2)
+        XCTAssertEqual(done[0].kind, 0x21)
+        XCTAssertEqual([UInt8](done[0].payload), [9, 8])
+        XCTAssertEqual(done[1].kind, 0x11)
+    }
+
+    func testStreamAttachReplyCoalescedWithFrames() async throws {
+        let server = try makeServer()
+        let payload = Data([0x0A, 0x0A, 0x7B, 0x0A])
+        var frame = Data([0, 0, 0, 5, 0x20])
+        frame.append(payload)
+        var newlineLength = Data([0, 0, 0x0A, 0x0A, 0x01])
+        newlineLength.append(Data(count: 0x0A0A - 1))
+        let wire = frame + newlineLength
+        server.setAttachReply { conn, id in
+            var one = Data(#"{"jsonrpc":"2.0","id":\#(id),"result":{"ok":true}}"#.utf8)
+            one.append(0x0A)
+            one.append(wire)
+            conn.sendRaw(one)
+        }
+        server.setAttachHandler { conn in conn.shutdownConnection() }
+        let stream = try await StreamConnection.attach(kind: "pty", params: [:], socketPath: server.path)
+        var got: [(UInt8, Data)] = []
+        for try await f in stream.frames { got.append((f.kind, f.payload)) }
+        XCTAssertEqual(got.count, 2)
+        XCTAssertEqual(got[0].0, 0x20)
+        XCTAssertEqual(got[0].1, payload)
+        XCTAssertEqual(got[1].0, 0x01)
+        XCTAssertEqual(got[1].1.count, 0x0A0A - 1)
+    }
+
+    func testSubscriptionAddedDuringReconnectResubscribeIsSent() async throws {
+        let server = try makeServer()
+        let arrived = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let count = Received()
+        server.setSubscribeHook { _ in
+            let n = count.get().count + 1
+            count.set(Data(count: n))
+            if n == 2 {
+                arrived.signal()
+                release.wait()
+            }
+        }
+        let client = makeClient(server)
+        try await client.connect(kind: "app", name: "Deskhand", version: "1")
+        let early = client.events(kinds: ["a"], hostID: nil)
+        defer { _ = early }
+        XCTAssertTrue(server.waitForRequests(method: "events.subscribe", count: 1))
+
+        server.stop()
+        try await Task.sleep(for: .milliseconds(50))
+        try server.start()
+        XCTAssertEqual(arrived.wait(timeout: .now() + 5), .success)
+
+        let late = client.events(kinds: ["b"], hostID: nil)
+        let deadline = Date().addingTimeInterval(5)
+        while await client.subscriptionCount < 2 && Date() < deadline { try await Task.sleep(for: .milliseconds(5)) }
+        release.signal()
+
+        XCTAssertTrue(server.waitForRequests(method: "events.subscribe", count: 3))
+        let last = server.requests(method: "events.subscribe")[2]
+        XCTAssertEqual(Set(last.params["kinds"] as? [String] ?? []), ["a", "b"])
+        server.emit(#"{"seq":5,"ts":"2026-10-20T10:00:00.000Z","host_id":"h","kind":"b"}"#)
+        let ev = try await next(late)
+        XCTAssertEqual(ev.seq, 5)
+        await client.close()
     }
 
     func testPathsHonorDeskhandHome() {
+        XCTAssertTrue(Paths.daemonLog.hasSuffix("/logs/daemon.log"))
         XCTAssertTrue(Paths.socket(home: URL(fileURLWithPath: "/x/y")).hasSuffix("/x/y/run/d.sock"))
         XCTAssertEqual(Paths.home(environment: ["DESKHAND_HOME": "/tmp/dh"]).path, "/tmp/dh")
         XCTAssertTrue(Paths.home(environment: [:]).path.hasSuffix("Library/Application Support/Deskhand"))
@@ -340,6 +516,19 @@ final class ClientTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: server.path))
     }
 
+    func testLauncherBoundsHangingStartCommand() async throws {
+        let server = MockDaemon()
+        let launcher = DaemonLauncher(socketPath: server.path, launch: {
+            try await Task.sleep(for: .seconds(30))
+        }, timeout: 0.3, pollInterval: 0.01)
+        let started = Date()
+        do {
+            try await launcher.ensureRunning()
+            XCTFail("expected error")
+        } catch ClientError.daemonUnavailable {}
+        XCTAssertLessThan(Date().timeIntervalSince(started), 2)
+    }
+
     func testLauncherThrowsDaemonUnavailableOnTimeout() async throws {
         let server = MockDaemon()
         let launcher = DaemonLauncher(socketPath: server.path, launch: {}, timeout: 0.2, pollInterval: 0.01)
@@ -347,7 +536,7 @@ final class ClientTests: XCTestCase {
             try await launcher.ensureRunning()
             XCTFail("expected error")
         } catch ClientError.daemonUnavailable(let logPath) {
-            XCTAssertTrue(logPath.hasSuffix("daemon.log"))
+            XCTAssertTrue(logPath.hasSuffix("logs/daemon.log"))
         }
     }
 }

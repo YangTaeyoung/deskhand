@@ -30,20 +30,38 @@ public struct DaemonLauncher: Sendable {
     }
 
     /// Returns once the socket accepts connections, starting the daemon first when needed.
+    /// The whole call, including waiting for the start command, is bounded by `timeout`.
     public func ensureRunning() async throws {
         if isResponding() { return }
-        do {
-            try await launch()
-        } catch {
-            throw ClientError.daemonUnavailable(logPath: logPath)
-        }
         let deadline = Date().addingTimeInterval(timeout)
+        let launched = await runLaunch(budget: timeout)
+        guard launched else { throw ClientError.daemonUnavailable(logPath: logPath) }
         while Date() < deadline {
             if isResponding() { return }
             try await Task.sleep(for: .seconds(pollInterval))
         }
         if isResponding() { return }
         throw ClientError.daemonUnavailable(logPath: logPath)
+    }
+
+    /// Runs the start command; false when it failed, true when it finished or the budget ran out first.
+    private func runLaunch(budget: TimeInterval) async -> Bool {
+        let launch = self.launch
+        return await withCheckedContinuation { continuation in
+            let once = Once(continuation)
+            Task {
+                do {
+                    try await launch()
+                    once.resume(true)
+                } catch {
+                    once.resume(false)
+                }
+            }
+            Task {
+                try? await Task.sleep(for: .seconds(budget))
+                once.resume(true)
+            }
+        }
     }
 
     private func isResponding() -> Bool {
@@ -76,5 +94,20 @@ public struct DaemonLauncher: Sendable {
             }
         }
         if status != 0 { throw ClientError.daemonUnavailable(logPath: Paths.daemonLog) }
+    }
+}
+
+private final class Once: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Bool, Never>?
+
+    init(_ continuation: CheckedContinuation<Bool, Never>) { self.continuation = continuation }
+
+    func resume(_ value: Bool) {
+        lock.lock()
+        let c = continuation
+        continuation = nil
+        lock.unlock()
+        c?.resume(returning: value)
     }
 }

@@ -21,7 +21,7 @@ public enum Paths {
     }
 
     public static var daemonLog: String {
-        home.appendingPathComponent("log/daemon.log").path
+        home.appendingPathComponent("logs/daemon.log").path
     }
 }
 
@@ -169,8 +169,14 @@ public actor DeskhandClient {
 
         let reply = try await rawCall("hello", ["client": hello.kind, "name": hello.name, "version": hello.version])
         clientID = reply["client_id"]?.stringValue
-        try await resubscribe()
+        var snapshot: Set<UUID>
+        repeat {
+            snapshot = Set(subscriptions.keys)
+            try await resubscribe()
+        } while Set(subscriptions.keys) != snapshot
     }
+
+    var subscriptionCount: Int { subscriptions.count }
 
     private func startReader(_ connection: Connection, generation gen: Int) {
         Task {

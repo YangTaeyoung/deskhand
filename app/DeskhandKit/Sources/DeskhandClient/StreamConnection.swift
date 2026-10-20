@@ -40,28 +40,34 @@ public final class StreamConnection: Sendable {
             Task {
                 var ready: CheckedContinuation<Void, Error>? = ready
                 do {
-                    var lines = LineBuffer()
+                    var head = Data()
                     var parser = FrameParser()
-                    var phase = 0
+                    var expectedID = 1
+                    var attached = false
                     try connection.write(Wire.request(id: 1, method: "hello", params: helloData))
                     for try await chunk in connection.chunks {
-                        if phase < 2 {
-                            for line in lines.append(chunk) {
-                                guard phase < 2, let response = Wire.response(Wire.parse(line) ?? .null) else { continue }
-                                if case .failure(let error) = response.outcome { throw error }
-                                if phase == 0 {
-                                    phase = 1
-                                    try connection.write(Wire.request(id: 2, method: "stream.attach", params: attachData))
-                                } else {
-                                    phase = 2
-                                    ready?.resume()
-                                    ready = nil
-                                    let rest = lines.takeRemainder()
-                                    for f in try parser.append(rest) { continuation.yield(f) }
-                                }
-                            }
-                        } else {
+                        if attached {
                             for f in try parser.append(chunk) { continuation.yield(f) }
+                            continue
+                        }
+                        head.append(chunk)
+                        while !attached, let nl = head.firstIndex(of: 0x0A) {
+                            let line = head.subdata(in: head.startIndex..<nl)
+                            head.removeSubrange(head.startIndex...nl)
+                            guard let response = Wire.response(Wire.parse(line) ?? .null), response.id == expectedID else { continue }
+                            if case .failure(let error) = response.outcome { throw error }
+                            if expectedID == 1 {
+                                expectedID = 2
+                                try connection.write(Wire.request(id: 2, method: "stream.attach", params: attachData))
+                            } else {
+                                attached = true
+                                ready?.resume()
+                                ready = nil
+                            }
+                        }
+                        if attached {
+                            for f in try parser.append(head) { continuation.yield(f) }
+                            head = Data()
                         }
                     }
                     if let pendingReady = ready { pendingReady.resume(throwing: ClientError.disconnected) }

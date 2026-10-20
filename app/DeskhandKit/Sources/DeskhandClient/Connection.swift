@@ -144,7 +144,7 @@ struct LineBuffer {
 
 /// Accumulates bytes and yields complete binary frames: u32 BE length (= 1 + payload) and a kind byte.
 struct FrameParser {
-    static let maxFrameLength = 64 << 20
+    static let maxFrameLength = 32 << 20
     private var buffer = Data()
 
     mutating func append(_ data: Data) throws -> [(kind: UInt8, payload: Data)] {

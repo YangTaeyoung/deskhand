@@ -82,6 +82,8 @@ final class MockDaemon: @unchecked Sendable {
     private var acceptedCount = 0
     private var handler: @Sendable (MockRequest) -> MockReply? = { _ in nil }
     private var attachHandler: @Sendable (MockConnection) -> Void = { _ in }
+    private var subscribeHook: @Sendable (MockRequest) -> Void = { _ in }
+    private var attachReplyOverride: (@Sendable (MockConnection, Int) -> Void)?
 
     init() {
         dir = "/tmp/dhc-\(UUID().uuidString.prefix(8))"
@@ -100,6 +102,15 @@ final class MockDaemon: @unchecked Sendable {
 
     func setAttachHandler(_ h: @escaping @Sendable (MockConnection) -> Void) {
         lock.lock(); attachHandler = h; lock.unlock()
+    }
+
+    func setSubscribeHook(_ h: @escaping @Sendable (MockRequest) -> Void) {
+        lock.lock(); subscribeHook = h; lock.unlock()
+    }
+
+    /// Replaces the `stream.attach` success reply; the closure writes the reply (and anything after it) itself.
+    func setAttachReply(_ h: @escaping @Sendable (MockConnection, Int) -> Void) {
+        lock.lock(); attachReplyOverride = h; lock.unlock()
     }
 
     func start() throws {
@@ -177,6 +188,8 @@ final class MockDaemon: @unchecked Sendable {
         requests.append(req)
         let h = handler
         let attach = attachHandler
+        let hook = subscribeHook
+        let attachOverride = attachReplyOverride
         lock.broadcast()
         lock.unlock()
 
@@ -185,9 +198,14 @@ final class MockDaemon: @unchecked Sendable {
             reply(conn, id, .result(#"{"client_id":"c-test"}"#))
         case "events.subscribe":
             conn.isSubscribed = true
+            hook(req)
             reply(conn, id, .result("{}"))
         case "stream.attach":
-            reply(conn, id, .result(#"{"ok":true}"#))
+            if let attachOverride {
+                attachOverride(conn, id)
+            } else {
+                reply(conn, id, .result(#"{"ok":true}"#))
+            }
             attach(conn)
             return false
         default:
