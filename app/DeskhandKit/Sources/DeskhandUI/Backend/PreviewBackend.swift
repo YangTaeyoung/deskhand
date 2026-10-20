@@ -31,6 +31,8 @@ public final class PreviewBackend: Backend {
     private struct State {
         var hosts: [Host]
         var controls: [String: ControlState]
+        /// Per host, newest first.
+        var timelines: [String: [TimelineEntry]]
         var subscribers: [UUID: Subscriber] = [:]
         var seq = 0
         var jobs = 0
@@ -44,7 +46,8 @@ public final class PreviewBackend: Backend {
         self.scenario = scenario
         self.stepDelay = stepDelay
         let hosts = scenario == .standard ? PreviewFixtures.hosts() : []
-        state = Mutex(State(hosts: hosts, controls: PreviewFixtures.controls(for: hosts)))
+        let timelines = Dictionary(uniqueKeysWithValues: hosts.map { ($0.hostID, PreviewFixtures.timeline(hostID: $0.hostID)) })
+        state = Mutex(State(hosts: hosts, controls: PreviewFixtures.controls(for: hosts), timelines: timelines))
     }
 
     /// Ends every open `events` stream, finishing it with `error` when given, as a dropped
@@ -233,6 +236,7 @@ extension PreviewBackend {
     }
 
     public func controlAcquire(hostID: String, as owner: ControlOwner, force: Bool) async throws -> ControlState {
+        await pause()
         let current = try await controlGet(hostID: hostID)
         if owner == .ai, current.owner == ControlOwner.human.rawValue {
             throw RPCErrorInfo(message: "사람이 조작 중입니다. 사람이 제어권을 넘길 때까지 기다리세요",
@@ -243,37 +247,51 @@ extension PreviewBackend {
                                code: "CONTROL_HELD_BY_HUMAN", nextAction: "human_resume_ai")
         }
         let client = owner == .human ? nil : "Claude Code"
-        return update(hostID, ControlState(owner: owner.rawValue, ownerClient: client, gen: current.gen + 1, aiPaused: current.aiPaused))
+        let summary = owner == .human ? "제어권을 가져왔습니다" : "제어권을 얻었습니다"
+        return update(hostID, ControlState(owner: owner.rawValue, ownerClient: client, gen: current.gen + 1, aiPaused: current.aiPaused),
+                      actor: owner == .human ? "human" : "ai", client: client ?? "Deskhand", summary: summary)
     }
 
     public func controlRelease(hostID: String) async throws {
         let current = try await controlGet(hostID: hostID)
-        _ = update(hostID, ControlState(owner: "none", gen: current.gen + 1, aiPaused: current.aiPaused))
+        _ = update(hostID, ControlState(owner: "none", gen: current.gen + 1, aiPaused: current.aiPaused),
+                   actor: "human", client: "Deskhand", summary: "제어권을 놓았습니다")
     }
 
     public func controlStop(hostID: String) async throws -> ControlState {
         let current = try await controlGet(hostID: hostID)
-        return update(hostID, ControlState(owner: "human", gen: current.gen + 1, aiPaused: true))
+        return update(hostID, ControlState(owner: "human", gen: current.gen + 1, aiPaused: true),
+                      actor: "human", client: "Deskhand", summary: "긴급 정지 · AI 입력을 멈췄습니다")
     }
 
     public func controlResumeAI(hostID: String) async throws -> ControlState {
+        await pause()
         let current = try await controlGet(hostID: hostID)
-        return update(hostID, ControlState(owner: "none", gen: current.gen + 1, aiPaused: false))
+        return update(hostID, ControlState(owner: "none", gen: current.gen + 1, aiPaused: false),
+                      actor: "human", client: "Deskhand", summary: "AI에게 제어권을 넘겼습니다")
     }
 
-    private func update(_ hostID: String, _ control: ControlState) -> ControlState {
-        state.withLock { s in
+    /// Stores `control`, records the change in the host's timeline, and emits `control.changed`
+    /// and `timeline.appended`.
+    private func update(_ hostID: String, _ control: ControlState, actor: String, client: String, summary: String) -> ControlState {
+        let entry = state.withLock { s -> TimelineEntry in
             s.controls[hostID] = control
             if let i = s.hosts.firstIndex(where: { $0.hostID == hostID }) {
                 s.hosts[i].owner = control.owner
                 s.hosts[i].ownerClient = control.ownerClient
             }
+            let seq = (s.timelines[hostID]?.first?.seq ?? 0) + 1
+            let entry = TimelineEntry(seq: seq, ts: Timestamp(date: .now), hostID: hostID, actor: actor, clientName: client,
+                                      kind: "control", summary: summary, outcome: "ok")
+            s.timelines[hostID, default: []].insert(entry, at: 0)
+            return entry
         }
         var payload: [String: JSONValue] = [
             "owner": .string(control.owner), "gen": .int(control.gen), "ai_paused": .bool(control.aiPaused),
         ]
         if let client = control.ownerClient { payload["owner_client"] = .string(client) }
         emit(kind: EventKind.controlChanged, hostID: hostID, payload: payload)
+        emit(kind: EventKind.timelineAppended, hostID: hostID, payload: ["entry": Self.payload(entry)])
         return control
     }
 }
@@ -283,7 +301,7 @@ extension PreviewBackend {
 extension PreviewBackend {
     public func timelineList(hostID: String, since: Int?, limit: Int) async throws -> [TimelineEntry] {
         _ = try host(hostID)
-        let entries = PreviewFixtures.timeline(hostID: hostID).filter { since == nil || $0.seq > since! }
+        let entries = state.withLock { $0.timelines[hostID] ?? [] }.filter { since == nil || $0.seq > since! }
         return Array(entries.prefix(limit))
     }
 }

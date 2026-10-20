@@ -32,6 +32,19 @@ extension Host {
         lastSeen?.date.formatted(.relative(presentation: .named).locale(Locale(identifier: "ko_KR")))
     }
 
+    /// True while Windows shows the lock or sign-in screen, so screen and input are unavailable.
+    public var isSessionLocked: Bool {
+        guard let session else { return false }
+        return session.locked || session.inputDesktop == "Winlogon"
+    }
+
+    /// Subtitle under the computer name in the toolbar: the signed-in session while connected,
+    /// otherwise the sidebar status line.
+    public var sessionSubtitle: String {
+        guard connection == .ready || connection == .degraded, let session else { return statusLine() }
+        return .ui("host.status.session", "\(session.user) · \(HostOS.sessionTitle(session))")
+    }
+
     /// Number of capabilities in the `ready` state.
     public var readyCapabilityCount: Int {
         caps.items.values.filter { $0.state == CapabilityState.ready.rawValue }.count
@@ -88,6 +101,15 @@ public enum HostOS {
             ? String.ui("session.rdp", "원격 데스크톱")
             : String.ui("session.console", "콘솔")
         return session.locked ? .ui("session.locked", "\(kind) · 잠김") : kind
+    }
+
+    /// `input_desktop` as shown in the inspector.
+    public static func desktopTitle(_ desktop: String) -> String {
+        switch desktop {
+        case "Default": .ui("session.desktop.default", "기본 데스크톱")
+        case "Winlogon": .ui("session.desktop.winlogon", "로그인 화면")
+        default: .ui("session.desktop.unknown", "알 수 없음")
+        }
     }
 }
 

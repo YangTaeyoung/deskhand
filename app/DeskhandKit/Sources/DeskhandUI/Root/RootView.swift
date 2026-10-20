@@ -33,12 +33,17 @@ struct ComputersSplitView: View {
     @Bindable var store: AppStore
 
     var body: some View {
+        @Bindable var controlActions = store.controlActions
         NavigationSplitView {
             SidebarView(store: store)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 360)
         } detail: {
             RootDetailView(store: store)
                 .navigationTitle(store.selectedHost?.name ?? "Deskhand")
+                .navigationSubtitle(store.selectedHost?.sessionSubtitle ?? "")
+        }
+        .sheet(item: $controlActions.pendingTakeover) { pending in
+            TakeoverConfirmView(store: store, pending: pending)
         }
         .sheet(item: $store.addHost) { flow in
             AddHostSheet(flow: flow)
@@ -82,25 +87,30 @@ struct ComputersSplitView: View {
     }
 }
 
-/// Detail column: loading, list error, no computers, the selected computer, or a prompt to select one.
+/// Detail column: loading, list error, no computers, the selected computer's workspace, or a
+/// prompt to select one.
 public struct RootDetailView: View {
     let store: AppStore
+    let chrome: WorkspaceChrome
 
-    public init(store: AppStore) {
+    public init(store: AppStore, chrome: WorkspaceChrome = .native) {
         self.store = store
+        self.chrome = chrome
     }
 
+    /// The content under the daemon-reconnecting notice, reporting a zero minimum size to the split view.
     public var body: some View {
         content
             .safeAreaInset(edge: .top, spacing: 0) {
                 if store.phase == .reconnecting {
-                    StatusNotice(symbol: nil, tint: DS.Color.warning,
-                                 title: String.ui("daemon.reconnecting.title", "데몬과 다시 연결하는 중…"),
-                                 message: String.ui("daemon.reconnecting.message", "연결되면 목록과 상태를 다시 불러옵니다. 그동안 보이는 상태는 최신이 아닐 수 있습니다."))
-                        .padding(.horizontal, DS.Space.xl)
-                        .padding(.top, DS.Space.l)
+                    BannerBand(style: .tinted(DS.Color.warning), symbol: nil,
+                               title: String.ui("daemon.reconnecting.title", "데몬과 다시 연결하는 중…"),
+                               message: String.ui("daemon.reconnecting.message", "연결되면 목록과 상태를 다시 불러옵니다. 그동안 보이는 상태는 최신이 아닐 수 있습니다.")) {
+                        EmptyView()
+                    }
                 }
             }
+            .frame(minWidth: 0, minHeight: 0)
     }
 
     @ViewBuilder
@@ -120,7 +130,7 @@ public struct RootDetailView: View {
         } else if store.hosts.isEmpty {
             NoHostsView { store.presentAddHost() }
         } else if let host = store.selectedHost {
-            WorkspacePlaceholderView(store: store, host: host)
+            WorkspaceView(store: store, host: host, chrome: chrome)
         } else {
             EmptyStateView(symbol: "sidebar.left",
                            title: String.ui("detail.select.title", "컴퓨터를 선택하세요"),

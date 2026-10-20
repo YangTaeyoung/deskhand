@@ -152,16 +152,18 @@ final class AppStoreConsistencyTests: XCTestCase {
     func testTimelineIsNewestFirstAndAppendedEntriesSurviveReload() async throws {
         let (store, backend) = await startedStore()
         let dev = PreviewFixtures.devPCID
+        let fixtureSeqs = PreviewFixtures.timeline(hostID: dev).map(\.seq)
         await store.loadTimeline(for: dev)
-        XCTAssertEqual(store.timeline(for: dev).map(\.seq), [105, 104, 103, 102, 101])
+        XCTAssertEqual(store.timeline(for: dev).map(\.seq), fixtureSeqs)
 
-        let entry = TimelineEntry(seq: 106, ts: Timestamp(date: .now), hostID: dev, actor: "human", kind: "control",
+        let newSeq = fixtureSeqs[0] + 1
+        let entry = TimelineEntry(seq: newSeq, ts: Timestamp(date: .now), hostID: dev, actor: "human", kind: "control",
                                   summary: "제어권을 가져왔습니다", outcome: "ok")
         backend.base.emit(kind: EventKind.timelineAppended, hostID: dev, payload: ["entry": PreviewBackend.payload(entry)])
-        try await waitUntil { store.timeline(for: dev).first?.seq == 106 }
+        try await waitUntil { store.timeline(for: dev).first?.seq == newSeq }
 
         await store.loadTimeline(for: dev)
-        XCTAssertEqual(store.timeline(for: dev).map(\.seq), [106, 105, 104, 103, 102, 101])
+        XCTAssertEqual(store.timeline(for: dev).map(\.seq), [newSeq] + fixtureSeqs)
     }
 
     func testTimelineFailureStaysInline() async throws {
@@ -175,7 +177,7 @@ final class AppStoreConsistencyTests: XCTestCase {
         backend.failTimeline(with: nil)
         await store.loadTimeline(for: dev)
         XCTAssertNil(store.timelineError(for: dev))
-        XCTAssertEqual(store.timeline(for: dev).count, 5)
+        XCTAssertEqual(store.timeline(for: dev).count, PreviewFixtures.timeline(hostID: dev).count)
     }
 
     // MARK: Add host

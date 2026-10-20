@@ -81,5 +81,10 @@ final class StringCatalogTests: XCTestCase {
         let title = DoctorStatus.fail.title
         XCTAssertEqual(String.ui("doctor.count", "\(title) \(current)"), "실패 3")
         XCTAssertEqual(InstallStep.initialize.title, "에이전트 초기화")
+        let fps = 60
+        let latency = 18
+        XCTAssertEqual(String.ui("quality.short", "\(fps) fps · \(latency) ms"), "60 fps · 18 ms")
+        let tab = WorkspaceTab.files
+        XCTAssertEqual(String.ui("tab.help", "\(tab.title) (⌘\(tab.number))"), "파일 (⌘3)")
     }
 }

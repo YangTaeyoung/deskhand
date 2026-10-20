@@ -14,8 +14,17 @@ enum RootScenes {
     private static let backend = PreviewBackend(scenario: .standard, stepDelay: .zero)
 
     static func store(hosts: [Host], selected: String?) -> AppStore {
-        AppStore.seeded(backend: backend, defaults: defaults, hosts: hosts, selectedHostID: selected,
-                        timelines: Dictionary(uniqueKeysWithValues: hosts.map { ($0.hostID, PreviewFixtures.timeline(hostID: $0.hostID)) }))
+        let store = AppStore.seeded(backend: backend, defaults: defaults, hosts: hosts, selectedHostID: selected,
+                                    timelines: Dictionary(uniqueKeysWithValues: hosts.map { ($0.hostID, PreviewFixtures.timeline(hostID: $0.hostID)) }))
+        resetLayout(store)
+        return store
+    }
+
+    /// The default workspace layout: the screen tab with the activity inspector.
+    static func resetLayout(_ store: AppStore) {
+        store.layout.tab = .screen
+        store.layout.showsInspector = true
+        store.layout.inspectorPane = .activity
     }
 
     static var withHosts: AppStore { store(hosts: PreviewFixtures.hosts(), selected: PreviewFixtures.devPCID) }
@@ -77,10 +86,12 @@ enum RootScenes {
                 }
             },
             SnapshotScene(name: "root-reconnecting", size: size) {
-                SplitStandIn(store: AppStore.seeded(
+                let store = AppStore.seeded(
                     backend: backend, defaults: defaults, phase: .reconnecting, hosts: PreviewFixtures.hosts(),
                     selectedHostID: PreviewFixtures.devPCID,
-                    timelines: [PreviewFixtures.devPCID: PreviewFixtures.timeline(hostID: PreviewFixtures.devPCID)]))
+                    timelines: [PreviewFixtures.devPCID: PreviewFixtures.timeline(hostID: PreviewFixtures.devPCID)])
+                let _ = resetLayout(store)
+                SplitStandIn(store: store)
             },
             SnapshotScene(name: "root-host-blocked", size: size) {
                 SplitStandIn(store: store(hosts: PreviewFixtures.hosts(), selected: PreviewFixtures.labID))
@@ -112,17 +123,22 @@ enum RootScenes {
     }
 }
 
-/// Sidebar and detail columns of the computers split view, side by side.
+/// Sidebar and detail columns of the computers split view, side by side, with the window
+/// toolbar drawn as a strip over the detail column and the sidebar list starting below it.
 struct SplitStandIn: View {
     let store: AppStore
 
     var body: some View {
         HStack(spacing: 0) {
             SidebarView(store: store, selectionStyle: .drawn)
+                .padding(.top, WorkspaceToolbarStrip.height)
                 .frame(width: RootScenes.sidebarWidth)
             Divider()
-            RootDetailView(store: store)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            VStack(spacing: 0) {
+                WorkspaceToolbarStrip(store: store)
+                RootDetailView(store: store, chrome: .standIn)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
     }
 }

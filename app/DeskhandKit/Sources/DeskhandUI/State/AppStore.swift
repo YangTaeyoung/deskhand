@@ -76,10 +76,16 @@ public final class AppStore {
     /// Failure of the last host action (connect, disconnect, repair, remove).
     public var actionError: OperationError?
 
+    /// Selected workspace tab and inspector.
+    public let layout: WorkspaceLayout
+    /// Take control, give back to the AI and emergency stop, with their progress and failures.
+    public let controlActions: ControlActions
+
     private var controls: [String: ControlState] = [:]
     /// Per host, newest first.
     private var timelines: [String: [TimelineEntry]] = [:]
     private var timelineErrors: [String: OperationError] = [:]
+    private var streamQualities: [String: StreamQuality] = [:]
     @ObservationIgnored private var eventsTask: Task<Void, Never>?
     @ObservationIgnored private var reloadTask: Task<Void, Never>?
     @ObservationIgnored private var reloadToken = 0
@@ -89,6 +95,9 @@ public final class AppStore {
         self.defaults = defaults
         self.backoff = backoff
         self.selectedHostID = defaults.string(forKey: Self.selectionKey)
+        self.layout = WorkspaceLayout(defaults: defaults)
+        self.controlActions = ControlActions(backend: backend)
+        controlActions.store = self
     }
 
     // MARK: Queries
@@ -117,9 +126,25 @@ public final class AppStore {
         timelines[hostID] ?? []
     }
 
+    /// True once the host's timeline has loaded or received an entry.
+    public func isTimelineLoaded(for hostID: String) -> Bool {
+        timelines[hostID] != nil
+    }
+
     /// Why the last timeline load of a host failed, until a load succeeds.
     public func timelineError(for hostID: String) -> OperationError? {
         timelineErrors[hostID]
+    }
+
+    /// The latest measured quality of the host's screen stream, while one is open.
+    public func streamQuality(for hostID: String) -> StreamQuality? {
+        streamQualities[hostID]
+    }
+
+    /// Records the quality of the host's screen stream; `nil` when the stream closes.
+    public func setStreamQuality(_ quality: StreamQuality?, for hostID: String) {
+        guard host(hostID) != nil else { return }
+        streamQualities[hostID] = quality
     }
 
     // MARK: Lifecycle
@@ -215,6 +240,7 @@ public final class AppStore {
         controls = controls.filter { ids.contains($0.key) }
         timelines = timelines.filter { ids.contains($0.key) }
         timelineErrors = timelineErrors.filter { ids.contains($0.key) }
+        streamQualities = streamQualities.filter { ids.contains($0.key) }
         reconcileSelection()
     }
 
@@ -256,6 +282,7 @@ public final class AppStore {
             controls[id] = nil
             timelines[id] = nil
             timelineErrors[id] = nil
+            streamQualities[id] = nil
             reconcileSelection()
         default:
             guard let id = event.hostID, let i = hosts.firstIndex(where: { $0.hostID == id }) else {
@@ -323,6 +350,16 @@ public final class AppStore {
     public func loadControl(for hostID: String) async {
         guard let control = try? await backend.controlGet(hostID: hostID), host(hostID) != nil else { return }
         controls[hostID] = control
+    }
+
+    /// Applies the control state a `control.*` call returned, unless an event already brought a
+    /// newer generation.
+    func applyControlResult(_ control: ControlState, for hostID: String) {
+        guard let i = hosts.firstIndex(where: { $0.hostID == hostID }) else { return }
+        if let current = controls[hostID], current.gen > control.gen { return }
+        controls[hostID] = control
+        hosts[i].owner = control.owner
+        hosts[i].ownerClient = control.ownerClient
     }
 
     /// Loads a host's timeline and merges it with entries already received from events.
@@ -401,14 +438,25 @@ extension AppStore {
         phase: Phase = .ready,
         hosts: [Host],
         selectedHostID: String?,
-        timelines: [String: [TimelineEntry]] = [:]
+        controls: [String: ControlState]? = nil,
+        timelines: [String: [TimelineEntry]] = [:],
+        timelineErrors: [String: OperationError] = [:],
+        streamQualities: [String: StreamQuality] = [:]
     ) -> AppStore {
         let store = AppStore(backend: backend, defaults: defaults)
         store.phase = phase
-        store.hosts = hosts
+        store.hosts = hosts.map { host in
+            guard let control = controls?[host.hostID] else { return host }
+            var host = host
+            host.owner = control.owner
+            host.ownerClient = control.ownerClient
+            return host
+        }
         store.hostsLoaded = phase == .ready || phase == .reconnecting
-        store.controls = PreviewFixtures.controls(for: hosts)
+        store.controls = controls ?? PreviewFixtures.controls(for: hosts)
         store.timelines = timelines
+        store.timelineErrors = timelineErrors
+        store.streamQualities = streamQualities
         store.selectedHostID = selectedHostID
         return store
     }

@@ -91,7 +91,7 @@ public struct ControlBadge: View {
             .font(.system(size: 10, weight: .bold))
             .foregroundStyle(.white)
             .frame(width: 20, height: 20)
-            .background(owner.tint.gradient, in: Circle())
+            .background(owner.fill.gradient, in: Circle())
             .overlay(Circle().strokeBorder(.white.opacity(prominence == .increased ? 0.9 : 0), lineWidth: 1.5))
             .help(owner.title)
             .accessibilityLabel(String.ui("a11y.control", "제어권: \(ControlPill.label(owner: owner, clientName: nil))"))

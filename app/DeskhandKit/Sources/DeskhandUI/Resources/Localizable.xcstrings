@@ -49,6 +49,18 @@
         }
       }
     },
+    "a11y.controlRunning": {
+      "comment": "VoiceOver label of a control button while its call runs: action title",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@, 진행 중"
+          }
+        }
+      }
+    },
     "a11y.copyFix": {
       "comment": "VoiceOver label: copy fix",
       "extractionState": "manual",
@@ -193,6 +205,18 @@
         }
       }
     },
+    "action.dismiss": {
+      "comment": "Button that closes an inline message",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "닫기"
+          }
+        }
+      }
+    },
     "action.doctor": {
       "comment": "Button: doctor",
       "extractionState": "manual",
@@ -213,18 +237,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "완료"
-          }
-        }
-      }
-    },
-    "action.more": {
-      "comment": "Button: more",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "더 보기"
           }
         }
       }
@@ -589,6 +601,138 @@
         }
       }
     },
+    "banner.ai.message": {
+      "comment": "Workspace banner while an AI client controls the computer: message",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "언제든 제어권을 가져오거나 긴급 정지할 수 있습니다."
+          }
+        }
+      }
+    },
+    "banner.ai.title": {
+      "comment": "Workspace banner title while an AI client without a name controls the computer",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI가 조작 중"
+          }
+        }
+      }
+    },
+    "banner.ai.titleWithClient": {
+      "comment": "Workspace banner title while an AI client controls the computer: client name",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI가 조작 중 — %@"
+          }
+        }
+      }
+    },
+    "banner.aiPaused.message": {
+      "comment": "Workspace banner after an emergency stop: message",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI에게 넘기기 전까지 AI는 이 PC를 조작할 수 없습니다."
+          }
+        }
+      }
+    },
+    "banner.aiPaused.title": {
+      "comment": "Workspace banner after an emergency stop: title",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 일시정지됨"
+          }
+        }
+      }
+    },
+    "banner.blocked.message": {
+      "comment": "Workspace banner when the agent certificate does not match: message",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트를 다시 설치했다면 다시 페어링하세요. 아니라면 다른 컴퓨터가 이 주소를 쓰는지 먼저 진단하세요."
+          }
+        }
+      }
+    },
+    "banner.connecting.message": {
+      "comment": "Workspace banner while connecting: message",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보안 연결로 에이전트에 접속하고 있습니다."
+          }
+        }
+      }
+    },
+    "banner.human.message": {
+      "comment": "Workspace banner while the person at this Mac controls the computer: message",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI의 입력은 거절됩니다. 작업을 마치면 AI에게 넘기세요."
+          }
+        }
+      }
+    },
+    "banner.locked.message": {
+      "comment": "Workspace banner while Windows shows its lock screen: message",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 PC 앞에서 잠금을 해제하세요. 그동안은 사람도 AI도 화면과 입력을 쓸 수 없습니다."
+          }
+        }
+      }
+    },
+    "banner.locked.title": {
+      "comment": "Workspace banner while Windows shows its lock screen: title",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windows가 잠겨 있습니다"
+          }
+        }
+      }
+    },
+    "banner.reconnecting.message": {
+      "comment": "Workspace banner while reconnecting: message",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결되면 바로 이어서 쓸 수 있습니다. 결과를 모르는 작업은 다시 실행하지 않습니다."
+          }
+        }
+      }
+    },
     "cap.clipboard": {
       "comment": "Capability name: clipboard",
       "extractionState": "manual",
@@ -841,6 +985,54 @@
         }
       }
     },
+    "control.failed.giveBack": {
+      "comment": "Inline failure title: giving control back to the AI failed",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI에게 넘기지 못했습니다"
+          }
+        }
+      }
+    },
+    "control.failed.stop": {
+      "comment": "Inline failure title: the emergency stop failed",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "긴급 정지하지 못했습니다"
+          }
+        }
+      }
+    },
+    "control.failed.takeOver": {
+      "comment": "Inline failure title: taking control failed",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제어권을 가져오지 못했습니다"
+          }
+        }
+      }
+    },
+    "control.giveBack": {
+      "comment": "Button: let the AI control the computer again",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI에게 넘기기"
+          }
+        }
+      }
+    },
     "control.human": {
       "comment": "Control owner: the user at this Mac holds input",
       "extractionState": "manual",
@@ -853,6 +1045,18 @@
         }
       }
     },
+    "control.loginRequired": {
+      "comment": "Control pill while Windows shows its lock screen",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인 필요"
+          }
+        }
+      }
+    },
     "control.none": {
       "comment": "Control owner: nobody holds input",
       "extractionState": "manual",
@@ -861,6 +1065,30 @@
           "stringUnit": {
             "state": "translated",
             "value": "관찰 중"
+          }
+        }
+      }
+    },
+    "control.stop": {
+      "comment": "Button and menu item: emergency stop of AI input",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "긴급 정지"
+          }
+        }
+      }
+    },
+    "control.takeOver": {
+      "comment": "Button and menu item: take control from the AI",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제어권 가져오기"
           }
         }
       }
@@ -1705,6 +1933,30 @@
         }
       }
     },
+    "help.giveBack": {
+      "comment": "Tooltip of the give-back button",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI가 다시 이 PC를 조작할 수 있게 합니다"
+          }
+        }
+      }
+    },
+    "help.hideInspector": {
+      "comment": "Tooltip of the inspector toggle while the inspector is shown",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "인스펙터 가리기 (⌥⌘0)"
+          }
+        }
+      }
+    },
     "help.openLog": {
       "comment": "Tooltip: open log",
       "extractionState": "manual",
@@ -1717,26 +1969,38 @@
         }
       }
     },
-    "host.activity.empty": {
-      "comment": "Computer detail: activity empty",
+    "help.showInspector": {
+      "comment": "Tooltip of the inspector toggle while the inspector is hidden",
       "extractionState": "manual",
       "localizations": {
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "아직 기록된 동작이 없습니다. 사람이나 AI가 이 컴퓨터를 조작하면 여기에 남습니다."
+            "value": "인스펙터 보기 (⌥⌘0)"
           }
         }
       }
     },
-    "host.activity.failed": {
-      "comment": "Computer detail: timeline load failed, with the error message",
+    "help.stop": {
+      "comment": "Tooltip of the emergency stop button",
       "extractionState": "manual",
       "localizations": {
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "활동 기록을 불러오지 못했습니다: %@"
+            "value": "AI 입력을 즉시 멈추고 내가 제어권을 가집니다 (⇧⌘.)"
+          }
+        }
+      }
+    },
+    "help.takeOver": {
+      "comment": "Tooltip of the take-control button",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 대신 내가 이 PC를 조작합니다"
           }
         }
       }
@@ -1837,6 +2101,18 @@
         }
       }
     },
+    "host.field.desktop": {
+      "comment": "Inspector: label of the Windows input desktop",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "입력 데스크톱"
+          }
+        }
+      }
+    },
     "host.field.display": {
       "comment": "Computer detail: field display",
       "extractionState": "manual",
@@ -1905,18 +2181,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "사용자"
-          }
-        }
-      }
-    },
-    "host.section.activity": {
-      "comment": "Computer detail: section activity",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "최근 활동"
           }
         }
       }
@@ -2013,6 +2277,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "컴퓨터 목록을 불러오는 중"
+          }
+        }
+      }
+    },
+    "inspector.activity": {
+      "comment": "Inspector pane: timeline of actions",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "활동"
+          }
+        }
+      }
+    },
+    "inspector.info": {
+      "comment": "Inspector pane: computer details",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "정보"
+          }
+        }
+      }
+    },
+    "inspector.pane": {
+      "comment": "VoiceOver label of the inspector pane picker",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "인스펙터 패널"
+          }
+        }
+      }
+    },
+    "inspector.toggle": {
+      "comment": "Toolbar button that shows or hides the inspector",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "인스펙터"
           }
         }
       }
@@ -2161,14 +2473,50 @@
         }
       }
     },
-    "notice.blocked.fix": {
-      "comment": "Connection notice in the computer detail: blocked fix",
+    "menu.hideInspector": {
+      "comment": "View menu item: hide the inspector",
       "extractionState": "manual",
       "localizations": {
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "에이전트를 다시 설치했다면 다시 페어링하세요. 다시 설치한 적이 없다면 다른 컴퓨터가 이 주소를 쓰고 있을 수 있으니 진단을 먼저 실행하세요."
+            "value": "인스펙터 가리기"
+          }
+        }
+      }
+    },
+    "menu.inspectorActivity": {
+      "comment": "View menu item: show the inspector's activity pane",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "활동 기록"
+          }
+        }
+      }
+    },
+    "menu.inspectorInfo": {
+      "comment": "View menu item: show the inspector's computer details pane",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "컴퓨터 정보"
+          }
+        }
+      }
+    },
+    "menu.showInspector": {
+      "comment": "View menu item: show the inspector",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "인스펙터 보기"
           }
         }
       }
@@ -2193,30 +2541,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "연결하는 중…"
-          }
-        }
-      }
-    },
-    "notice.degraded.message": {
-      "comment": "Connection notice in the computer detail: degraded message",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "화면이 늦게 바뀌거나 끊길 수 있습니다. 네트워크 상태를 확인하세요."
-          }
-        }
-      }
-    },
-    "notice.degraded.title": {
-      "comment": "Connection notice in the computer detail: degraded title",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "연결이 불안정합니다"
           }
         }
       }
@@ -2257,18 +2581,6 @@
         }
       }
     },
-    "notice.reconnecting.message": {
-      "comment": "Connection notice in the computer detail: reconnecting message",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "연결이 돌아오면 화면과 명령을 바로 다시 쓸 수 있습니다. 결과를 모르는 작업은 다시 실행하지 않습니다."
-          }
-        }
-      }
-    },
     "notice.reconnecting.title": {
       "comment": "Connection notice in the computer detail: reconnecting title",
       "extractionState": "manual",
@@ -2293,6 +2605,18 @@
         }
       }
     },
+    "outcome.denied.help": {
+      "comment": "Tooltip of the denied outcome badge",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제어권이 없어 실행하지 않았습니다"
+          }
+        }
+      }
+    },
     "outcome.failed": {
       "comment": "Timeline outcome badge: failed",
       "extractionState": "manual",
@@ -2305,6 +2629,18 @@
         }
       }
     },
+    "outcome.failed.help": {
+      "comment": "Tooltip of the failed outcome badge",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "동작이 실행됐지만 실패했습니다"
+          }
+        }
+      }
+    },
     "outcome.unknown": {
       "comment": "Timeline outcome badge: unknown",
       "extractionState": "manual",
@@ -2313,6 +2649,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "결과 불명"
+          }
+        }
+      }
+    },
+    "outcome.unknown.help": {
+      "comment": "Tooltip of the unknown outcome badge",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결이 끊겨 실행 여부를 확인하지 못했습니다"
+          }
+        }
+      }
+    },
+    "quality.a11y": {
+      "comment": "VoiceOver label of the stream quality: frames per second, latency in milliseconds",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면 스트림 초당 %1$lld프레임, 지연 %2$lld밀리초"
+          }
+        }
+      }
+    },
+    "quality.help": {
+      "comment": "Tooltip of the stream quality: frames per second, latency in milliseconds",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면 스트림: 초당 %1$lld프레임, 캡처에서 표시까지 %2$lld ms"
+          }
+        }
+      }
+    },
+    "quality.short": {
+      "comment": "Toolbar stream quality: frames per second, latency in milliseconds",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld fps · %2$lld ms"
           }
         }
       }
@@ -2373,6 +2757,42 @@
           "stringUnit": {
             "state": "translated",
             "value": "콘솔"
+          }
+        }
+      }
+    },
+    "session.desktop.default": {
+      "comment": "Windows input desktop: the normal desktop",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본 데스크톱"
+          }
+        }
+      }
+    },
+    "session.desktop.unknown": {
+      "comment": "Windows input desktop: unknown",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "알 수 없음"
+          }
+        }
+      }
+    },
+    "session.desktop.winlogon": {
+      "comment": "Windows input desktop: the sign-in screen",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인 화면"
           }
         }
       }
@@ -2469,6 +2889,594 @@
           "stringUnit": {
             "state": "translated",
             "value": "대기"
+          }
+        }
+      }
+    },
+    "tab.debugger": {
+      "comment": "Workspace tab: debugger",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "디버거"
+          }
+        }
+      }
+    },
+    "tab.debugger.heading": {
+      "comment": "Debugger tab placeholder: heading",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Electron 디버거"
+          }
+        }
+      }
+    },
+    "tab.debugger.summary": {
+      "comment": "Debugger tab placeholder: what the tab does",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Electron 앱을 디버그 모드로 실행하거나 실행 중인 앱에 붙어 중단점, 호출 스택, 변수를 봅니다."
+          }
+        }
+      }
+    },
+    "tab.files": {
+      "comment": "Workspace tab: files",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일"
+          }
+        }
+      }
+    },
+    "tab.files.heading": {
+      "comment": "Files tab placeholder: heading",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 주고받기"
+          }
+        }
+      }
+    },
+    "tab.files.summary": {
+      "comment": "Files tab placeholder: what the tab does",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Mac과 원격 PC의 폴더를 나란히 보고 끌어다 놓아 주고받습니다. 전송은 중간에 끊겨도 이어서 받습니다."
+          }
+        }
+      }
+    },
+    "tab.help": {
+      "comment": "Tooltip of a workspace tab: tab title, shortcut number",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ (⌘%2$lld)"
+          }
+        }
+      }
+    },
+    "tab.logs": {
+      "comment": "Workspace tab: logs and diagnostics",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그"
+          }
+        }
+      }
+    },
+    "tab.logs.heading": {
+      "comment": "Logs tab placeholder: heading",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그와 시스템 진단"
+          }
+        }
+      }
+    },
+    "tab.logs.summary": {
+      "comment": "Logs tab placeholder: what the tab does",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "시스템 요약, Windows 이벤트 로그, 크래시 덤프를 시간과 수준으로 걸러 봅니다."
+          }
+        }
+      }
+    },
+    "tab.picker": {
+      "comment": "VoiceOver label of the workspace tab picker",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 공간 탭"
+          }
+        }
+      }
+    },
+    "tab.placeholder.badge": {
+      "comment": "Badge under a tab placeholder whose content is not built yet",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "준비 중인 탭입니다"
+          }
+        }
+      }
+    },
+    "tab.processes": {
+      "comment": "Workspace tab: processes",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "프로세스"
+          }
+        }
+      }
+    },
+    "tab.processes.heading": {
+      "comment": "Processes tab placeholder: heading",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 중인 프로세스"
+          }
+        }
+      }
+    },
+    "tab.processes.summary": {
+      "comment": "Processes tab placeholder: what the tab does",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "프로세스를 CPU·메모리 사용량과 함께 보고, Deskhand가 시작한 프로세스를 구분해 종료합니다."
+          }
+        }
+      }
+    },
+    "tab.qa": {
+      "comment": "Workspace tab: QA scenarios",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QA"
+          }
+        }
+      }
+    },
+    "tab.qa.heading": {
+      "comment": "QA tab placeholder: heading",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QA 시나리오"
+          }
+        }
+      }
+    },
+    "tab.qa.summary": {
+      "comment": "QA tab placeholder: what the tab does",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "시나리오 파일을 실행하고 단계별 결과와 증거 스크린샷을 확인한 뒤 보고서로 내보냅니다."
+          }
+        }
+      }
+    },
+    "tab.screen": {
+      "comment": "Workspace tab: remote screen",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면"
+          }
+        }
+      }
+    },
+    "tab.screen.heading": {
+      "comment": "Screen tab placeholder: heading",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 화면"
+          }
+        }
+      }
+    },
+    "tab.screen.summary": {
+      "comment": "Screen tab placeholder: what the tab does",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 PC의 화면을 실시간으로 보고 마우스와 키보드로 조작합니다. AI가 조작하는 동안 화면을 클릭하면 제어권을 가져올지 묻습니다."
+          }
+        }
+      }
+    },
+    "tab.terminal": {
+      "comment": "Workspace tab: terminal",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "터미널"
+          }
+        }
+      }
+    },
+    "tab.terminal.heading": {
+      "comment": "Terminal tab placeholder: heading",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 터미널"
+          }
+        }
+      }
+    },
+    "tab.terminal.summary": {
+      "comment": "Terminal tab placeholder: what the tab does",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PowerShell과 cmd 세션을 여러 개 엽니다. 연결이 끊겼다가 돌아와도 출력이 이어집니다."
+          }
+        }
+      }
+    },
+    "takeover.footnote": {
+      "comment": "Takeover confirmation: how to give control back",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 맡기려면 ‘AI에게 넘기기’를 누르세요."
+          }
+        }
+      }
+    },
+    "takeover.lastAction": {
+      "comment": "Takeover confirmation: label above the AI's latest action",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI의 마지막 동작"
+          }
+        }
+      }
+    },
+    "takeover.message": {
+      "comment": "Takeover confirmation: message with the computer name",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’에서 AI의 입력을 멈추고 내가 조작합니다. 아직 전달되지 않은 AI 입력은 버립니다."
+          }
+        }
+      }
+    },
+    "takeover.title": {
+      "comment": "Takeover confirmation title when the AI client has no name",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI에게서 제어권을 가져올까요?"
+          }
+        }
+      }
+    },
+    "takeover.titleWithClient": {
+      "comment": "Takeover confirmation title: AI client name",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에게서 제어권을 가져올까요?"
+          }
+        }
+      }
+    },
+    "timeline.a11y.artifacts": {
+      "comment": "VoiceOver: number of artifacts of a timeline entry",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "산출물 %lld개"
+          }
+        }
+      }
+    },
+    "timeline.artifact.a11y": {
+      "comment": "VoiceOver label of an artifact: file name",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "산출물 %@, Finder에서 보기"
+          }
+        }
+      }
+    },
+    "timeline.artifact.help": {
+      "comment": "Tooltip of an artifact: file path",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finder에서 보기 · %@"
+          }
+        }
+      }
+    },
+    "timeline.artifact.more": {
+      "comment": "Count of artifacts not shown",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "+%lld"
+          }
+        }
+      }
+    },
+    "timeline.copyJob": {
+      "comment": "Timeline context menu: copy the job ID",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 ID 복사"
+          }
+        }
+      }
+    },
+    "timeline.copySummary": {
+      "comment": "Timeline context menu: copy the action summary",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "동작 요약 복사"
+          }
+        }
+      }
+    },
+    "timeline.empty.message": {
+      "comment": "Timeline empty state: message",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사람이나 AI가 이 컴퓨터를 조작하면 누가 무엇을 했는지 여기에 시간순으로 남습니다."
+          }
+        }
+      }
+    },
+    "timeline.empty.title": {
+      "comment": "Timeline empty state: title",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아직 기록이 없습니다"
+          }
+        }
+      }
+    },
+    "timeline.failed": {
+      "comment": "Timeline load failure title",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "활동 기록을 불러오지 못했습니다"
+          }
+        }
+      }
+    },
+    "timeline.kind.connection": {
+      "comment": "Timeline action kind: connection",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결"
+          }
+        }
+      }
+    },
+    "timeline.kind.control": {
+      "comment": "Timeline action kind: control change",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제어권"
+          }
+        }
+      }
+    },
+    "timeline.kind.debug": {
+      "comment": "Timeline action kind: debugging",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "디버그"
+          }
+        }
+      }
+    },
+    "timeline.kind.exec": {
+      "comment": "Timeline action kind: command",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "명령"
+          }
+        }
+      }
+    },
+    "timeline.kind.file": {
+      "comment": "Timeline action kind: file",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일"
+          }
+        }
+      }
+    },
+    "timeline.kind.input": {
+      "comment": "Timeline action kind: mouse or keyboard input",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "입력"
+          }
+        }
+      }
+    },
+    "timeline.kind.install": {
+      "comment": "Timeline action kind: installation",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설치"
+          }
+        }
+      }
+    },
+    "timeline.kind.qa": {
+      "comment": "Timeline action kind: QA scenario",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QA"
+          }
+        }
+      }
+    },
+    "timeline.loading": {
+      "comment": "Timeline loading state",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "활동 기록을 불러오는 중"
+          }
+        }
+      }
+    },
+    "timeline.today": {
+      "comment": "Timeline day header: today",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오늘"
+          }
+        }
+      }
+    },
+    "timeline.yesterday": {
+      "comment": "Timeline day header: yesterday",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "어제"
           }
         }
       }

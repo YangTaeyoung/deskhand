@@ -7,7 +7,7 @@ let scenes: [SnapshotScene] = [
     SnapshotScene(name: "components-gallery", size: CGSize(width: 1440, height: 1024)) {
         ComponentsGallery()
     },
-] + RootScenes.all
+] + RootScenes.all + WorkspaceScenes.all
 
 let usage = """
     사용법: DeskhandSnapshots --out <디렉터리> [--only <장면>]

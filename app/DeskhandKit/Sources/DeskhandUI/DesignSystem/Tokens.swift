@@ -11,6 +11,10 @@ public enum DS {
         public static let human = SwiftUI.Color.blue
         /// An AI client holds input control.
         public static let ai = SwiftUI.Color.purple
+        /// Fill under white text for human control: `human` deepened so the text stays legible.
+        public static let humanFill = human.mix(with: .black, by: 0.12)
+        /// Fill under white text for AI control: `ai` deepened so the text stays legible.
+        public static let aiFill = ai.mix(with: .black, by: 0.22)
         /// Nobody holds control; the screen is only watched.
         public static let observe = SwiftUI.Color.secondary
         /// Errors, destructive actions and the emergency stop.

@@ -207,6 +207,11 @@ public struct OperationError: Error, Sendable, Equatable {
                   nextAction: error.nextAction)
     }
 
+    /// The daemon's message followed by the remedy on its own line when one is known.
+    public var detail: String {
+        [message, fix].compactMap { $0 }.joined(separator: "\n")
+    }
+
     /// How to resolve the failure, for error codes with a known remedy.
     public var fix: String? {
         switch code {

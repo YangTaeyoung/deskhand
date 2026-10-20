@@ -82,6 +82,15 @@ extension ControlOwner {
         case .ai: DS.Color.ai
         }
     }
+
+    /// Fill under white text for an owner that holds control.
+    public var fill: Color {
+        switch self {
+        case .none: DS.Color.observe
+        case .human: DS.Color.humanFill
+        case .ai: DS.Color.aiFill
+        }
+    }
 }
 
 extension StepStatus {

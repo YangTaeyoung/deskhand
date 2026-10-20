@@ -10,6 +10,9 @@ public enum PreviewFixtures {
     public static let buildServerID = "build-server"
     public static let designID = "design-ws"
     public static let labID = "lab-pc"
+    public static let meetingPCID = "meeting-pc"
+    public static let stagingID = "staging-pc"
+    public static let kioskID = "kiosk-pc"
 
     /// SSH alias whose simulated installation fails at the `install` step.
     public static let failingAlias = "media-pc"
@@ -50,6 +53,32 @@ public enum PreviewFixtures {
                  displays: [display(width: 2880, height: 1920, scale: 2, adapter: "Qualcomm Adreno")],
                  owner: "human", agentVersion: "0.1.0", connectionGeneration: 2,
                  lastSeen: Timestamp(date: now)),
+            Host(hostID: meetingPCID, name: "회의실 PC", os: "windows", arch: "amd64", address: "192.168.0.55", port: 47600,
+                 sshAlias: "meeting", state: "ready", caps: caps("ready"),
+                 session: SessionInfo(sessionID: 1, user: "meeting", connectState: "active", protocolKind: "console",
+                                      locked: false, inputDesktop: "Default"),
+                 displays: [display(width: 1920, height: 1080, scale: 1, adapter: "Intel Iris Xe Graphics")],
+                 owner: "none", agentVersion: "0.1.0", connectionGeneration: 1,
+                 lastSeen: Timestamp(date: now)),
+            Host(hostID: stagingID, name: "스테이징 서버", os: "windows", arch: "amd64", address: "10.0.4.30", port: 47600,
+                 sshAlias: "staging", state: "ready", caps: caps("ready"),
+                 session: SessionInfo(sessionID: 3, user: "deploy", connectState: "active", protocolKind: "rdp",
+                                      locked: false, inputDesktop: "Default"),
+                 displays: [display(width: 2560, height: 1440, scale: 1, adapter: "Microsoft Remote Display Adapter")],
+                 owner: "human", agentVersion: "0.1.0", connectionGeneration: 6,
+                 lastSeen: Timestamp(date: now)),
+            Host(hostID: kioskID, name: "매장 키오스크", os: "windows", arch: "amd64", address: "192.168.10.8", port: 47600,
+                 sshAlias: "kiosk", state: "ready",
+                 caps: caps("ready", except: [
+                     "screen": Capability(state: "needs_user", reason: "Windows 로그인 화면이 떠 있습니다"),
+                     "input": Capability(state: "needs_user", reason: "Windows 로그인 화면이 떠 있습니다"),
+                     "uia": Capability(state: "needs_user", reason: "Windows 로그인 화면이 떠 있습니다"),
+                 ]),
+                 session: SessionInfo(sessionID: 1, user: "kiosk", connectState: "active", protocolKind: "console",
+                                      locked: true, inputDesktop: "Winlogon"),
+                 displays: [display(width: 1080, height: 1920, scale: 1, adapter: "Intel UHD Graphics 600")],
+                 owner: "none", agentVersion: "0.1.0", connectionGeneration: 2,
+                 lastSeen: Timestamp(date: now)),
             Host(hostID: buildServerID, name: "빌드 서버", os: "windows", arch: "amd64", address: "10.0.4.12", port: 47600,
                  sshAlias: "build", state: "reconnecting",
                  caps: caps("unavailable", reason: "다시 연결하는 중입니다"),
@@ -68,30 +97,87 @@ public enum PreviewFixtures {
         ]
     }
 
+    /// Control states matching the hosts' owners. The staging server is paused by an emergency stop.
     public static func controls(for hosts: [Host]) -> [String: ControlState] {
         var controls: [String: ControlState] = [:]
         for host in hosts {
-            controls[host.hostID] = ControlState(owner: host.owner, ownerClient: host.ownerClient, gen: host.connectionGeneration, aiPaused: false)
+            controls[host.hostID] = ControlState(owner: host.owner, ownerClient: host.ownerClient, gen: host.connectionGeneration,
+                                                 aiPaused: host.hostID == stagingID)
         }
         return controls
     }
 
+    /// Screen stream quality of connected sample computers.
+    public static func streamQuality(hostID: String) -> StreamQuality? {
+        switch hostID {
+        case devPCID: StreamQuality(fps: 60, latencyMS: 18)
+        case qaLaptopID: StreamQuality(fps: 30, latencyMS: 41)
+        case meetingPCID: StreamQuality(fps: 60, latencyMS: 12)
+        case stagingID: StreamQuality(fps: 48, latencyMS: 35)
+        default: nil
+        }
+    }
+
     /// Timeline entries newest first, as `timeline.list` returns them.
     public static func timeline(hostID: String, now: Date = .now) -> [TimelineEntry] {
-        guard hostID == devPCID else { return [] }
-        func at(_ minutesAgo: Double) -> Timestamp { Timestamp(date: now.addingTimeInterval(-minutesAgo * 60)) }
-        return [
-            TimelineEntry(seq: 105, ts: at(3), hostID: hostID, actor: "ai", clientName: "Claude Code", kind: "file",
-                          summary: "C:\\qa\\report.html 받기", outcome: "ok"),
-            TimelineEntry(seq: 104, ts: at(12), hostID: hostID, actor: "ai", clientName: "Claude Code", kind: "input",
-                          summary: "‘주문 확인’ 버튼 클릭", outcome: "ok"),
-            TimelineEntry(seq: 103, ts: at(31), hostID: hostID, actor: "ai", clientName: "Claude Code", kind: "exec",
-                          summary: "dotnet test C:\\src\\Shop.sln", outcome: "failed", jobID: "j-01JB7Q"),
-            TimelineEntry(seq: 102, ts: at(38), hostID: hostID, actor: "human", clientName: "Deskhand", kind: "control",
-                          summary: "AI에게 제어권을 넘겼습니다", outcome: "ok"),
-            TimelineEntry(seq: 101, ts: at(42), hostID: hostID, actor: "system", kind: "connection",
-                          summary: "연결됨 · 세대 4", outcome: "ok"),
-        ]
+        func ago(_ minutes: Double) -> Timestamp { Timestamp(date: now.addingTimeInterval(-minutes * 60)) }
+        let today = Calendar.current.startOfDay(for: now)
+        func yesterday(_ hour: Int, _ minute: Int) -> Timestamp {
+            Timestamp(date: today.addingTimeInterval(TimeInterval(-24 * 3600 + hour * 3600 + minute * 60)))
+        }
+        func artifact(_ id: String, _ kind: String, _ name: String, _ mime: String, size: Int, at ts: Timestamp, job: String? = nil) -> Artifact {
+            Artifact(artifactID: id, jobID: job, kind: kind, name: name,
+                     path: Paths.home.appendingPathComponent("artifacts/\(hostID)/\(name)").path, size: size, mime: mime,
+                     sha256: "9c1f07d24ab2e8f1", createdAt: ts)
+        }
+        func entry(_ seq: Int, _ ts: Timestamp, _ actor: String, _ client: String?, _ kind: String, _ summary: String,
+                   _ outcome: String = "ok", job: String? = nil, artifacts: [Artifact] = []) -> TimelineEntry {
+            TimelineEntry(seq: seq, ts: ts, hostID: hostID, actor: actor, clientName: client, kind: kind, summary: summary,
+                          outcome: outcome, jobID: job, artifacts: artifacts)
+        }
+        switch hostID {
+        case devPCID:
+            return [
+                entry(105, ago(3), "ai", "Claude Code", "file", "C:\\qa\\report.html 받기",
+                      artifacts: [artifact("a-105", "file", "report.html", "text/html", size: 48_210, at: ago(3))]),
+                entry(104, ago(12), "ai", "Claude Code", "input", "‘주문 확인’ 버튼 클릭",
+                      artifacts: [artifact("a-104", "screenshot", "after-click.png", "image/png", size: 412_331, at: ago(12)),
+                                  artifact("a-104u", "ui_tree", "order-form.json", "application/json", size: 9_812, at: ago(12))]),
+                entry(103, ago(31), "ai", "Claude Code", "exec", "dotnet test C:\\src\\Shop.sln", "failed", job: "j-01JB7Q",
+                      artifacts: [artifact("a-103", "log", "dotnet-test.log", "text/plain", size: 88_004, at: ago(31), job: "j-01JB7Q")]),
+                entry(102, ago(38), "human", "Deskhand", "control", "AI에게 제어권을 넘겼습니다"),
+                entry(101, ago(42), "system", nil, "connection", "연결됨 · 세대 4"),
+                entry(100, yesterday(18, 52), "system", nil, "connection", "연결 끊김 · 원격 PC가 절전 모드로 들어갔습니다"),
+                entry(99, yesterday(18, 40), "ai", "Claude Code", "input", "‘배포’ 버튼 클릭", "denied"),
+                entry(98, yesterday(18, 31), "human", "Deskhand", "control", "제어권을 가져왔습니다"),
+                entry(97, yesterday(18, 12), "ai", "Claude Code", "exec", "powershell C:\\deploy\\publish.ps1", "unknown", job: "j-01JB5C"),
+                entry(96, yesterday(17, 55), "ai", "Claude Code", "input", "화면 캡처 · 디스플레이 1",
+                      artifacts: [artifact("a-96", "screenshot", "display-1.png", "image/png", size: 1_204_551, at: yesterday(17, 55))]),
+            ]
+        case qaLaptopID:
+            return [
+                entry(41, ago(6), "human", "Deskhand", "control", "제어권을 가져왔습니다"),
+                entry(40, ago(19), "ai", "Codex", "qa", "결제 흐름 시나리오 · 12단계 중 12단계 통과", job: "j-01JB8A",
+                      artifacts: [artifact("a-40", "report", "checkout-report.html", "text/html", size: 120_400, at: ago(19), job: "j-01JB8A")]),
+            ]
+        case meetingPCID:
+            return [entry(12, ago(25), "system", nil, "connection", "연결됨 · 세대 1")]
+        case stagingID:
+            return [
+                entry(53, ago(2), "human", "Deskhand", "control", "긴급 정지 · AI 입력을 멈췄습니다"),
+                entry(52, ago(3), "ai", "Codex", "input", "‘모든 주문 삭제’ 확인 창 열기",
+                      artifacts: [artifact("a-52", "screenshot", "confirm-dialog.png", "image/png", size: 356_120, at: ago(3))]),
+                entry(51, ago(9), "ai", "Codex", "exec", "sqlcmd -S . -Q \"SELECT COUNT(*) FROM Orders\""),
+                entry(50, ago(11), "system", nil, "connection", "원격 데스크톱 세션 연결됨 · deploy"),
+            ]
+        case kioskID:
+            return [
+                entry(31, ago(6), "system", nil, "connection", "Windows 세션이 잠겼습니다"),
+                entry(30, ago(8), "ai", "Claude Code", "input", "‘주문 시작’ 화면에서 메뉴 넘기기", "failed"),
+            ]
+        default:
+            return []
+        }
     }
 
     public static func doctor(hostID: String) -> [DoctorCheck] {
