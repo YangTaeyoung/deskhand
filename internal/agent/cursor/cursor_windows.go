@@ -4,6 +4,7 @@ package cursor
 
 import (
 	"fmt"
+	"runtime"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -78,7 +79,8 @@ func (windowsSource) sample() sample {
 
 // shape reads the bitmaps of cursor h. Without a color bitmap the mask
 // holds the AND mask above the XOR mask; a color bitmap with any alpha is
-// drawn with that alpha, and one without alpha with the AND mask.
+// drawn with that alpha, and one without alpha with the AND mask. It holds
+// the calling goroutine's thread from GetDC to ReleaseDC.
 func (windowsSource) shape(h uintptr) (*wire.CursorShape, error) {
 	var ii iconInfo
 	if r, _, err := procGetIconInfo.Call(h, uintptr(unsafe.Pointer(&ii))); r == 0 {
@@ -88,6 +90,8 @@ func (windowsSource) shape(h uintptr) (*wire.CursorShape, error) {
 	if ii.hbmColor != 0 {
 		defer procDeleteObject.Call(ii.hbmColor)
 	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	dc, _, _ := procGetDC.Call(0)
 	if dc == 0 {
 		return nil, fmt.Errorf("GetDC failed")
