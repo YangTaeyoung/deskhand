@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/YangTaeyoung/deskhand/internal/agent/capture"
 	"github.com/YangTaeyoung/deskhand/internal/agent/display"
@@ -307,10 +308,12 @@ func (j *Injector) apply(ctx context.Context, owner uint64, ev wire.InputEvent) 
 	var err error
 	switch ev.K {
 	case "text":
-		switch ev.Method {
-		case "", "unicode":
+		switch n := utf8.RuneCountInString(ev.Text); {
+		case n > maxTextChars:
+			err = fail(wire.CodeInvalidArgument, "the text has %d characters, more than the %d one text event carries; send it in parts of at most %d characters", n, maxTextChars, maxTextChars)
+		case ev.Method == "", ev.Method == "unicode":
 			err = j.typeText(ctx, owner, ev)
-		case "paste":
+		case ev.Method == "paste":
 			err = j.paste(ctx, owner, ev)
 		default:
 			err = fail(wire.CodeInvalidArgument, "text method '%s' is unknown; use unicode or paste", cut(ev.Method))

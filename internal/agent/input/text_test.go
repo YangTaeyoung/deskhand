@@ -294,3 +294,33 @@ func hex4(v uint16) string {
 	const digits = "0123456789ABCDEF"
 	return string([]byte{digits[v>>12&15], digits[v>>8&15], digits[v>>4&15], digits[v&15]})
 }
+
+func TestATextOfMoreThan100000CharactersIsRefused(t *testing.T) {
+	for _, method := range []string{"unicode", "paste"} {
+		t.Run(method, func(t *testing.T) {
+			clip := &fakeClipboard{}
+			sys := &fakeSystem{clip: clip}
+			j := newTestInjector(t, sys, userSession, oneDisplay, Options{})
+			a := j.Apply(wire.InputEvent{Seq: 1, K: "text", Method: method, Text: strings.Repeat("한", maxTextChars) + "a"})
+			mustFail(t, a, wire.CodeInvalidArgument)
+			if !strings.Contains(a.Error, "100000") {
+				t.Fatalf("the refusal %q does not name the limit", a.Error)
+			}
+			clip.mu.Lock()
+			clipLog := len(clip.log)
+			clip.mu.Unlock()
+			if n := len(sys.sent()); n != 0 || clipLog != 0 {
+				t.Fatalf("%d sends and %d clipboard calls for a refused text", n, clipLog)
+			}
+		})
+	}
+	if maxTextChars != 100_000 {
+		t.Fatalf("a text event carries up to %d characters", maxTextChars)
+	}
+	sys := &fakeSystem{}
+	j := newTestInjector(t, sys, userSession, oneDisplay, Options{})
+	mustOK(t, j.Apply(wire.InputEvent{Seq: 2, K: "text", Text: strings.Repeat("\r\n", maxTextChars/2)}))
+	if n := len(sys.sent()); n != maxTextChars/2/chunkChars {
+		t.Fatalf("%d sends for %d line breaks", n, maxTextChars/2)
+	}
+}

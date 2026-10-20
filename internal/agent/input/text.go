@@ -18,6 +18,8 @@ const (
 	// drainAfter is how recent the last chunk of text has to be for the
 	// first chunk of the next text to wait for it to be read.
 	drainAfter = time.Second
+	// maxTextChars bounds the characters of one text event.
+	maxTextChars = 100_000
 )
 
 // textItem is the inputs of one character of a text, or of a "\r\n", and
