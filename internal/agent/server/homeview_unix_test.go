@@ -12,6 +12,7 @@ import (
 
 	"github.com/YangTaeyoung/deskhand/internal/agent/session"
 	"github.com/YangTaeyoung/deskhand/internal/proto"
+	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
 func TestAnAbsoluteLinkInTheHomeIsRefusedAsSuch(t *testing.T) {
@@ -126,5 +127,23 @@ func TestTheScopeCheckFindsARelativeProgramInTheLaunchFolder(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, "runner-ran")); err != nil {
 		t.Fatal("run.sh did not start through the scope")
+	}
+}
+
+func TestCopyDoesNotWriteIntoTheSessionHome(t *testing.T) {
+	home, outside := linkedHome(t)
+	c := sessionClient(t, session.Session{User: "deskhand", Home: home}, true)
+	res := c.call("fs.copy", proto.Message{"from": filepath.Join(outside, "shadow"), "to": filepath.Join(home, "copy")})
+	if res["ok"] != false || res.String("code") != wire.CodeCapabilityUnsupported {
+		t.Fatalf("copy into the home %v", res)
+	}
+	if _, err := os.Lstat(filepath.Join(home, "copy")); err == nil {
+		t.Fatal("the copy was written into the home")
+	}
+	if err := os.WriteFile(filepath.Join(home, "a.txt"), []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if res := c.ok("fs.copy", proto.Message{"from": filepath.Join(home, "a.txt"), "to": filepath.Join(outside, "a.txt")}); res.Int("copied") != 1 {
+		t.Fatalf("copy out of the home %v", res)
 	}
 }

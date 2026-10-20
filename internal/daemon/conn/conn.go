@@ -967,7 +967,9 @@ func answer(res proto.Message) (proto.Message, error) {
 }
 
 // agentError turns an answer with ok false into an *apierr.Error; an answer
-// without a code gets one from its text.
+// without a code gets one from its text. The next action of
+// CAPABILITY_UNSUPPORTED is host_repair only for a code taken from the text,
+// which names an op the agent does not know.
 func agentError(res proto.Message) *apierr.Error {
 	code, _ := res["code"].(string)
 	msg := res.String("error")
@@ -975,14 +977,15 @@ func agentError(res proto.Message) *apierr.Error {
 		msg = "에이전트가 이유를 밝히지 않고 요청을 거절했습니다. PC의 에이전트 로그를 확인하세요"
 	}
 	retry, _ := res["retryable"].(bool)
-	if code == "" {
+	inferred := code == ""
+	if inferred {
 		code = inferCode(msg)
 	}
 	next := ""
-	switch code {
-	case wire.CodeExecutionOutcomeUnknown, wire.CodeInProgress:
+	switch {
+	case code == wire.CodeExecutionOutcomeUnknown, code == wire.CodeInProgress:
 		next = apierr.NextCheckState
-	case wire.CodeCapabilityUnsupported:
+	case code == wire.CodeCapabilityUnsupported && inferred:
 		next = apierr.NextHostRepair
 	}
 	return apierr.New(code, msg, retry, next)

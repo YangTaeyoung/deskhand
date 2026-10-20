@@ -1,0 +1,289 @@
+//go:build windows
+
+package server
+
+import (
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
+
+	"github.com/YangTaeyoung/deskhand/internal/wire"
+)
+
+var (
+	shell32                = windows.NewLazySystemDLL("shell32.dll")
+	procSHFileOperationW   = shell32.NewProc("SHFileOperationW")
+	procSHQueryRecycleBinW = shell32.NewProc("SHQueryRecycleBinW")
+)
+
+// SHFileOperationW function and flags.
+const (
+	foDelete               = 0x3
+	fofSilent              = 0x4
+	fofNoConfirmation      = 0x10
+	fofAllowUndo           = 0x40
+	fofNoErrorUI           = 0x400
+	fofNoConnectedElements = 0x2000
+)
+
+// shellPathMax is MAX_PATH: the Recycle Bin keeps an entry only when its
+// path and the path of everything in it are shorter, in UTF-16 code units.
+const shellPathMax = 260
+
+// Registry keys of the Recycle Bin settings, below HKEY_CURRENT_USER and
+// HKEY_LOCAL_MACHINE.
+const (
+	bitBucketVolumes = `Software\Microsoft\Windows\CurrentVersion\Explorer\BitBucket\Volume\`
+	explorerPolicies = `Software\Microsoft\Windows\CurrentVersion\Policies\Explorer`
+)
+
+// shFileOpStruct is SHFILEOPSTRUCTW of 64-bit Windows.
+type shFileOpStruct struct {
+	hwnd                  uintptr
+	wFunc                 uint32
+	pFrom                 *uint16
+	pTo                   *uint16
+	fFlags                uint16
+	fAnyOperationsAborted int32
+	hNameMappings         uintptr
+	lpszProgressTitle     *uint16
+}
+
+// shQueryRBInfo is SHQUERYRBINFO of 64-bit Windows.
+type shQueryRBInfo struct {
+	cbSize      uint32
+	i64Size     int64
+	i64NumItems int64
+}
+
+// platformTrash moves the entry at path, whose Lstat is fi, to the current
+// user's Recycle Bin (shellRecycle) once recyclable has found that the
+// Recycle Bin keeps it.
+func platformTrash(path string, fi fs.FileInfo) error {
+	if err := recyclable(path, fi); err != nil {
+		return err
+	}
+	return shellRecycle(path)
+}
+
+// unsupportedTrash is the CAPABILITY_UNSUPPORTED error of an entry the
+// Recycle Bin does not keep, with the reason why and the next step.
+func unsupportedTrash(path, why, next string) error {
+	return coded(wire.CodeCapabilityUnsupported, fmt.Sprintf("the Recycle Bin cannot keep '%s' because %s; %s", path, why, next), false)
+}
+
+// recyclable returns nil when the Recycle Bin of the current user keeps the
+// entry at path, whose Lstat is fi: path is not in a Recycle Bin, path is
+// shorter than shellPathMax, it lies on a fixed local volume that has a
+// Recycle Bin, neither a policy nor the volume's setting removes deleted
+// files at once, every path in the folder it names is shorter than
+// shellPathMax, and its size, with everything in it, is within the
+// volume's Recycle Bin size. Otherwise it
+// returns a CAPABILITY_UNSUPPORTED error, or the error that kept it from
+// checking.
+func recyclable(path string, fi fs.FileInfo) error {
+	const permanently = "delete it permanently with fs.delete instead"
+	rest := path[windowsVolumeLen(path):]
+	if first, _, _ := strings.Cut(strings.TrimLeft(rest, `\`), `\`); strings.EqualFold(first, "$Recycle.Bin") {
+		return unsupportedTrash(path, "it is in the Recycle Bin already", "delete it permanently with fs.delete, or leave it there")
+	}
+	if n := utf16Len(path); n >= shellPathMax {
+		return unsupportedTrash(path, fmt.Sprintf("its path is %d characters long and the Recycle Bin takes paths shorter than %d characters", n, shellPathMax),
+			"move it to a shorter path with fs.rename and trash it there, or "+permanently)
+	}
+	root, err := volumeRoot(path)
+	if err != nil {
+		return fsFailure(fmt.Sprintf("cannot find the volume of '%s'", path), err)
+	}
+	rootPtr, err := windows.UTF16PtrFromString(root)
+	if err != nil {
+		return err
+	}
+	if t := windows.GetDriveType(rootPtr); t != windows.DRIVE_FIXED {
+		return unsupportedTrash(path, fmt.Sprintf("%s is %s, which has no Recycle Bin", root, driveKind(t)), permanently)
+	}
+	guid := make([]uint16, 64)
+	if err := windows.GetVolumeNameForVolumeMountPoint(rootPtr, &guid[0], uint32(len(guid))); err != nil {
+		return unsupportedTrash(path, fmt.Sprintf("%s is not the root of a volume (it may be a drive made with subst), so it has no Recycle Bin", root), permanently)
+	}
+	info := shQueryRBInfo{cbSize: uint32(unsafe.Sizeof(shQueryRBInfo{}))}
+	if hr, _, _ := procSHQueryRecycleBinW.Call(uintptr(unsafe.Pointer(rootPtr)), uintptr(unsafe.Pointer(&info))); uint32(hr) != 0 {
+		return unsupportedTrash(path, fmt.Sprintf("the volume %s has no Recycle Bin for this user (SHQueryRecycleBin 0x%08X)", root, uint32(hr)), permanently)
+	}
+	if v, ok := policyValue("NoRecycleFiles"); ok && v != 0 {
+		return unsupportedTrash(path, "the policy \"Do not move deleted files to the Recycle Bin\" is on", permanently)
+	}
+	volume := strings.TrimSuffix(strings.TrimPrefix(windows.UTF16ToString(guid), `\\?\Volume`), `\`)
+	limit, err := recycleBinLimit(root, volume)
+	if err != nil {
+		return unsupportedTrash(path, err.Error(), permanently)
+	}
+	size, err := treeSize(path, fi)
+	if err != nil {
+		return err
+	}
+	if size > limit {
+		return unsupportedTrash(path, fmt.Sprintf("it takes %d bytes, more than the %d bytes the Recycle Bin of %s holds", size, limit, root),
+			permanently+", or raise the size of that Recycle Bin")
+	}
+	return nil
+}
+
+// treeSize returns the size of the entry at path, whose Lstat is fi, with
+// the sizes of the files in the folder it names, without following links;
+// a path in that folder as long as shellPathMax or longer is a
+// CAPABILITY_UNSUPPORTED error.
+func treeSize(path string, fi fs.FileInfo) (int64, error) {
+	if !fi.IsDir() {
+		return fi.Size(), nil
+	}
+	var size int64
+	err := filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return fsFailure(fmt.Sprintf("cannot read '%s'", p), err)
+		}
+		if n := utf16Len(p); n >= shellPathMax {
+			return unsupportedTrash(path, fmt.Sprintf("it holds '%s', whose path is %d characters long, and the Recycle Bin takes paths shorter than %d characters", p, n, shellPathMax),
+				"move what it holds to shorter paths, or delete it permanently with fs.delete instead")
+		}
+		if d.Type().IsRegular() {
+			info, err := d.Info()
+			if err != nil {
+				return fsFailure(fmt.Sprintf("cannot read '%s'", p), err)
+			}
+			size += info.Size()
+		}
+		return nil
+	})
+	return size, err
+}
+
+// volumeRoot returns the root of the volume that holds path, such as C:\
+// (GetVolumePathNameW).
+func volumeRoot(path string) (string, error) {
+	roots, err := volumeRoots(path)
+	if err != nil {
+		return "", err
+	}
+	return roots[0], nil
+}
+
+// driveKind names the drive type t of GetDriveTypeW.
+func driveKind(t uint32) string {
+	switch t {
+	case windows.DRIVE_REMOVABLE:
+		return "a removable drive"
+	case windows.DRIVE_REMOTE:
+		return "a network drive"
+	case windows.DRIVE_CDROM:
+		return "a CD or DVD drive"
+	case windows.DRIVE_RAMDISK:
+		return "a RAM disk"
+	}
+	return "not a fixed local drive"
+}
+
+// policyValue returns the DWORD name of the Explorer policies, read from
+// HKEY_LOCAL_MACHINE first and then from HKEY_CURRENT_USER.
+func policyValue(name string) (uint64, bool) {
+	for _, hive := range []registry.Key{registry.LOCAL_MACHINE, registry.CURRENT_USER} {
+		if v, ok := dwordValue(hive, explorerPolicies, name); ok {
+			return v, true
+		}
+	}
+	return 0, false
+}
+
+// dwordValue returns the integer value name of the key path below hive.
+func dwordValue(hive registry.Key, path, name string) (uint64, bool) {
+	k, err := registry.OpenKey(hive, path, registry.QUERY_VALUE)
+	if err != nil {
+		return 0, false
+	}
+	defer k.Close()
+	v, _, err := k.GetIntegerValue(name)
+	return v, err == nil
+}
+
+// recycleBinLimit returns the most bytes the Recycle Bin of the volume with
+// the root root and the GUID volume ({…}) holds: the MaxCapacity (MiB) of
+// the volume's Recycle Bin settings, or the share of the volume's size in
+// percent the RecycleBinSize policy sets when that is smaller. A setting
+// that removes deleted files at once (NukeOnDelete) and a limit that
+// cannot be read are errors whose text says so.
+func recycleBinLimit(root, volume string) (int64, error) {
+	key := bitBucketVolumes + volume
+	if v, ok := dwordValue(registry.CURRENT_USER, key, "NukeOnDelete"); ok && v != 0 {
+		return 0, fmt.Errorf("the Recycle Bin of %s is set to remove files immediately when they are deleted", root)
+	}
+	limit := int64(-1)
+	if mb, ok := dwordValue(registry.CURRENT_USER, key, "MaxCapacity"); ok {
+		limit = int64(mb) << 20
+	}
+	if pct, ok := policyValue("RecycleBinSize"); ok {
+		var total uint64
+		if p, err := windows.UTF16PtrFromString(root); err == nil && windows.GetDiskFreeSpaceEx(p, nil, &total, nil) == nil {
+			if byPolicy := int64(total / 100 * pct); limit < 0 || byPolicy < limit {
+				limit = byPolicy
+			}
+		}
+	}
+	if limit < 0 {
+		return 0, fmt.Errorf("the size of the Recycle Bin of %s could not be read from its settings", root)
+	}
+	return limit, nil
+}
+
+// shellRecycle deletes path with SHFileOperationW and FOF_ALLOWUNDO, which
+// moves it to the Recycle Bin, without any confirmation, progress or error
+// window and without the entries the shell connects to path, such as the
+// folder of a saved web page. It runs on its thread in a single-threaded
+// COM apartment.
+func shellRecycle(path string) error {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	if err := windows.CoInitializeEx(0, windows.COINIT_APARTMENTTHREADED|windows.COINIT_DISABLE_OLE1DDE); err == nil || err == windows.Errno(1) {
+		defer windows.CoUninitialize()
+	}
+	from, err := windows.UTF16FromString(path)
+	if err != nil {
+		return invalidArgument(fmt.Sprintf("'%s' holds a NUL character; pass a path without it", path))
+	}
+	from = append(from, 0)
+	op := shFileOpStruct{wFunc: foDelete, pFrom: &from[0], fFlags: fofAllowUndo | fofNoConfirmation | fofSilent | fofNoErrorUI | fofNoConnectedElements}
+	r, _, _ := procSHFileOperationW.Call(uintptr(unsafe.Pointer(&op)))
+	runtime.KeepAlive(from)
+	if code := uint32(r); code != 0 {
+		return shellDeleteError(path, code)
+	}
+	if op.fAnyOperationsAborted != 0 {
+		return coded(wire.CodeInternal, fmt.Sprintf("the Recycle Bin stopped before it moved '%s'; check it with fs.stat and retry", path), true)
+	}
+	if _, err := os.Lstat(path); err == nil {
+		return coded(wire.CodeInternal, fmt.Sprintf("'%s' is still there after the move to the Recycle Bin; check it with fs.stat and retry", path), true)
+	}
+	return nil
+}
+
+// shellDeleteError is the error of the SHFileOperationW result code for
+// path, after which nothing was moved.
+func shellDeleteError(path string, code uint32) error {
+	switch code {
+	case 0x20, 0x21:
+		return coded(wire.CodePermissionDenied, fmt.Sprintf("another program has '%s' open, so it was not moved to the Recycle Bin; close that program and retry", path), true)
+	case 0x7C:
+		return coded(wire.CodePermissionDenied, fmt.Sprintf("the Recycle Bin could not move '%s' (SHFileOperation error 0x7C); a program may have it or a file in it open, so close that program and retry", path), true)
+	case 0x5, 0x78:
+		return coded(wire.CodePermissionDenied, fmt.Sprintf("access to '%s' is denied, so it was not moved to the Recycle Bin; check its permissions and retry", path), false)
+	case 0x2, 0x3:
+		return coded(wire.CodeNotFound, fmt.Sprintf("'%s' was gone when it was to be moved to the Recycle Bin; check the path with fs.stat", path), false)
+	}
+	return coded(wire.CodeInternal, fmt.Sprintf("the Recycle Bin refused '%s' (SHFileOperation error 0x%X); check it with fs.stat and retry", path, code), false)
+}

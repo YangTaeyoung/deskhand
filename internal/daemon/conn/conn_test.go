@@ -315,8 +315,12 @@ func TestAgentErrorBecomesCodedError(t *testing.T) {
 		t.Fatalf("error %#v", err)
 	}
 	_, err = h.Call(context.Background(), "nope", nil, CallOpts{})
-	if e := apierr.As(err); e == nil || e.Code != wire.CodeCapabilityUnsupported {
+	if e := apierr.As(err); e == nil || e.Code != wire.CodeCapabilityUnsupported || e.NextAction != apierr.NextHostRepair {
 		t.Fatalf("unknown op error %#v", err)
+	}
+	_, err = h.Call(context.Background(), "fail.unsupported", nil, CallOpts{})
+	if e := apierr.As(err); e == nil || e.Code != wire.CodeCapabilityUnsupported || e.NextAction != "" {
+		t.Fatalf("CAPABILITY_UNSUPPORTED the agent sent %#v", err)
 	}
 }
 

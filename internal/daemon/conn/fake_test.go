@@ -240,6 +240,8 @@ func (f *fakeAgent) handle(m proto.Message) (proto.Message, bool) {
 		return proto.Message{"ok": true, "entries": []any{}, "truncated": false}, false
 	case "fail.coded":
 		return proto.Message{"ok": false, "code": "STALE_TARGET", "error": "element e1 no longer exists; call ui.tree again", "retryable": false}, false
+	case "fail.unsupported":
+		return proto.Message{"ok": false, "code": "CAPABILITY_UNSUPPORTED", "error": "the Recycle Bin cannot keep 'x'; delete it permanently with fs.delete instead", "retryable": false}, false
 	}
 	return proto.Message{"ok": false, "error": "unknown op '" + m.String("op") + "'; update deskhand-agent"}, false
 }

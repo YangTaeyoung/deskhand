@@ -2,7 +2,9 @@ package daemon_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -405,6 +407,96 @@ func TestFilesRoundTrip(t *testing.T) {
 	refused := e.call(t, "files.rename", map[string]any{"host_id": "pc", "from": moved, "to": file})
 	if refused["status"] != "failed" || refused["error"].(map[string]any)["code"] != "NOT_FOUND" {
 		t.Fatalf("rename of a deleted file %v", refused)
+	}
+}
+
+func TestFilesCopyTrashAndHash(t *testing.T) {
+	e := setup(t, setupOpts{trustDaemon: true})
+	e.waitState(t, "ready")
+	src := filepath.Join(e.agent.home, "원본.txt")
+	if err := os.WriteFile(src, []byte("copy me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(e.agent.home, "사본.txt")
+	cp := e.call(t, "files.copy", map[string]any{"host_id": "pc", "from": src, "to": dst})
+	checkEnvelope(t, cp)
+	if cp["status"] != "succeeded" || cp["path"] != dst || cp["copied"] != float64(1) || cp["outcome"] != "written" || cp["request_id"] == nil {
+		t.Fatalf("copy %v", cp)
+	}
+	if b, _ := os.ReadFile(dst); string(b) != "copy me" {
+		t.Fatalf("copy content %q", b)
+	}
+	st, err := store.Open(paths.DB())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if req, err := st.GetRequest(cp["request_id"].(string)); err != nil || req.State != store.RequestDone {
+		t.Fatalf("the copy request %+v, %v was not journaled", req, err)
+	}
+	conflict := e.call(t, "files.copy", map[string]any{"host_id": "pc", "from": src, "to": dst})
+	if errObj, _ := conflict["error"].(map[string]any); conflict["status"] != "failed" || errObj["code"] != "TRANSFER_CONFLICT" {
+		t.Fatalf("copy onto an existing file %v", conflict)
+	}
+	renamed := e.call(t, "files.copy", map[string]any{"host_id": "pc", "from": src, "to": dst, "on_conflict": "rename"})
+	if renamed["status"] != "succeeded" || renamed["path"] != filepath.Join(e.agent.home, "사본 (1).txt") || renamed["outcome"] != "renamed" {
+		t.Fatalf("copy with rename %v", renamed)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var ce *client.Error
+	for _, params := range []map[string]any{
+		{"host_id": "pc", "from": src, "to": dst, "on_conflict": "merge"},
+		{"host_id": "pc", "from": src},
+		{"host_id": "pc"},
+	} {
+		if err := e.c.Call(ctx, "files.copy", params, nil); !errors.As(err, &ce) || ce.Code != "INVALID_ARGUMENT" {
+			t.Fatalf("files.copy %v: %v", params, err)
+		}
+	}
+
+	hash := e.call(t, "files.hash", map[string]any{"host_id": "pc", "path": dst})
+	checkEnvelope(t, hash)
+	sum := sha256.Sum256([]byte("copy me"))
+	if hash["status"] != "succeeded" || hash["host_id"] != "pc" || hash["sha256"] != hex.EncodeToString(sum[:]) || hash["size"] != float64(7) ||
+		hash["offset"] != float64(0) || hash["length"] != float64(7) {
+		t.Fatalf("hash %v", hash)
+	}
+	part := e.call(t, "files.hash", map[string]any{"host_id": "pc", "path": dst, "offset": 5, "length": 2})
+	if sum := sha256.Sum256([]byte("me")); part["sha256"] != hex.EncodeToString(sum[:]) || part["length"] != float64(2) {
+		t.Fatalf("hash of a range %v", part)
+	}
+	gone := e.call(t, "files.hash", map[string]any{"host_id": "pc", "path": filepath.Join(e.agent.home, "gone")})
+	if errObj, _ := gone["error"].(map[string]any); gone["status"] != "failed" || errObj["code"] != "NOT_FOUND" || gone["sha256"] != nil {
+		t.Fatalf("hash of a missing file %v", gone)
+	}
+	if err := e.c.Call(ctx, "files.hash", map[string]any{"host_id": "pc", "path": dst, "offset": -1}, nil); !errors.As(err, &ce) || ce.Code != "INVALID_ARGUMENT" {
+		t.Fatalf("hash with a negative offset: %v", err)
+	}
+
+	trash := e.call(t, "files.trash", map[string]any{"host_id": "pc", "path": dst})
+	checkEnvelope(t, trash)
+	if errObj, _ := trash["error"].(map[string]any); trash["status"] != "failed" || errObj["code"] != "CAPABILITY_UNSUPPORTED" || trash["next_action"] != nil {
+		t.Fatalf("trash outside Windows %v", trash)
+	}
+	if _, err := os.Stat(dst); err != nil {
+		t.Fatalf("the file the agent could not trash is gone: %v", err)
+	}
+	if missing := e.call(t, "files.trash", map[string]any{"host_id": "pc", "path": filepath.Join(e.agent.home, "gone")}); missing["status"] != "succeeded" || missing["trashed"] != false {
+		t.Fatalf("trash of a missing path %v", missing)
+	}
+
+	entries := e.call(t, "timeline.list", map[string]any{"host_id": "pc"})["entries"].([]any)
+	seen := map[string]string{}
+	for _, en := range entries {
+		m := en.(map[string]any)
+		if m["kind"] == "file" {
+			seen[m["summary"].(string)] = m["outcome"].(string)
+		}
+	}
+	if seen["복사: "+src+" → "+dst] == "" || seen["휴지통으로 옮기기: "+dst] != "failed" {
+		t.Fatalf("timeline %v", seen)
 	}
 }
 

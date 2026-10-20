@@ -48,7 +48,7 @@ Alcove 에이전트 프로토콜 2층과 같은 NDJSON(`t`로 구분). 한 줄 �
 - 에이전트는 welcome 전에는 요청을 처리하지 않고 이벤트도 보내지 않는다. 첫 메시지가 welcome이 아니거나 10초 안에 오지 않으면 스트림을 닫는다.
 - hello·welcome 뒤에는 `req`(데몬→에이전트)와 `res`·`ev`(에이전트→데몬)만 흐른다. 에이전트는 그 밖의 `t`를 받으면 실행하지 않고 `{"t":"res","id":<그 메시지의 id 또는 null>,"ok":false,"code":"INVALID_ARGUMENT","error":"…","retryable":false}` 한 줄로 답한다. 두 번째 welcome은 무시한다.
 - `session`: Windows는 `session_id`, `user`(에이전트 계정), `connect_state`(`active`/`connected`/`disconnected`/`other`) 중 읽은 것. `displays`는 화면 기능 전까지 `[]`. `boot_id`는 에이전트 프로세스가 시작할 때마다 바뀐다.
-- `rid`(요청 ID): 데몬은 비멱등 op에 항상 붙인다. 기록 대상 op는 `exec.run`, `exec.start`, `exec.write`, `exec.kill`, `proc.kill`, `fs.write`, `fs.rename`, `fs.mkdir`, `fs.delete`, `app.launch`, `clipboard.set`, `win.action`, `ui.act`이고(데몬과 에이전트가 함께 쓰는 목록 `internal/wire.JournaledOps`), `rid`가 없는 요청은 기록 없이 실행한다. 형식은 영문자·숫자·`-`·`_` 1–128자의 문자열(Windows 장치 이름 제외)이다. 요청에 `rid`가 있으면 op와 상관없이 형식을 검사하고, 어기면(문자열이 아님, 빈 문자열, 허용하지 않는 문자) 실행하지 않고 `INVALID_ARGUMENT`로 답한다.
+- `rid`(요청 ID): 데몬은 비멱등 op에 항상 붙인다. 기록 대상 op는 `exec.run`, `exec.start`, `exec.write`, `exec.kill`, `proc.kill`, `fs.write`, `fs.rename`, `fs.mkdir`, `fs.delete`, `fs.copy`, `fs.trash`, `xfer.commit`, `xfer.abort`, `app.launch`, `clipboard.set`, `win.action`, `ui.act`이고(데몬과 에이전트가 함께 쓰는 목록 `internal/wire.JournaledOps`), `rid`가 없는 요청은 기록 없이 실행한다. 형식은 영문자·숫자·`-`·`_` 1–128자의 문자열(Windows 장치 이름 제외)이다. 요청에 `rid`가 있으면 op와 상관없이 형식을 검사하고, 어기면(문자열이 아님, 빈 문자열, 허용하지 않는 문자) 실행하지 않고 `INVALID_ARGUMENT`로 답한다.
 - 에이전트는 실행 전에 `DataDir/journal/<rid>.json`에 실행 중 기록을 쓰고, 끝나면 응답(`t`, `id` 제외)으로 바꾼다. 끝난 기록은 24시간 보존한다. 같은 `rid`가 다시 오면 실행하지 않고 저장한 응답을 `"replayed":true`와 함께 돌려준다(저장한 응답이 실패면 그 실패 그대로). 실행 중이면 `{"ok":false,"code":"IN_PROGRESS","retryable":true}`. 다른 op에 쓴 `rid`면 `INVALID_ARGUMENT`.
 - 에이전트가 실행 중에 멈췄던 `rid`는 다시 실행하지 않고 `{"ok":false,"code":"EXECUTION_OUTCOME_UNKNOWN"}`를 저장한 응답으로 삼는다.
 - `req.status{rid}` 응답: 기록이 없으면 `{"ok":true,"state":"unknown"}`, 실행 중이면 `{"ok":true,"state":"running"}`, 끝났으면 저장한 응답의 필드(`ok`·`code`·`error` 또는 결과 필드)에 `"state":"done"`을 더한 것.
@@ -74,9 +74,9 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 | `input.state` | — | `gen`, `pressed`(눌린 키·버튼) |
 | `input.release_all` | — | `released` |
 | `control.set_writer` | `gen` | `gen` — 이 값보다 작은 세대의 UI 계열 요청은 `CONTROL_PREEMPTED` |
-| `fs.copy` | `from`, `to`, `on_conflict`, `recursive` | `path`, `copied` |
-| `fs.trash` | `path` | `trashed` |
-| `fs.hash` | `path`, `offset`, `length` | `sha256` |
+| `fs.copy` | `from`, `to`(복사본의 전체 경로, 그 폴더는 있어야 한다), `on_conflict`(`fail` 기본/`replace`/`skip`/`rename`), `recursive`(폴더일 때), `roots` | `path`(복사본의 실제 경로), `copied`(복사한 파일 수), `outcome`(`written`/`skipped`/`renamed`) |
+| `fs.trash` | `path`, `roots` | `trashed`(없는 경로면 false) |
+| `fs.hash` | `path`, `offset`, `length`(0=끝까지), `roots` | `sha256`, `offset`, `length`(읽은 바이트 수), `size`(파일 크기) |
 | `xfer.prepare` | `transfer_id`, `path`, `size`, `mtime`, `sha256`(전체, push일 때), `on_conflict`(`fail`/`replace`/`skip`/`rename`) | `part_size`(이미 받은 바이트), `part_sha256`, `free_bytes`, `dest_exists` |
 | `xfer.commit` | `transfer_id`, `path`, `sha256`, `on_conflict` | `path`(실제 반영 경로), `outcome`(`written`/`skipped`/`renamed`) |
 | `xfer.abort` | `transfer_id`, `path` | `removed` — 임시 파일만 지운다 |
@@ -87,6 +87,15 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 | `diag.events` | `log`(`Application`/`System`), `since`, `level`, `provider`, `max` | `events` |
 | `diag.crashes` | `since` | `dumps`(WER 덤프 목록) |
 | `agent.update` | `path`(이미 put한 새 실행 파일), `sha256` | 자기 교체 후 재시작 예약 |
+
+파일 op `fs.copy`, `fs.trash`, `fs.hash`의 규칙:
+
+- 경로 검사: Windows에서 장치 경로(`\\.\…`, `\\?\GLOBALROOT…`), 장치 예약 이름(`CON`, `PRN`, `AUX`, `NUL`, `CONIN$`, `CONOUT$`, `COM0`–`COM9`, `LPT0`–`LPT9`, `COM¹²³`·`LPT¹²³`, 대소문자 무관, 확장자가 붙어도), 점이나 공백으로 끝나는 이름, 제어 문자나 `< > : " | ? *`가 든 이름은 `INVALID_ARGUMENT`다. `\\?\` 접두는 떼고 다루며 결과 경로에도 붙이지 않는다. 260자를 넘는 경로도 다룬다.
+- `roots`(선택): 절대 폴더 경로 배열. 비어 있거나 없으면 제한이 없다. 있으면 경로의 폴더를 링크·junction·짧은 이름·대소문자까지 해석한 경로와 경로 전체를 해석한 경로가 모두 어느 root(같은 방식으로 해석) 안이어야 하고, 아니면 `PERMISSION_DENIED`다. 대상이 없는 링크를 지나는 경로도 `PERMISSION_DENIED`다.
+- 오류에는 항상 `code`가 있다. 없는 경로·폴더 `NOT_FOUND`, 볼륨 가득 참 `DISK_FULL`, 접근 거부 `PERMISSION_DENIED`, 다른 프로그램이 연 항목 `PERMISSION_DENIED`(`retryable:true`).
+- `fs.copy`: 복사본을 `to`의 폴더에 임시 이름(`.deskhand-copy-<임의>`)으로 끝까지 쓰고 디스크에 내린 뒤 `to`로 옮긴다(덮어쓰지 않는 이름 바꾸기, `replace`일 때만 파일 교체). 실패하면 임시 항목을 지운다. 내용·수정 시각·권한 비트(Windows는 읽기 전용 여부)를 복사하고, 숨김 같은 다른 속성·ACL·대체 데이터 스트림은 복사하지 않는다. 폴더는 `recursive`가 있어야 하고 안의 링크·junction·특수 파일은 `INVALID_ARGUMENT`다. 링크인 `from`도 거절한다. 폴더를 그 안으로 복사하면 `INVALID_ARGUMENT`. `to`가 있으면 `fail`은 `TRANSFER_CONFLICT`, `skip`은 복사하지 않고 `outcome:"skipped"`(`path`는 있는 항목), `replace`는 파일을 파일로만 바꾸고(폴더가 끼면 `TRANSFER_CONFLICT`), `rename`은 `이름 (1).확장자`부터 비어 있는 이름에 쓴다(`outcome:"renamed"`). 대소문자만 다른 이름이 있으면 `fail`·`replace`는 그 이름을 밝힌 `TRANSFER_CONFLICT`다. Windows 밖 에이전트가 데스크톱 세션 사용자의 홈 안으로 복사하는 것은 `CAPABILITY_UNSUPPORTED`다.
+- `fs.trash`: 현재 사용자의 휴지통으로 옮긴다(`SHFileOperationW` `FO_DELETE`, `FOF_ALLOWUNDO|FOF_NOCONFIRMATION|FOF_SILENT|FOF_NOERRORUI|FOF_NO_CONNECTED_ELEMENTS`, 창을 띄우지 않는다). 휴지통이 받지 않고 바로 지울 항목은 옮기지 않고 `CAPABILITY_UNSUPPORTED`다: 고정 로컬 드라이브가 아니거나(네트워크·이동식·subst 등) 휴지통이 없는 볼륨, "삭제된 파일을 휴지통으로 이동하지 않음" 정책이나 볼륨의 즉시 삭제 설정, 경로나 폴더 안 경로가 260자(UTF-16) 이상, 볼륨 휴지통 최대 크기(`MaxCapacity`, `RecycleBinSize` 정책)보다 큰 항목, 이미 휴지통에 있는 항목. 영구 삭제로 대신하지 않는다(영구 삭제는 `fs.delete`). Windows 밖의 에이전트는 항상 `CAPABILITY_UNSUPPORTED`. 파일 시스템 루트·홈 폴더와 그 상위는 `fs.delete`처럼 거절한다.
+- `fs.hash`: 일반 파일의 `offset`부터 `length`바이트(0이면 끝까지)의 SHA-256. `offset`이 파일 크기보다 크면 `INVALID_ARGUMENT`.
 
 이벤트(`ev`): Alcove의 `job.exited`, `process.exited`, 창 이벤트, `events.dropped`에 더해 `clipboard.changed`(`text`: 에이전트가 쓰지 않은 PC 클립보드 변경, 700000바이트까지), `session.changed`, `display.changed`, `caps.changed`, `input.preempted`.
 

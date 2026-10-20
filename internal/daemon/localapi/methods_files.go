@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"path"
+	"slices"
 	"strings"
 	"time"
 
@@ -21,23 +22,27 @@ func (s *Server) registerFiles() {
 	s.methods["files.mkdir"] = s.filesMkdir
 	s.methods["files.rename"] = s.filesRename
 	s.methods["files.delete"] = s.filesDelete
+	s.methods["files.copy"] = s.filesCopy
+	s.methods["files.trash"] = s.filesTrash
+	s.methods["files.hash"] = s.filesHash
 }
 
 type fileParams struct {
-	HostID    string `json:"host_id"`
-	Path      string `json:"path"`
-	From      string `json:"from"`
-	To        string `json:"to"`
-	Recursive bool   `json:"recursive"`
-	SHA256    bool   `json:"sha256"`
-	Offset    int64  `json:"offset"`
-	Length    int    `json:"length"`
-	Data      string `json:"data"`
-	Append    bool   `json:"append"`
-	Truncate  bool   `json:"truncate"`
-	Mkdirs    bool   `json:"mkdirs"`
-	Overwrite bool   `json:"overwrite"`
-	Permanent bool   `json:"permanent"`
+	HostID     string `json:"host_id"`
+	Path       string `json:"path"`
+	From       string `json:"from"`
+	To         string `json:"to"`
+	Recursive  bool   `json:"recursive"`
+	SHA256     bool   `json:"sha256"`
+	Offset     int64  `json:"offset"`
+	Length     int64  `json:"length"`
+	Data       string `json:"data"`
+	Append     bool   `json:"append"`
+	Truncate   bool   `json:"truncate"`
+	Mkdirs     bool   `json:"mkdirs"`
+	Overwrite  bool   `json:"overwrite"`
+	Permanent  bool   `json:"permanent"`
+	OnConflict string `json:"on_conflict"`
 }
 
 func (p fileParams) needPath(method string) error {
@@ -297,4 +302,75 @@ func (s *Server) filesDelete(ctx context.Context, sess *session, raw json.RawMes
 		params["recursive"] = true
 	}
 	return s.fileChange(ctx, sess, p.HostID, "fs.delete", params, "영구 삭제: "+p.Path, "deleted")
+}
+
+// conflictPolicies are the values of on_conflict.
+var conflictPolicies = []string{"fail", "replace", "skip", "rename"}
+
+func (s *Server) filesCopy(ctx context.Context, sess *session, raw json.RawMessage) (any, error) {
+	var p fileParams
+	if err := decode(raw, &p); err != nil {
+		return nil, err
+	}
+	if err := hostRequired(p.HostID); err != nil {
+		return nil, err
+	}
+	if p.From == "" || p.To == "" {
+		return nil, required("from과 to", "files.copy")
+	}
+	params := proto.Message{"from": p.From, "to": p.To}
+	if p.OnConflict != "" {
+		if !slices.Contains(conflictPolicies, p.OnConflict) {
+			return nil, apierr.Invalid("on_conflict는 fail, replace, skip, rename 중 하나여야 합니다. 그중 하나를 주세요")
+		}
+		params["on_conflict"] = p.OnConflict
+	}
+	if p.Recursive {
+		params["recursive"] = true
+	}
+	return s.fileChange(ctx, sess, p.HostID, "fs.copy", params, "복사: "+p.From+" → "+p.To, "path", "copied", "outcome")
+}
+
+func (s *Server) filesTrash(ctx context.Context, sess *session, raw json.RawMessage) (any, error) {
+	var p fileParams
+	if err := decode(raw, &p); err != nil {
+		return nil, err
+	}
+	if err := p.needPath("files.trash"); err != nil {
+		return nil, err
+	}
+	return s.fileChange(ctx, sess, p.HostID, "fs.trash", proto.Message{"path": p.Path}, "휴지통으로 옮기기: "+p.Path, "trashed")
+}
+
+// filesHash runs fs.hash and returns its envelope with the sha256, offset,
+// length and size of the answer; it records no timeline entry.
+func (s *Server) filesHash(ctx context.Context, _ *session, raw json.RawMessage) (any, error) {
+	var p fileParams
+	if err := decode(raw, &p); err != nil {
+		return nil, err
+	}
+	if err := p.needPath("files.hash"); err != nil {
+		return nil, err
+	}
+	if p.Offset < 0 || p.Length < 0 {
+		return nil, apierr.Invalid("offset과 length는 0 이상이어야 합니다. length 0은 파일 끝까지입니다")
+	}
+	h, row, err := s.d.Hosts.Conn(p.HostID)
+	if err != nil {
+		return nil, err
+	}
+	info := conn.CallInfo{}
+	res, err := h.Call(ctx, "fs.hash", proto.Message{"path": p.Path, "offset": p.Offset, "length": p.Length}, conn.CallOpts{Info: &info})
+	if pe := requestProblem(err); pe != nil {
+		return nil, pe
+	}
+	fields := map[string]any{}
+	if err == nil {
+		for _, k := range []string{"sha256", "offset", "length", "size"} {
+			if v, ok := res[k]; ok {
+				fields[k] = v
+			}
+		}
+	}
+	return s.envelope(row.HostID, "", info, outcomeOf(info, err), nil).Map(fields), nil
 }
