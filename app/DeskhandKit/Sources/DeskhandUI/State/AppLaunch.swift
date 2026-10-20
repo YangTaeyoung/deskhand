@@ -2,7 +2,8 @@ import DeskhandClient
 import Foundation
 
 /// Chooses the backend for a launch: `PreviewBackend` with `--preview[=<scenario>]` or
-/// `DESKHAND_PREVIEW=1|<scenario>`, otherwise `LiveBackend`.
+/// `DESKHAND_PREVIEW=1|<scenario>`, playing the bundled `sample.h264` on screen streams,
+/// otherwise `LiveBackend`.
 public enum AppLaunch {
     /// Separate defaults domain for preview launches, so they do not change the real selection.
     public static let previewDefaultsSuite = "io.github.yangtaeyoung.Deskhand.preview"
@@ -14,7 +15,8 @@ public enum AppLaunch {
     ) -> AppStore {
         if let scenario = previewScenario(arguments: arguments, environment: environment) {
             let defaults = UserDefaults(suiteName: previewDefaultsSuite) ?? .standard
-            return AppStore(backend: PreviewBackend(scenario: scenario), defaults: defaults)
+            let video = Bundle.main.url(forResource: "sample", withExtension: "h264")
+            return AppStore(backend: PreviewBackend(scenario: scenario, screenVideo: video), defaults: defaults)
         }
         return AppStore(backend: LiveBackend())
     }

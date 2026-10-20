@@ -77,4 +77,9 @@ final class SnapshotBackend: Backend {
     func events(kinds: [String]?, hostID: String?) -> AsyncThrowingStream<DaemonEvent, Error> {
         AsyncThrowingStream { _ in }
     }
+
+    /// Throws; scenes draw the screen with `ScreenStandIn`.
+    func screenAttach(hostID: String, display: Int, preset: StreamPreset) async throws -> any ScreenStream {
+        throw ClientError.notConnected
+    }
 }

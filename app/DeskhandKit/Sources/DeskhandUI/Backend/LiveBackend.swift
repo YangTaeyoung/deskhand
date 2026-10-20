@@ -184,3 +184,13 @@ extension LiveBackend {
         client.events(kinds: kinds, hostID: hostID)
     }
 }
+
+// MARK: Screen
+
+extension LiveBackend {
+    public func screenAttach(hostID: String, display: Int, preset: StreamPreset) async throws -> any ScreenStream {
+        try await StreamConnection.attach(
+            kind: "screen", params: ["host_id": hostID, "display": display, "preset": preset.rawValue],
+            socketPath: client.socketPath, clientName: "Deskhand", clientVersion: clientVersion)
+    }
+}

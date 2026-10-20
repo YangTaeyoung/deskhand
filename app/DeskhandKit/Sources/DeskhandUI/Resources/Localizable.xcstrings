@@ -1273,6 +1273,18 @@
         }
       }
     },
+    "display.title": {
+      "comment": "Name of a remote display: 1-based number",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "디스플레이 %lld"
+          }
+        }
+      }
+    },
     "doctor.allPassed": {
       "comment": "Diagnostics sheet: all passed",
       "extractionState": "manual",
@@ -1825,6 +1837,18 @@
         }
       }
     },
+    "fix.capabilityUnsupported": {
+      "comment": "Remedy for CAPABILITY_UNSUPPORTED",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 PC의 에이전트를 최신 버전으로 업데이트한 뒤 다시 시도하세요."
+          }
+        }
+      }
+    },
     "fix.elevation": {
       "comment": "How to fix the error code: elevation",
       "extractionState": "manual",
@@ -2269,6 +2293,174 @@
         }
       }
     },
+    "hud.dropped": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "손실"
+          }
+        }
+      }
+    },
+    "hud.dropped.value": {
+      "comment": "Statistics overlay: number of dropped frames",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld프레임"
+          }
+        }
+      }
+    },
+    "hud.encode": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "인코딩"
+          }
+        }
+      }
+    },
+    "hud.encode.detail": {
+      "comment": "Statistics overlay: median and 95th percentile encode time in ms",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중앙값 %1$@ ms · p95 %2$@ ms"
+          }
+        }
+      }
+    },
+    "hud.encode.median": {
+      "comment": "Statistics overlay: median encode time in ms",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중앙값 %@ ms"
+          }
+        }
+      }
+    },
+    "hud.encoder": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "인코더"
+          }
+        }
+      }
+    },
+    "hud.encoder.hardware": {
+      "comment": "Statistics overlay: encoder name, hardware encoding",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 하드웨어"
+          }
+        }
+      }
+    },
+    "hud.encoder.software": {
+      "comment": "Statistics overlay: encoder name, software encoding",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 소프트웨어"
+          }
+        }
+      }
+    },
+    "hud.latency": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지연"
+          }
+        }
+      }
+    },
+    "hud.latency.detail": {
+      "comment": "Statistics overlay latency split: capture-to-receive ms, app processing ms",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PC→Mac %1$@ ms · 앱 %2$@ ms"
+          }
+        }
+      }
+    },
+    "hud.latency.pending": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "데몬 측정을 기다리는 중"
+          }
+        }
+      }
+    },
+    "hud.release": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌃⌥를 눌렀다 떼면 입력을 돌려받습니다"
+          }
+        }
+      }
+    },
+    "hud.size": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "해상도"
+          }
+        }
+      }
+    },
+    "hud.size.scaled": {
+      "comment": "Statistics overlay: encoded size, source display size",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · 원본 %2$@"
+          }
+        }
+      }
+    },
     "inspector.activity": {
       "comment": "Inspector pane: timeline of actions",
       "extractionState": "manual",
@@ -2421,6 +2613,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "보안 연결로 에이전트에 접속합니다"
+          }
+        }
+      }
+    },
+    "keyboard.mode.macInput": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac 입력기 사용"
+          }
+        }
+      }
+    },
+    "keyboard.mode.macInput.detail": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Mac에서 조합을 끝낸 글자만 보냅니다"
+          }
+        }
+      }
+    },
+    "keyboard.mode.scancode": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windows 입력기 사용"
+          }
+        }
+      }
+    },
+    "keyboard.mode.scancode.detail": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "키를 그대로 보내고 한글 조합은 Windows가 합니다"
           }
         }
       }
@@ -2641,6 +2881,78 @@
         }
       }
     },
+    "preset.balanced": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "균형"
+          }
+        }
+      }
+    },
+    "preset.balanced.detail": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최대 2560 폭으로 축소"
+          }
+        }
+      }
+    },
+    "preset.saver": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "절약"
+          }
+        }
+      }
+    },
+    "preset.saver.detail": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최대 1920 폭 · 낮은 비트레이트"
+          }
+        }
+      }
+    },
+    "preset.sharp": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선명"
+          }
+        }
+      }
+    },
+    "preset.sharp.detail": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원본 해상도 · 높은 비트레이트"
+          }
+        }
+      }
+    },
     "quality.a11y": {
       "comment": "VoiceOver label of the stream quality: frames per second, latency in milliseconds",
       "extractionState": "manual",
@@ -2649,6 +2961,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "화면 스트림 초당 %1$lld프레임, 지연 %2$lld밀리초"
+          }
+        }
+      }
+    },
+    "quality.a11y.bitrate": {
+      "comment": "VoiceOver label of the stream quality without latency: frames per second, megabits per second",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면 스트림 초당 %1$lld프레임, %2$@메가비트"
           }
         }
       }
@@ -2665,6 +2989,18 @@
         }
       }
     },
+    "quality.help.bitrate": {
+      "comment": "Tooltip of the stream quality without a latency measurement: frames per second, megabits per second",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면 스트림: 초당 %1$lld프레임, %2$@ Mbps 수신. 지연은 데몬이 측정값을 보내면 표시합니다."
+          }
+        }
+      }
+    },
     "quality.short": {
       "comment": "Toolbar stream quality: frames per second, latency in milliseconds",
       "extractionState": "manual",
@@ -2673,6 +3009,30 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$lld fps · %2$lld ms"
+          }
+        }
+      }
+    },
+    "quality.short.bitrate": {
+      "comment": "Toolbar stream quality: frames per second, received megabits per second",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld fps · %2$@ Mbps"
+          }
+        }
+      }
+    },
+    "quality.short.fps": {
+      "comment": "Toolbar stream quality: frames per second",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld fps"
           }
         }
       }
@@ -2721,6 +3081,714 @@
           "stringUnit": {
             "state": "translated",
             "value": "에이전트까지 제거"
+          }
+        }
+      }
+    },
+    "screen.a11y.help": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "클릭하면 키보드와 마우스를 이 PC로 보냅니다. ⌃⌥를 눌렀다 떼면 입력을 돌려받습니다"
+          }
+        }
+      }
+    },
+    "screen.a11y.help.ai": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "클릭하면 AI에게서 제어권을 가져올지 묻습니다"
+          }
+        }
+      }
+    },
+    "screen.a11y.label": {
+      "comment": "VoiceOver label of the remote screen: computer name, display name",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@의 원격 화면, %2$@"
+          }
+        }
+      }
+    },
+    "screen.ai.a11yWithClient": {
+      "comment": "VoiceOver label of the purple edge around the remote screen: AI client name",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 조작 중 · %@"
+          }
+        }
+      }
+    },
+    "screen.ai.tag": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 조작 중"
+          }
+        }
+      }
+    },
+    "screen.blocked.message": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "인증서 문제를 해결하고 다시 연결하면 화면을 볼 수 있습니다."
+          }
+        }
+      }
+    },
+    "screen.blocked.title": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면을 열 수 없습니다"
+          }
+        }
+      }
+    },
+    "screen.composing": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "조합 중"
+          }
+        }
+      }
+    },
+    "screen.connecting": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면을 불러오는 중…"
+          }
+        }
+      }
+    },
+    "screen.connecting.host": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PC에 연결하는 중…"
+          }
+        }
+      }
+    },
+    "screen.connecting.retrying": {
+      "comment": "Under the loading screen when attaching failed: the failure message",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 자동으로 다시 시도합니다"
+          }
+        }
+      }
+    },
+    "screen.denied": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI가 조작 중이라 입력이 전달되지 않았습니다"
+          }
+        }
+      }
+    },
+    "screen.display.help": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보여 줄 디스플레이를 고릅니다. 바꾸면 화면을 다시 불러옵니다."
+          }
+        }
+      }
+    },
+    "screen.display.picker": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "디스플레이"
+          }
+        }
+      }
+    },
+    "screen.failed.title": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면 스트림을 열지 못했습니다"
+          }
+        }
+      }
+    },
+    "screen.input.ai": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면을 클릭하면 제어권을 가져옵니다"
+          }
+        }
+      }
+    },
+    "screen.input.ai.short": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "클릭하면 가져오기"
+          }
+        }
+      }
+    },
+    "screen.input.captured": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "입력 중"
+          }
+        }
+      }
+    },
+    "screen.input.idle": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면을 클릭하면 키보드와 마우스를 보냅니다"
+          }
+        }
+      }
+    },
+    "screen.input.idle.short": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "클릭하여 조작"
+          }
+        }
+      }
+    },
+    "screen.input.release": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌃⌥를 눌렀다 떼면 해제"
+          }
+        }
+      }
+    },
+    "screen.keyboard": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "키보드"
+          }
+        }
+      }
+    },
+    "screen.keyboard.hangul": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오른쪽 ⌥를 한/영 키로 보내기"
+          }
+        }
+      }
+    },
+    "screen.keyboard.hanja": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오른쪽 ⌘를 한자 키로 보내기"
+          }
+        }
+      }
+    },
+    "screen.keyboard.help": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "키보드 입력 방식과 키 바꾸기"
+          }
+        }
+      }
+    },
+    "screen.keyboard.mode": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "입력 방식"
+          }
+        }
+      }
+    },
+    "screen.keyboard.modeItem": {
+      "comment": "Keyboard menu item: input mode name, description",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ — %2$@"
+          }
+        }
+      }
+    },
+    "screen.keyboard.swap": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘를 Ctrl로, ⌃를 Windows 키로 보내기"
+          }
+        }
+      }
+    },
+    "screen.locked.message": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "잠금이 풀리면 화면이 바로 나타납니다. 잠금 화면은 원격으로 볼 수 없습니다."
+          }
+        }
+      }
+    },
+    "screen.locked.title": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windows 잠금 화면"
+          }
+        }
+      }
+    },
+    "screen.offline.message": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 연결되면 화면이 여기에 나타납니다."
+          }
+        }
+      }
+    },
+    "screen.offline.title": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PC가 오프라인입니다"
+          }
+        }
+      }
+    },
+    "screen.paused.display.message": {
+      "comment": "Paused screen message: display name",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 연결이 끊겼거나 모니터가 꺼져 있습니다. 모니터 전원을 확인하거나 다른 디스플레이를 고르세요."
+          }
+        }
+      }
+    },
+    "screen.paused.display.show": {
+      "comment": "Button that switches to another display: display name",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 보기"
+          }
+        }
+      }
+    },
+    "screen.paused.display.title": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "디스플레이를 찾을 수 없습니다"
+          }
+        }
+      }
+    },
+    "screen.paused.locked.message": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PC 앞에서 잠금을 풀면 화면이 바로 이어집니다. 잠금 화면은 원격으로 조작할 수 없습니다."
+          }
+        }
+      }
+    },
+    "screen.paused.locked.title": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windows가 잠겨 있습니다"
+          }
+        }
+      }
+    },
+    "screen.paused.noViewer.message": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보는 사람이 없다고 판단해 캡처를 멈췄습니다. 다시 연결하면 이어집니다."
+          }
+        }
+      }
+    },
+    "screen.paused.noViewer.title": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PC가 화면 전송을 멈췄습니다"
+          }
+        }
+      }
+    },
+    "screen.paused.other.message": {
+      "comment": "Paused screen message: raw reason reported by the agent",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트가 알린 이유: %@"
+          }
+        }
+      }
+    },
+    "screen.paused.other.title": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면 전송이 일시 중지되었습니다"
+          }
+        }
+      }
+    },
+    "screen.paused.rdp.copyHelp": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "명령을 복사합니다"
+          }
+        }
+      }
+    },
+    "screen.paused.rdp.message": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 PC는 원격 데스크톱(RDP) 세션이라, RDP 창이 최소화되면 Windows가 화면 그리기를 멈춥니다. RDP 창을 다시 열거나, PC의 관리자 명령 프롬프트에서 아래 명령으로 세션을 콘솔로 옮기세요. RDP 연결은 끊깁니다."
+          }
+        }
+      }
+    },
+    "screen.paused.rdp.title": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 데스크톱 창이 최소화되어 화면이 멈췄습니다"
+          }
+        }
+      }
+    },
+    "screen.paused.reconnect": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 연결"
+          }
+        }
+      }
+    },
+    "screen.paused.secure.message": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용자 계정 컨트롤 창이나 Ctrl+Alt+Del 화면은 원격으로 보거나 조작할 수 없습니다. PC 앞에서 승인하거나 닫으면 화면이 바로 이어집니다."
+          }
+        }
+      }
+    },
+    "screen.paused.secure.title": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PC에 보안 화면(UAC/잠금)이 떠 있습니다"
+          }
+        }
+      }
+    },
+    "screen.preset.a11y": {
+      "comment": "VoiceOver label of the quality menu: current preset",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화질, %@"
+          }
+        }
+      }
+    },
+    "screen.preset.help": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화질: 선명은 원본 해상도, 균형은 최대 2560 폭, 절약은 최대 1920 폭과 낮은 비트레이트"
+          }
+        }
+      }
+    },
+    "screen.preset.item": {
+      "comment": "Quality menu item: preset name, preset description",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ — %2$@"
+          }
+        }
+      }
+    },
+    "screen.preset.picker": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화질"
+          }
+        }
+      }
+    },
+    "screen.reconnecting": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 연결하는 중…"
+          }
+        }
+      }
+    },
+    "screen.resuming": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면을 다시 불러오는 중…"
+          }
+        }
+      }
+    },
+    "screen.statistics": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "통계"
+          }
+        }
+      }
+    },
+    "screen.statistics.hide": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스트림 통계 가리기"
+          }
+        }
+      }
+    },
+    "screen.statistics.show": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스트림 통계 보기: fps, 지연, 비트레이트, 인코더"
+          }
+        }
+      }
+    },
+    "screen.unavailable.message": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트가 화면 캡처를 준비하지 못했습니다. 진단을 실행해 원인을 확인하세요."
+          }
+        }
+      }
+    },
+    "screen.unavailable.title": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지금은 화면을 가져올 수 없습니다"
+          }
+        }
+      }
+    },
+    "screen.unsupported.title": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 PC는 화면 스트리밍을 지원하지 않습니다"
           }
         }
       }

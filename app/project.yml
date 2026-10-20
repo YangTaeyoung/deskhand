@@ -26,6 +26,9 @@ targets:
       - path: Deskhand/Sources
       # XcodeGen infers the resources build phase from the file type.
       - path: Deskhand/Resources/Assets.xcassets
+      # H.264 capture that --preview screen streams play.
+      - path: DeskhandKit/Tests/Fixtures/sample.h264
+        buildPhase: resources
     dependencies:
       - package: DeskhandKit
         product: DeskhandUI

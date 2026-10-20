@@ -50,6 +50,7 @@ struct WorkspaceToolbar: ToolbarContent {
         if let quality = model.quality {
             ToolbarItem(placement: .primaryAction) {
                 StreamQualityLabel(quality: quality, connection: host.connection)
+                    .id(quality)
             }
             .sharedBackgroundVisibility(.hidden)
         }
@@ -152,7 +153,8 @@ public struct WorkspaceToolbarStrip: View {
     }
 }
 
-/// `60 fps · 18 ms` with a gauge symbol; tinted orange while the connection is degraded.
+/// `60 fps · 18 ms` with a gauge symbol, or the received bitrate in place of the latency until
+/// the daemon reports a latency measurement; tinted orange while the connection is degraded.
 struct StreamQualityLabel: View {
     let quality: StreamQuality
     let connection: ConnectionState
@@ -163,15 +165,35 @@ struct StreamQualityLabel: View {
         HStack(spacing: DS.Space.xs) {
             Image(systemName: connection == .degraded ? "wifi.exclamationmark" : "gauge.with.dots.needle.50percent")
                 .foregroundStyle(connection == .degraded ? AnyShapeStyle(DS.Color.warning) : AnyShapeStyle(.secondary))
-            Text(String.ui("quality.short", "\(fps) fps · \(quality.latencyMS) ms"))
+            Text(text)
                 .monospacedDigit()
         }
         .font(DS.Font.caption)
         .foregroundStyle(.secondary)
         .fixedSize()
-        .help(String.ui("quality.help", "화면 스트림: 초당 \(fps)프레임, 캡처에서 표시까지 \(quality.latencyMS) ms"))
+        .help(help)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(String.ui("quality.a11y", "화면 스트림 초당 \(fps)프레임, 지연 \(quality.latencyMS)밀리초"))
+        .accessibilityLabel(accessibilityText)
+    }
+
+    private var text: String {
+        if let latency = quality.latencyMS { return .ui("quality.short", "\(fps) fps · \(latency) ms") }
+        if let megabits = quality.megabitsText { return .ui("quality.short.bitrate", "\(fps) fps · \(megabits) Mbps") }
+        return .ui("quality.short.fps", "\(fps) fps")
+    }
+
+    private var help: String {
+        if let latency = quality.latencyMS {
+            return .ui("quality.help", "화면 스트림: 초당 \(fps)프레임, 캡처에서 표시까지 \(latency) ms")
+        }
+        let megabits = quality.megabitsText ?? "—"
+        return .ui("quality.help.bitrate", "화면 스트림: 초당 \(fps)프레임, \(megabits) Mbps 수신. 지연은 데몬이 측정값을 보내면 표시합니다.")
+    }
+
+    private var accessibilityText: String {
+        if let latency = quality.latencyMS { return .ui("quality.a11y", "화면 스트림 초당 \(fps)프레임, 지연 \(latency)밀리초") }
+        let megabits = quality.megabitsText ?? "—"
+        return .ui("quality.a11y.bitrate", "화면 스트림 초당 \(fps)프레임, \(megabits)메가비트")
     }
 }
 

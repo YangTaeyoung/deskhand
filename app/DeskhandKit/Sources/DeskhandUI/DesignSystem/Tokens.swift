@@ -29,6 +29,13 @@ public enum DS {
         public static let surfaceRaised = SwiftUI.Color(nsColor: .underPageBackgroundColor)
         /// Hairlines and card borders.
         public static let separator = SwiftUI.Color(nsColor: .separatorColor)
+        /// Backdrop around the remote screen and behind it before the first frame: a near
+        /// black that keeps dark edges of the remote screen distinguishable.
+        public static let screenBackdrop = SwiftUI.Color(white: 0.07)
+        /// Dims the remote screen under state messages.
+        public static let scrim = SwiftUI.Color.black.opacity(0.6)
+        /// Background of panels, capsules and toasts drawn over the remote screen.
+        public static let overlayPanel = SwiftUI.Color(white: 0.12).opacity(0.92)
     }
 
     /// Spacing scale in points. Layout uses only these values.

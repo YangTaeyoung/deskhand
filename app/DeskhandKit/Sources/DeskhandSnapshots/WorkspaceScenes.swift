@@ -20,6 +20,11 @@ enum WorkspaceScenes {
         /// Timeline replies that replace the fixtures' for these hosts.
         var timelines: [String: SnapshotBackend.TimelineReply] = [:]
         var controlFailure: OperationError?
+        /// Display shown on the selected computer.
+        var display: Int?
+        var statistics = false
+        /// Screen stand-ins that replace the live default for these hosts.
+        var screens: [String: ScreenStandIn] = [:]
     }
 
     /// A store with every fixture computer, `setup.selected` selected and its layout applied.
@@ -41,6 +46,7 @@ enum WorkspaceScenes {
         }
         var qualities: [String: StreamQuality] = [:]
         for host in hosts {
+            if let standIn = setup.screens[host.hostID], standIn.session.phase != .live { continue }
             if let quality = PreviewFixtures.streamQuality(hostID: host.hostID) { qualities[host.hostID] = quality }
         }
         let backend = SnapshotBackend(controls: controls, timelines: replies, controlFailure: setup.controlFailure)
@@ -50,14 +56,31 @@ enum WorkspaceScenes {
         store.layout.tab = setup.tab
         store.layout.showsInspector = setup.inspector != nil
         store.layout.inspectorPane = setup.inspector ?? .activity
+        resetScreen(store)
+        store.screenPreferences.showsStatistics = setup.statistics
+        if let display = setup.display { store.screenPreferences.setDisplay(display, for: setup.selected) }
         return store
+    }
+
+    /// Default screen preferences: balanced preset, no statistics, scancode keyboard, primary displays.
+    static func resetScreen(_ store: AppStore) {
+        let preferences = store.screenPreferences
+        preferences.preset = .balanced
+        preferences.showsStatistics = false
+        preferences.keyboardMode = .scancode
+        preferences.swapCommandControl = true
+        preferences.rightOptionHangul = true
+        preferences.rightCommandHanja = false
+        for host in store.hosts {
+            preferences.setDisplay(host.displays.first(where: \.primary)?.index ?? 0, for: host.hostID)
+        }
     }
 
     static func scene(_ name: String, _ setup: Setup, after: @escaping @MainActor (AppStore) -> Void = { _ in }) -> SnapshotScene {
         SnapshotScene(name: name, size: size) {
             let store = store(setup)
             let _ = after(store)
-            SplitStandIn(store: store)
+            SplitStandIn(store: store, screens: ScreenScenes.standIns(for: store.hosts, overrides: setup.screens))
         }
     }
 

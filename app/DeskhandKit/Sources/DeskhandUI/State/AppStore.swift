@@ -79,6 +79,8 @@ public final class AppStore {
 
     /// Selected workspace tab and inspector.
     public let layout: WorkspaceLayout
+    /// Stream preset, statistics overlay, keyboard handling and displays of the screen tab.
+    public let screenPreferences: ScreenPreferences
     /// Take control, give back to the AI and emergency stop, with their progress and failures.
     public let controlActions: ControlActions
 
@@ -100,6 +102,7 @@ public final class AppStore {
         self.backoff = backoff
         self.selectedHostID = defaults.string(forKey: Self.selectionKey)
         self.layout = WorkspaceLayout(defaults: defaults)
+        self.screenPreferences = ScreenPreferences(defaults: defaults)
         self.controlActions = ControlActions(backend: backend)
         controlActions.store = self
     }

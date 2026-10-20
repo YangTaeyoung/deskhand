@@ -1,4 +1,5 @@
 import DeskhandClient
+import DeskhandMedia
 import Foundation
 import Synchronization
 import struct DeskhandClient.Host
@@ -41,10 +42,15 @@ public final class PreviewBackend: Backend {
     public let scenario: PreviewScenario
     private let stepDelay: Duration
     private let state: Mutex<State>
+    /// Access units of the H.264 capture the screen streams play.
+    private let screenUnits: [Data]
 
-    public init(scenario: PreviewScenario = .standard, stepDelay: Duration = .milliseconds(700)) {
+    /// `screenVideo` is an Annex-B H.264 file whose first access unit is a keyframe; screen
+    /// streams play it in a loop. Without one they report the stream as paused.
+    public init(scenario: PreviewScenario = .standard, stepDelay: Duration = .milliseconds(700), screenVideo: URL? = nil) {
         self.scenario = scenario
         self.stepDelay = stepDelay
+        screenUnits = screenVideo.flatMap { try? Data(contentsOf: $0) }.map(AnnexB.accessUnits) ?? []
         let hosts = scenario == .standard ? PreviewFixtures.hosts() : []
         let timelines = Dictionary(uniqueKeysWithValues: hosts.map { ($0.hostID, PreviewFixtures.timeline(hostID: $0.hostID)) })
         state = Mutex(State(hosts: hosts, controls: PreviewFixtures.controls(for: hosts), timelines: timelines))
@@ -317,5 +323,20 @@ extension PreviewBackend {
             self?.state.withLock { $0.subscribers[id] = nil }
         }
         return stream
+    }
+}
+
+// MARK: Screen
+
+extension PreviewBackend {
+    public func screenAttach(hostID: String, display: Int, preset: StreamPreset) async throws -> any ScreenStream {
+        let host = try host(hostID)
+        guard host.connection == .ready || host.connection == .degraded else {
+            throw RPCErrorInfo(message: "\(host.name)에 연결되어 있지 않습니다", code: "OFFLINE", retryable: true)
+        }
+        await pause()
+        return PreviewScreenStream(host: host, display: display, preset: preset, units: screenUnits) { [weak self] in
+            self?.state.withLock { $0.controls[hostID]?.owner } == ControlOwner.ai.rawValue
+        }
     }
 }

@@ -73,12 +73,23 @@ public struct WorkspaceView: View {
                 .layoutPriority(1)
             ControlBanner(store: store, host: host)
                 .layoutPriority(1)
-            TabPlaceholderView(tab: store.layout.tab)
+            tabContent
                 .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
                 .clipped()
         }
         .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: bannerKind)
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var tabContent: some View {
+        switch store.layout.tab {
+        case .screen:
+            ScreenView(store: store, host: host, chrome: chrome)
+                .id(host.hostID)
+        case .terminal, .files, .processes, .logs, .debugger, .qa:
+            TabPlaceholderView(tab: store.layout.tab)
+        }
     }
 
     private struct BannerState: Equatable {

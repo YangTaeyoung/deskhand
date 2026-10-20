@@ -28,9 +28,9 @@ public enum PreviewFixtures {
         return HostCaps(items: items)
     }
 
-    static func display(width: Int = 3840, height: Int = 2160, scale: Double = 1.5, adapter: String) -> DisplayInfo {
-        DisplayInfo(index: 0, name: #"\\.\DISPLAY1"#, adapter: adapter, x: 0, y: 0, width: width, height: height,
-                    dpi: Int(96 * scale), scale: scale, primary: true, refreshHz: 60)
+    static func display(index: Int = 0, width: Int = 3840, height: Int = 2160, scale: Double = 1.5, adapter: String) -> DisplayInfo {
+        DisplayInfo(index: index, name: "\\\\.\\DISPLAY\(index + 1)", adapter: adapter, x: index * width, y: 0, width: width,
+                    height: height, dpi: Int(96 * scale), scale: scale, primary: index == 0, refreshHz: 60)
     }
 
     public static func hosts(now: Date = .now) -> [Host] {
@@ -39,7 +39,7 @@ public enum PreviewFixtures {
                  sshAlias: "windows", state: "ready", caps: caps("ready"),
                  session: SessionInfo(sessionID: 1, user: "taeyoung", connectState: "active", protocolKind: "console",
                                       locked: false, inputDesktop: "Default"),
-                 displays: [display(adapter: "NVIDIA GeForce RTX 2070")],
+                 displays: [display(adapter: "NVIDIA GeForce RTX 2070"), display(index: 1, adapter: "NVIDIA GeForce RTX 2070")],
                  owner: "ai", ownerClient: "Claude Code", agentVersion: "0.1.0", connectionGeneration: 4,
                  lastSeen: Timestamp(date: now)),
             Host(hostID: qaLaptopID, name: "QA 노트북", os: "windows", arch: "arm64", address: "192.168.0.31", port: 47600,
@@ -110,10 +110,10 @@ public enum PreviewFixtures {
     /// Screen stream quality of connected sample computers.
     public static func streamQuality(hostID: String) -> StreamQuality? {
         switch hostID {
-        case devPCID: StreamQuality(fps: 60, latencyMS: 18)
-        case qaLaptopID: StreamQuality(fps: 30, latencyMS: 41)
-        case meetingPCID: StreamQuality(fps: 60, latencyMS: 12)
-        case stagingID: StreamQuality(fps: 48, latencyMS: 35)
+        case devPCID: StreamQuality(fps: 60, latencyMS: 18, bitsPerSecond: 17_400_000)
+        case qaLaptopID: StreamQuality(fps: 30, latencyMS: 41, bitsPerSecond: 6_200_000)
+        case meetingPCID: StreamQuality(fps: 60, latencyMS: 12, bitsPerSecond: 9_800_000)
+        case stagingID: StreamQuality(fps: 48, latencyMS: 35, bitsPerSecond: 11_300_000)
         default: nil
         }
     }

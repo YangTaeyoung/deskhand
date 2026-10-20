@@ -5,7 +5,7 @@ import struct DeskhandClient.Host
 /// Everything the screens ask of the daemon, grouped by feature. A feature adds its own
 /// protocol below and joins it to this list; `LiveBackend` and `PreviewBackend` implement each
 /// feature protocol in their own extension.
-public protocol Backend: BackendLifecycle, HostsBackend, ControlBackend, TimelineBackend, EventsBackend {}
+public protocol Backend: BackendLifecycle, HostsBackend, ControlBackend, TimelineBackend, EventsBackend, ScreenBackend {}
 
 public protocol BackendLifecycle: Sendable {
     /// Makes the daemon reachable and says hello. Throws `ClientError.daemonUnavailable` when the
@@ -44,6 +44,24 @@ public protocol TimelineBackend: Sendable {
     /// Entries newest first.
     func timelineList(hostID: String, since: Int?, limit: Int) async throws -> [TimelineEntry]
 }
+
+/// `stream.attach` with kind `screen` (local-api.md §4).
+public protocol ScreenBackend: Sendable {
+    /// Opens a stream connection for the screen of `display` at `preset`. Frames follow
+    /// protocol.md §4–§5 and local-api.md §4; the stream finishes when the daemon closes it.
+    func screenAttach(hostID: String, display: Int, preset: StreamPreset) async throws -> any ScreenStream
+}
+
+/// A binary frame connection opened by `stream.attach`.
+public protocol ScreenStream: AnyObject, Sendable {
+    /// Frames from the daemon in arrival order.
+    var frames: AsyncThrowingStream<StreamConnection.Frame, Error> { get }
+    /// Sends one frame of `kind` with `payload`.
+    func send(kind: UInt8, payload: Data) async throws
+    func close()
+}
+
+extension StreamConnection: ScreenStream {}
 
 /// Daemon event notifications (`events.subscribe`).
 public protocol EventsBackend: Sendable {
@@ -225,6 +243,8 @@ public struct OperationError: Error, Sendable, Equatable {
             .ui("fix.sessionLocked", "원격 컴퓨터에서 로그인하거나 잠금을 해제하세요.")
         case "PORT_CONFLICT":
             .ui("fix.portConflict", "다른 프로그램이 UDP 47600 포트를 쓰고 있습니다. 그 프로그램을 종료한 뒤 다시 시도하세요.")
+        case "CAPABILITY_UNSUPPORTED":
+            .ui("fix.capabilityUnsupported", "원격 PC의 에이전트를 최신 버전으로 업데이트한 뒤 다시 시도하세요.")
         case "IN_PROGRESS":
             .ui("fix.inProgress", "같은 작업이 이미 진행 중입니다. 끝난 뒤 다시 시도하세요.")
         default:

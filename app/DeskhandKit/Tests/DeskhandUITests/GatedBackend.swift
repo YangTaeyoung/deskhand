@@ -158,6 +158,10 @@ final class GatedBackend: Backend {
     func events(kinds: [String]?, hostID: String?) -> AsyncThrowingStream<DaemonEvent, Error> {
         base.events(kinds: kinds, hostID: hostID)
     }
+
+    func screenAttach(hostID: String, display: Int, preset: StreamPreset) async throws -> any ScreenStream {
+        try await base.screenAttach(hostID: hostID, display: display, preset: preset)
+    }
 }
 
 /// Polls `condition` on the main actor until it holds or `timeout` passes.

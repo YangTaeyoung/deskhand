@@ -25,6 +25,7 @@ enum RootScenes {
         store.layout.tab = .screen
         store.layout.showsInspector = true
         store.layout.inspectorPane = .activity
+        WorkspaceScenes.resetScreen(store)
     }
 
     static var withHosts: AppStore { store(hosts: PreviewFixtures.hosts(), selected: PreviewFixtures.devPCID) }
@@ -127,6 +128,8 @@ enum RootScenes {
 /// toolbar drawn as a strip over the detail column and the sidebar list starting below it.
 struct SplitStandIn: View {
     let store: AppStore
+    /// Screens drawn in the screen tab; a live screen for every computer when nil.
+    var screens: ScreenStandIns?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -140,6 +143,7 @@ struct SplitStandIn: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .environment(\.screenStandIns, screens ?? ScreenScenes.standIns(for: store.hosts))
     }
 }
 
