@@ -116,8 +116,8 @@ final class PreviewFileStore: Sendable {
         /// Where the item is written; differs from the request after a rename.
         var destination: String
         var renamed: Bool
-        /// The pull writes files on this Mac.
-        var writesLocal: Bool
+        /// The pull adds its files to the local overlay.
+        var toOverlay: Bool
     }
 
     private struct State: Sendable {
@@ -150,7 +150,7 @@ final class PreviewFileStore: Sendable {
                 s.transfers[transfer.transferID] = transfer
                 s.order.append(transfer.transferID)
                 s.plans[transfer.transferID] = Plan(destination: transfer.direction.hasSuffix("push") ? transfer.remote : transfer.local,
-                                                    renamed: false, writesLocal: false)
+                                                    renamed: false, toOverlay: false)
             }
             s.fixturesToRun = fixtures.filter { $0.state == "running" }.map(\.transferID)
         }
@@ -301,13 +301,18 @@ extension PreviewBackend {
         }
     }
 
-    public func appLaunch(hostID: String, path: String) async throws {
+    public func appLaunch(hostID: String, path: String, args: [String]?, cwd: String?) async throws -> Int? {
         _ = try readyHost(hostID)
         await pause(fraction: 0.5)
         guard let entry = files.tree(hostID, { $0.entry(at: path) }) else {
             throw OperationError(code: "NOT_FOUND", message: "‘\(FilePath.lastComponent(path, style: .windows))’이(가) 없습니다")
         }
         if entry.dir { throw OperationError(code: "INVALID_ARGUMENT", message: "폴더는 실행할 수 없습니다") }
+        let extensionName = FileKind.pathExtension(of: entry.name)
+        if extensionName == "dmp" || extensionName == "dat" {
+            throw OperationError(code: "INVALID_ARGUMENT", message: "‘\(entry.name)’을(를) 열 프로그램이 원격 PC에 없습니다")
+        }
+        return 4_000 + abs(entry.name.hashValue % 20_000)
     }
 
     // MARK: Transfers
@@ -317,11 +322,11 @@ extension PreviewBackend {
         await pause(fraction: 0.2)
         let id = files.nextID()
         var plan = PreviewFileStore.Plan(destination: request.direction.isUpload ? request.remote : request.local,
-                                         renamed: false, writesLocal: !request.direction.isUpload)
+                                         renamed: false, toOverlay: !request.direction.isUpload)
         let items = try transferItems(request, host: host)
         let exists = request.direction.isUpload
             ? files.tree(request.hostID) { $0.entry(at: request.remote) != nil }
-            : FileManager.default.fileExists(atPath: request.local)
+            : existsOnMac(request.local)
         let name = request.direction.isUpload
             ? FilePath.lastComponent(request.local, style: .posix)
             : FilePath.lastComponent(request.remote, style: .windows)
@@ -335,12 +340,12 @@ extension PreviewBackend {
             case .fail:
                 transfer.state = TransferState.failed.rawValue
                 transfer.outcome = TransferOutcome.failed.rawValue
-                transfer.error = "대상에 ‘\(name)’이(가) 이미 있어 보내지 않았습니다 (TRANSFER_CONFLICT)"
+                transfer.error = EnvelopeError(code: "TRANSFER_CONFLICT", message: "대상에 ‘\(name)’이(가) 이미 있어 보내지 않았습니다")
                 transfer.files = transfer.files.map { file in
                     var file = file
                     file.state = TransferState.failed.rawValue
                     file.outcome = TransferOutcome.failed.rawValue
-                    file.error = "TRANSFER_CONFLICT"
+                    file.error = EnvelopeError(code: "TRANSFER_CONFLICT", message: "대상에 같은 이름의 항목이 있습니다")
                     return file
                 }
             case .skip:
@@ -357,7 +362,7 @@ extension PreviewBackend {
                 let free = PreviewFileStore.copyName(name) { candidate in
                     request.direction.isUpload
                         ? self.files.tree(request.hostID) { $0.entry(at: FilePath.join(folder, candidate, style: .windows)) != nil }
-                        : FileManager.default.fileExists(atPath: FilePath.join(folder, candidate, style: .posix))
+                        : self.existsOnMac(FilePath.join(folder, candidate, style: .posix))
                 }
                 plan.destination = FilePath.join(folder, free, style: request.direction.isUpload ? .windows : .posix)
                 plan.renamed = true
@@ -489,14 +494,21 @@ extension PreviewBackend {
                 }
             }
         } else {
+            let protected = PreviewFileStore.Tree.key("C:\\Windows") + "\\"
+            let temp = PreviewFileStore.Tree.key("C:\\Windows\\Temp") + "\\"
             for i in transfer.files.indices {
-                if let message = writeLocal(transfer.files[i], plan: plan, single: transfer.files.count == 1) {
-                    transfer.files[i].state = TransferState.failed.rawValue
-                    transfer.files[i].outcome = TransferOutcome.failed.rawValue
-                    transfer.files[i].sha256 = nil
-                    transfer.files[i].error = message
-                    failures += 1
-                }
+                let source = PreviewFileStore.Tree.key(transfer.files.count == 1 ? transfer.remote
+                    : FilePath.join(transfer.remote, transfer.files[i].rel, style: .windows))
+                guard source.hasPrefix(protected), !source.hasPrefix(temp) else { continue }
+                transfer.files[i].state = TransferState.failed.rawValue
+                transfer.files[i].outcome = TransferOutcome.failed.rawValue
+                transfer.files[i].sha256 = nil
+                transfer.files[i].bytesDone = 0
+                transfer.files[i].error = EnvelopeError(code: "ELEVATION_REQUIRED", message: "관리자 권한이 필요한 파일입니다.")
+                failures += 1
+            }
+            if plan.toOverlay {
+                addToOverlay(transfer, plan: plan)
             }
         }
         transfer.filesDone = transfer.files.count - failures
@@ -511,13 +523,13 @@ extension PreviewBackend {
         } else if direction == .movePush {
             transfer.state = TransferState.done.rawValue
             transfer.outcome = TransferOutcome.copiedSourceRetained.rawValue
-            transfer.error = "미리보기에서는 이 Mac의 원본 파일을 지우지 않습니다."
+            transfer.error = EnvelopeError(message: "미리보기에서는 이 Mac의 원본 파일을 지우지 않습니다.")
         } else if direction == .movePull {
             let locked = files.tree(transfer.hostID) { $0.locked.contains(PreviewFileStore.Tree.key(transfer.remote)) }
             transfer.state = TransferState.done.rawValue
             if locked {
                 transfer.outcome = TransferOutcome.copiedSourceRetained.rawValue
-                transfer.error = "Shop.exe가 이 파일을 열어 두고 있어 원격 PC의 원본을 지우지 못했습니다."
+                transfer.error = EnvelopeError(code: "PERMISSION_DENIED", message: "Shop.exe가 이 파일을 열어 두고 있어 원격 PC의 원본을 지우지 못했습니다.")
             } else {
                 files.tree(transfer.hostID) { $0.remove(transfer.remote) }
                 transfer.outcome = plan.renamed ? TransferOutcome.renamed.rawValue : TransferOutcome.written.rawValue
@@ -531,22 +543,29 @@ extension PreviewBackend {
         emitTransfer(transfer)
     }
 
-    /// Writes a pulled file on this Mac as a sparse file of its size. Never replaces an existing
-    /// file. Returns why the file was not written, or nil.
-    private func writeLocal(_ file: TransferFile, plan: PreviewFileStore.Plan, single: Bool) -> String? {
-        guard plan.writesLocal else { return nil }
-        let path = single ? plan.destination : FilePath.join(plan.destination, file.rel.replacingOccurrences(of: "\\", with: "/"), style: .posix)
-        let fm = FileManager.default
-        if fm.fileExists(atPath: path) { return "미리보기에서는 이 Mac의 기존 파일을 덮어쓰지 않습니다." }
-        do {
-            try fm.createDirectory(at: URL(fileURLWithPath: path).deletingLastPathComponent(), withIntermediateDirectories: true)
-            guard fm.createFile(atPath: path, contents: nil) else { return "이 Mac에 파일을 만들 수 없습니다." }
-            let handle = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
-            try handle.truncate(atOffset: UInt64(file.size))
-            try handle.close()
-            return nil
-        } catch {
-            return error.localizedDescription
+    /// Whether `path` exists on this Mac's disk or in the local overlay.
+    func existsOnMac(_ path: String) -> Bool {
+        FileManager.default.fileExists(atPath: path) || localOverlay.item(at: path) != nil
+    }
+
+    /// Shows a finished pull in the local pane: the item, and for a folder its files.
+    private func addToOverlay(_ transfer: Transfer, plan: PreviewFileStore.Plan) {
+        let now = Date.now
+        let single = transfer.files.count == 1 && !(transfer.files.first?.rel.contains("\\") ?? false)
+            && files.tree(transfer.hostID, { $0.entry(at: transfer.remote) })?.dir != true
+        if single {
+            if let file = transfer.files.first, file.transferState != .failed {
+                localOverlay.add(FileItem(name: FilePath.lastComponent(plan.destination, style: .posix), path: plan.destination,
+                                          isDirectory: false, size: file.size, modified: now))
+            }
+            return
+        }
+        localOverlay.add(FileItem(name: FilePath.lastComponent(plan.destination, style: .posix), path: plan.destination,
+                                  isDirectory: true, modified: now))
+        for file in transfer.files where file.transferState != .failed {
+            let path = FilePath.join(plan.destination, file.rel.replacingOccurrences(of: "\\", with: "/"), style: .posix)
+            localOverlay.add(FileItem(name: FilePath.lastComponent(path, style: .posix), path: path, isDirectory: false,
+                                      size: file.size, modified: now))
         }
     }
 

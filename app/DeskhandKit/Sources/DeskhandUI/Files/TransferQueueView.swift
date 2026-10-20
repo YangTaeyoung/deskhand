@@ -151,7 +151,7 @@ struct TransferQueueView: View {
                     .accessibilityHidden(true)
                 Text(String.ui("queue.empty", "전송 기록이 없습니다"))
                     .font(DS.Font.headline)
-                Text(String.ui("queue.emptyMessage", "파일을 다른 패널로 끌어다 놓으면 여기에서 진행률과 결과를 확인할 수 있습니다. ⌥를 누른 채 놓으면 이동합니다."))
+                Text(String.ui("queue.emptyMessage", "파일을 다른 패널로 끌어다 놓으면 여기에서 진행률과 결과를 확인할 수 있습니다. ⌘를 누른 채 놓으면 이동합니다."))
                     .font(DS.Font.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -197,6 +197,21 @@ struct TransferRow: View {
                 if let explanation = row.explanation {
                     explanationLine(explanation, row: row)
                 }
+                if let fix = row.fix {
+                    Text(fix)
+                        .font(DS.Font.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if row.state == .failed || row.outcome == .failed, let code = transfer.error?.code {
+                    ErrorCodeLine(code: code)
+                }
+                if !row.direction.isUpload, row.state == .done, model.overlay?.item(at: row.destinationPath) != nil {
+                    Label(String.ui("files.preview.note", "미리보기에서는 이 Mac에 쓰지 않습니다. 받은 항목은 앱을 닫으면 사라집니다."),
+                          systemImage: "eye")
+                        .font(DS.Font.caption)
+                        .foregroundStyle(DS.Color.warning)
+                }
                 if let error = queue.actionErrors[transfer.transferID] {
                     Label(error.message, systemImage: "exclamationmark.octagon.fill")
                         .font(DS.Font.caption)
@@ -214,10 +229,11 @@ struct TransferRow: View {
         .accessibilityLabel(row.accessibilitySummary)
     }
 
-    /// A single-file transfer whose file has its own error or a non-written outcome.
+    /// A single-file transfer whose file has its own error message.
     private var hasFileDetail: Bool {
-        guard let file = transfer.files.first, transfer.files.count == 1 else { return false }
-        return file.error != nil && row.explanation?.contains(file.error ?? "") == false
+        guard let file = transfer.files.first, transfer.files.count == 1,
+              let message = TransferFilePresentation(file).errorMessage else { return false }
+        return row.explanation?.contains(message) == false
     }
 
     private func titleLine(_ row: TransferPresentation) -> some View {
@@ -266,11 +282,12 @@ struct TransferRow: View {
                     .progressViewStyle(.linear)
                     .tint(row.state == .paused ? DS.Color.neutral : DS.Color.accent)
             } else {
-                ProgressView()
-                    .progressViewStyle(.linear)
-                    .tint(DS.Color.accent)
+                WorkingBar(tint: row.state == .verifying ? DS.Color.success : DS.Color.accent)
+                    .accessibilityLabel(row.state == .verifying ? String.ui("transfer.a11y.verifying", "SHA-256 확인 중")
+                                                                : String.ui("transfer.a11y.working", "진행 중"))
             }
-            Text([row.progress.map(FileFormat.percent), row.bytesText, row.rateText, row.etaText, row.filesText]
+            Text((row.state == .verifying ? [String.ui("transfer.verifyingDetail", "SHA-256 확인 중"), row.bytesText, row.filesText]
+                  : [row.progress.map(FileFormat.percent), row.bytesText, row.rateText, row.etaText, row.filesText])
                 .compactMap { $0 }.joined(separator: " · "))
                 .font(DS.Font.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
@@ -317,7 +334,7 @@ struct TransferRow: View {
         .accessibilityLabel(filesTitle)
         .accessibilityValue(isExpanded ? String.ui("a11y.expanded", "펼침") : String.ui("a11y.collapsed", "접힘"))
         if isExpanded {
-            VStack(spacing: 0) {
+            LazyVStack(spacing: 0) {
                 ForEach(Array(orderedFiles.enumerated()), id: \.offset) { _, file in
                     TransferFileRow(file: file)
                 }
@@ -461,17 +478,58 @@ private struct TransferFileRow: View {
                     .frame(minWidth: 52, alignment: .trailing)
                     .fixedSize()
             }
-            if let error = file.error, !error.isEmpty {
-                Text(error)
-                    .font(DS.Font.caption)
-                    .foregroundStyle(row.tone == .danger ? DS.Color.danger : DS.Color.warning)
-                    .padding(.leading, 24)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
+            if let message = row.errorMessage {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(message)
+                        .foregroundStyle(row.tone == .danger ? DS.Color.danger : DS.Color.warning)
+                    if let fix = row.fix {
+                        Text(fix)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let code = file.error?.code {
+                        ErrorCodeLine(code: code)
+                    }
+                }
+                .font(DS.Font.caption)
+                .padding(.leading, 24)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
             }
         }
         .padding(.horizontal, DS.Space.s)
         .padding(.vertical, DS.Space.xs)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// A full-width bar with moving stripes for work without a known fraction, such as hashing.
+private struct WorkingBar: View {
+    let tint: Color
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        TimelineView(.animation(paused: reduceMotion)) { context in
+            Canvas { canvas, size in
+                let rect = CGRect(origin: .zero, size: size)
+                let track = Path(roundedRect: rect, cornerRadius: size.height / 2)
+                canvas.fill(track, with: .color(tint.opacity(0.35)))
+                canvas.clip(to: track)
+                let stripe: CGFloat = 8
+                let phase = reduceMotion ? 0 : CGFloat(context.date.timeIntervalSinceReferenceDate * 24)
+                    .truncatingRemainder(dividingBy: stripe * 2)
+                var x = -size.height - stripe * 2 + phase
+                while x < size.width + size.height {
+                    var path = Path()
+                    path.move(to: CGPoint(x: x, y: size.height))
+                    path.addLine(to: CGPoint(x: x + size.height, y: 0))
+                    path.addLine(to: CGPoint(x: x + size.height + stripe, y: 0))
+                    path.addLine(to: CGPoint(x: x + stripe, y: size.height))
+                    path.closeSubpath()
+                    canvas.fill(path, with: .color(tint.opacity(0.8)))
+                    x += stripe * 2
+                }
+            }
+        }
+        .frame(height: 6)
     }
 }

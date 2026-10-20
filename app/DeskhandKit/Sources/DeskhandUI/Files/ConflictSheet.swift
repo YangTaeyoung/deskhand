@@ -254,3 +254,64 @@ struct FileInfoSheet: View {
         .accessibilityElement(children: .combine)
     }
 }
+
+/// Confirms a move from a menu or the toolbar: the sources are deleted only after the copies
+/// are verified. "다시 묻지 않기" turns the confirmation off.
+public struct MoveConfirmSheet: View {
+    let request: MoveRequest
+    let confirm: (Bool) -> Void
+    let cancel: () -> Void
+    @State private var dontAskAgain = false
+
+    public init(request: MoveRequest, confirm: @escaping (Bool) -> Void, cancel: @escaping () -> Void) {
+        self.request = request
+        self.confirm = confirm
+        self.cancel = cancel
+    }
+
+    private var title: String {
+        if request.candidates.count == 1, let name = request.candidates.first?.name {
+            return .ui("move.title.one", "‘\(name)’을(를) 이동할까요?")
+        }
+        let count = FileFormat.count(request.candidates.count)
+        return .ui("move.title.many", "\(count)개 항목을 이동할까요?")
+    }
+
+    public var body: some View {
+        let source = request.sourceName
+        let destination = request.destinationName
+        VStack(alignment: .leading, spacing: DS.Space.l) {
+            HStack(alignment: .top, spacing: DS.Space.m) {
+                Image(systemName: request.direction.isUpload ? "arrow.right.circle.fill" : "arrow.left.circle.fill")
+                    .font(.system(size: 30))
+                    .foregroundStyle(DS.Color.warning)
+                    .frame(width: 40)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: DS.Space.s) {
+                    Text(title)
+                        .font(DS.Font.title)
+                        .lineLimit(3)
+                        .truncationMode(.middle)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(String.ui("move.message", "\(destination)에 복사하고 SHA-256으로 확인한 뒤에만 \(source)의 원본을 지웁니다. 원본을 지우지 못하면 원본은 그대로 두고 알려 드립니다."))
+                        .font(DS.Font.body)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            HStack {
+                Toggle(String.ui("move.dontAsk", "다시 묻지 않기"), isOn: $dontAskAgain)
+                    .toggleStyle(.checkbox)
+                Spacer()
+                Button(String.ui("action.cancel", "취소"), action: cancel)
+                    .keyboardShortcut(.cancelAction)
+                Button(String.ui("move.confirm", "이동")) { confirm(dontAskAgain) }
+                    .keyboardShortcut(.defaultAction)
+            }
+            .controlSize(.large)
+        }
+        .padding(DS.Space.xl)
+        .frame(width: 480)
+    }
+}

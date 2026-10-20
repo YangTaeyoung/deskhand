@@ -2,22 +2,22 @@ import Darwin
 import Foundation
 
 /// A client connection accepted by `MockDaemon`.
-final class MockConnection: @unchecked Sendable {
+public final class MockConnection: @unchecked Sendable {
     private let fd: Int32
     private let writeLock = NSLock()
     private let stateLock = NSLock()
     private var closed = false
-    var isSubscribed = false
+    public var isSubscribed = false
 
-    init(fd: Int32) {
+    public init(fd: Int32) {
         self.fd = fd
         var on: Int32 = 1
         setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
     }
 
-    func send(line: String) { sendRaw(Data((line + "\n").utf8)) }
+    public func send(line: String) { sendRaw(Data((line + "\n").utf8)) }
 
-    func sendRaw(_ data: Data) {
+    public func sendRaw(_ data: Data) {
         writeLock.lock()
         defer { writeLock.unlock() }
         var offset = 0
@@ -30,7 +30,7 @@ final class MockConnection: @unchecked Sendable {
         }
     }
 
-    func shutdownConnection() {
+    public func shutdownConnection() {
         stateLock.lock()
         defer { stateLock.unlock() }
         if !closed {
@@ -39,14 +39,14 @@ final class MockConnection: @unchecked Sendable {
         }
     }
 
-    func closeDescriptor() {
+    public func closeDescriptor() {
         stateLock.lock()
         defer { stateLock.unlock() }
         closed = true
         close(fd)
     }
 
-    func readChunk() -> Data? {
+    public func readChunk() -> Data? {
         var buf = [UInt8](repeating: 0, count: 65536)
         while true {
             let n = read(fd, &buf, buf.count)
@@ -57,23 +57,23 @@ final class MockConnection: @unchecked Sendable {
     }
 }
 
-struct MockRequest: @unchecked Sendable {
-    let id: Int
-    let method: String
-    let params: [String: Any]
+public struct MockRequest: @unchecked Sendable {
+    public let id: Int
+    public let method: String
+    public let params: [String: Any]
 
 
-    var paramsData: Data { (try? JSONSerialization.data(withJSONObject: params)) ?? Data() }
+    public var paramsData: Data { (try? JSONSerialization.data(withJSONObject: params)) ?? Data() }
 }
 
-enum MockReply {
+public enum MockReply {
     case result(String)
     case error(code: Int, message: String, data: String?)
 }
 
-/// In-process unix-socket NDJSON JSON-RPC server used by the client tests.
-final class MockDaemon: @unchecked Sendable {
-    let path: String
+/// In-process unix-socket NDJSON JSON-RPC server used by the client and UI tests.
+public final class MockDaemon: @unchecked Sendable {
+    public let path: String
     private let dir: String
     private let lock = NSCondition()
     private var listenFD: Int32 = -1
@@ -85,7 +85,7 @@ final class MockDaemon: @unchecked Sendable {
     private var subscribeHook: @Sendable (MockRequest) -> Void = { _ in }
     private var attachReplyOverride: (@Sendable (MockConnection, Int) -> Void)?
 
-    init() {
+    public init() {
         dir = "/tmp/dhc-\(UUID().uuidString.prefix(8))"
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         path = dir + "/d.sock"
@@ -96,24 +96,24 @@ final class MockDaemon: @unchecked Sendable {
         try? FileManager.default.removeItem(atPath: dir)
     }
 
-    func setHandler(_ h: @escaping @Sendable (MockRequest) -> MockReply?) {
+    public func setHandler(_ h: @escaping @Sendable (MockRequest) -> MockReply?) {
         lock.lock(); handler = h; lock.unlock()
     }
 
-    func setAttachHandler(_ h: @escaping @Sendable (MockConnection) -> Void) {
+    public func setAttachHandler(_ h: @escaping @Sendable (MockConnection) -> Void) {
         lock.lock(); attachHandler = h; lock.unlock()
     }
 
-    func setSubscribeHook(_ h: @escaping @Sendable (MockRequest) -> Void) {
+    public func setSubscribeHook(_ h: @escaping @Sendable (MockRequest) -> Void) {
         lock.lock(); subscribeHook = h; lock.unlock()
     }
 
     /// Replaces the `stream.attach` success reply; the closure writes the reply (and anything after it) itself.
-    func setAttachReply(_ h: @escaping @Sendable (MockConnection, Int) -> Void) {
+    public func setAttachReply(_ h: @escaping @Sendable (MockConnection, Int) -> Void) {
         lock.lock(); attachReplyOverride = h; lock.unlock()
     }
 
-    func start() throws {
+    public func start() throws {
         unlink(path)
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         precondition(fd >= 0)
@@ -137,7 +137,7 @@ final class MockDaemon: @unchecked Sendable {
         t.start()
     }
 
-    func stop() {
+    public func stop() {
         lock.lock()
         let fd = listenFD
         listenFD = -1
@@ -227,21 +227,21 @@ final class MockDaemon: @unchecked Sendable {
     }
 
     /// Sends an `event` notification to every subscribed connection.
-    func emit(_ params: String) {
+    public func emit(_ params: String) {
         lock.lock(); let conns = connections; lock.unlock()
         for c in conns where c.isSubscribed {
             c.send(line: #"{"jsonrpc":"2.0","method":"event","params":\#(params)}"#)
         }
     }
 
-    func requests(method: String) -> [MockRequest] {
+    public func requests(method: String) -> [MockRequest] {
         lock.lock(); defer { lock.unlock() }
         return requests.filter { $0.method == method }
     }
 
     /// Blocks until `count` requests with `method` have arrived or the timeout passes.
     @discardableResult
-    func waitForRequests(method: String, count: Int, timeout: TimeInterval = 5) -> Bool {
+    public func waitForRequests(method: String, count: Int, timeout: TimeInterval = 5) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         lock.lock(); defer { lock.unlock() }
         while requests.filter({ $0.method == method }).count < count {
@@ -251,7 +251,7 @@ final class MockDaemon: @unchecked Sendable {
     }
 
     /// Closes all client connections but keeps listening.
-    func dropConnections() {
+    public func dropConnections() {
         lock.lock(); let conns = connections; connections = []; lock.unlock()
         for c in conns { c.shutdownConnection() }
     }

@@ -22,6 +22,9 @@ struct FilePane: View {
             FilePaneHeader(model: model, side: side, host: host, availability: availability)
             if availability == .ready {
                 PathBar(model: model, side: side, host: host)
+                if let error = model.paneErrors[side] {
+                    PaneErrorStrip(notice: error) { model.dismissError(side) }
+                }
                 content
                     .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
                 FilePaneStatus(model: model, side: side)
@@ -116,6 +119,7 @@ struct FilePane: View {
         h.renameStarted = { browser.renameRequest = nil }
         h.commitRename = { item, name in Task { await model.rename(item, to: name) } }
         h.dragWriter = { item in
+            guard !item.isPreviewOnly else { return nil }
             switch side {
             case .local:
                 return URL(fileURLWithPath: item.path) as NSURL
@@ -274,9 +278,9 @@ private struct FilePaneHeader: View {
         Button {
             Task {
                 if side == .local {
-                    await model.sendSelection(move: NSEvent.modifierFlags.contains(.option))
+                    await model.sendSelection(move: NSEvent.modifierFlags.contains(.command))
                 } else {
-                    await model.receiveSelection(move: NSEvent.modifierFlags.contains(.option))
+                    await model.receiveSelection(move: NSEvent.modifierFlags.contains(.command))
                 }
             }
         } label: {
@@ -287,8 +291,8 @@ private struct FilePaneHeader: View {
         .buttonStyle(.borderless)
         .disabled(selection.isEmpty || !otherReady)
         .help(side == .local
-              ? String.ui("files.send.help", "선택한 항목을 원격 PC의 열린 폴더로 보냅니다. ⌥를 누른 채 누르면 이동합니다.")
-              : String.ui("files.receive.help", "선택한 항목을 이 Mac의 열린 폴더로 받습니다. ⌥를 누른 채 누르면 이동합니다."))
+              ? String.ui("files.send.help", "선택한 항목을 원격 PC의 열린 폴더로 보냅니다. ⌘를 누른 채 누르면 확인한 뒤 이동합니다.")
+              : String.ui("files.receive.help", "선택한 항목을 이 Mac의 열린 폴더로 받습니다. ⌘를 누른 채 누르면 확인한 뒤 이동합니다."))
         .accessibilityLabel(side == .local ? String.ui("files.send.a11y", "선택한 항목을 원격 PC로 보내기")
                                            : String.ui("files.receive.a11y", "선택한 항목을 이 Mac으로 받기"))
     }
@@ -553,6 +557,11 @@ private struct FilePaneStatus: View {
                 Text(paging ?? String.ui("files.refreshing", "새로 고치는 중…")).lineLimit(1)
             } else if let paging {
                 Text(paging).lineLimit(1)
+            } else if side == .local, browser.items.contains(where: \.isPreviewOnly) {
+                Text(String.ui("files.preview.note.short", "미리보기에서는 이 Mac에 쓰지 않습니다"))
+                    .foregroundStyle(DS.Color.warning)
+                    .lineLimit(1)
+                    .help(String.ui("files.preview.note", "미리보기에서는 이 Mac에 쓰지 않습니다. 받은 항목은 앱을 닫으면 사라집니다."))
             } else if browser.truncated {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(DS.Color.warning)
@@ -597,6 +606,52 @@ private struct FilePaneStatus: View {
         let shown = FileFormat.count(browser.rows.count)
         let total = FileFormat.count(browser.total ?? browser.items.count)
         return .ui("files.status.paging", "\(total)개 중 \(shown)개 표시 · 스크롤하면 더 불러옵니다")
+    }
+}
+
+/// A failed action of the pane: the message, the remedy chosen by the error code, the code,
+/// and a close button.
+private struct PaneErrorStrip: View {
+    let notice: FilesNotice
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: DS.Space.s) {
+            Image(systemName: "exclamationmark.octagon.fill")
+                .foregroundStyle(DS.Color.danger)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(notice.message)
+                    .font(DS.Font.body.weight(.semibold))
+                if let detail = notice.detail {
+                    Text(detail)
+                        .font(DS.Font.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if let code = notice.code {
+                    ErrorCodeLine(code: code)
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+            Spacer(minLength: DS.Space.s)
+            Button(action: dismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 18, height: 18)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(String.ui("action.close", "닫기"))
+        }
+        .padding(.horizontal, DS.Space.m)
+        .padding(.vertical, DS.Space.s)
+        .background(DS.Color.danger.opacity(0.08))
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(DS.Color.danger.opacity(0.24)).frame(height: 1)
+        }
+        .accessibilityElement(children: .contain)
+        .onAppear { AccessibilityNotification.Announcement(notice.message).post() }
     }
 }
 
@@ -708,7 +763,7 @@ private struct RemoteUnavailableView: View {
                      ? String.ui("files.remote.connecting", "\(host.name)에 연결하는 중…")
                      : String.ui("files.remote.reconnecting", "\(host.name)에 다시 연결하는 중…"))
                     .font(DS.Font.headline)
-                Text(String.ui("files.remote.waiting", "연결되면 마지막으로 보던 폴더를 엽니다. 진행 중이던 전송은 연결이 돌아오면 이어집니다."))
+                Text(String.ui("files.remote.waiting", "연결되면 마지막으로 보던 폴더를 다시 엽니다. 연결이 끊겨 멈춘 전송은 다시 연결된 뒤 전송 목록에서 ‘재개’를 누르세요."))
                     .font(DS.Font.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

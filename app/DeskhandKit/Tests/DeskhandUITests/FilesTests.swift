@@ -1,5 +1,6 @@
 import AppKit
 import DeskhandClient
+import DeskhandTestSupport
 import XCTest
 import struct DeskhandClient.Host
 @testable import DeskhandUI
@@ -124,7 +125,11 @@ final class FilesTests: XCTestCase {
 
         await model.reload(.remote)
         XCTAssertNotNil(model.remote.item(named: "shop-2026-10-20.log"))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: scratch.appendingPathComponent("shop-2026-10-20.log").path))
+        let copy = scratch.appendingPathComponent("shop-2026-10-20.log").path
+        XCTAssertFalse(FileManager.default.fileExists(atPath: copy))
+        try await waitUntil { model.local.item(named: "shop-2026-10-20.log") != nil }
+        XCTAssertEqual(model.local.item(named: "shop-2026-10-20.log")?.isPreviewOnly, true)
+        XCTAssertEqual(model.localItem(at: copy)?.size, log.size)
     }
 
     // MARK: Listing
@@ -165,6 +170,13 @@ final class FilesTests: XCTestCase {
         XCTAssertEqual(FileSort(key: .name).sorted(items).map(\.name), ["a", "b.log", "c.zip", "file 9.txt", "file 10.txt"])
         XCTAssertEqual(FileSort(key: .name, ascending: false).sorted(items).map(\.name), ["a", "file 10.txt", "file 9.txt", "c.zip", "b.log"])
         XCTAssertEqual(FileSort(key: .size, ascending: false).sorted(items).map(\.name), ["a", "c.zip", "b.log", "file 9.txt", "file 10.txt"])
+        let mixed = ["Zeta.txt", "가나.txt", "_temp", "alpha.txt", "Ångström.txt", "10월 보고서", "9월 보고서", "나다.txt",
+                     "🚀 출시.md", "日本語.txt"].map {
+            FileItem(name: $0, path: "C:\\" + $0, isDirectory: false)
+        }
+        XCTAssertEqual(FileSort.standard.sorted(mixed).map(\.name),
+                       ["_temp", "🚀 출시.md", "9월 보고서", "10월 보고서", "가나.txt", "나다.txt", "日本語.txt", "alpha.txt",
+                        "Ångström.txt", "Zeta.txt"])
     }
 
     func testFolderErrorIsShownWithItsCode() async throws {
@@ -279,7 +291,8 @@ final class FilesTests: XCTestCase {
         XCTAssertNil(model.renameProblem(report, to: "Report.html"))
         await model.rename(report, to: "NUL")
         XCTAssertTrue(backend.fileCalls.isEmpty)
-        XCTAssertEqual(model.notice?.tone, .error)
+        XCTAssertEqual(model.paneErrors[.remote]?.tone, .error)
+        XCTAssertNil(model.notice)
     }
 
     func testNewFolderPicksFreeNameAndStartsRenaming() async throws {
@@ -343,5 +356,192 @@ final class FilesTests: XCTestCase {
         XCTAssertTrue(reopened.isColumnHidden(.kind, side: .local))
         XCTAssertFalse(reopened.isColumnHidden(.kind, side: .remote))
         XCTAssertEqual(reopened.conflictPolicy, .fail)
+    }
+
+    // MARK: Fix round 1
+
+    func testLiveFilesListSendsCursorAndLimitAndPages() async throws {
+        let daemon = MockDaemon()
+        try daemon.start()
+        defer { daemon.stop() }
+        daemon.setHandler { request in
+            guard request.method == "files.list" else { return nil }
+            let cursor = request.params["cursor"] as? String
+            func entry(_ n: Int) -> String {
+                #"{"name":"f\#(n).txt","path":"C:\\d\\f\#(n).txt","dir":false,"size":\#(n),"mtime":"2026-10-20T10:00:00.000Z","link":false}"#
+            }
+            if cursor == nil {
+                return .result(#"{"entries":[\#(entry(1)),\#(entry(2))],"next_cursor":"c-2","total":3}"#)
+            }
+            return .result(#"{"entries":[\#(entry(3))],"total":3,"truncated":true}"#)
+        }
+        let client = DeskhandClient(socketPath: daemon.path)
+        try await client.connect(kind: "app", name: "test", version: "0")
+        defer { Task { await client.close() } }
+        let backend = LiveBackend(client: client)
+
+        let first = try await backend.filesList(hostID: dev, path: "C:\\d", cursor: nil, limit: 2)
+        XCTAssertEqual(first.entries.map(\.name), ["f1.txt", "f2.txt"])
+        XCTAssertEqual(first.nextCursor, "c-2")
+        XCTAssertEqual(first.total, 3)
+        XCTAssertFalse(first.truncated)
+        let request = try XCTUnwrap(daemon.requests(method: "files.list").first)
+        XCTAssertEqual(request.params["host_id"] as? String, dev)
+        XCTAssertEqual(request.params["path"] as? String, "C:\\d")
+        XCTAssertEqual(request.params["limit"] as? Int, 2)
+        XCTAssertNil(request.params["cursor"])
+
+        let browser = FileBrowser(side: .remote, source: RemoteFileSource(backend: backend, hostID: dev, style: .windows), path: "C:\\d")
+        await browser.open("C:\\d")
+        XCTAssertEqual(browser.items.count, 2)
+        XCTAssertTrue(browser.hasMore)
+        await browser.loadMore()
+        XCTAssertEqual(browser.items.map(\.name), ["f1.txt", "f2.txt", "f3.txt"])
+        XCTAssertTrue(browser.truncated)
+        XCTAssertFalse(browser.hasMore)
+        let pages = daemon.requests(method: "files.list").dropFirst()
+        XCTAssertEqual(pages.map { $0.params["cursor"] as? String }, [nil, "c-2"])
+        XCTAssertEqual(pages.map { $0.params["limit"] as? Int }, [500, 500])
+
+        _ = try await backend.filesList(hostID: dev, path: "C:\\d", cursor: nil, limit: 90_000)
+        XCTAssertEqual(daemon.requests(method: "files.list").last?.params["limit"] as? Int, 5000)
+    }
+
+    func testReloadKeepsRevealedRowsAndSelection() async throws {
+        let backend = GatedBackend(PreviewBackend(stepDelay: .zero))
+        let browser = FileBrowser(side: .remote, source: RemoteFileSource(backend: backend, hostID: dev, style: .windows),
+                                  path: PreviewFixtures.largeFolder)
+        await browser.open(PreviewFixtures.largeFolder)
+        await browser.loadMore()
+        await browser.loadMore()
+        XCTAssertEqual(browser.rows.count, 1500)
+        let deep = PreviewFixtures.largeFolder + "\\capture-1400.png"
+        browser.selection = [deep]
+        await browser.reload()
+        XCTAssertEqual(browser.rows.count, 1500)
+        XCTAssertEqual(browser.selection, [deep])
+        XCTAssertEqual(browser.phase, .loaded)
+    }
+
+    func testConflictPromptsQueuePerRequest() async throws {
+        let backend = GatedBackend(PreviewBackend(stepDelay: .zero))
+        let store = makeStore(backend)
+        let model = try model(store)
+        await model.open(.remote, path: downloads)
+        await model.send([try localFile("report.html")], to: downloads, move: false)
+        await model.send([try localFile("Shop-build-1187.zip")], to: downloads, move: false)
+        XCTAssertEqual(model.conflicts.count, 2)
+        XCTAssertEqual(model.conflict?.items.map(\.candidate.name), ["report.html"])
+
+        await model.resolveConflict(.fail, applyToAll: false)
+        XCTAssertEqual(model.conflict?.items.map(\.candidate.name), ["Shop-build-1187.zip"])
+        await model.resolveConflict(.skip, applyToAll: false)
+        XCTAssertNil(model.conflict)
+        XCTAssertEqual(backend.transferRequests.map(\.onConflict), [.skip])
+    }
+
+    func testMenuMoveWaitsForConfirmation() async throws {
+        let backend = GatedBackend(PreviewBackend(stepDelay: .zero))
+        let store = makeStore(backend)
+        let model = try model(store)
+        await model.open(.remote, path: downloads)
+        let url = try localFile("이동할 빌드.zip")
+
+        await model.requestSend([url], to: downloads, move: true)
+        let request = try XCTUnwrap(model.pendingMove)
+        XCTAssertEqual(request.direction, .movePush)
+        XCTAssertTrue(backend.transferRequests.isEmpty)
+
+        await model.confirmMove(request, dontAskAgain: true)
+        XCTAssertNil(model.pendingMove)
+        XCTAssertEqual(backend.transferRequests.map(\.direction), [.movePush])
+        XCTAssertFalse(store.filesPreferences.confirmMoves)
+
+        await model.requestSend([try localFile("다음 빌드.zip")], to: downloads, move: true)
+        XCTAssertNil(model.pendingMove)
+        XCTAssertEqual(backend.transferRequests.map(\.direction), [.movePush, .movePush])
+
+        await model.requestSend([try localFile("복사.zip")], to: downloads, move: false)
+        XCTAssertEqual(backend.transferRequests.last?.direction, .push)
+    }
+
+    private func transfer(_ state: TransferState, bytes: Int, id: String = "t-stale") -> Transfer {
+        Transfer(transferID: id, hostID: dev, direction: "push", local: "/a/b.zip", remote: "C:\\b.zip", onConflict: "fail",
+                 state: state.rawValue, bytesDone: bytes, bytesTotal: 100, filesDone: 0, filesTotal: 1, rateBps: 10)
+    }
+
+    func testStaleTransferUpdatesAreIgnored() throws {
+        let backend = GatedBackend(PreviewBackend(stepDelay: .zero))
+        let model = try model(makeStore(backend))
+        let queue = model.transfers
+        queue.apply(transfer(.running, bytes: 50))
+        queue.apply(transfer(.paused, bytes: 50))
+        queue.apply(transfer(.running, bytes: 40))
+        XCTAssertEqual(queue.transfer("t-stale")?.transferState, .paused)
+        queue.apply(transfer(.running, bytes: 60))
+        XCTAssertEqual(queue.transfer("t-stale")?.bytesDone, 60)
+        queue.apply(transfer(.running, bytes: 55))
+        XCTAssertEqual(queue.transfer("t-stale")?.bytesDone, 60)
+        queue.apply(transfer(.cancelled, bytes: 60))
+        queue.apply(transfer(.running, bytes: 60))
+        XCTAssertEqual(queue.transfer("t-stale")?.transferState, .cancelled)
+        queue.apply(transfer(.done, bytes: 100, id: "t-done"))
+        queue.apply(transfer(.verifying, bytes: 100, id: "t-done"))
+        queue.apply(transfer(.paused, bytes: 100, id: "t-done"))
+        XCTAssertEqual(queue.transfer("t-done")?.transferState, .done)
+    }
+
+    func testUndecodableTransferEventIsCounted() throws {
+        let backend = GatedBackend(PreviewBackend(stepDelay: .zero))
+        let model = try model(makeStore(backend))
+        model.transfers.handle(DaemonEvent(seq: 9, hostID: dev, kind: EventKind.transferUpdated,
+                                           payload: ["transfer": .object(["transfer_id": .string("t")])]))
+        XCTAssertEqual(model.transfers.undecodedEvents, 1)
+        XCTAssertTrue(model.transfers.transfers.isEmpty)
+    }
+
+    func testTransferErrorShowsMessageAndFixByCode() throws {
+        var failed = transfer(.failed, bytes: 0)
+        failed.outcome = TransferOutcome.failed.rawValue
+        failed.error = EnvelopeError(code: "DISK_FULL", message: "대상 디스크 공간이 부족합니다")
+        let row = TransferPresentation(failed, hostName: "개발 PC")
+        XCTAssertEqual(row.explanation, "대상 디스크 공간이 부족합니다")
+        XCTAssertEqual(row.fix, OperationError(code: "DISK_FULL", message: "").fix)
+        XCTAssertNotNil(row.fix)
+        let partial = try XCTUnwrap(PreviewFixtures.transfers().first { $0.transferID == "t-preview-partial" })
+        XCTAssertEqual(TransferPresentation(partial, hostName: "개발 PC").fix, OperationError(code: "PERMISSION_DENIED", message: "").fix)
+    }
+
+    func testLaunchReportsProgressAndInlineError() async throws {
+        let backend = GatedBackend(PreviewBackend(stepDelay: .zero))
+        let model = try model(makeStore(backend))
+        await model.open(.remote, path: "C:\\ProgramData\\Shop\\CrashDumps")
+        let dump = try XCTUnwrap(model.remote.rows.first)
+        await model.launch(dump)
+        XCTAssertNil(model.busyMessage)
+        XCTAssertEqual(model.paneErrors[.remote]?.code, "INVALID_ARGUMENT")
+        XCTAssertNil(model.notice)
+
+        await model.open(.remote, path: "C:\\Shop\\bin")
+        let exe = try XCTUnwrap(model.remote.item(named: "Shop.exe"))
+        await model.launch(exe)
+        XCTAssertNil(model.paneErrors[.remote])
+        XCTAssertEqual(model.notice?.tone, .success)
+        XCTAssertTrue(model.notice?.message.contains("PID") == true)
+    }
+
+    func testRemoteReloadsWhenHostReturns() async throws {
+        let backend = GatedBackend(PreviewBackend(stepDelay: .zero))
+        let store = makeStore(backend)
+        var host = try XCTUnwrap(store.host(dev))
+        let model = store.files(for: host)
+        await model.start(host: host)
+        try await waitUntil { model.remote.phase == .loaded }
+        let calls = backend.filesListCalls.count
+        host.state = ConnectionState.reconnecting.rawValue
+        await model.start(host: host)
+        host.state = ConnectionState.ready.rawValue
+        await model.start(host: host)
+        XCTAssertGreaterThan(backend.filesListCalls.count, calls)
     }
 }

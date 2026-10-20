@@ -376,9 +376,10 @@ public struct TransferFile: Codable, Sendable, Equatable {
     public var state: String
     public var outcome: String?
     public var sha256: String?
-    public var error: String?
+    /// `{code, message}` (local-api.md §8); a plain string is read as the message.
+    public var error: EnvelopeError?
 
-    public init(rel: String, size: Int, bytesDone: Int, state: String, outcome: String? = nil, sha256: String? = nil, error: String? = nil) {
+    public init(rel: String, size: Int, bytesDone: Int, state: String, outcome: String? = nil, sha256: String? = nil, error: EnvelopeError? = nil) {
         self.rel = rel
         self.size = size
         self.bytesDone = bytesDone
@@ -396,11 +397,11 @@ public struct TransferFile: Codable, Sendable, Equatable {
         state = try c.decode(String.self, forKey: AnyKey("state"))
         outcome = try c.decodeIfPresent(String.self, forKey: AnyKey("outcome"))
         sha256 = try c.decodeIfPresent(String.self, forKey: AnyKey("sha256"))
-        error = try c.decodeIfPresent(String.self, forKey: AnyKey("error"))
+        error = try c.decodeIfPresent(EnvelopeError.self, forKey: AnyKey("error"))
     }
 }
 
-/// A file transfer (`transfer.*`).
+/// A file transfer (`transfer.*`). `rate_bps` and the byte counts are bytes (local-api.md §8).
 public struct Transfer: Codable, Sendable, Equatable {
     public var transferID: String
     public var hostID: String
@@ -415,10 +416,11 @@ public struct Transfer: Codable, Sendable, Equatable {
     public var filesTotal: Int
     public var rateBps: Int
     public var outcome: String?
-    public var error: String?
+    /// `{code, message}` (local-api.md §8); a plain string is read as the message.
+    public var error: EnvelopeError?
     public var files: [TransferFile]
 
-    public init(transferID: String, hostID: String, direction: String, local: String, remote: String, onConflict: String, state: String, bytesDone: Int, bytesTotal: Int, filesDone: Int, filesTotal: Int, rateBps: Int, outcome: String? = nil, error: String? = nil, files: [TransferFile] = []) {
+    public init(transferID: String, hostID: String, direction: String, local: String, remote: String, onConflict: String, state: String, bytesDone: Int, bytesTotal: Int, filesDone: Int, filesTotal: Int, rateBps: Int, outcome: String? = nil, error: EnvelopeError? = nil, files: [TransferFile] = []) {
         self.transferID = transferID
         self.hostID = hostID
         self.direction = direction
@@ -469,7 +471,7 @@ public struct Transfer: Codable, Sendable, Equatable {
         filesTotal = try c.decode(Int.self, forKey: .filesTotal)
         rateBps = try c.decode(Int.self, forKey: .rateBps)
         outcome = try c.decodeIfPresent(String.self, forKey: .outcome)
-        error = try c.decodeIfPresent(String.self, forKey: .error)
+        error = try c.decodeIfPresent(EnvelopeError.self, forKey: .error)
         files = try c.decodeIfPresent([TransferFile].self, forKey: .files) ?? []
     }
 }

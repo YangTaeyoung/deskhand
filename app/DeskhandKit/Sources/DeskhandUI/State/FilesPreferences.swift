@@ -1,13 +1,14 @@
 import Foundation
 import Observation
 
-/// Files tab settings the person chose: the conflict policy, each pane's sort, hidden files and
-/// columns, the last folders, and the queue drawer. Kept in UserDefaults.
+/// Files tab settings the person chose: the conflict policy, move confirmation, each pane's
+/// sort, hidden files and columns, the last folders, and the queue drawer. Kept in UserDefaults.
 @MainActor
 @Observable
 public final class FilesPreferences {
     enum Keys {
         static let conflictPolicy = "filesConflictPolicy"
+        static let confirmMoves = "filesConfirmMoves"
         static let sort = "filesSort"
         static let showsHidden = "filesShowsHidden"
         static let columnWidths = "filesColumnWidths"
@@ -23,6 +24,11 @@ public final class FilesPreferences {
     /// with the conflict sheet before the transfer starts.
     public var conflictPolicy: ConflictPolicy {
         didSet { defaults.set(conflictPolicy.rawValue, forKey: Keys.conflictPolicy) }
+    }
+
+    /// Moves from menus and the toolbar ask for confirmation first.
+    public var confirmMoves: Bool {
+        didSet { defaults.set(confirmMoves, forKey: Keys.confirmMoves) }
     }
 
     public var queueExpanded: Bool {
@@ -72,6 +78,7 @@ public final class FilesPreferences {
     init(defaults: UserDefaults) {
         self.defaults = defaults
         conflictPolicy = defaults.string(forKey: Keys.conflictPolicy).flatMap(ConflictPolicy.init(rawValue:)) ?? .fail
+        confirmMoves = defaults.object(forKey: Keys.confirmMoves) as? Bool ?? true
         queueExpanded = defaults.object(forKey: Keys.queueExpanded) as? Bool ?? true
         queueHeight = defaults.object(forKey: Keys.queueHeight) as? Double ?? 232
         splitFraction = defaults.object(forKey: Keys.split) as? Double ?? 0.5

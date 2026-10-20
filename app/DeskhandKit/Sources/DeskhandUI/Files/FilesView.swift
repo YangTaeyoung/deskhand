@@ -55,10 +55,23 @@ private struct FilesContent: View {
             .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: model.notice)
             TransferQueueView(model: model, maxHeight: queueLimit)
         }
-        .sheet(item: $model.conflict) { prompt in
-            ConflictSheet(prompt: prompt) { policy, applyToAll in
-                Task { await model.resolveConflict(policy, applyToAll: applyToAll) }
-            }
+        .background {
+            Color.clear
+                .sheet(item: Binding(get: { model.conflict }, set: { _ in })) { prompt in
+                    ConflictSheet(prompt: prompt) { policy, applyToAll in
+                        Task { await model.resolveConflict(policy, applyToAll: applyToAll) }
+                    }
+                }
+        }
+        .background {
+            Color.clear
+                .sheet(item: $model.pendingMove) { request in
+                    MoveConfirmSheet(request: request) { dontAskAgain in
+                        Task { await model.confirmMove(request, dontAskAgain: dontAskAgain) }
+                    } cancel: {
+                        model.pendingMove = nil
+                    }
+                }
         }
         .sheet(item: $model.info) { info in
             FileInfoSheet(state: info, sideName: model.sideName(info.side),
@@ -73,10 +86,22 @@ private struct FilesContent: View {
                 Task { await model.confirmPermanentDelete(request) }
             }
             Button(String.ui("action.cancel", "취소"), role: .cancel) {}
-        } message: { _ in
-            let host = model.sideName(.remote)
-            Text(String.ui("files.delete.message", "\(host)의 휴지통을 거치지 않고 바로 지웁니다. 이 작업은 되돌릴 수 없습니다."))
+        } message: { request in
+            Text(deletionMessage(request))
         }
+    }
+
+    /// The names (the first five and how many more), then what a permanent delete means.
+    private func deletionMessage(_ request: DeletionRequest) -> String {
+        let host = model.sideName(.remote)
+        let consequence = String.ui("files.delete.message", "\(host)의 휴지통을 거치지 않고 바로 지웁니다. 이 작업은 되돌릴 수 없습니다.")
+        guard request.items.count > 1 else { return consequence }
+        var names = request.items.prefix(5).map { "· \($0.name)" }
+        if request.items.count > 5 {
+            let more = FileFormat.count(request.items.count - 5)
+            names.append(.ui("files.delete.more", "외 \(more)개"))
+        }
+        return names.joined(separator: "\n") + "\n\n" + consequence
     }
 
     private var deletionTitle: String {

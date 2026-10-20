@@ -202,6 +202,20 @@ private struct FilePathParams: Encodable {
     let path: String
 }
 
+private struct FileListParams: Encodable {
+    let hostID: String
+    let path: String
+    let cursor: String?
+    let limit: Int
+}
+
+private struct AppLaunchParams: Encodable {
+    let hostID: String
+    let path: String
+    let args: [String]?
+    let cwd: String?
+}
+
 private struct FileRenameParams: Encodable {
     let hostID: String
     let from: String
@@ -226,10 +240,17 @@ private struct TransferIDParams: Encodable {
     let transferID: String
 }
 
-/// `{entries, truncated?}`.
+/// `{entries, next_cursor?, total?, truncated?}`.
 private struct FileListResult: Decodable {
     let entries: [FileEntry]
+    let nextCursor: String?
+    let total: Int?
     let truncated: Bool?
+}
+
+/// `pid` of `app.launch` alongside the envelope.
+private struct AppLaunchResult: Decodable {
+    let pid: Int?
 }
 
 private struct TransferStartResult: Decodable {
@@ -245,11 +266,11 @@ private struct TransferListResult: Decodable {
 }
 
 extension LiveBackend {
-    /// `files.list{host_id, path}` returns the whole folder in one page; `cursor` and `limit`
-    /// are not sent and the page has no next cursor.
+    /// `files.list{host_id, path, cursor?, limit}` with `limit` clamped to 1–5000 (local-api.md §8).
     public func filesList(hostID: String, path: String, cursor: String?, limit: Int) async throws -> FileEntryPage {
-        let result: FileListResult = try await client.call("files.list", FilePathParams(hostID: hostID, path: path))
-        return FileEntryPage(entries: result.entries, nextCursor: nil, total: result.entries.count,
+        let result: FileListResult = try await client.call(
+            "files.list", FileListParams(hostID: hostID, path: path, cursor: cursor, limit: min(max(limit, 1), 5000)))
+        return FileEntryPage(entries: result.entries, nextCursor: result.nextCursor, total: result.total,
                              truncated: result.truncated ?? false)
     }
 
@@ -273,8 +294,11 @@ extension LiveBackend {
         try await envelopeCall("files.delete", FileDeleteParams(hostID: hostID, path: path, permanent: true))
     }
 
-    public func appLaunch(hostID: String, path: String) async throws {
-        try await envelopeCall("app.launch", FilePathParams(hostID: hostID, path: path))
+    public func appLaunch(hostID: String, path: String, args: [String]?, cwd: String?) async throws -> Int? {
+        let envelope: Envelope<AppLaunchResult> = try await client.call(
+            "app.launch", AppLaunchParams(hostID: hostID, path: path, args: args, cwd: cwd))
+        try Self.check(envelope)
+        return envelope.payload.pid
     }
 
     public func transferStart(_ request: TransferRequest) async throws -> String {

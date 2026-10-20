@@ -64,8 +64,9 @@ public protocol FilesBackend: Sendable {
     func filesTrash(hostID: String, path: String) async throws
     /// Deletes `path` permanently (`permanent: true`).
     func filesDelete(hostID: String, path: String) async throws
-    /// Starts `path` on the remote computer in the signed-in user's session.
-    func appLaunch(hostID: String, path: String) async throws
+    /// Starts `path` on the remote computer in the signed-in user's session and returns its
+    /// process ID when the agent reports one.
+    func appLaunch(hostID: String, path: String, args: [String]?, cwd: String?) async throws -> Int?
     /// Starts a transfer and returns its `transfer_id`; progress arrives as `transfer.updated` events.
     func transferStart(_ request: TransferRequest) async throws -> String
     /// Transfers of `hostID`, newest first.

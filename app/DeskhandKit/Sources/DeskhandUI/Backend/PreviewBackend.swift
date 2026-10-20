@@ -16,7 +16,8 @@ public enum PreviewScenario: String, CaseIterable, Sendable {
 
 /// In-memory `Backend` with fixture data. Mutating calls change its state and emit the events
 /// the daemon would send; `hostAdd` plays the installation steps with `stepDelay` between them.
-public final class PreviewBackend: Backend {
+/// Nothing is written to this Mac's disk: pulled files land in `localOverlay`.
+public final class PreviewBackend: Backend, LocalOverlayProviding {
     private struct Subscriber {
         let kinds: [String]?
         let hostID: String?
@@ -46,6 +47,8 @@ public final class PreviewBackend: Backend {
     private let screenUnits: [Data]
     /// Remote folders and transfers.
     let files: PreviewFileStore
+    /// Items pulled to this Mac; the preview never writes to the disk.
+    public let localOverlay = LocalOverlay()
 
     /// `screenVideo` is an Annex-B H.264 file whose first access unit is a keyframe; screen
     /// streams play it in a loop. Without one they report the stream as paused.

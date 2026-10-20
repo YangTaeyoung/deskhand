@@ -24,6 +24,8 @@ enum FilesScenes {
         var queueExpanded = false
         var queueHeight: Double = 232
         var hidden: [FileSide: Set<FileColumn>] = [:]
+        /// An inline action error shown in a pane.
+        var paneError: (side: FileSide, message: String, error: OperationError)?
     }
 
     static func remoteItems(_ path: String, user: String = "taeyoung") -> [FileItem] {
@@ -55,6 +57,11 @@ enum FilesScenes {
                           phase: files.remotePhase, backStack: files.remoteBack)
         model.transfers.seed(files.transfers, expanded: files.expanded)
         model.activeSide = files.active
+        model.dismissError(.local)
+        model.dismissError(.remote)
+        if let paneError = files.paneError {
+            model.show(.error, paneError.message, error: paneError.error, side: paneError.side)
+        }
         model.markSeeded()
     }
 
@@ -79,6 +86,10 @@ enum FilesScenes {
         let longFolder = PreviewFixtures.longNamesFolder(user: user)
         return [
             scene("files", Setup(selected: dev, tab: .files, inspector: nil), Files(
+                localItems: PreviewFixtures.localItems() + [
+                    FileItem(name: "checkout-report.html", path: PreviewFixtures.localBuildFolder + "/checkout-report.html",
+                             isDirectory: false, size: 120_400, modified: .now.addingTimeInterval(-120), isPreviewOnly: true),
+                ],
                 localSelection: ["Shop-Setup-1188-x64.msi"],
                 remoteSelection: ["Deskhand-Setup-0.4.2.msi", "report.html"],
                 remoteBack: [home], transfers: running)),
@@ -97,6 +108,21 @@ enum FilesScenes {
             scene("files-conflict", Setup(selected: dev, tab: .files, inspector: nil), Files(transfers: running), sheet: { store in
                 AnyView(ConflictSheet(prompt: conflictPrompt(store: store, dev: dev, home: home)) { _, _ in })
             }),
+            scene("files-move-confirm", Setup(selected: dev, tab: .files, inspector: nil), Files(transfers: running), sheet: { store in
+                let local = PreviewFixtures.localBuildFolder
+                let downloads = home + "\\Downloads"
+                return AnyView(MoveConfirmSheet(request: MoveRequest(
+                    direction: .movePush,
+                    candidates: [TransferCandidate(name: "Shop-Setup-1188-x64.msi", source: local + "/Shop-Setup-1188-x64.msi",
+                                                   destination: downloads + "\\Shop-Setup-1188-x64.msi", isDirectory: false,
+                                                   size: 1_203_486_720)],
+                    folder: downloads, sourceName: "이 Mac", destinationName: store.host(dev)?.name ?? "개발 PC"),
+                    confirm: { _ in }, cancel: {}))
+            }),
+            scene("files-action-error", Setup(selected: dev, tab: .files, inspector: nil), Files(
+                remotePath: "C:\\ProgramData\\Shop\\CrashDumps", remoteSelection: ["Shop.exe.4013.dmp"], transfers: running,
+                paneError: (.remote, "‘Shop.exe.4013.dmp’을(를) 열지 못했습니다",
+                            OperationError(code: "INVALID_ARGUMENT", message: "‘Shop.exe.4013.dmp’을(를) 열 프로그램이 원격 PC에 없습니다")))),
             scene("files-empty", Setup(selected: dev, tab: .files, inspector: nil), Files(
                 localPath: "/Users/taeyoung/Desktop/새 빌드", localItems: [],
                 remotePath: home + "\\Downloads\\빈 폴더", remoteItems: [], remoteBack: [home + "\\Downloads"],

@@ -24,9 +24,11 @@ let package = Package(
         ),
         // Renders registered scenes to PNG offscreen, in light and dark mode.
         .executableTarget(name: "DeskhandSnapshots", dependencies: ["DeskhandUI", "DeskhandMedia"]),
-        .testTarget(name: "DeskhandClientTests", dependencies: ["DeskhandClient"]),
+        // In-process mock daemon shared by the client and UI tests.
+        .target(name: "DeskhandTestSupport", path: "Tests/DeskhandTestSupport"),
+        .testTarget(name: "DeskhandClientTests", dependencies: ["DeskhandClient", "DeskhandTestSupport"]),
         .testTarget(name: "DeskhandMediaTests", dependencies: ["DeskhandMedia"]),
-        .testTarget(name: "DeskhandUITests", dependencies: ["DeskhandUI", "DeskhandMedia"]),
+        .testTarget(name: "DeskhandUITests", dependencies: ["DeskhandUI", "DeskhandMedia", "DeskhandTestSupport"]),
     ],
     swiftLanguageModes: [.v6]
 )

@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import DeskhandClient
+import DeskhandTestSupport
 import struct DeskhandClient.Host
 
 private struct HostListResult: Decodable, Sendable { let hosts: [Host] }
@@ -352,6 +353,18 @@ final class ClientTests: XCTestCase {
         XCTAssertEqual(transfer.onConflict, "rename")
         XCTAssertEqual(transfer.rateBps, 100)
         XCTAssertEqual(transfer.files.first?.rel, "a")
+        XCTAssertNil(transfer.error)
+
+        let failed = try Wire.decode(Transfer.self, from: Data(#"""
+        {"transfer_id":"t","host_id":"h","direction":"pull","local":"/a","remote":"C:\\a","on_conflict":"fail","state":"failed",
+         "bytes_done":0,"bytes_total":2,"files_done":0,"files_total":2,"rate_bps":0,"outcome":"partial",
+         "error":{"code":"DISK_FULL","message":"공간이 부족합니다","next_action":"free_space"},
+         "files":[{"rel":"a","size":1,"bytes_done":0,"state":"failed","error":{"code":"PERMISSION_DENIED","message":"거부됨"}},
+                  {"rel":"b","size":1,"bytes_done":0,"state":"failed","error":"옛 형식"}]}
+        """#.utf8))
+        XCTAssertEqual(failed.error, EnvelopeError(code: "DISK_FULL", message: "공간이 부족합니다", nextAction: "free_space"))
+        XCTAssertEqual(failed.files.first?.error?.code, "PERMISSION_DENIED")
+        XCTAssertEqual(failed.files.last?.error, EnvelopeError(message: "옛 형식"))
 
         let proc = try Wire.decode(ProcessInfo.self, from: Data(#"""
         {"pid":4,"ppid":1,"name":"n","mem_kb":10,"started_by_deskhand":true}

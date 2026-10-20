@@ -1,9 +1,12 @@
 import DeskhandClient
 import Foundation
 import Observation
+import os
 
 /// Transfers of one computer, newest first, kept current by `transfer.updated` events. Tracks
-/// the pause, resume and cancel calls in flight and their failures.
+/// the pause, resume and cancel calls in flight and their failures. Updates that arrive out of
+/// order are ignored: a finished or paused transfer does not go back to an active state unless
+/// its bytes moved past the known count or this app resumed it.
 @MainActor
 @Observable
 public final class TransferQueue {
@@ -19,11 +22,16 @@ public final class TransferQueue {
     public private(set) var dismissed: Set<String> = []
     public private(set) var running: [String: TransferAction] = [:]
     public private(set) var actionErrors: [String: OperationError] = [:]
+    /// `transfer.updated` events whose transfer could not be read.
+    public private(set) var undecodedEvents = 0
 
     /// Called once for each transfer that reaches a finished state while the queue watches it.
     @ObservationIgnored var onFinish: ((Transfer) -> Void)?
     @ObservationIgnored private let backend: any Backend
     @ObservationIgnored private var eventsTask: Task<Void, Never>?
+    /// Transfers this app resumed, whose next active update is accepted after a stop.
+    @ObservationIgnored private var restarting: Set<String> = []
+    nonisolated static let log = Logger(subsystem: "io.github.yangtaeyoung.Deskhand", category: "files")
 
     init(hostID: String, backend: any Backend) {
         self.hostID = hostID
@@ -41,26 +49,37 @@ public final class TransferQueue {
 
     // MARK: Lifecycle
 
-    /// Loads the host's transfers and follows `transfer.updated` events until `stop()`.
+    /// Subscribes to `transfer.updated`, then loads the host's transfers, and follows the events
+    /// until `stop()`. After the stream ends it subscribes and loads again.
     func start() {
         guard eventsTask == nil else { return }
         let backend = self.backend
         let hostID = self.hostID
         eventsTask = Task { [weak self] in
-            await self?.reload()
             while !Task.isCancelled {
                 let stream = backend.events(kinds: [EventKind.transferUpdated], hostID: hostID)
+                await self?.reload()
                 do {
                     for try await event in stream {
-                        guard let value = event.payload["transfer"],
-                              let transfer = try? LiveBackend.decode(Transfer.self, from: value) else { continue }
-                        self?.apply(transfer)
+                        self?.handle(event)
                     }
                 } catch {}
                 guard !Task.isCancelled else { return }
                 try? await Task.sleep(for: .seconds(1))
-                await self?.reload()
             }
+        }
+    }
+
+    /// Applies a `transfer.updated` event; one whose `transfer` does not decode is logged and counted.
+    func handle(_ event: DaemonEvent) {
+        guard event.kind == EventKind.transferUpdated else { return }
+        do {
+            guard let value = event.payload["transfer"] else { throw DecodingError.valueNotFound(
+                Transfer.self, .init(codingPath: [], debugDescription: "transfer.updated without transfer")) }
+            apply(try LiveBackend.decode(Transfer.self, from: value))
+        } catch {
+            undecodedEvents += 1
+            Self.log.error("transfer.updated seq \(event.seq, privacy: .public) not applied: \(String(describing: error), privacy: .public)")
         }
     }
 
@@ -82,10 +101,12 @@ public final class TransferQueue {
         }
     }
 
-    /// Inserts or replaces a transfer of this host. Newly seen transfers go to the top.
+    /// Inserts or replaces a transfer of this host unless it is older than the known state.
+    /// Newly seen transfers go to the top.
     func apply(_ transfer: Transfer, notify: Bool = true) {
         guard transfer.hostID == hostID else { return }
         if let i = transfers.firstIndex(where: { $0.transferID == transfer.transferID }) {
+            guard !isStale(transfer, over: transfers[i]) else { return }
             let wasFinished = transfers[i].transferState.isFinished
             transfers[i] = transfer
             if notify, !wasFinished, transfer.transferState.isFinished { onFinish?(transfer) }
@@ -93,6 +114,25 @@ public final class TransferQueue {
             transfers.insert(transfer, at: 0)
             dismissed.remove(transfer.transferID)
         }
+    }
+
+    /// Whether `incoming` describes an earlier moment than `current`.
+    private func isStale(_ incoming: Transfer, over current: Transfer) -> Bool {
+        let id = incoming.transferID
+        let new = incoming.transferState
+        let old = current.transferState
+        let active = new == .queued || new == .running || new == .verifying
+        if restarting.contains(id) {
+            if active { restarting.remove(id) }
+            return false
+        }
+        if active, old.isFinished || old == .paused {
+            return incoming.bytesDone <= current.bytesDone
+        }
+        if new == .paused, old.isFinished { return true }
+        if old == .verifying, new == .queued || new == .running { return true }
+        if old == .running, new == .running || new == .queued { return incoming.bytesDone < current.bytesDone }
+        return false
     }
 
     /// Reads a transfer the app just started so it shows before its first event.
@@ -106,7 +146,9 @@ public final class TransferQueue {
     public func perform(_ action: TransferAction, on id: String) {
         switch action {
         case .pause: call(action, id) { try await $0.transferPause(transferID: id) }
-        case .resume, .retry: call(action, id) { try await $0.transferResume(transferID: id) }
+        case .resume, .retry:
+            restarting.insert(id)
+            call(action, id) { try await $0.transferResume(transferID: id) }
         case .cancel: call(action, id) { try await $0.transferCancel(transferID: id) }
         case .dismiss:
             dismissed.insert(id)

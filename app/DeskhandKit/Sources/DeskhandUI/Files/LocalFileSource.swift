@@ -25,11 +25,15 @@ public protocol FileListingSource: Sendable {
     func list(path: String, cursor: String?, limit: Int) async throws -> FileListPage
 }
 
-/// Folders of this Mac, read with `FileManager`. Every folder comes back as one page.
+/// Folders of this Mac, read with `FileManager`, with the items of `overlay` added. Every
+/// folder comes back as one page.
 public struct LocalFileSource: FileListingSource {
     public var style: PathStyle { .posix }
+    public let overlay: LocalOverlay?
 
-    public init() {}
+    public init(overlay: LocalOverlay? = nil) {
+        self.overlay = overlay
+    }
 
     private static let keys: [URLResourceKey] = [
         .isDirectoryKey, .isPackageKey, .isSymbolicLinkKey, .isHiddenKey, .isWritableKey, .fileSizeKey,
@@ -37,9 +41,25 @@ public struct LocalFileSource: FileListingSource {
     ]
 
     public func list(path: String, cursor: String?, limit: Int) async throws -> FileListPage {
-        try await Task.detached(priority: .userInitiated) {
-            try Self.read(path)
-        }.value
+        let overlay = self.overlay
+        let added = overlay?.items(in: path) ?? []
+        do {
+            let page = try await Task.detached(priority: .userInitiated) {
+                try Self.read(path)
+            }.value
+            guard !added.isEmpty else { return page }
+            let addedPaths = Set(added.map(\.path))
+            let items = page.items.filter { !addedPaths.contains($0.path) } + added
+            return FileListPage(items: items, total: items.count)
+        } catch let error as OperationError where error.code == "NOT_FOUND" && overlay?.hasFolder(path) == true {
+            return FileListPage(items: added, total: added.count)
+        }
+    }
+
+    /// The item at `path` on disk or in the overlay.
+    public func item(at path: String) -> FileItem? {
+        if let item = overlay?.item(at: path) { return item }
+        return Self.exists(path) ? Self.item(for: URL(fileURLWithPath: path)) : nil
     }
 
     static func read(_ path: String) throws -> FileListPage {

@@ -16,7 +16,7 @@ struct ControlCall: Equatable {
 /// Backend that forwards to a `PreviewBackend`, counts `hostList` calls, can hold `hostList`
 /// replies until the test resumes them in any order, can fail `timelineList`, and records,
 /// holds or fails `control.*` changes.
-final class GatedBackend: Backend {
+final class GatedBackend: Backend, LocalOverlayProviding {
     let base: PreviewBackend
 
     private struct HeldControl: Hashable {
@@ -44,6 +44,8 @@ final class GatedBackend: Backend {
     init(_ base: PreviewBackend) {
         self.base = base
     }
+
+    var localOverlay: LocalOverlay { base.localOverlay }
 
     func holdHostList(_ hold: Bool) {
         state.withLock { $0.holdHostList = hold }
@@ -208,9 +210,9 @@ final class GatedBackend: Backend {
         try await base.filesDelete(hostID: hostID, path: path)
     }
 
-    func appLaunch(hostID: String, path: String) async throws {
+    func appLaunch(hostID: String, path: String, args: [String]?, cwd: String?) async throws -> Int? {
         record(FileCall(method: "app.launch", path: path))
-        try await base.appLaunch(hostID: hostID, path: path)
+        return try await base.appLaunch(hostID: hostID, path: path, args: args, cwd: cwd)
     }
 
     func transferStart(_ request: TransferRequest) async throws -> String {

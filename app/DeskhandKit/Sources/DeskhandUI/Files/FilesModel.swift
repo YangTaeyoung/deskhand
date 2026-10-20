@@ -60,6 +60,28 @@ public struct ConflictPrompt: Sendable, Equatable, Identifiable {
     public var current: ConflictItem? { items.first }
 }
 
+/// A move started from a menu or the toolbar, waiting for the person to confirm it.
+public struct MoveRequest: Sendable, Equatable, Identifiable {
+    public let id: UUID
+    /// `move_push` or `move_pull`.
+    public var direction: TransferDirection
+    public var candidates: [TransferCandidate]
+    public var folder: String
+    /// `이 Mac` or the computer's name: where the sources are deleted after verification.
+    public var sourceName: String
+    public var destinationName: String
+
+    public init(id: UUID = UUID(), direction: TransferDirection, candidates: [TransferCandidate], folder: String,
+                sourceName: String, destinationName: String) {
+        self.id = id
+        self.direction = direction
+        self.candidates = candidates
+        self.folder = folder
+        self.sourceName = sourceName
+        self.destinationName = destinationName
+    }
+}
+
 /// Items awaiting confirmation of a permanent delete.
 public struct DeletionRequest: Sendable, Equatable, Identifiable {
     public let id = UUID()
@@ -89,12 +111,15 @@ public struct FilesNotice: Sendable, Equatable, Identifiable {
     public var message: String
     public var detail: String?
     public var code: String?
+    /// The pane an error belongs to; errors with a pane stay in that pane until dismissed.
+    public var side: FileSide?
 }
 
 /// What a drag over a pane would do, for the pane's drop banner.
 public struct FileDropHover: Sendable, Equatable {
     /// Folder row under the pointer; nil for the open folder.
     public var folder: FileItem?
+    /// ⌘ is held: the drop moves.
     public var move: Bool
     public var count: Int
 }
@@ -166,10 +191,14 @@ public final class FilesModel {
     public let transfers: TransferQueue
     /// The pane the keyboard and toolbar act on.
     public var activeSide: FileSide = .remote
-    public var conflict: ConflictPrompt?
+    /// Conflicts waiting for a decision, one prompt per transfer request, oldest first.
+    public private(set) var conflicts: [ConflictPrompt] = []
+    public var pendingMove: MoveRequest?
     public var pendingDeletion: DeletionRequest?
     public var info: FileInfoState?
     public private(set) var notice: FilesNotice?
+    /// Failures shown inline at the top of a pane until dismissed or the next success there.
+    public private(set) var paneErrors: [FileSide: FilesNotice] = [:]
     public var dropHover: [FileSide: FileDropHover] = [:]
     /// Remote actions in flight, for the pane's status line.
     public private(set) var busyMessage: String?
@@ -179,8 +208,11 @@ public final class FilesModel {
     @ObservationIgnored weak var store: AppStore?
     @ObservationIgnored let backend: any Backend
     @ObservationIgnored let preferences: FilesPreferences
+    /// Items the preview daemon pulled to this Mac, when the backend keeps them in memory.
+    @ObservationIgnored let overlay: LocalOverlay?
     @ObservationIgnored private(set) var hostName: String
     @ObservationIgnored private var started = false
+    @ObservationIgnored private var wasReady: Bool?
     @ObservationIgnored private var noticeTask: Task<Void, Never>?
 
     init(host: Host, backend: any Backend, preferences: FilesPreferences) {
@@ -190,7 +222,8 @@ public final class FilesModel {
         self.preferences = preferences
         let remoteStyle = PathStyle(os: host.os)
         let localPath = preferences.localPath.flatMap { LocalFileSource.exists($0) ? $0 : nil } ?? LocalFileSource.home
-        local = FileBrowser(side: .local, source: LocalFileSource(), path: localPath,
+        overlay = (backend as? any LocalOverlayProviding)?.localOverlay
+        local = FileBrowser(side: .local, source: LocalFileSource(overlay: overlay), path: localPath,
                             sort: preferences.sort(for: .local), showsHidden: preferences.showsHidden(.local))
         remote = FileBrowser(side: .remote, source: RemoteFileSource(backend: backend, hostID: host.hostID, style: remoteStyle),
                              path: preferences.remotePath(for: host.hostID) ?? RemoteFileSource.startPath(for: host),
@@ -200,6 +233,19 @@ public final class FilesModel {
     }
 
     public func browser(_ side: FileSide) -> FileBrowser { side == .local ? local : remote }
+
+    /// The shown conflict prompt.
+    public var conflict: ConflictPrompt? { conflicts.first }
+
+    /// Puts conflict prompts in place without a transfer request. Snapshot scenes use it.
+    public func seedConflicts(_ prompts: [ConflictPrompt]) {
+        conflicts = prompts
+    }
+
+    /// The item at `path` on this Mac's disk or among the preview's received items.
+    public func localItem(at path: String) -> FileItem? {
+        (local.source as? LocalFileSource)?.item(at: path)
+    }
 
     /// `이 Mac` or the computer's name.
     public func sideName(_ side: FileSide) -> String {
@@ -213,8 +259,14 @@ public final class FilesModel {
     public func start(host: Host) async {
         hostName = host.name
         let available = RemoteFilesAvailability(host: host) == .ready
+        let returned = available && wasReady == false
+        wasReady = available
         guard !started else {
-            if available { await loadRemoteIfNeeded() }
+            if returned, remote.phase == .loaded {
+                await remote.reload()
+            } else if available {
+                await loadRemoteIfNeeded()
+            }
             return
         }
         started = true
@@ -330,36 +382,64 @@ public final class FilesModel {
 
     /// Pushes files of this Mac into a remote folder.
     public func send(_ urls: [URL], to folder: String, move: Bool) async {
-        let candidates = urls.map { url -> TransferCandidate in
+        await begin(uploads(urls, to: folder), direction: .upload(move: move), folder: folder)
+    }
+
+    /// Pulls remote items into a folder of this Mac.
+    public func receive(_ items: [RemoteDragItem], to folder: String, move: Bool) async {
+        await begin(downloads(items, to: folder), direction: .download(move: move), folder: folder)
+    }
+
+    /// Sends from a menu or the toolbar: a move waits for confirmation unless the person turned
+    /// the confirmation off.
+    public func requestSend(_ urls: [URL], to folder: String, move: Bool) async {
+        guard move, preferences.confirmMoves else { return await send(urls, to: folder, move: move) }
+        pendingMove = MoveRequest(direction: .movePush, candidates: uploads(urls, to: folder), folder: folder,
+                                  sourceName: sideName(.local), destinationName: sideName(.remote))
+    }
+
+    /// Receives from a menu or the toolbar, confirming a move as `requestSend` does.
+    public func requestReceive(_ items: [RemoteDragItem], to folder: String, move: Bool) async {
+        guard move, preferences.confirmMoves else { return await receive(items, to: folder, move: move) }
+        pendingMove = MoveRequest(direction: .movePull, candidates: downloads(items, to: folder), folder: folder,
+                                  sourceName: sideName(.remote), destinationName: sideName(.local))
+    }
+
+    /// Starts a confirmed move; with `dontAskAgain`, later moves start without asking.
+    public func confirmMove(_ request: MoveRequest, dontAskAgain: Bool) async {
+        if pendingMove?.id == request.id { pendingMove = nil }
+        if dontAskAgain { preferences.confirmMoves = false }
+        await begin(request.candidates, direction: request.direction, folder: request.folder)
+    }
+
+    private func uploads(_ urls: [URL], to folder: String) -> [TransferCandidate] {
+        urls.map { url in
             let item = LocalFileSource.item(for: url)
             return TransferCandidate(name: item.name, source: url.path,
                                      destination: FilePath.join(folder, item.name, style: remote.style),
                                      isDirectory: item.isDirectory, size: item.size, modified: item.modified)
         }
-        await begin(candidates, direction: .upload(move: move), folder: folder)
     }
 
-    /// Pulls remote items into a folder of this Mac.
-    public func receive(_ items: [RemoteDragItem], to folder: String, move: Bool) async {
-        let candidates = items.map { item in
+    private func downloads(_ items: [RemoteDragItem], to folder: String) -> [TransferCandidate] {
+        items.map { item in
             TransferCandidate(name: item.name, source: item.path, destination: FilePath.join(folder, item.name, style: .posix),
                               isDirectory: item.dir, size: item.size, modified: item.modified)
         }
-        await begin(candidates, direction: .download(move: move), folder: folder)
     }
 
-    /// Sends the local selection to the open remote folder.
+    /// Sends the local selection to the open remote folder; ⌘ on the toolbar button moves.
     public func sendSelection(move: Bool) async {
-        let urls = local.selectedItems.map { URL(fileURLWithPath: $0.path) }
+        let urls = local.selectedItems.filter { !$0.isPreviewOnly }.map { URL(fileURLWithPath: $0.path) }
         guard !urls.isEmpty, remote.phase == .loaded else { return }
-        await send(urls, to: remote.path, move: move)
+        await requestSend(urls, to: remote.path, move: move)
     }
 
-    /// Receives the remote selection into the open local folder.
+    /// Receives the remote selection into the open local folder; ⌘ on the toolbar button moves.
     public func receiveSelection(move: Bool) async {
         let items = remote.selectedItems.map { RemoteDragItem(hostID: hostID, item: $0) }
         guard !items.isEmpty else { return }
-        await receive(items, to: local.path, move: move)
+        await requestReceive(items, to: local.path, move: move)
     }
 
     /// Starts transfers whose destinations are free with the `fail` policy and asks about the
@@ -372,23 +452,18 @@ public final class FilesModel {
             return
         }
         let existing = await existingItems(for: candidates, direction: direction, folder: folder)
-        var conflicts: [ConflictItem] = []
+        var found: [ConflictItem] = []
         for candidate in candidates {
             if let item = existing[candidate.destination] {
-                conflicts.append(ConflictItem(candidate: candidate, existing: item))
+                found.append(ConflictItem(candidate: candidate, existing: item))
             } else {
                 await start(candidate, direction: direction, policy: .fail)
             }
         }
-        guard !conflicts.isEmpty else { return }
-        if var prompt = conflict, prompt.direction == direction, prompt.folder == folder {
-            prompt.items.append(contentsOf: conflicts)
-            conflict = prompt
-        } else {
-            conflict = ConflictPrompt(direction: direction, sourceName: sideName(direction.isUpload ? .local : .remote),
-                                      destinationName: sideName(direction.isUpload ? .remote : .local),
-                                      folder: folder, items: conflicts)
-        }
+        guard !found.isEmpty else { return }
+        self.conflicts.append(ConflictPrompt(direction: direction, sourceName: sideName(direction.isUpload ? .local : .remote),
+                                             destinationName: sideName(direction.isUpload ? .remote : .local),
+                                             folder: folder, items: found))
     }
 
     /// Items already at the candidates' destinations, by destination path.
@@ -404,8 +479,8 @@ public final class FilesModel {
                 }
             }
         } else {
-            for candidate in candidates where LocalFileSource.exists(candidate.destination) {
-                found[candidate.destination] = LocalFileSource.item(for: URL(fileURLWithPath: candidate.destination))
+            for candidate in candidates {
+                if let item = localItem(at: candidate.destination) { found[candidate.destination] = item }
             }
         }
         return found
@@ -423,23 +498,29 @@ public final class FilesModel {
             await transfers.track(id)
         } catch {
             let name = candidate.name
-            show(.error, .ui("files.error.transferStart", "‘\(name)’ 전송을 시작하지 못했습니다"), error: OperationError(error))
+            show(.error, .ui("files.error.transferStart", "‘\(name)’ 전송을 시작하지 못했습니다"), error: OperationError(error),
+                 side: direction.isUpload ? .remote : .local)
         }
     }
 
     /// Applies the person's decision to the shown conflict, or with `applyToAll` to every
-    /// remaining one. `fail` stops: no remaining conflicting item is transferred.
+    /// remaining one of the same request. `fail` stops that request: none of its remaining
+    /// conflicting items is transferred. Prompts of later requests stay queued.
     public func resolveConflict(_ policy: ConflictPolicy, applyToAll: Bool) async {
-        guard var prompt = conflict, !prompt.items.isEmpty else { return }
+        guard var prompt = conflicts.first, !prompt.items.isEmpty else { return }
         if policy == .fail {
             let count = FileFormat.count(prompt.items.count)
-            conflict = nil
+            conflicts.removeFirst()
             show(.info, .ui("files.conflict.stopped", "같은 이름이 있는 \(count)개 항목을 보내지 않았습니다"))
             return
         }
         let targets = applyToAll ? prompt.items : [prompt.items[0]]
         prompt.items.removeFirst(targets.count)
-        conflict = prompt.items.isEmpty ? nil : prompt
+        if prompt.items.isEmpty {
+            conflicts.removeFirst()
+        } else {
+            conflicts[0] = prompt
+        }
         for item in targets {
             await start(item.candidate, direction: prompt.direction, policy: policy)
         }
@@ -474,6 +555,10 @@ public final class FilesModel {
             await open(.remote, path: folder)
             remote.selection = [path]
             activeSide = .remote
+        } else if overlay?.item(at: path) != nil {
+            await open(.local, path: folder)
+            local.selection = [path]
+            activeSide = .local
         } else if LocalFileSource.exists(path) {
             NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
         } else {
@@ -499,7 +584,7 @@ public final class FilesModel {
                 remote.renameRequest = created.path
             }
         } catch {
-            show(.error, .ui("files.error.mkdir", "‘\(name)’ 폴더를 만들지 못했습니다"), error: OperationError(error))
+            show(.error, .ui("files.error.mkdir", "‘\(name)’ 폴더를 만들지 못했습니다"), error: OperationError(error), side: .remote)
         }
     }
 
@@ -516,7 +601,7 @@ public final class FilesModel {
     public func rename(_ item: FileItem, to name: String) async {
         guard name != item.name else { return }
         if let problem = renameProblem(item, to: name) {
-            show(.error, problem)
+            show(.error, problem, side: .remote)
             return
         }
         let target = FilePath.join(FilePath.parent(item.path, style: remote.style) ?? remote.path, name, style: remote.style)
@@ -528,7 +613,7 @@ public final class FilesModel {
             if let renamed = remote.item(named: name) { remote.selection = [renamed.path] }
         } catch {
             let old = item.name
-            show(.error, .ui("files.error.rename", "‘\(old)’의 이름을 바꾸지 못했습니다"), error: OperationError(error))
+            show(.error, .ui("files.error.rename", "‘\(old)’의 이름을 바꾸지 못했습니다"), error: OperationError(error), side: .remote)
         }
     }
 
@@ -584,21 +669,29 @@ public final class FilesModel {
                 let more = FileFormat.count(failures.count - 1)
                 message = .ui("files.error.more", "\(message) 외 \(more)개")
             }
-            show(.error, message, error: error)
+            show(.error, message, error: error, side: .remote)
         } else {
             show(.success, success(FileFormat.count(items.count)))
         }
     }
 
-    /// Starts a remote file with `app.launch`.
+    /// Starts a remote file with `app.launch`, with progress in the remote status line and a
+    /// failure inline in the remote pane.
     public func launch(_ item: FileItem) async {
         let name = item.name
+        busyMessage = .ui("files.busy.launch", "‘\(name)’을(를) 원격 PC에서 여는 중…")
+        defer { busyMessage = nil }
         do {
-            try await backend.appLaunch(hostID: hostID, path: item.path)
+            let pid = try await backend.appLaunch(hostID: hostID, path: item.path, args: nil, cwd: nil)
             let host = hostName
-            show(.success, .ui("files.launched", "\(host)에서 ‘\(name)’을(를) 열었습니다"))
+            if let pid {
+                let number = String(pid)
+                show(.success, .ui("files.launchedPID", "\(host)에서 ‘\(name)’을(를) 열었습니다 · PID \(number)"))
+            } else {
+                show(.success, .ui("files.launched", "\(host)에서 ‘\(name)’을(를) 열었습니다"))
+            }
         } catch {
-            show(.error, .ui("files.error.launch", "‘\(name)’을(를) 열지 못했습니다"), error: OperationError(error))
+            show(.error, .ui("files.error.launch", "‘\(name)’을(를) 열지 못했습니다"), error: OperationError(error), side: .remote)
         }
     }
 
@@ -646,9 +739,16 @@ public final class FilesModel {
 
     // MARK: Notices
 
-    public func show(_ tone: FilesNotice.Tone, _ message: String, error: OperationError? = nil) {
+    /// Shows a toast, or for an error with a pane, an inline message in that pane. A success or
+    /// information toast clears the inline errors.
+    public func show(_ tone: FilesNotice.Tone, _ message: String, error: OperationError? = nil, side: FileSide? = nil) {
+        let notice = FilesNotice(tone: tone, message: message, detail: error.map(\.detail), code: error?.code, side: side)
+        if tone == .error, let side {
+            paneErrors[side] = notice
+            return
+        }
+        if tone != .error { paneErrors = [:] }
         noticeTask?.cancel()
-        let notice = FilesNotice(tone: tone, message: message, detail: error.map(\.detail), code: error?.code)
         self.notice = notice
         let seconds: Double = tone == .error ? 8 : 3.5
         noticeTask = Task { [weak self] in
@@ -663,191 +763,7 @@ public final class FilesModel {
         notice = nil
     }
 
-    // MARK: Menus
-
-    /// Context menu entries for `targets` in `side`; an empty `targets` is the open folder's menu.
-    public func menu(for targets: [FileItem], side: FileSide) -> [FileMenuEntry] {
-        side == .local ? localMenu(targets) : remoteMenu(targets)
-    }
-
-    private func localMenu(_ targets: [FileItem]) -> [FileMenuEntry] {
-        let remoteReady = remote.phase == .loaded
-        if targets.isEmpty {
-            return [
-                FileMenuEntry(.ui("files.menu.showInFinder", "Finder에서 보기"), symbol: "folder") { [weak self] in
-                    guard let self else { return }
-                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: self.local.path)])
-                },
-                FileMenuEntry(.ui("files.menu.copyFolderPath", "이 폴더 경로 복사"), symbol: "doc.on.doc") { [weak self] in
-                    guard let self else { return }
-                    self.copyPaths([FileItem(name: "", path: self.local.path, isDirectory: true)])
-                },
-                .separator,
-                FileMenuEntry(.ui("files.menu.refresh", "새로 고침"), symbol: "arrow.clockwise", key: "r") { [weak self] in
-                    Task { await self?.reload(.local) }
-                },
-            ]
-        }
-        var entries: [FileMenuEntry] = []
-        if targets.count == 1, let folder = targets.first, folder.isFolder {
-            entries.append(FileMenuEntry(.ui("files.menu.open", "열기"), symbol: "folder", key: "↓") { [weak self] in
-                Task { await self?.activate(folder, side: .local) }
-            })
-            entries.append(.separator)
-        }
-        entries += [
-            FileMenuEntry(.ui("files.menu.send", "원격 PC로 보내기"), symbol: "square.and.arrow.up", isEnabled: remoteReady) { [weak self] in
-                Task { await self?.send(targets.map { URL(fileURLWithPath: $0.path) }, to: self?.remote.path ?? "", move: false) }
-            },
-            FileMenuEntry(.ui("files.menu.sendMove", "원격 PC로 이동…"), symbol: "arrow.right.circle", isEnabled: remoteReady) { [weak self] in
-                Task { await self?.send(targets.map { URL(fileURLWithPath: $0.path) }, to: self?.remote.path ?? "", move: true) }
-            },
-            .separator,
-            FileMenuEntry(.ui("files.menu.showInFinder", "Finder에서 보기"), symbol: "folder") { [weak self] in
-                self?.revealInFinder(targets)
-            },
-            FileMenuEntry(.ui("files.menu.copyPath", "경로 복사"), symbol: "doc.on.doc", key: "c", modifiers: [.command, .option]) { [weak self] in
-                self?.copyPaths(targets)
-            },
-        ]
-        if targets.count == 1, let item = targets.first {
-            entries.append(FileMenuEntry(.ui("files.menu.info", "정보"), symbol: "info.circle", key: "i") { [weak self] in
-                self?.showInfo(item, side: .local)
-            })
-        }
-        return entries
-    }
-
-    private func remoteMenu(_ targets: [FileItem]) -> [FileMenuEntry] {
-        let ready = remote.phase == .loaded
-        if targets.isEmpty {
-            return [
-                FileMenuEntry(.ui("files.menu.newFolder", "새 폴더"), symbol: "folder.badge.plus", key: "n",
-                              modifiers: [.command, .shift], isEnabled: ready) { [weak self] in
-                    Task { await self?.newFolder() }
-                },
-                .separator,
-                FileMenuEntry(.ui("files.menu.copyFolderPath", "이 폴더 경로 복사"), symbol: "doc.on.doc") { [weak self] in
-                    guard let self else { return }
-                    self.copyPaths([FileItem(name: "", path: self.remote.path, isDirectory: true)])
-                },
-                FileMenuEntry(.ui("files.menu.refresh", "새로 고침"), symbol: "arrow.clockwise", key: "r") { [weak self] in
-                    Task { await self?.reload(.remote) }
-                },
-            ]
-        }
-        let single = targets.count == 1 ? targets.first : nil
-        var entries: [FileMenuEntry] = []
-        if let folder = single, folder.isFolder {
-            entries.append(FileMenuEntry(.ui("files.menu.open", "열기"), symbol: "folder", key: "↓") { [weak self] in
-                Task { await self?.activate(folder, side: .remote) }
-            })
-        }
-        if let file = single, !file.isDirectory {
-            entries.append(FileMenuEntry(.ui("files.menu.launch", "원격에서 열기"), symbol: "arrow.up.forward.app") { [weak self] in
-                Task { await self?.launch(file) }
-            })
-            entries.append(FileMenuEntry(.ui("files.menu.openLog", "로그로 열기"), symbol: "doc.text.magnifyingglass",
-                                         isEnabled: file.fileKind.isReadableAsLog) { [weak self] in
-                self?.openLog(file)
-            })
-        }
-        if !entries.isEmpty { entries.append(.separator) }
-        entries += [
-            FileMenuEntry(.ui("files.menu.receive", "이 Mac으로 받기"), symbol: "square.and.arrow.down", isEnabled: local.phase == .loaded) { [weak self] in
-                guard let self else { return }
-                Task { await self.receive(targets.map { RemoteDragItem(hostID: self.hostID, item: $0) }, to: self.local.path, move: false) }
-            },
-            FileMenuEntry(.ui("files.menu.receiveMove", "이 Mac으로 이동…"), symbol: "arrow.left.circle", isEnabled: local.phase == .loaded) { [weak self] in
-                guard let self else { return }
-                Task { await self.receive(targets.map { RemoteDragItem(hostID: self.hostID, item: $0) }, to: self.local.path, move: true) }
-            },
-            .separator,
-            FileMenuEntry(.ui("files.menu.newFolder", "새 폴더"), symbol: "folder.badge.plus", key: "n",
-                          modifiers: [.command, .shift], isEnabled: ready) { [weak self] in
-                Task { await self?.newFolder() }
-            },
-        ]
-        if let item = single {
-            entries.append(FileMenuEntry(.ui("files.menu.rename", "이름 바꾸기"), symbol: "pencil", key: "↩", modifiers: []) { [weak self] in
-                self?.remote.renameRequest = item.path
-            })
-        }
-        entries += [
-            FileMenuEntry(.ui("files.menu.trash", "휴지통으로 이동"), symbol: "trash", key: "⌫") { [weak self] in
-                Task { await self?.trash(targets) }
-            },
-            FileMenuEntry(.ui("files.menu.delete", "영구 삭제…"), symbol: "trash.slash", key: "⌫", modifiers: [.command, .option]) { [weak self] in
-                self?.requestPermanentDelete(targets)
-            },
-            .separator,
-            FileMenuEntry(.ui("files.menu.copyPath", "경로 복사"), symbol: "doc.on.doc", key: "c", modifiers: [.command, .option]) { [weak self] in
-                self?.copyPaths(targets)
-            },
-        ]
-        if let item = single {
-            entries.append(FileMenuEntry(.ui("files.menu.info", "정보"), symbol: "info.circle", key: "i") { [weak self] in
-                self?.showInfo(item, side: .remote)
-            })
-        }
-        return entries
-    }
-}
-
-/// A remote row being dragged, as written to the pasteboard.
-public struct RemoteDragItem: Codable, Sendable, Equatable {
-    public var hostID: String
-    public var path: String
-    public var name: String
-    public var dir: Bool
-    public var size: Int?
-    public var modified: Date?
-
-    public init(hostID: String, path: String, name: String, dir: Bool, size: Int? = nil, modified: Date? = nil) {
-        self.hostID = hostID
-        self.path = path
-        self.name = name
-        self.dir = dir
-        self.size = size
-        self.modified = modified
-    }
-
-    public init(hostID: String, item: FileItem) {
-        self.init(hostID: hostID, path: item.path, name: item.name, dir: item.isDirectory, size: item.size, modified: item.modified)
-    }
-}
-
-extension NSPasteboard.PasteboardType {
-    /// A remote file or folder row of the files tab (`RemoteDragItem` JSON).
-    public static let deskhandRemoteItem = NSPasteboard.PasteboardType("io.github.yangtaeyoung.Deskhand.remote-item")
-}
-
-/// What a drag carries into a pane.
-public enum FileDropPayload: Sendable, Equatable {
-    /// Files and folders of this Mac, from the local pane or Finder.
-    case local([URL])
-    /// Rows of a remote pane.
-    case remote([RemoteDragItem])
-
-    public init?(pasteboard: NSPasteboard) {
-        let decoder = JSONDecoder()
-        let remote = (pasteboard.pasteboardItems ?? []).compactMap { item -> RemoteDragItem? in
-            guard let data = item.data(forType: .deskhandRemoteItem) else { return nil }
-            return try? decoder.decode(RemoteDragItem.self, from: data)
-        }
-        if !remote.isEmpty {
-            self = .remote(remote)
-            return
-        }
-        let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
-        guard !urls.isEmpty else { return nil }
-        self = .local(urls)
-    }
-
-    public var count: Int {
-        switch self {
-        case .local(let urls): urls.count
-        case .remote(let items): items.count
-        }
+    public func dismissError(_ side: FileSide) {
+        paneErrors[side] = nil
     }
 }

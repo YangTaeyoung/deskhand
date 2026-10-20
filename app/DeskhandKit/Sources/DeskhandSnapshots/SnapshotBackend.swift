@@ -88,7 +88,7 @@ final class SnapshotBackend: Backend {
     func filesRename(hostID: String, from: String, to: String) async throws {}
     func filesTrash(hostID: String, path: String) async throws {}
     func filesDelete(hostID: String, path: String) async throws {}
-    func appLaunch(hostID: String, path: String) async throws {}
+    func appLaunch(hostID: String, path: String, args: [String]?, cwd: String?) async throws -> Int? { nil }
     func transferStart(_ request: TransferRequest) async throws -> String { throw ClientError.notConnected }
     func transferList(hostID: String) async throws -> [Transfer] { [] }
     func transferGet(transferID: String) async throws -> Transfer { throw ClientError.notConnected }

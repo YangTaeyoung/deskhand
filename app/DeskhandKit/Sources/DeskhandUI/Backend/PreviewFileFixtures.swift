@@ -203,10 +203,10 @@ extension PreviewFixtures {
         partialFiles[11].outcome = "skipped"
         partialFiles[11].sha256 = nil
         partialFiles[17] = TransferFile(rel: "QA 캡처-18.png", size: 1_480_000, bytesDone: 0, state: "failed", outcome: "failed",
-                                        error: "액세스가 거부되었습니다. 대상 폴더에 쓰기 권한이 없습니다 (PERMISSION_DENIED)")
+                                        error: EnvelopeError(code: "PERMISSION_DENIED", message: "액세스가 거부되었습니다. 대상 폴더에 쓰기 권한이 없습니다"))
         partialFiles[22] = TransferFile(rel: "원본/2026년 10월 결제 승인 실패 재현 화면 녹화 원본 — 편집 전 (개인정보 가림 처리 안 됨).mov", size: 1_480_000,
                                         bytesDone: 0, state: "failed", outcome: "failed",
-                                        error: "대상 경로가 Windows 경로 길이 한도를 넘습니다. 폴더 이름을 줄이세요")
+                                        error: EnvelopeError(code: "INVALID_ARGUMENT", message: "대상 경로가 Windows 경로 길이 한도를 넘습니다. 폴더 이름을 줄이세요"))
         let pausedFiles = files(7, prefix: "Shop.exe", size: 54_000_000, done: 3, ext: "dmp")
         return [
             Transfer(transferID: "t-preview-running", hostID: hostID, direction: "push",
@@ -217,15 +217,15 @@ extension PreviewFixtures {
             Transfer(transferID: "t-preview-paused", hostID: hostID, direction: "pull",
                      local: localHome + "/Downloads/CrashDumps", remote: "C:\\ProgramData\\Shop\\CrashDumps", onConflict: "fail",
                      state: "paused", bytesDone: 162_000_000, bytesTotal: 378_000_000, filesDone: 3, filesTotal: 7, rateBps: 0,
-                     error: "연결이 끊겨 멈췄습니다.", files: pausedFiles),
+                     error: EnvelopeError(code: "OFFLINE", message: "연결이 끊겨 멈췄습니다."), files: pausedFiles),
             Transfer(transferID: "t-preview-retained", hostID: hostID, direction: "move_pull",
                      local: localHome + "/Downloads/shop-2026-10-19.log", remote: "C:\\Shop\\logs\\shop-2026-10-19.log",
                      onConflict: "fail", state: "done", bytesDone: 14_220_118, bytesTotal: 14_220_118, filesDone: 1, filesTotal: 1,
                      rateBps: 0, outcome: "copied_source_retained",
-                     error: "Shop.exe가 이 파일을 열어 두고 있어 원격 PC의 원본을 지우지 못했습니다.",
+                     error: EnvelopeError(code: "PERMISSION_DENIED", message: "Shop.exe가 이 파일을 열어 두고 있어 원격 PC의 원본을 지우지 못했습니다."),
                      files: [TransferFile(rel: "shop-2026-10-19.log", size: 14_220_118, bytesDone: 14_220_118, state: "done",
                                           outcome: "copied_source_retained", sha256: "4f9c2b7ee21a90c3",
-                                          error: "원본 삭제 실패: 다른 프로세스가 파일을 사용 중입니다")]),
+                                          error: EnvelopeError(code: "PERMISSION_DENIED", message: "원본 삭제 실패: 다른 프로세스가 파일을 사용 중입니다"))]),
             Transfer(transferID: "t-preview-partial", hostID: hostID, direction: "push",
                      local: localHome + "/Desktop/QA 캡처 10월", remote: "C:\\qa\\uploads\\QA 캡처 10월", onConflict: "rename",
                      state: "done", bytesDone: 32_560_000, bytesTotal: 35_520_000, filesDone: 22, filesTotal: 24, rateBps: 0,
@@ -233,9 +233,9 @@ extension PreviewFixtures {
             Transfer(transferID: "t-preview-failed", hostID: hostID, direction: "pull",
                      local: localHome + "/Downloads/MEMORY.DMP", remote: "C:\\Windows\\MEMORY.DMP", onConflict: "fail",
                      state: "failed", bytesDone: 0, bytesTotal: 2_147_483_648, filesDone: 0, filesTotal: 1, rateBps: 0,
-                     outcome: "failed", error: "관리자 권한이 필요한 파일입니다. 관리자 계정의 SSH 별칭으로 다시 연결하세요.",
+                     outcome: "failed", error: EnvelopeError(code: "ELEVATION_REQUIRED", message: "관리자 권한이 필요한 파일입니다."),
                      files: [TransferFile(rel: "MEMORY.DMP", size: 2_147_483_648, bytesDone: 0, state: "failed", outcome: "failed",
-                                          error: "ELEVATION_REQUIRED")]),
+                                          error: EnvelopeError(code: "ELEVATION_REQUIRED", message: "관리자 권한이 필요한 파일입니다."))]),
             Transfer(transferID: "t-preview-done", hostID: hostID, direction: "push",
                      local: localHome + "/Downloads/Deskhand-agent-0.1.0.zip", remote: downloads + "\\Deskhand-agent-0.1.0.zip",
                      onConflict: "fail", state: "done", bytesDone: 14_221_312, bytesTotal: 14_221_312, filesDone: 1, filesTotal: 1,

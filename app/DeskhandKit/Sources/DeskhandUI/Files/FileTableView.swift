@@ -73,15 +73,16 @@ struct FileTableHandlers {
     var dragWriter: (FileItem) -> (any NSPasteboardWriting)? = { _ in nil }
     var canDrop: (FileDropPayload, FileItem?) -> Bool = { _, _ in false }
     var dropHover: (FileDropHover?) -> Void = { _ in }
-    /// Payload, target folder row (nil for the open folder), and whether ⌥ asked for a move.
+    /// Payload, target folder row (nil for the open folder), and whether ⌘ asked for a move.
     var drop: (FileDropPayload, FileItem?, Bool) -> Void = { _, _, _ in }
     var columnWidthChanged: (FileColumn, Double) -> Void = { _, _ in }
     var columnHiddenChanged: (FileColumn, Bool) -> Void = { _, _ in }
 }
 
 /// A pane's file list: an `NSTableView` with name, modified, size and kind columns, sorting,
-/// multiple selection, type-select, context menus, inline rename, drag and drop with ⌥ for
-/// move, middle-truncated names with the full name as tooltip, and persisted column widths.
+/// multiple selection, type-select, context menus, inline rename, drag and drop (⌘ moves, as in
+/// Finder; a plain or ⌥ drag copies), middle-truncated names with the full name as tooltip, and
+/// persisted column widths.
 /// Narrow panes hide the kind and then the modified column.
 struct FileTableView: NSViewRepresentable {
     let side: FileSide
@@ -478,13 +479,13 @@ struct FileTableView: NSViewRepresentable {
                 hover(nil)
                 return []
             }
-            let move = NSEvent.modifierFlags.contains(.option)
+            let mask = info.draggingSourceOperationMask
+            let move = NSEvent.modifierFlags.contains(.command) && !mask.intersection([.move, .generic]).isEmpty
             lastMove = move
             hover(FileDropHover(folder: folder, move: move, count: payload.count))
-            let mask = info.draggingSourceOperationMask
-            if move, mask.contains(.move) { return .move }
+            if move { return mask.contains(.move) ? .move : .generic }
             if mask.contains(.copy) { return .copy }
-            return mask.contains(.generic) ? .generic : []
+            return []
         }
 
         func tableView(_ tableView: NSTableView, acceptDrop info: any NSDraggingInfo, row: Int,
@@ -590,6 +591,10 @@ final class FileNameCell: NSTableCellView {
 
     let icon = NSImageView()
     let label = NSTextField(labelWithString: "")
+    /// `미리보기` after the name of an item the preview daemon received.
+    let previewTag = NSTextField(labelWithString: String.ui("files.preview.tag", "미리보기"))
+    private var labelTrailing: NSLayoutConstraint?
+    private var tagTrailing: NSLayoutConstraint?
     /// The row's context menu as VoiceOver actions, read when VoiceOver asks.
     var actionsProvider: (() -> [NSAccessibilityCustomAction])?
     private var item: FileItem?
@@ -606,19 +611,32 @@ final class FileNameCell: NSTableCellView {
         label.cell?.truncatesLastVisibleLine = true
         label.font = .systemFont(ofSize: NSFont.systemFontSize)
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        previewTag.translatesAutoresizingMaskIntoConstraints = false
+        previewTag.font = .systemFont(ofSize: NSFont.smallSystemFontSize, weight: .semibold)
+        previewTag.textColor = NSColor(DS.Color.warning)
+        previewTag.setContentCompressionResistancePriority(.required, for: .horizontal)
+        previewTag.setContentHuggingPriority(.required, for: .horizontal)
+        previewTag.isHidden = true
         addSubview(icon)
         addSubview(label)
+        addSubview(previewTag)
         imageView = icon
         textField = label
         label.setAccessibilityCustomActions([])
+        let labelTrailing = label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -2)
+        let tagTrailing = previewTag.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -2)
+        self.labelTrailing = labelTrailing
+        self.tagTrailing = tagTrailing
         NSLayoutConstraint.activate([
             icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
             icon.centerYAnchor.constraint(equalTo: centerYAnchor),
             icon.widthAnchor.constraint(equalToConstant: 18),
             icon.heightAnchor.constraint(equalToConstant: 16),
             label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 6),
-            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -2),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
+            labelTrailing,
+            previewTag.leadingAnchor.constraint(equalTo: label.trailingAnchor, constant: 6),
+            previewTag.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
     }
 
@@ -636,7 +654,12 @@ final class FileNameCell: NSTableCellView {
         label.drawsBackground = false
         label.isBezeled = false
         icon.image = NSImage(systemSymbolName: item.fileKind.symbol, accessibilityDescription: item.kind)
-        toolTip = item.name
+        previewTag.isHidden = !item.isPreviewOnly
+        labelTrailing?.isActive = !item.isPreviewOnly
+        tagTrailing?.isActive = item.isPreviewOnly
+        toolTip = item.isPreviewOnly
+            ? item.name + "\n" + String.ui("files.preview.note", "미리보기에서는 이 Mac에 쓰지 않습니다. 받은 항목은 앱을 닫으면 사라집니다.")
+            : item.name
         alphaValue = item.isHidden ? 0.55 : 1
         recolor()
     }
@@ -648,6 +671,7 @@ final class FileNameCell: NSTableCellView {
     private func recolor() {
         let emphasized = backgroundStyle == .emphasized
         label.textColor = emphasized ? .alternateSelectedControlTextColor : .labelColor
+        previewTag.textColor = emphasized ? .alternateSelectedControlTextColor : NSColor(DS.Color.warning)
         if emphasized {
             icon.contentTintColor = .alternateSelectedControlTextColor
         } else {

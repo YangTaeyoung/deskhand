@@ -2210,6 +2210,17 @@
         }
       }
     },
+    "files.busy.launch": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’을(를) 원격 PC에서 여는 중…"
+          }
+        }
+      }
+    },
     "files.busy.mkdir": {
       "extractionState": "manual",
       "localizations": {
@@ -2294,6 +2305,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@의 휴지통을 거치지 않고 바로 지웁니다. 이 작업은 되돌릴 수 없습니다."
+          }
+        }
+      }
+    },
+    "files.delete.more": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "외 %@개"
           }
         }
       }
@@ -2595,6 +2617,17 @@
         }
       }
     },
+    "files.launchedPID": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@에서 ‘%2$@’을(를) 열었습니다 · PID %3$@"
+          }
+        }
+      }
+    },
     "files.loading": {
       "extractionState": "manual",
       "localizations": {
@@ -2837,6 +2870,39 @@
         }
       }
     },
+    "files.preview.note": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "미리보기에서는 이 Mac에 쓰지 않습니다. 받은 항목은 앱을 닫으면 사라집니다."
+          }
+        }
+      }
+    },
+    "files.preview.note.short": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "미리보기에서는 이 Mac에 쓰지 않습니다"
+          }
+        }
+      }
+    },
+    "files.preview.tag": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "미리보기"
+          }
+        }
+      }
+    },
     "files.receive": {
       "extractionState": "manual",
       "localizations": {
@@ -2865,7 +2931,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "선택한 항목을 이 Mac의 열린 폴더로 받습니다. ⌥를 누른 채 누르면 이동합니다."
+            "value": "선택한 항목을 이 Mac의 열린 폴더로 받습니다. ⌘를 누른 채 누르면 확인한 뒤 이동합니다."
           }
         }
       }
@@ -2975,7 +3041,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "연결되면 마지막으로 보던 폴더를 엽니다. 진행 중이던 전송은 연결이 돌아오면 이어집니다."
+            "value": "연결되면 마지막으로 보던 폴더를 다시 엽니다. 연결이 끊겨 멈춘 전송은 다시 연결된 뒤 전송 목록에서 ‘재개’를 누르세요."
           }
         }
       }
@@ -3052,7 +3118,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "선택한 항목을 원격 PC의 열린 폴더로 보냅니다. ⌥를 누른 채 누르면 이동합니다."
+            "value": "선택한 항목을 원격 PC의 열린 폴더로 보냅니다. ⌘를 누른 채 누르면 확인한 뒤 이동합니다."
           }
         }
       }
@@ -4893,6 +4959,61 @@
         }
       }
     },
+    "move.confirm": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이동"
+          }
+        }
+      }
+    },
+    "move.dontAsk": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 묻지 않기"
+          }
+        }
+      }
+    },
+    "move.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@에 복사하고 SHA-256으로 확인한 뒤에만 %2$@의 원본을 지웁니다. 원본을 지우지 못하면 원본은 그대로 두고 알려 드립니다."
+          }
+        }
+      }
+    },
+    "move.title.many": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@개 항목을 이동할까요?"
+          }
+        }
+      }
+    },
+    "move.title.one": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’을(를) 이동할까요?"
+          }
+        }
+      }
+    },
     "name.dots": {
       "extractionState": "manual",
       "localizations": {
@@ -5419,7 +5540,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "파일을 다른 패널로 끌어다 놓으면 여기에서 진행률과 결과를 확인할 수 있습니다. ⌥를 누른 채 놓으면 이동합니다."
+            "value": "파일을 다른 패널로 끌어다 놓으면 여기에서 진행률과 결과를 확인할 수 있습니다. ⌘를 누른 채 놓으면 이동합니다."
           }
         }
       }
@@ -7224,6 +7345,28 @@
         }
       }
     },
+    "transfer.a11y.verifying": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SHA-256 확인 중"
+          }
+        }
+      }
+    },
+    "transfer.a11y.working": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "진행 중"
+          }
+        }
+      }
+    },
     "transfer.action.cancel": {
       "extractionState": "manual",
       "localizations": {
@@ -7726,6 +7869,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "확인 중"
+          }
+        }
+      }
+    },
+    "transfer.verifyingDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SHA-256 확인 중"
           }
         }
       }

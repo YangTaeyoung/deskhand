@@ -3,7 +3,9 @@ import Observation
 
 /// What one pane shows: the open folder, its items sorted and filtered, the rows revealed so
 /// far, the selection and the back/forward history. Rows are revealed `pageSize` at a time;
-/// when the loaded items run out, the next page is fetched from the source.
+/// when the loaded items run out, the next page is fetched from the source. The sorted,
+/// filtered order is kept and rebuilt only when the items, sort, search or hidden filter
+/// change; revealing more rows only takes a longer prefix of it.
 @MainActor
 @Observable
 public final class FileBrowser {
@@ -47,7 +49,7 @@ public final class FileBrowser {
     public var sort: FileSort {
         didSet {
             guard sort != oldValue else { return }
-            refresh()
+            reorder()
             fetchRemainingWhenFiltering()
         }
     }
@@ -57,7 +59,7 @@ public final class FileBrowser {
         didSet {
             guard query != oldValue else { return }
             revealed = Self.pageSize
-            refresh()
+            reorder()
             fetchRemainingWhenFiltering()
         }
     }
@@ -65,7 +67,7 @@ public final class FileBrowser {
     public var showsHidden: Bool {
         didSet {
             guard showsHidden != oldValue else { return }
-            refresh()
+            reorder()
         }
     }
 
@@ -76,6 +78,10 @@ public final class FileBrowser {
 
     @ObservationIgnored private var token = 0
     @ObservationIgnored private var remainingTask: Task<Void, Never>?
+    /// `items` with their sort keys, in source order.
+    @ObservationIgnored private var keyed: [KeyedFileItem] = []
+    /// Items that pass the filters, in sort order.
+    @ObservationIgnored private var ordered: [FileItem] = []
 
     public init(side: FileSide, source: any FileListingSource, path: String, sort: FileSort = .standard, showsHidden: Bool = false) {
         self.side = side
@@ -152,30 +158,32 @@ public final class FileBrowser {
         guard phase == .loaded else { return }
         if revealed < matchCount {
             revealed += Self.pageSize
-            refresh()
+            reslice()
             return
         }
         guard nextCursor != nil else { return }
         revealed += Self.pageSize
         await fetchNextPage()
-        refresh()
     }
 
     // MARK: Loading
 
+    /// Lists `target`. With `keepRows`, the open folder stays shown while it reloads, and as
+    /// many pages are fetched as were loaded before so the revealed rows and the selection
+    /// survive.
     private func load(_ target: String, keepRows: Bool = false) async {
         token += 1
         let current = token
         remainingTask?.cancel()
         remainingTask = nil
-        if keepRows && phase == .loaded {
+        let refreshing = keepRows && phase == .loaded
+        let previousCount = items.count
+        if refreshing {
             isRefreshing = true
         } else {
             path = target
             phase = .loading
-            items = []
-            rows = []
-            matchCount = 0
+            setItems([])
             nextCursor = nil
             total = nil
             truncated = false
@@ -184,20 +192,30 @@ public final class FileBrowser {
         }
         loadMoreError = nil
         do {
-            let page = try await source.list(path: target, cursor: nil, limit: Self.pageSize)
+            var page = try await source.list(path: target, cursor: nil, limit: Self.pageSize)
+            var collected = page.items
+            if refreshing {
+                while collected.count < previousCount, let cursor = page.nextCursor {
+                    let next = try await source.list(path: target, cursor: cursor, limit: Self.pageSize)
+                    guard current == token else { return }
+                    let known = Set(collected.map(\.path))
+                    collected.append(contentsOf: next.items.filter { !known.contains($0.path) })
+                    page = FileListPage(items: [], nextCursor: next.nextCursor, total: next.total ?? page.total,
+                                        truncated: page.truncated || next.truncated)
+                }
+            }
             guard current == token else { return }
             path = target
-            items = page.items
             nextCursor = page.nextCursor
             total = page.total
             truncated = page.truncated
             phase = .loaded
             isRefreshing = false
-            if keepRows {
-                let paths = Set(items.map(\.path))
+            if refreshing {
+                let paths = Set(collected.map(\.path))
                 selection = selection.intersection(paths)
             }
-            refresh()
+            setItems(collected)
             fetchRemainingWhenFiltering()
         } catch {
             guard current == token else { return }
@@ -218,7 +236,7 @@ public final class FileBrowser {
             let page = try await source.list(path: path, cursor: cursor, limit: Self.pageSize)
             guard current == token else { return }
             let known = Set(items.map(\.path))
-            items.append(contentsOf: page.items.filter { !known.contains($0.path) })
+            appendItems(page.items.filter { !known.contains($0.path) })
             nextCursor = page.nextCursor
             total = page.total ?? total
             truncated = truncated || page.truncated
@@ -236,7 +254,6 @@ public final class FileBrowser {
         remainingTask = Task { [weak self] in
             while let self, self.nextCursor != nil, self.loadMoreError == nil, !Task.isCancelled {
                 await self.fetchNextPage()
-                self.refresh()
             }
             self?.remainingTask = nil
         }
@@ -246,16 +263,37 @@ public final class FileBrowser {
     public func retryLoadMore() async {
         loadMoreError = nil
         await fetchNextPage()
-        refresh()
     }
 
-    private func refresh() {
+    /// Replaces the items and their keys, then rebuilds the order.
+    private func setItems(_ new: [FileItem]) {
+        items = new
+        keyed = new.map(KeyedFileItem.init)
+        reorder()
+    }
+
+    /// Adds a page of items and their keys, then rebuilds the order.
+    private func appendItems(_ new: [FileItem]) {
+        items.append(contentsOf: new)
+        keyed.append(contentsOf: new.map(KeyedFileItem.init))
+        reorder()
+    }
+
+    /// Filters and sorts the keyed items, then reslices the rows.
+    private func reorder() {
         let needle = query.trimmingCharacters(in: .whitespaces)
-        let visible = items.filter { item in
-            (showsHidden || !item.isHidden) && (needle.isEmpty || item.name.localizedStandardContains(needle))
+        let visible = keyed.filter { entry in
+            (showsHidden || !entry.item.isHidden) && (needle.isEmpty || entry.item.name.localizedStandardContains(needle))
         }
         matchCount = visible.count
-        rows = Array(sort.sorted(visible).prefix(revealed))
+        ordered = sort.sorted(visible).map(\.item)
+        reslice()
+    }
+
+    /// The first `revealed` rows of the kept order.
+    private func reslice() {
+        let next = Array(ordered.prefix(revealed))
+        if next != rows { rows = next }
     }
 
     // MARK: Seeding
@@ -266,13 +304,12 @@ public final class FileBrowser {
                      phase: Phase = .loaded, backStack: [String] = []) {
         token += 1
         self.path = FilePath.normalized(path, style: style)
-        self.items = items
         self.nextCursor = nextCursor
         self.total = total ?? (nextCursor == nil ? items.count : nil)
         self.selection = selection
         self.phase = phase
         self.backStack = backStack
         revealed = Self.pageSize
-        refresh()
+        setItems(items)
     }
 }

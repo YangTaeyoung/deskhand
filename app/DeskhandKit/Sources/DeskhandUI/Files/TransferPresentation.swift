@@ -203,7 +203,7 @@ public struct TransferPresentation: Sendable, Equatable {
             let resume = direction.isUpload
                 ? String.ui("transfer.explain.resumeUp", "재개하면 확인된 부분 다음부터 이어서 보냅니다.")
                 : String.ui("transfer.explain.resumeDown", "재개하면 확인된 부분 다음부터 이어서 받습니다.")
-            if let error = transfer.error, !error.isEmpty {
+            if let error = errorMessage {
                 return .ui("transfer.explain.pausedBecause", "\(error) \(resume)")
             }
             return resume
@@ -215,7 +215,7 @@ public struct TransferPresentation: Sendable, Equatable {
             return .ui("transfer.explain.cancelled", "취소했습니다. 대상에 반영된 파일은 없습니다.")
         case .failed:
             if outcome == .partial { return partialExplanation }
-            return transfer.error ?? .ui("transfer.explain.failed", "전송하지 못했습니다.")
+            return errorMessage ?? .ui("transfer.explain.failed", "전송하지 못했습니다.")
         case .done:
             switch outcome ?? .written {
             case .written:
@@ -229,14 +229,28 @@ public struct TransferPresentation: Sendable, Equatable {
                 return .ui("transfer.explain.renamed", "대상에 같은 이름이 있어 다른 이름으로 저장했습니다.")
             case .copiedSourceRetained:
                 let base = String.ui("transfer.explain.retained", "대상에 사본을 쓰고 SHA-256으로 확인했지만 원본을 지우지 못했습니다. 원본은 \(side)에 그대로 있습니다.")
-                guard let error = transfer.error, !error.isEmpty else { return base }
+                guard let error = errorMessage else { return base }
                 return .ui("transfer.explain.reason", "\(base)\n이유: \(error)")
             case .partial:
                 return partialExplanation
             case .failed:
-                return transfer.error ?? .ui("transfer.explain.failed", "전송하지 못했습니다.")
+                return errorMessage ?? .ui("transfer.explain.failed", "전송하지 못했습니다.")
             }
         }
+    }
+
+    /// The daemon's message for the transfer's error.
+    public var errorMessage: String? {
+        guard let message = transfer.error?.message, !message.isEmpty else { return nil }
+        return message
+    }
+
+    /// How to resolve the transfer's error, chosen by its code; for a partial transfer, by the
+    /// code of its first failed file.
+    public var fix: String? {
+        guard state == .failed || state == .paused || outcome == .failed || outcome == .partial else { return nil }
+        let error = transfer.error ?? transfer.files.first { $0.transferState == .failed || $0.transferOutcome == .failed }?.error
+        return error.map { OperationError($0).fix } ?? nil
     }
 
     private var partialExplanation: String {
@@ -324,6 +338,17 @@ public struct TransferFilePresentation: Sendable, Equatable {
             case .failed: return .danger
             }
         }
+    }
+
+    /// The daemon's message for the file's error.
+    public var errorMessage: String? {
+        guard let message = file.error?.message, !message.isEmpty else { return nil }
+        return message
+    }
+
+    /// How to resolve the file's error, chosen by its code.
+    public var fix: String? {
+        file.error.flatMap { OperationError($0).fix }
     }
 
     /// `SHA-256 9c1f07d2…` once verified.
