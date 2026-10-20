@@ -48,6 +48,9 @@ type run struct {
 	quiet  bool
 	// reqID and jobID are the ids of the operation in progress, once known.
 	reqID, jobID string
+	// unknownOnErr makes a failed call exit 4 (outcome unknown) unless the
+	// request itself was invalid.
+	unknownOnErr bool
 }
 
 const usageText = `사용법: deskhand [--json] [--quiet] <명령> ...
@@ -209,6 +212,9 @@ func (r *run) failCall(err error, mutating bool, host string) int {
 	case wire.CodeExecutionOutcomeUnknown, wire.CodeTimeout:
 		code = exitUnknown
 	}
+	if r.unknownOnErr && r.jobID != "" && ae.Code != wire.CodeInvalidArgument {
+		code = exitUnknown
+	}
 	if mutating && client.IsConnectionLost(err) {
 		code = exitUnknown
 	}
@@ -221,7 +227,7 @@ func (r *run) failCall(err error, mutating bool, host string) int {
 			if host != "" {
 				list += " --host " + host
 			}
-			fmt.Fprintf(r.Stderr, "결과를 알 수 없습니다. %s 로 작업 기록을 확인하고 PC 상태를 직접 살핀 뒤 필요하면 다시 실행하세요\n", list)
+			fmt.Fprintf(r.Stderr, "결과를 알 수 없습니다. %s 로 최근 작업을 확인하고 deskhand files stat 또는 deskhand proc ls 로 PC 상태를 직접 살핀 뒤 필요하면 다시 실행하세요\n", list)
 		}
 	} else if n := nextStep(ae.NextAction); n != "" {
 		fmt.Fprintln(r.Stderr, "다음 단계: "+n)

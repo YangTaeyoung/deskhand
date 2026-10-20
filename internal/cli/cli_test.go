@@ -603,3 +603,77 @@ func TestConnectionLostIsDetectedThroughWrapping(t *testing.T) {
 		t.Fatalf("IsConnectionLost(%v) = false", err)
 	}
 }
+
+func runningThenFinal(final map[string]any) handler {
+	var mu sync.Mutex
+	n := 0
+	return func(map[string]any, func(any)) (any, *rpcFail) {
+		mu.Lock()
+		defer mu.Unlock()
+		n++
+		if n == 1 {
+			time.Sleep(60 * time.Millisecond)
+			return map[string]any{"chunks": []any{map[string]any{"stream": "stdout", "data": "early "}}, "next_cursor": "6:0", "state": "running", "status": "running"}, nil
+		}
+		return final, nil
+	}
+}
+
+func TestTimeoutCancelFailureExitsFourWithJobID(t *testing.T) {
+	startFake(t, execFake(nil, map[string]handler{
+		"jobs.output": runningThenFinal(exited(0, "", "")),
+		"jobs.cancel": func(map[string]any, func(any)) (any, *rpcFail) { return nil, &rpcFail{"DROP", ""} },
+	}))
+	r := runCLI(t, false, "", "exec", "h1", "--timeout", "30ms", "--", "slow")
+	if r.code != exitUnknown || !strings.Contains(r.err, "deskhand jobs get j-1") || strings.Contains(r.err, "종료했습니다") {
+		t.Fatalf("code %d stderr %q", r.code, r.err)
+	}
+}
+
+func TestTimeoutAfterJobFinishedReturnsRealResult(t *testing.T) {
+	startFake(t, execFake(nil, map[string]handler{
+		"jobs.output": runningThenFinal(exited(5, "late", "")),
+		"jobs.cancel": ok(envelope("failed", map[string]any{"job": map[string]any{"status": "failed"}})),
+	}))
+	r := runCLI(t, false, "", "exec", "h1", "--timeout", "30ms", "--", "slow")
+	if r.code != 5 || r.stdout != "early late" || strings.Contains(r.err, "종료했습니다") {
+		t.Fatalf("code %d stdout %q stderr %q", r.code, r.stdout, r.err)
+	}
+}
+
+func TestTimeoutCancelledJobDrainsOutputAndExits124(t *testing.T) {
+	cancelled := map[string]any{"chunks": []any{map[string]any{"stream": "stdout", "data": "tail"}}, "next_cursor": "end", "state": "exited", "status": "cancelled"}
+	startFake(t, execFake(nil, map[string]handler{
+		"jobs.output": runningThenFinal(cancelled),
+		"jobs.cancel": ok(envelope("cancelled", nil)),
+	}))
+	r := runCLI(t, false, "", "exec", "h1", "--timeout", "30ms", "--", "slow")
+	if r.code != 124 || r.stdout != "early tail" || !strings.Contains(r.err, "종료했습니다") {
+		t.Fatalf("code %d stdout %q stderr %q", r.code, r.stdout, r.err)
+	}
+}
+
+func TestFollowErrorExitsFourWithJobID(t *testing.T) {
+	startFake(t, execFake(nil, map[string]handler{
+		"jobs.output": func(map[string]any, func(any)) (any, *rpcFail) { return nil, &rpcFail{"INTERNAL", "내부 오류"} }}))
+	r := runCLI(t, false, "", "exec", "h1", "--", "x")
+	if r.code != exitUnknown || !strings.Contains(r.err, "내부 오류") || !strings.Contains(r.err, "deskhand jobs get j-1") {
+		t.Fatalf("code %d stderr %q", r.code, r.err)
+	}
+}
+
+func TestWatchEndedWithoutExitStatusExitsFour(t *testing.T) {
+	startFake(t, map[string]handler{"jobs.output": ok(map[string]any{"chunks": []any{}, "next_cursor": "end", "state": "exited", "status": "running"})})
+	r := runCLI(t, false, "", "jobs", "watch", "j-7")
+	if r.code != exitUnknown || !strings.Contains(r.err, "deskhand jobs get j-7") {
+		t.Fatalf("code %d stderr %q", r.code, r.err)
+	}
+}
+
+func TestJobsCancelLostConnectionNamesJob(t *testing.T) {
+	startFake(t, map[string]handler{"jobs.cancel": func(map[string]any, func(any)) (any, *rpcFail) { return nil, &rpcFail{"DROP", ""} }})
+	r := runCLI(t, false, "", "jobs", "cancel", "j-8")
+	if r.code != exitUnknown || !strings.Contains(r.err, "deskhand jobs get j-8") {
+		t.Fatalf("code %d stderr %q", r.code, r.err)
+	}
+}

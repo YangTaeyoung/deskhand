@@ -124,6 +124,7 @@ func (r *run) exec(ctx context.Context, args []string) int {
 	if r.jobID == "" {
 		return r.unknownExitWhy(start, "명령 시작", "작업 id를 받지 못했습니다")
 	}
+	r.unknownOnErr = true
 	opts := followOpts{stdout: r.Stdout, stderr: r.Stderr, timeout: *timeout}
 	var outBuf, errBuf bytes.Buffer
 	if r.asJSON {

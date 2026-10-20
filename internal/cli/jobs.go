@@ -73,6 +73,7 @@ func (r *run) jobsCancel(ctx context.Context, args []string) int {
 	if len(pos) != 1 {
 		return r.fail(usagef("deskhand jobs cancel <job-id> 형식으로 주세요"))
 	}
+	r.jobID = pos[0]
 	res, err := r.simple(ctx, "jobs.cancel", map[string]any{"job_id": pos[0]})
 	if err != nil {
 		return r.failMut(err, "")
@@ -179,9 +180,7 @@ func (r *run) follow(ctx context.Context, c *client.Client, id string, o followO
 			return res
 		}
 		if !deadline.IsZero() && time.Now().After(deadline) {
-			res.timedOut = true
-			res.exit = r.timeoutJob(ctx, c, id, o, &cursor, &lastState)
-			return res
+			return r.timeoutJob(ctx, c, id, o, &cursor, &lastState)
 		}
 		select {
 		case <-ctx.Done():
@@ -218,18 +217,61 @@ func (r *run) emit(out obj, id string, lastState *string, o followOpts) {
 	}
 }
 
-// timeoutJob cancels a job that ran past its time limit, prints the output
-// that arrived until then and returns the timeout exit code.
-func (r *run) timeoutJob(ctx context.Context, c *client.Client, id string, o followOpts, cursor, lastState *string) int {
-	if _, err := r.call(ctx, c, "jobs.cancel", map[string]any{"job_id": id}, callTimeout); err != nil {
-		fmt.Fprintf(r.Stderr, "시간 초과 뒤 작업 %s를 취소하지 못했습니다(%s). deskhand jobs cancel %s 로 끝내세요\n", id, apierrMessage(err), id)
+// timeoutJob cancels a job that ran past its time limit and settles the
+// result by what the cancel did: a cancelled job ends with the timeout exit
+// code, a job that had already finished returns its real result, and a
+// cancel whose result is unknown exits 4.
+func (r *run) timeoutJob(ctx context.Context, c *client.Client, id string, o followOpts, cursor, lastState *string) followResult {
+	res := followResult{}
+	cancel, err := r.call(ctx, c, "jobs.cancel", map[string]any{"job_id": id}, callTimeout)
+	status := cancel.str("status")
+	finished := status == model.StatusSucceeded || (status == model.StatusFailed && cancel.sub("error") == nil)
+	if err != nil || !(status == model.StatusCancelled || finished) {
+		why := "취소 결과를 확인하지 못했습니다"
+		if err != nil {
+			why = "취소 요청이 실패했습니다(" + apierrMessage(err) + ")"
+		}
+		fmt.Fprintf(r.Stderr, "작업 %s: 시간 제한을 넘겼지만 %s. 명령이 아직 실행 중일 수 있습니다. deskhand jobs get %s 로 상태를 확인하세요\n", id, why, id)
+		res.exit = exitUnknown
+		return res
 	}
-	if out, err := r.call(ctx, c, "jobs.output", map[string]any{"job_id": id, "cursor": *cursor}, callTimeout); err == nil {
-		r.emit(out, id, lastState, o)
+	last := r.drain(ctx, c, id, o, cursor, lastState)
+	if finished {
+		res.status = last.str("status")
+		res.code, res.hasCode = last.num("code")
+		res.exit = r.watchExit(id, last)
+		return res
 	}
+	res.timedOut = true
 	fmt.Fprintf(r.Stderr, "명령 실행: 명령이 %s 안에 끝나지 않아 종료했습니다. --timeout을 늘리거나 --timeout 0으로 다시 실행하세요\n", o.timeout)
-	return exitTimeout
+	res.exit = exitTimeout
+	return res
 }
+
+// drain prints the remaining output of id until it ends or cannot be read
+// and returns the last jobs.output result.
+func (r *run) drain(ctx context.Context, c *client.Client, id string, o followOpts, cursor, lastState *string) obj {
+	var last obj
+	for i := 0; i < drainPolls; i++ {
+		out, err := r.call(ctx, c, "jobs.output", map[string]any{"job_id": id, "cursor": *cursor}, callTimeout)
+		if err != nil {
+			return last
+		}
+		last = out
+		r.emit(out, id, lastState, o)
+		if next := out.str("next_cursor"); next != "" {
+			*cursor = next
+		}
+		if watchDone(out, *cursor) {
+			return last
+		}
+		time.Sleep(r.PollInterval)
+	}
+	return last
+}
+
+// drainPolls bounds the reads that follow a cancel.
+const drainPolls = 20
 
 func apierrMessage(err error) string {
 	var ae *apierr.Error
@@ -277,7 +319,11 @@ func (r *run) watchExit(id string, res obj) int {
 	case status == model.StatusFailed:
 		return exitFailure
 	}
-	return exitOK
+	if status == model.StatusSucceeded || (hasCode && code == 0) {
+		return exitOK
+	}
+	fmt.Fprintf(r.Stderr, "작업 %s: 출력은 끝났지만 종료 상태(%s)를 확인하지 못했습니다. deskhand jobs get %s 로 상태를 확인하세요\n", id, dash(status), id)
+	return exitUnknown
 }
 
 func statusKorean(s string) string {
