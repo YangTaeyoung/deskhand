@@ -48,7 +48,7 @@
 | `control.get` | `host_id` | `owner`(`none`/`human`/`ai`), `owner_client`, `gen`, `ai_paused` |
 | `control.acquire` | `host_id`, `as`(`human`/`ai`), `force`(사람만) | 새 owner |
 | `control.release` | `host_id` | — |
-| `control.stop` | `host_id` | 긴급 정지: owner=human, `ai_paused=true` |
+| `control.stop` | `host_id` | 긴급 정지: owner=human, `ai_paused=true`. 연결이 끊긴 호스트에도 적용된다(재연결 후 AI 입력 차단 유지) |
 | `control.resume_ai` | `host_id` | `ai_paused=false`, owner=none |
 
 ### 관찰·입력 (AI·CLI)
@@ -131,7 +131,7 @@
 | Capability | `state`(`ready`/`unavailable`/`unsupported`/`needs_user`), `reason?` |
 | SessionInfo | `session_id`(정수), `user`, `sid?`, `connect_state`(`active`/`connected`/`disconnected`), `protocol`(`console`/`rdp`), `locked`, `input_desktop`(`Default`/`Winlogon`/`unknown`), `integrity?` |
 | DisplayInfo | `index`, `name`, `adapter`, `x`, `y`, `width`, `height`, `dpi`(정수), `scale`(실수), `primary`, `refresh_hz`(정수) |
-| ControlState | `owner`, `owner_client?`, `gen`, `ai_paused` |
+| ControlState | `owner`, `owner_client?`, `gen`(호스트별 제어권 상태가 바뀔 때마다 — owner 또는 ai_paused — 1씩 오르는 값. 클라이언트는 더 큰 gen만 반영한다), `ai_paused` |
 | SessionInspect (`session.inspect` 결과) | SessionInfo의 모든 필드 + ControlState의 모든 필드 + `displays`([DisplayInfo]) + `caps` + `connection_generation` — 한 단계 평평한 객체 |
 | Job | `job_id`, `host_id`, `kind`(`exec`/`transfer`/`qa`/`install`/`debug`/`pty`), `status`(봉투 status 값), `request_id?`, `summary`, `progress?`(0–1), `created_at`, `updated_at`, `finished_at?`, `result?`(객체) |
 | FileEntry | `name`, `path`, `dir`, `size`, `mtime`, `link`, `hidden?`, `readonly?` |
