@@ -141,10 +141,10 @@ public final class DebuggerModel {
         recentLaunches = Self.readRecent(defaults, hostID: hostID)
     }
 
-    private var recentKey: String { "debugger.recentLaunches.\(hostID)" }
+    private var recentKey: String { SettingsKey.Debugger.recentLaunches(hostID) }
 
     private static func readRecent(_ defaults: UserDefaults, hostID: String) -> [RecentLaunch] {
-        guard let data = defaults.data(forKey: "debugger.recentLaunches.\(hostID)"),
+        guard let data = defaults.data(forKey: SettingsKey.Debugger.recentLaunches(hostID)),
               let list = try? JSONDecoder().decode([RecentLaunch].self, from: data) else { return [] }
         return list
     }

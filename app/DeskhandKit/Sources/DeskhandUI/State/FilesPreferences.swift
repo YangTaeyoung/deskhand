@@ -2,22 +2,34 @@ import Foundation
 import Observation
 
 /// Files tab settings the person chose: the conflict policy, move confirmation, each pane's
-/// sort, hidden files and columns, the last folders, and the queue drawer. Kept in UserDefaults.
+/// sort, hidden files and columns, the last folders, the queue drawer, the download folder,
+/// each computer's work roots and how long finished transfers stay in the queue. Kept in
+/// UserDefaults; the files tab and the settings window edit the same values.
 @MainActor
 @Observable
 public final class FilesPreferences {
-    enum Keys {
-        static let conflictPolicy = "filesConflictPolicy"
-        static let confirmMoves = "filesConfirmMoves"
-        static let sort = "filesSort"
-        static let showsHidden = "filesShowsHidden"
-        static let columnWidths = "filesColumnWidths"
-        static let hiddenColumns = "filesHiddenColumns"
-        static let localPath = "filesLocalPath"
-        static let remotePaths = "filesRemotePaths"
-        static let queueExpanded = "filesQueueExpanded"
-        static let queueHeight = "filesQueueHeight"
-        static let split = "filesSplitFraction"
+    private enum Keys {
+        static let conflictPolicy = SettingsKey.Files.conflictPolicy
+        static let confirmMoves = SettingsKey.Files.confirmMoves
+        static let sort = SettingsKey.Files.sort
+        static let showsHidden = SettingsKey.Files.showsHidden
+        static let columnWidths = SettingsKey.Files.columnWidths
+        static let hiddenColumns = SettingsKey.Files.hiddenColumns
+        static let localPath = SettingsKey.Files.localPath
+        static let remotePaths = SettingsKey.Files.remotePaths
+        static let queueExpanded = SettingsKey.Files.queueExpanded
+        static let queueHeight = SettingsKey.Files.queueHeight
+        static let split = SettingsKey.Files.splitFraction
+        static let downloadFolder = SettingsKey.Files.downloadFolder
+        static let workRoots = SettingsKey.Files.workRoots
+        static let retention = SettingsKey.Files.finishedTransferRetention
+    }
+
+    /// `~/Downloads/Deskhand`.
+    public static var defaultDownloadFolder: String {
+        let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
+        return downloads.appendingPathComponent("Deskhand").path
     }
 
     /// What a transfer does when the destination has an item of the same name. `fail` asks
@@ -73,6 +85,21 @@ public final class FilesPreferences {
         didSet { defaults.set(remotePaths, forKey: Keys.remotePaths) }
     }
 
+    /// Folder on this Mac that downloads from the logs tab go to; nil keeps `defaultDownloadFolder`.
+    public var customDownloadFolder: String? {
+        didSet { defaults.set(customDownloadFolder, forKey: Keys.downloadFolder) }
+    }
+
+    /// How long a finished transfer stays in the queue after it last changed.
+    public var finishedTransferRetention: TransferRetention {
+        didSet { defaults.set(finishedTransferRetention.rawValue, forKey: Keys.retention) }
+    }
+
+    /// Work root paths by host ID, in the order the person added them.
+    private var workRoots: [String: [String]] {
+        didSet { defaults.set(workRoots, forKey: Keys.workRoots) }
+    }
+
     @ObservationIgnored private let defaults: UserDefaults
 
     init(defaults: UserDefaults) {
@@ -88,6 +115,37 @@ public final class FilesPreferences {
         widths = defaults.dictionary(forKey: Keys.columnWidths) as? [String: Double] ?? [:]
         hiddenColumns = defaults.stringArray(forKey: Keys.hiddenColumns) ?? []
         remotePaths = defaults.dictionary(forKey: Keys.remotePaths) as? [String: String] ?? [:]
+        customDownloadFolder = defaults.string(forKey: Keys.downloadFolder)
+        finishedTransferRetention = (defaults.object(forKey: Keys.retention) as? Int).flatMap(TransferRetention.init(rawValue:)) ?? .month
+        workRoots = defaults.dictionary(forKey: Keys.workRoots) as? [String: [String]] ?? [:]
+    }
+
+    /// The download folder in effect.
+    public var downloadFolder: String { customDownloadFolder ?? Self.defaultDownloadFolder }
+
+    /// Work roots of `hostID`, in the order they were added.
+    public func workRoots(for hostID: String) -> [String] {
+        workRoots[hostID] ?? []
+    }
+
+    /// Adds `path` to the work roots of `hostID` unless an equal root is there; returns the
+    /// reason it was not added, or nil.
+    @discardableResult
+    public func addWorkRoot(_ path: String, for hostID: String, style: PathStyle) -> WorkRootProblem? {
+        let current = workRoots(for: hostID)
+        switch WorkRoots.validate(path, existing: current, style: style) {
+        case .success(let root):
+            workRoots[hostID] = current + [root]
+            return nil
+        case .failure(let problem):
+            return problem
+        }
+    }
+
+    public func removeWorkRoot(_ path: String, for hostID: String) {
+        var roots = workRoots(for: hostID)
+        roots.removeAll { $0 == path }
+        workRoots[hostID] = roots.isEmpty ? nil : roots
     }
 
     public func sort(for side: FileSide) -> FileSort {

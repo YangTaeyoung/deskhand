@@ -46,8 +46,8 @@ public final class QAModel {
 
     public static let pageSize = 50
     public static let recentLimit = 8
-    private static let allHostsKey = "qa.allHosts"
-    private static let recentKey = "qa.recentScenarios"
+    private static let allHostsKey = SettingsKey.QA.allHosts
+    private static let recentKey = SettingsKey.QA.recentScenarios
 
     public private(set) var records: [String: QARunRecord] = [:]
     public private(set) var listings: [QAScope: Listing] = [:]

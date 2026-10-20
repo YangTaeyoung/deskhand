@@ -190,7 +190,8 @@ public struct ScreenView: View {
             VideoLayerView(
                 session: session, owner: owner, inputEnabled: isLive, display: display,
                 keyMap: preferences.keyMap, keyboardMode: preferences.keyboardMode,
-                forwardsSystemShortcuts: preferences.forwardsSystemShortcuts, remoteSize: remoteSize,
+                forwardsSystemShortcuts: preferences.forwardsSystemShortcuts,
+                showsLocalCursor: preferences.showsLocalCursor, remoteSize: remoteSize,
                 accessibilityLabel: String.ui("screen.a11y.label", "\(host.name)의 원격 화면, \(displayTitle)"),
                 accessibilityHelp: owner == .ai
                     ? String.ui("screen.a11y.help.ai", "클릭하면 AI에게서 제어권을 가져올지 묻습니다")

@@ -20,7 +20,7 @@ extension CrashDumpKind {
 }
 
 /// The crash dumps of the last 30 days, newest first: app, kind, time, size and path, each
-/// with a download into `~/Downloads/Deskhand` through the transfer queue and, once received,
+/// with a download into the download folder of the settings through the transfer queue and, once received,
 /// Finder에서 보기.
 struct CrashDumpList: View {
     let model: LogsModel
@@ -72,7 +72,7 @@ struct CrashDumpList: View {
 
     private var header: some View {
         let count = FileFormat.count(model.crashes.count)
-        let folder = (LogsModel.downloadFolder as NSString).abbreviatingWithTildeInPath
+        let folder = (model.downloadFolder as NSString).abbreviatingWithTildeInPath
         return HStack(alignment: .firstTextBaseline, spacing: DS.Space.s) {
             Text(String.ui("logs.dumps.title", "최근 30일 · \(count)개"))
                 .font(DS.Font.headline)
@@ -247,7 +247,7 @@ private struct DownloadControl: View {
             Label(title, systemImage: "arrow.down.circle")
         }
         .controlSize(.small)
-        .help(String.ui("logs.download.help", "~/Downloads/Deskhand로 받습니다. 같은 이름이 있으면 새 이름으로 저장합니다."))
+        .help(String.ui("logs.download.help", "\((model.downloadFolder as NSString).abbreviatingWithTildeInPath)에 받습니다. 같은 이름이 있으면 새 이름으로 저장합니다."))
     }
 
     private func progressText(_ presentation: TransferPresentation) -> String {

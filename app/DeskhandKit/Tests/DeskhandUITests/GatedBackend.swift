@@ -50,6 +50,9 @@ final class GatedBackend: Backend, LocalOverlayProviding {
         var eventQueries: [EventLogQuery] = []
         var heldEventQueries: [CheckedContinuation<Void, Never>] = []
         var holdEvents = false
+        var restartFailure: OperationError?
+        var restartCalls = 0
+        var hostRemoveFailure: OperationError?
     }
 
     private let state = Mutex(State())
@@ -131,6 +134,27 @@ final class GatedBackend: Backend, LocalOverlayProviding {
     }
 
     func start() async throws { try await base.start() }
+    func daemonInfo() async -> DaemonInfo { await base.daemonInfo() }
+    func restartDaemon() async throws {
+        let failure = state.withLock { s -> OperationError? in
+            s.restartCalls += 1
+            return s.restartFailure
+        }
+        if let failure { throw failure }
+        try await base.restartDaemon()
+    }
+
+    var restartCalls: Int { state.withLock { $0.restartCalls } }
+
+    /// Makes `restartDaemon` throw `error`, or restart the preview daemon again when nil.
+    func failRestart(with error: OperationError?) {
+        state.withLock { $0.restartFailure = error }
+    }
+
+    /// Makes `hostRemove` throw `error`, or remove again when nil.
+    func failHostRemove(with error: OperationError?) {
+        state.withLock { $0.hostRemoveFailure = error }
+    }
 
     func hostList() async throws -> [Host] {
         let hold = state.withLock { s -> Bool in
@@ -144,7 +168,10 @@ final class GatedBackend: Backend, LocalOverlayProviding {
     }
 
     func hostAdd(name: String, ssh: String) async throws -> JobReceipt { try await base.hostAdd(name: name, ssh: ssh) }
-    func hostRemove(hostID: String, uninstall: Bool) async throws { try await base.hostRemove(hostID: hostID, uninstall: uninstall) }
+    func hostRemove(hostID: String, uninstall: Bool) async throws {
+        if let failure = state.withLock({ $0.hostRemoveFailure }) { throw failure }
+        try await base.hostRemove(hostID: hostID, uninstall: uninstall)
+    }
     func hostDoctor(hostID: String) async throws -> [DoctorCheck] { try await base.hostDoctor(hostID: hostID) }
     func hostConnect(hostID: String) async throws { try await base.hostConnect(hostID: hostID) }
     func hostDisconnect(hostID: String) async throws { try await base.hostDisconnect(hostID: hostID) }

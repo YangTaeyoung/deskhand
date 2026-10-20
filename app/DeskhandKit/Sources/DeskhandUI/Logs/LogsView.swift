@@ -165,7 +165,7 @@ private struct LogsSectionBar: View {
     }
 }
 
-/// A remote log file the files tab sent here: its path, download into `~/Downloads/Deskhand`,
+/// A remote log file the files tab sent here: its path, download into the download folder,
 /// then open it with the Mac's default app or show it in Finder.
 private struct LogFileStrip: View {
     let model: LogsModel
@@ -245,7 +245,7 @@ private struct LogFileStrip: View {
                 Label(String.ui("logs.file.download", "이 Mac으로 받기"), systemImage: "arrow.down.circle")
             }
             .controlSize(.small)
-            .help(String.ui("logs.download.help", "~/Downloads/Deskhand로 받습니다. 같은 이름이 있으면 새 이름으로 저장합니다."))
+            .help(String.ui("logs.download.help", "\((model.downloadFolder as NSString).abbreviatingWithTildeInPath)에 받습니다. 같은 이름이 있으면 새 이름으로 저장합니다."))
         }
     }
 }

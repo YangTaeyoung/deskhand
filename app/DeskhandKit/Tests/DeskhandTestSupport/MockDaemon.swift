@@ -195,7 +195,7 @@ public final class MockDaemon: @unchecked Sendable {
 
         switch method {
         case "hello":
-            reply(conn, id, .result(#"{"client_id":"c-test"}"#))
+            reply(conn, id, .result(#"{"client_id":"c-test","daemon_version":"0.4.2","api_version":1}"#))
         case "events.subscribe":
             conn.isSubscribed = true
             hook(req)

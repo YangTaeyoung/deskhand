@@ -23,6 +23,16 @@ public enum Paths {
     public static var daemonLog: String {
         home.appendingPathComponent("logs/daemon.log").path
     }
+
+    /// `<home>/logs`.
+    public static var logs: String {
+        home.appendingPathComponent("logs", isDirectory: true).path
+    }
+
+    /// `<home>/artifacts`, where screenshots, QA evidence and saved diagnostics are kept.
+    public static var artifacts: String {
+        home.appendingPathComponent("artifacts", isDirectory: true).path
+    }
 }
 
 /// Client for the daemon local API: NDJSON JSON-RPC 2.0 over a unix socket.
@@ -63,6 +73,10 @@ public actor DeskhandClient {
     private var reconnectWatchers: [UUID: AsyncStream<Void>.Continuation] = [:]
     private var reconnectTask: Task<Void, Never>?
     public private(set) var clientID: String?
+    /// `daemon_version` of the last `hello` reply.
+    public private(set) var daemonVersion: String?
+    /// `api_version` of the last `hello` reply.
+    public private(set) var apiVersion: Int?
 
     public init(
         socketPath: String = Paths.socket,
@@ -194,6 +208,8 @@ public actor DeskhandClient {
 
         let reply = try await rawCall("hello", ["client": hello.kind, "name": hello.name, "version": hello.version])
         clientID = reply["client_id"]?.stringValue
+        daemonVersion = reply["daemon_version"]?.stringValue
+        apiVersion = reply["api_version"]?.intValue
         var snapshot: Set<UUID>
         repeat {
             snapshot = Set(subscriptions.keys)

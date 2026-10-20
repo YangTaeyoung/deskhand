@@ -14,8 +14,7 @@ struct DeskhandApp: App {
             DeskhandCommands(store: store)
         }
         Settings {
-            DS.Color.surface
-                .frame(width: 520, height: 360)
+            SettingsView(store: store)
         }
     }
 }

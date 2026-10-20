@@ -175,6 +175,21 @@ extension PreviewBackend {
     }
 }
 
+// MARK: Daemon
+
+extension PreviewBackend {
+    /// The preview daemon's version, with the real daemon's file locations.
+    public func daemonInfo() async -> DaemonInfo {
+        scenario == .daemonUnavailable ? DaemonInfo(version: nil, apiVersion: nil) : DaemonInfo(version: "0.1.0", apiVersion: 1)
+    }
+
+    /// Ends every event stream, as a daemon that stopped would, after `stepDelay`.
+    public func restartDaemon() async throws {
+        try await Task.sleep(for: stepDelay)
+        endEventStreams()
+    }
+}
+
 // MARK: Hosts
 
 extension PreviewBackend {

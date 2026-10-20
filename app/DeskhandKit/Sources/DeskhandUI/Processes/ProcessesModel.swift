@@ -58,11 +58,7 @@ public final class ProcessesModel {
         case failed(OperationError)
     }
 
-    enum Keys {
-        static let sortColumn = "processes.sortColumn"
-        static let sortAscending = "processes.sortAscending"
-        static let tree = "processes.tree"
-    }
+    private typealias Keys = SettingsKey.Processes
 
     public static let refreshInterval: Duration = .seconds(2)
 

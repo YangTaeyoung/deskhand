@@ -42,7 +42,7 @@ public final class AppStore {
     }
 
     /// UserDefaults key holding the selected host ID.
-    public static let selectionKey = "selectedHostID"
+    public static let selectionKey = SettingsKey.selectedHost
 
     public let backend: any Backend
     @ObservationIgnored private let defaults: UserDefaults
@@ -87,6 +87,12 @@ public final class AppStore {
     public let filesPreferences: FilesPreferences
     /// Default shell, text size and paste confirmation of the terminal tab.
     public let terminalPreferences: TerminalPreferences
+    /// What of each computer reaches AI clients.
+    public let privacyPreferences: PrivacyPreferences
+    /// The quick switch palette (⌘K).
+    public let quickSwitch: QuickSwitchModel
+    /// The settings window (⌘,).
+    public let settings: SettingsModel
     /// A remote file the files tab asked the logs tab to show.
     public var logSelection: LogSelection?
     /// QA runs of every computer, their selection and the run sheet.
@@ -110,7 +116,10 @@ public final class AppStore {
     @ObservationIgnored private var reloadTask: Task<Void, Never>?
     @ObservationIgnored private var reloadToken = 0
 
-    public init(backend: any Backend, defaults: UserDefaults = .standard, backoff: ResubscribeBackoff = .standard) {
+    /// `loginItem` opens the app at login; without one, a `MemoryLoginItem` that never touches the system.
+    public init(backend: any Backend, defaults: UserDefaults = .standard, backoff: ResubscribeBackoff = .standard,
+                loginItem: (any LoginItemControl)? = nil) {
+        SettingsMigration.migrate(defaults)
         self.backend = backend
         self.defaults = defaults
         self.backoff = backoff
@@ -120,8 +129,12 @@ public final class AppStore {
         self.controlActions = ControlActions(backend: backend)
         self.filesPreferences = FilesPreferences(defaults: defaults)
         self.terminalPreferences = TerminalPreferences(defaults: defaults)
+        self.privacyPreferences = PrivacyPreferences(defaults: defaults)
+        self.quickSwitch = QuickSwitchModel(defaults: defaults)
+        self.settings = SettingsModel(defaults: defaults, loginItem: loginItem ?? MemoryLoginItem())
         self.qa = QAModel(backend: backend, defaults: defaults, backoff: backoff)
         controlActions.store = self
+        settings.store = self
     }
 
     // MARK: Queries
@@ -205,6 +218,16 @@ public final class AppStore {
         let model = DebuggerModel(hostID: host.hostID, backend: backend, defaults: defaults)
         debuggerModels[host.hostID] = model
         return model
+    }
+
+    /// Transfers in the queues of computers whose files tab state exists, most recently changed first.
+    var knownTransfers: [Transfer] {
+        filesModels.values.flatMap { $0.transfers.visible }.sorted { $0.updatedAt.date > $1.updatedAt.date }
+    }
+
+    /// Open debug sessions of computers whose debugger tab state exists, by computer order.
+    var knownDebugSessions: [DebugSessionModel] {
+        hosts.compactMap { debuggerModels[$0.hostID] }.flatMap(\.openSessions)
     }
 
     /// A debugged app on the host is paused, for hosts whose debugger tab state exists.

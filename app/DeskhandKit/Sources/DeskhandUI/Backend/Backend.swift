@@ -6,8 +6,8 @@ import struct DeskhandClient.ProcessInfo
 /// Everything the screens ask of the daemon, grouped by feature. A feature adds its own
 /// protocol below and joins it to this list; `LiveBackend` and `PreviewBackend` implement each
 /// feature protocol in their own extension.
-public protocol Backend: BackendLifecycle, HostsBackend, ControlBackend, TimelineBackend, EventsBackend, ScreenBackend, FilesBackend,
-    TerminalBackend, ProcessesBackend, DiagnosticsBackend, DebuggerBackend, QABackend {}
+public protocol Backend: BackendLifecycle, DaemonBackend, HostsBackend, ControlBackend, TimelineBackend, EventsBackend, ScreenBackend,
+    FilesBackend, TerminalBackend, ProcessesBackend, DiagnosticsBackend, DebuggerBackend, QABackend {}
 
 /// A process of the remote computer (`ProcessInfo` of DeskhandClient).
 public typealias RemoteProcess = ProcessInfo
@@ -16,6 +16,37 @@ public protocol BackendLifecycle: Sendable {
     /// Makes the daemon reachable and says hello. Throws `ClientError.daemonUnavailable` when the
     /// daemon cannot be started.
     func start() async throws
+}
+
+/// The daemon this app talks to: its versions from `hello` (local-api.md §7), its files, and
+/// `deskhand daemon stop` / `start`.
+public protocol DaemonBackend: Sendable {
+    func daemonInfo() async -> DaemonInfo
+    /// Stops the daemon and starts it again, returning once the new daemon accepts connections.
+    /// The connection to it comes back on its own.
+    func restartDaemon() async throws
+}
+
+/// Versions and file locations of the daemon.
+public struct DaemonInfo: Equatable, Sendable {
+    /// `daemon_version` of `hello`; nil before the first reply.
+    public var version: String?
+    /// `api_version` of `hello`; nil before the first reply.
+    public var apiVersion: Int?
+    public var socketPath: String
+    public var logPath: String
+    public var logFolder: String
+    public var artifactsFolder: String
+
+    public init(version: String?, apiVersion: Int?, socketPath: String = Paths.socket, logPath: String = Paths.daemonLog,
+                logFolder: String = Paths.logs, artifactsFolder: String = Paths.artifacts) {
+        self.version = version
+        self.apiVersion = apiVersion
+        self.socketPath = socketPath
+        self.logPath = logPath
+        self.logFolder = logFolder
+        self.artifactsFolder = artifactsFolder
+    }
 }
 
 /// `host.*` and `session.inspect` (local-api.md §3).

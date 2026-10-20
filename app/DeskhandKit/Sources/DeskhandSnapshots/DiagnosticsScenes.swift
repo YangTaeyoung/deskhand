@@ -103,7 +103,7 @@ enum DiagnosticsScenes {
 
     /// Pulls of the crash dump fixtures: Shop.exe received, the dotnet full dump arriving.
     static func dumpTransfers() -> [Transfer] {
-        let folder = LogsModel.downloadFolder
+        let folder = FilesPreferences.defaultDownloadFolder
         let dumps = PreviewFixtures.crashDumps(hostID: dev, user: "taeyoung")
         let shop = dumps[0]
         let dotnet = dumps[1]

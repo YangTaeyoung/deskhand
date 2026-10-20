@@ -49,7 +49,7 @@ final class AppStoreTests: XCTestCase {
         let first = AppStore(backend: PreviewBackend(scenario: .standard, stepDelay: .zero), defaults: defaults)
         await first.start()
         first.selectedHostID = PreviewFixtures.qaLaptopID
-        XCTAssertEqual(defaults.string(forKey: "selectedHostID"), PreviewFixtures.qaLaptopID)
+        XCTAssertEqual(defaults.string(forKey: AppStore.selectionKey), PreviewFixtures.qaLaptopID)
 
         let second = AppStore(backend: PreviewBackend(scenario: .standard, stepDelay: .zero), defaults: defaults)
         await second.start()
@@ -57,7 +57,7 @@ final class AppStoreTests: XCTestCase {
     }
 
     func testUnknownPersistedSelectionFallsBackToFirstHost() async throws {
-        defaults.set("removed-host", forKey: "selectedHostID")
+        defaults.set("removed-host", forKey: AppStore.selectionKey)
         let store = AppStore(backend: PreviewBackend(scenario: .standard, stepDelay: .zero), defaults: defaults)
         await store.start()
         XCTAssertEqual(store.selectedHostID, store.hosts.first?.hostID)

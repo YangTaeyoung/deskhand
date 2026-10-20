@@ -7,13 +7,7 @@ import Observation
 @MainActor
 @Observable
 public final class TerminalPreferences {
-    enum Keys {
-        static let defaultShell = "terminalDefaultShell"
-        static let fontSize = "terminalFontSize"
-        static let confirmsMultilinePaste = "terminalConfirmsMultilinePaste"
-        static let optionAsMeta = "terminalOptionAsMeta"
-        static let allowsClipboardWrite = "terminalAllowsClipboardWrite"
-    }
+    private typealias Keys = SettingsKey.Terminal
 
     /// The shell a new tab opens with ⌘T and the + button.
     public var defaultShell: TerminalShell {

@@ -28,7 +28,8 @@ public struct RootView: View {
     }
 }
 
-/// Sidebar of computers and the selected computer's detail, with the add, diagnose and remove flows.
+/// Sidebar of computers and the selected computer's detail, with the add, diagnose and remove
+/// flows and the quick switch palette.
 struct ComputersSplitView: View {
     @Bindable var store: AppStore
 
@@ -41,6 +42,8 @@ struct ComputersSplitView: View {
                 .navigationTitle(store.selectedHost?.name ?? "Deskhand")
                 .navigationSubtitle(store.selectedHost?.sessionSubtitle ?? "")
         }
+        .overlay { QuickSwitchOverlay(store: store) }
+        .animation(.snappy(duration: 0.15), value: store.quickSwitch.isPresented)
         .sheet(item: pendingTakeover) { pending in
             TakeoverConfirmView(store: store, pending: pending)
         }

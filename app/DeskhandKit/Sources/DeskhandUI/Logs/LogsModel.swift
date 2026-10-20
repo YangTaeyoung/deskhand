@@ -129,11 +129,9 @@ public final class LogsModel {
         }
     }
 
-    /// `~/Downloads/Deskhand`, where crash dumps are saved.
-    public static var downloadFolder: String {
-        let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
-        return downloads.appendingPathComponent("Deskhand").path
+    /// Where crash dumps and log files are saved: the download folder of the settings.
+    public var downloadFolder: String {
+        store?.filesPreferences.downloadFolder ?? FilesPreferences.defaultDownloadFolder
     }
 
     public let hostID: String
@@ -429,13 +427,13 @@ public final class LogsModel {
         }
     }
 
-    /// Pulls `dump` into `~/Downloads/Deskhand` through the transfer queue, under a free name
+    /// Pulls `dump` into the download folder through the transfer queue, under a free name
     /// when a file of that name is there.
     public func download(_ dump: CrashDump) async {
         await download(remotePath: dump.path)
     }
 
-    /// Pulls the remote file at `remotePath` into `~/Downloads/Deskhand` through the transfer
+    /// Pulls the remote file at `remotePath` into the download folder through the transfer
     /// queue, under a free name when a file of that name is there.
     public func download(remotePath: String) async {
         guard let store, let host = store.host(hostID), !downloadStarting.contains(remotePath) else { return }
@@ -443,7 +441,7 @@ public final class LogsModel {
         downloadErrors[remotePath] = nil
         defer { downloadStarting.remove(remotePath) }
         do {
-            _ = try await store.files(for: host).download(remotePath: remotePath, toFolder: Self.downloadFolder)
+            _ = try await store.files(for: host).download(remotePath: remotePath, toFolder: downloadFolder)
         } catch {
             downloadErrors[remotePath] = OperationError(error)
         }

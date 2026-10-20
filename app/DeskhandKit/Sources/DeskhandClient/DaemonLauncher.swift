@@ -72,14 +72,24 @@ public struct DaemonLauncher: Sendable {
 
     /// Runs `deskhand daemon start` from the app bundle, falling back to `deskhand` on PATH.
     static func runDaemonStart() async throws {
+        try await runCLI(["daemon", "start"])
+    }
+
+    /// Runs `deskhand daemon stop` from the app bundle, falling back to `deskhand` on PATH.
+    /// Returns once the command has finished; throws when it fails.
+    public static func stopDaemon() async throws {
+        try await runCLI(["daemon", "stop"])
+    }
+
+    private static func runCLI(_ arguments: [String]) async throws {
         let bundled = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/deskhand")
         let process = Process()
         if FileManager.default.isExecutableFile(atPath: bundled.path) {
             process.executableURL = bundled
-            process.arguments = ["daemon", "start"]
+            process.arguments = arguments
         } else {
             process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = ["deskhand", "daemon", "start"]
+            process.arguments = ["deskhand"] + arguments
         }
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice

@@ -416,9 +416,17 @@ private struct PathBar: View {
 
     private var placesMenu: some View {
         let places = side == .local ? LocalFileSource.places : RemoteFileSource.places(for: host)
+        let roots = side == .remote ? model.preferences.workRoots(for: host.hostID) : []
         return Menu {
             ForEach(places) { place in
                 Button(place.title) { Task { await model.open(side, path: place.path) } }
+            }
+            if !roots.isEmpty {
+                Section(String.ui("files.places.workRoots", "작업 루트")) {
+                    ForEach(roots, id: \.self) { root in
+                        Button(root) { Task { await model.open(side, path: root) } }
+                    }
+                }
             }
         } label: {
             Image(systemName: side == .local ? "house" : "externaldrive")

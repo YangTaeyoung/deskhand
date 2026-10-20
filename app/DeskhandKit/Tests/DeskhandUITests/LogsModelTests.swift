@@ -238,7 +238,7 @@ final class LogsModelTests: XCTestCase {
         let request = try XCTUnwrap(backend.transferRequests.last)
         XCTAssertEqual(request.direction, .pull)
         XCTAssertEqual(request.remote, dump.path)
-        XCTAssertEqual(request.local, LogsModel.downloadFolder + "/Shop.exe.4013.dmp")
+        XCTAssertEqual(request.local, FilesPreferences.defaultDownloadFolder + "/Shop.exe.4013.dmp")
         XCTAssertEqual(request.onConflict, .rename)
         let transfer = try XCTUnwrap(model.transfer(for: dump))
         XCTAssertEqual(transfer.remote, dump.path)

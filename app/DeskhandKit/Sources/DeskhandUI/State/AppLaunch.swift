@@ -18,7 +18,7 @@ public enum AppLaunch {
             let video = Bundle.main.url(forResource: "sample", withExtension: "h264")
             return AppStore(backend: PreviewBackend(scenario: scenario, screenVideo: video), defaults: defaults)
         }
-        return AppStore(backend: LiveBackend())
+        return AppStore(backend: LiveBackend(), loginItem: SystemLoginItem())
     }
 
     /// The preview scenario requested by the arguments or environment, or nil for a live launch.

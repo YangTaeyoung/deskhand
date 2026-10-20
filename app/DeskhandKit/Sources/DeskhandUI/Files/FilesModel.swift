@@ -229,6 +229,7 @@ public final class FilesModel {
                              path: preferences.remotePath(for: host.hostID) ?? RemoteFileSource.startPath(for: host),
                              sort: preferences.sort(for: .remote), showsHidden: preferences.showsHidden(.remote))
         transfers = TransferQueue(hostID: host.hostID, backend: backend)
+        transfers.retention = { [weak preferences] in preferences?.finishedTransferRetention ?? .month }
         transfers.onFinish = { [weak self] transfer in self?.transferFinished(transfer) }
     }
 

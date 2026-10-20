@@ -23,10 +23,10 @@ public final class WorkspaceLayout {
         }
     }
 
-    enum Keys {
-        static let tab = "workspaceTab"
-        static let showsInspector = "inspectorVisible"
-        static let inspectorPane = "inspectorPane"
+    private enum Keys {
+        static let tab = SettingsKey.Workspace.tab
+        static let showsInspector = SettingsKey.Workspace.inspectorVisible
+        static let inspectorPane = SettingsKey.Workspace.inspectorPane
     }
 
     public var tab: WorkspaceTab {

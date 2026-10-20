@@ -196,7 +196,7 @@ struct DataTable<Row: Identifiable & Equatable>: NSViewRepresentable where Row.I
         private var fitting = false
 
         /// UserDefaults key of the preferred first-column width of the table saved as `autosaveName`.
-        static func preferredKey(_ autosaveName: String) -> String { "DataTable.\(autosaveName).firstColumnWidth" }
+        static func preferredKey(_ autosaveName: String) -> String { SettingsKey.Table.firstColumnWidth(autosaveName) }
 
         init(_ parent: DataTable) {
             self.parent = parent

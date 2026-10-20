@@ -27,6 +27,8 @@ public final class TransferQueue {
 
     /// Called once for each transfer that reaches a finished state while the queue watches it.
     @ObservationIgnored var onFinish: ((Transfer) -> Void)?
+    /// How long a finished transfer stays in the list after it last changed.
+    @ObservationIgnored var retention: () -> TransferRetention = { .month }
     @ObservationIgnored private let backend: any Backend
     @ObservationIgnored private var eventsTask: Task<Void, Never>?
     @ObservationIgnored private var reconnectsTask: Task<Void, Never>?
@@ -39,8 +41,15 @@ public final class TransferQueue {
         self.backend = backend
     }
 
-    /// Transfers shown in the drawer.
-    public var visible: [Transfer] { transfers.filter { !dismissed.contains($0.transferID) } }
+    /// Transfers shown in the drawer: every one the person did not remove, except finished ones
+    /// that last changed longer ago than the retention.
+    public var visible: [Transfer] {
+        let cutoff = Date(timeIntervalSinceNow: -retention().interval)
+        return transfers.filter { transfer in
+            guard !dismissed.contains(transfer.transferID) else { return false }
+            return !transfer.transferState.isFinished || transfer.updatedAt.date >= cutoff
+        }
+    }
 
     public var summary: TransferSummary { TransferSummary(visible) }
 

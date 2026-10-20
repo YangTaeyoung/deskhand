@@ -168,9 +168,14 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
     }
 
     /// True while the remote cursor is drawn locally; the system cursor is then hidden over the
-    /// video while captured.
+    /// video while captured, unless `showsLocalCursor` is on.
     public var drawsRemoteCursor = false {
         didSet { if drawsRemoteCursor != oldValue { updateCursor() } }
+    }
+
+    /// Keeps the system cursor visible over the video while captured.
+    public var showsLocalCursor = false {
+        didSet { if showsLocalCursor != oldValue { updateCursor() } }
     }
 
     public var onEvent: (InputEvent) -> Void = { _ in }
@@ -358,12 +363,13 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
         updateCursor(at: convert(event.locationInWindow, from: nil))
     }
 
-    /// Hides the system cursor over the video while captured and the remote cursor is drawn locally.
+    /// Hides the system cursor over the video while captured and the remote cursor is drawn
+    /// locally, unless `showsLocalCursor` is on.
     private func updateCursor(at point: CGPoint? = nil) {
         guard let window else { return }
         let location = point ?? convert(window.mouseLocationOutsideOfEventStream, from: nil)
         let over = mapper?.remotePoint(from: location) != nil
-        let hide = isCaptured && drawsRemoteCursor && over
+        let hide = isCaptured && drawsRemoteCursor && over && !showsLocalCursor
         guard hide != hidesCursor || point != nil else { return }
         hidesCursor = hide
         (hide ? Self.blankCursor : NSCursor.arrow).set()

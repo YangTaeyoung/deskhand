@@ -45,6 +45,19 @@ extension LiveBackend {
     }
 }
 
+// MARK: Daemon
+
+extension LiveBackend {
+    public func daemonInfo() async -> DaemonInfo {
+        DaemonInfo(version: await client.daemonVersion, apiVersion: await client.apiVersion, socketPath: client.socketPath)
+    }
+
+    public func restartDaemon() async throws {
+        try await DaemonLauncher.stopDaemon()
+        try await launcher.ensureRunning()
+    }
+}
+
 // MARK: Hosts
 
 private struct HostIDParams: Encodable {

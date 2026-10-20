@@ -27,6 +27,16 @@ public enum DS {
         public static let surface = SwiftUI.Color(nsColor: .windowBackgroundColor)
         /// Panels and cards that sit one level above `surface`.
         public static let surfaceRaised = SwiftUI.Color(nsColor: .underPageBackgroundColor)
+        /// Floating panels over the window, such as the quick switch: the window background,
+        /// blended 7% toward white in dark mode.
+        public static let floatingSurface = SwiftUI.Color(nsColor: NSColor(name: nil) { appearance in
+            var base = NSColor.windowBackgroundColor
+            appearance.performAsCurrentDrawingAppearance {
+                base = NSColor.windowBackgroundColor.usingColorSpace(.sRGB) ?? .windowBackgroundColor
+            }
+            guard appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua else { return base }
+            return base.blended(withFraction: 0.07, of: .white) ?? base
+        })
         /// Hairlines and card borders.
         public static let separator = SwiftUI.Color(nsColor: .separatorColor)
         /// Backdrop around the remote screen and behind it before the first frame: a near

@@ -3,22 +3,14 @@ import Foundation
 import Observation
 import struct DeskhandClient.Host
 
-/// Remote screen settings the person chose: stream preset, statistics overlay, keyboard
-/// handling and the display shown per computer. Kept in UserDefaults; the screen tab menus and
+/// Remote screen settings the person chose: stream preset, statistics overlay, the local
+/// pointer, keyboard handling and the display shown per computer. Kept in UserDefaults; the screen tab menus and
 /// the settings window edit the same values.
 @MainActor
 @Observable
 public final class ScreenPreferences {
-    enum Keys {
-        static let preset = "screenPreset"
-        static let showsStatistics = "screenShowsStatistics"
-        static let keyboardMode = "keyboardMode"
-        static let swapCommandControl = "keyboardSwapCommandControl"
-        static let rightOptionHangul = "keyboardRightOptionHangul"
-        static let rightCommandHanja = "keyboardRightCommandHanja"
-        static let forwardsSystemShortcuts = "keyboardForwardsSystemShortcuts"
-        static let displays = "screenDisplays"
-    }
+    private typealias Keys = SettingsKey.Screen
+    private typealias KeyboardKeys = SettingsKey.Keyboard
 
     public var preset: StreamPreset {
         didSet { defaults.set(preset.rawValue, forKey: Keys.preset) }
@@ -29,28 +21,34 @@ public final class ScreenPreferences {
         didSet { defaults.set(showsStatistics, forKey: Keys.showsStatistics) }
     }
 
+    /// Keeps this Mac's pointer visible over the remote screen while input is captured, beside
+    /// the remote cursor drawn locally.
+    public var showsLocalCursor: Bool {
+        didSet { defaults.set(showsLocalCursor, forKey: Keys.showsLocalCursor) }
+    }
+
     public var keyboardMode: KeyboardMode {
-        didSet { defaults.set(keyboardMode.rawValue, forKey: Keys.keyboardMode) }
+        didSet { defaults.set(keyboardMode.rawValue, forKey: KeyboardKeys.mode) }
     }
 
     /// ⌘ sends Ctrl and ⌃ sends the Windows key.
     public var swapCommandControl: Bool {
-        didSet { defaults.set(swapCommandControl, forKey: Keys.swapCommandControl) }
+        didSet { defaults.set(swapCommandControl, forKey: KeyboardKeys.swapCommandControl) }
     }
 
     /// Right ⌥ sends 한/영.
     public var rightOptionHangul: Bool {
-        didSet { defaults.set(rightOptionHangul, forKey: Keys.rightOptionHangul) }
+        didSet { defaults.set(rightOptionHangul, forKey: KeyboardKeys.rightOptionHangul) }
     }
 
     /// Right ⌘ sends 한자.
     public var rightCommandHanja: Bool {
-        didSet { defaults.set(rightCommandHanja, forKey: Keys.rightCommandHanja) }
+        didSet { defaults.set(rightCommandHanja, forKey: KeyboardKeys.rightCommandHanja) }
     }
 
     /// ⌘Q, ⌘H and ⌘Tab go to the remote PC while input is captured.
     public var forwardsSystemShortcuts: Bool {
-        didSet { defaults.set(forwardsSystemShortcuts, forKey: Keys.forwardsSystemShortcuts) }
+        didSet { defaults.set(forwardsSystemShortcuts, forKey: KeyboardKeys.forwardsSystemShortcuts) }
     }
 
     /// Display index chosen per host ID.
@@ -64,11 +62,12 @@ public final class ScreenPreferences {
         self.defaults = defaults
         preset = defaults.string(forKey: Keys.preset).flatMap(StreamPreset.init(rawValue:)) ?? .balanced
         showsStatistics = defaults.object(forKey: Keys.showsStatistics) as? Bool ?? false
-        keyboardMode = defaults.string(forKey: Keys.keyboardMode).flatMap(KeyboardMode.init(rawValue:)) ?? .scancode
-        swapCommandControl = defaults.object(forKey: Keys.swapCommandControl) as? Bool ?? true
-        rightOptionHangul = defaults.object(forKey: Keys.rightOptionHangul) as? Bool ?? true
-        rightCommandHanja = defaults.object(forKey: Keys.rightCommandHanja) as? Bool ?? false
-        forwardsSystemShortcuts = defaults.object(forKey: Keys.forwardsSystemShortcuts) as? Bool ?? false
+        showsLocalCursor = defaults.object(forKey: Keys.showsLocalCursor) as? Bool ?? false
+        keyboardMode = defaults.string(forKey: KeyboardKeys.mode).flatMap(KeyboardMode.init(rawValue:)) ?? .scancode
+        swapCommandControl = defaults.object(forKey: KeyboardKeys.swapCommandControl) as? Bool ?? true
+        rightOptionHangul = defaults.object(forKey: KeyboardKeys.rightOptionHangul) as? Bool ?? true
+        rightCommandHanja = defaults.object(forKey: KeyboardKeys.rightCommandHanja) as? Bool ?? false
+        forwardsSystemShortcuts = defaults.object(forKey: KeyboardKeys.forwardsSystemShortcuts) as? Bool ?? false
         displays = defaults.dictionary(forKey: Keys.displays) as? [String: Int] ?? [:]
     }
 

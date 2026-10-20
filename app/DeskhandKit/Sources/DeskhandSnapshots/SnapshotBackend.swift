@@ -19,14 +19,20 @@ final class SnapshotBackend: Backend {
     private let controls: [String: ControlState]
     private let timelines: [String: TimelineReply]
     private let controlFailure: OperationError?
+    private let daemonVersion: String?
 
-    init(controls: [String: ControlState], timelines: [String: TimelineReply], controlFailure: OperationError? = nil) {
+    /// `daemonVersion` is the version `daemonInfo` reports; nil for a daemon that never answered.
+    init(controls: [String: ControlState], timelines: [String: TimelineReply], controlFailure: OperationError? = nil,
+         daemonVersion: String? = "0.1.0") {
         self.controls = controls
         self.timelines = timelines
         self.controlFailure = controlFailure
+        self.daemonVersion = daemonVersion
     }
 
     func start() async throws {}
+    func daemonInfo() async -> DaemonInfo { DaemonInfo(version: daemonVersion, apiVersion: daemonVersion == nil ? nil : 1) }
+    func restartDaemon() async throws {}
     func hostList() async throws -> [Host] { try await base.hostList() }
     func hostAdd(name: String, ssh: String) async throws -> JobReceipt { try await base.hostAdd(name: name, ssh: ssh) }
     func hostRemove(hostID: String, uninstall: Bool) async throws {}

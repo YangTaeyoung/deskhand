@@ -53,6 +53,10 @@ final class ClientTests: XCTestCase {
         XCTAssertEqual(hello[0].params["version"] as? String, "1.2.3")
         let clientID = await client.clientID
         XCTAssertEqual(clientID, "c-test")
+        let daemonVersion = await client.daemonVersion
+        let apiVersion = await client.apiVersion
+        XCTAssertEqual(daemonVersion, "0.4.2")
+        XCTAssertEqual(apiVersion, 1)
 
         let result: HostListResult = try await client.call("host.list", NoParams())
         XCTAssertEqual(result.hosts.map(\.hostID), ["win-1"])
