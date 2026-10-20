@@ -307,7 +307,8 @@ func (s *Server) fsCopy(ctx context.Context, req proto.Message) (proto.Message, 
 // It reports whether to exists and the path of the existing entry under the
 // name its folder holds. With to there, fail, a name that differs only in
 // letter case under fail or replace, and replace with a folder on either
-// side are TRANSFER_CONFLICT errors; skip, replace and rename are not.
+// side are TRANSFER_CONFLICT errors (wire.DecideConflict); skip, replace and
+// rename are not.
 func applyConflictPolicy(from, to string, folder bool, policy, what string) (bool, string, error) {
 	dst, err := os.Lstat(to)
 	if missing(err) {
@@ -324,13 +325,12 @@ func applyConflictPolicy(from, to string, folder bool, policy, what string) (boo
 	conflict := func(msg string) (bool, string, error) {
 		return true, existing, coded(wire.CodeTransferConflict, msg, false)
 	}
-	switch {
-	case policy == "skip":
-	case name != filepath.Base(to) && policy != "rename":
+	switch wire.DecideConflict(policy, name != filepath.Base(to), dst.IsDir() || folder) {
+	case wire.ConflictCase:
 		return conflict(fmt.Sprintf("'%s' exists as '%s', a name that differs only in letter case, which Windows takes for the same name; pass that name, another name, or on_conflict skip or rename", to, name))
-	case policy == "fail":
+	case wire.ConflictExists:
 		return conflict(fmt.Sprintf("'%s' exists; pass on_conflict replace, skip or rename to %s anyway", to, what))
-	case policy == "replace" && (dst.IsDir() || folder):
+	case wire.ConflictFolder:
 		if from == "" {
 			return conflict(fmt.Sprintf("'%s' is a folder, and on_conflict replace replaces a file with a file; trash the folder with fs.trash first, or pass on_conflict rename", to))
 		}

@@ -195,10 +195,10 @@ func actualName(p string) string {
 
 // conflict applies the on_conflict policy to the destination target on
 // this Mac before a file is put there, as the agent does (docs/protocol.md
-// §3.1 fs.copy): it reports whether target exists and the path of the
-// existing entry under the name its folder holds. With target there, fail,
-// a name that differs only in letter case under fail or replace, and
-// replace of a folder are TRANSFER_CONFLICT errors.
+// §3.1 fs.copy) with wire.DecideConflict: it reports whether target exists
+// and the path of the existing entry under the name its folder holds. With
+// target there, fail, a name that differs only in letter case under fail
+// or replace, and replace of a folder are TRANSFER_CONFLICT errors.
 func conflict(target, policy string) (bool, string, *apierr.Error) {
 	fi, err := os.Lstat(target)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -212,13 +212,12 @@ func conflict(target, policy string) (bool, string, *apierr.Error) {
 	refuse := func(msg string) (bool, string, *apierr.Error) {
 		return true, existing, apierr.New(wire.CodeTransferConflict, msg, false, apierr.NextFixParams)
 	}
-	switch {
-	case policy == "skip":
-	case name != filepath.Base(target) && policy != "rename":
+	switch wire.DecideConflict(policy, name != filepath.Base(target), fi.IsDir()) {
+	case wire.ConflictCase:
 		return refuse(fmt.Sprintf("이 Mac에 %s가 대소문자만 다른 이름 %s로 있습니다. 다른 이름을 주거나 on_conflict skip이나 rename으로 다시 시도하세요", target, name))
-	case policy == "fail":
+	case wire.ConflictExists:
 		return refuse(fmt.Sprintf("이 Mac에 %s가 이미 있습니다. on_conflict replace, skip, rename 중 하나로 다시 시도하세요", target))
-	case policy == "replace" && fi.IsDir():
+	case wire.ConflictFolder:
 		return refuse(fmt.Sprintf("이 Mac의 %s는 폴더라 replace로 바꾸지 않습니다. 폴더를 치우거나 on_conflict rename으로 다시 시도하세요", target))
 	}
 	return true, existing, nil

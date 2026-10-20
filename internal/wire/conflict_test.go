@@ -48,3 +48,26 @@ func TestNumberedNameKeepsTheExtensionOfAFile(t *testing.T) {
 		t.Fatalf("RenameMax %d", RenameMax)
 	}
 }
+
+func TestDecideConflictIsOneTableForAnExistingDestination(t *testing.T) {
+	for _, tc := range []struct {
+		policy           string
+		caseOnly, folder bool
+		want             Conflict
+	}{
+		{"fail", false, false, ConflictExists},
+		{"fail", true, false, ConflictCase},
+		{"fail", false, true, ConflictExists},
+		{"replace", false, false, ConflictNone},
+		{"replace", true, false, ConflictCase},
+		{"replace", false, true, ConflictFolder},
+		{"replace", true, true, ConflictCase},
+		{"skip", true, true, ConflictNone},
+		{"rename", true, true, ConflictNone},
+		{"rename", false, false, ConflictNone},
+	} {
+		if got := DecideConflict(tc.policy, tc.caseOnly, tc.folder); got != tc.want {
+			t.Errorf("DecideConflict(%s, case %v, folder %v) = %v, want %v", tc.policy, tc.caseOnly, tc.folder, got, tc.want)
+		}
+	}
+}
