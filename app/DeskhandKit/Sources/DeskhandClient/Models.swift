@@ -953,6 +953,29 @@ public struct TimelineEntry: Codable, Sendable, Equatable {
     }
 }
 
+/// One check of `host.doctor`: `status` is `pass`, `fail`, `warn` or `skip`; `fix` is how to resolve a failure.
+public struct DoctorCheck: Codable, Sendable, Equatable {
+    public var id: String
+    public var status: String
+    public var detail: String
+    public var fix: String?
+
+    public init(id: String, status: String, detail: String, fix: String? = nil) {
+        self.id = id
+        self.status = status
+        self.detail = detail
+        self.fix = fix
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: AnyKey.self)
+        id = try c.decode(String.self, forKey: AnyKey("id"))
+        status = try c.decode(String.self, forKey: AnyKey("status"))
+        detail = try c.decodeIfPresent(String.self, forKey: AnyKey("detail")) ?? ""
+        fix = try c.decodeIfPresent(String.self, forKey: AnyKey("fix"))
+    }
+}
+
 struct AnyKey: CodingKey {
     var stringValue: String
     var intValue: Int? { nil }

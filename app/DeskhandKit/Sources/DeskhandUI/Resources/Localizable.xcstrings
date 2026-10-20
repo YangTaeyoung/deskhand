@@ -1,6 +1,18 @@
 {
   "sourceLanguage": "ko",
   "strings": {
+    "a11y.aliasChip": {
+      "comment": "VoiceOver label: alias chip",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH 별칭 %@ 사용"
+          }
+        }
+      }
+    },
     "a11y.capability": {
       "comment": "VoiceOver label of a capability chip: capability name, state",
       "extractionState": "manual",
@@ -37,6 +49,42 @@
         }
       }
     },
+    "a11y.copyFix": {
+      "comment": "VoiceOver label: copy fix",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 해결 방법 복사"
+          }
+        }
+      }
+    },
+    "a11y.doctorRow": {
+      "comment": "VoiceOver label: doctor row",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@, %2$@"
+          }
+        }
+      }
+    },
+    "a11y.sidebar": {
+      "comment": "VoiceOver label: sidebar",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "컴퓨터 목록"
+          }
+        }
+      }
+    },
     "a11y.step": {
       "comment": "VoiceOver label of a step: index, count, title, status",
       "extractionState": "manual",
@@ -49,6 +97,174 @@
         }
       }
     },
+    "action.addHost": {
+      "comment": "Button: add host",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "컴퓨터 추가"
+          }
+        }
+      }
+    },
+    "action.cancel": {
+      "comment": "Button: cancel",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "취소"
+          }
+        }
+      }
+    },
+    "action.close": {
+      "comment": "Button: close",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "닫기"
+          }
+        }
+      }
+    },
+    "action.connect": {
+      "comment": "Button: connect",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결"
+          }
+        }
+      }
+    },
+    "action.copied": {
+      "comment": "Button: copied",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복사됨"
+          }
+        }
+      }
+    },
+    "action.copy": {
+      "comment": "Button: copy",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복사"
+          }
+        }
+      }
+    },
+    "action.copyAlias": {
+      "comment": "Button: copy alias",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH 별칭 복사"
+          }
+        }
+      }
+    },
+    "action.disconnect": {
+      "comment": "Button: disconnect",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결 끊기"
+          }
+        }
+      }
+    },
+    "action.doctor": {
+      "comment": "Button: doctor",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "진단 실행"
+          }
+        }
+      }
+    },
+    "action.done": {
+      "comment": "Button: done",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "완료"
+          }
+        }
+      }
+    },
+    "action.more": {
+      "comment": "Button: more",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "더 보기"
+          }
+        }
+      }
+    },
+    "action.ok": {
+      "comment": "Button: ok",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "확인"
+          }
+        }
+      }
+    },
+    "action.remove": {
+      "comment": "Button: remove",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제거…"
+          }
+        }
+      }
+    },
+    "action.repair": {
+      "comment": "Button: repair",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 페어링"
+          }
+        }
+      }
+    },
     "action.retry": {
       "comment": "Button that repeats a failed operation",
       "extractionState": "manual",
@@ -57,6 +273,450 @@
           "stringUnit": {
             "state": "translated",
             "value": "다시 시도"
+          }
+        }
+      }
+    },
+    "actionError.title": {
+      "comment": "Alert for a failed computer action: title",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업을 완료하지 못했습니다"
+          }
+        }
+      }
+    },
+    "actor.ai": {
+      "comment": "Timeline actor: ai",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI"
+          }
+        }
+      }
+    },
+    "actor.human": {
+      "comment": "Timeline actor: human",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사람"
+          }
+        }
+      }
+    },
+    "actor.system": {
+      "comment": "Timeline actor: system",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "시스템"
+          }
+        }
+      }
+    },
+    "addHost.alias": {
+      "comment": "Add-computer sheet: alias",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH 별칭"
+          }
+        }
+      }
+    },
+    "addHost.alias.found": {
+      "comment": "Add-computer sheet: alias found",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "~/.ssh/config에서 찾은 별칭 %lld개 · 고르거나 직접 입력하세요"
+          }
+        }
+      }
+    },
+    "addHost.alias.more": {
+      "comment": "Add-computer sheet: alias more",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld개 더 보기"
+          }
+        }
+      }
+    },
+    "addHost.alias.none": {
+      "comment": "Add-computer sheet: alias none",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "~/.ssh/config에서 별칭을 찾지 못했습니다. ssh 명령에 쓰는 호스트 이름을 직접 입력하세요."
+          }
+        }
+      }
+    },
+    "addHost.alias.prompt": {
+      "comment": "Add-computer sheet: alias prompt",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예: windows"
+          }
+        }
+      }
+    },
+    "addHost.background": {
+      "comment": "Add-computer sheet: background",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "창을 닫아도 설치는 데몬에서 계속됩니다."
+          }
+        }
+      }
+    },
+    "addHost.continueInBackground": {
+      "comment": "Add-computer sheet: continue in background",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "백그라운드에서 계속"
+          }
+        }
+      }
+    },
+    "addHost.edit": {
+      "comment": "Add-computer sheet: edit",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정 수정"
+          }
+        }
+      }
+    },
+    "addHost.failed.fix": {
+      "comment": "Add-computer sheet: failed fix",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "단계에 표시된 오류를 해결한 뒤 다시 시도하세요."
+          }
+        }
+      }
+    },
+    "addHost.failed.step": {
+      "comment": "Add-computer sheet: failed step",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’ 단계에서 실패했습니다"
+          }
+        }
+      }
+    },
+    "addHost.failed.summary": {
+      "comment": "Add-computer sheet: failed summary",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설치를 마치지 못했습니다"
+          }
+        }
+      }
+    },
+    "addHost.failed.title": {
+      "comment": "Add-computer sheet: failed title",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "컴퓨터를 추가하지 못했습니다"
+          }
+        }
+      }
+    },
+    "addHost.name": {
+      "comment": "Add-computer sheet: name",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "표시 이름"
+          }
+        }
+      }
+    },
+    "addHost.name.caption": {
+      "comment": "Add-computer sheet: name caption",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사이드바와 CLI에서 쓰는 이름입니다. 비워 두면 별칭을 씁니다."
+          }
+        }
+      }
+    },
+    "addHost.name.prompt": {
+      "comment": "Add-computer sheet: name prompt",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예: 개발 PC"
+          }
+        }
+      }
+    },
+    "addHost.progress": {
+      "comment": "Add-computer sheet: progress",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld/%2$lld단계 진행 중"
+          }
+        }
+      }
+    },
+    "addHost.requirements": {
+      "comment": "Add-computer sheet: requirements",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 계정에 관리자 권한이 있어야 하고, 이 Mac에서 ssh 별칭으로 비밀번호 없이 접속되어야 합니다. ~/.ssh 설정은 바꾸지 않습니다."
+          }
+        }
+      }
+    },
+    "addHost.running.title": {
+      "comment": "Add-computer sheet: running title",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "컴퓨터 추가 중"
+          }
+        }
+      }
+    },
+    "addHost.start": {
+      "comment": "Add-computer sheet: start",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설치하고 연결"
+          }
+        }
+      }
+    },
+    "addHost.subtitle": {
+      "comment": "Add-computer sheet: subtitle",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH로 접속되는 Windows PC에 에이전트를 설치하고 페어링합니다."
+          }
+        }
+      }
+    },
+    "addHost.succeeded.title": {
+      "comment": "Add-computer sheet: succeeded title",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결됨"
+          }
+        }
+      }
+    },
+    "addHost.target": {
+      "comment": "Add-computer sheet: target",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · ssh %2$@"
+          }
+        }
+      }
+    },
+    "addHost.title": {
+      "comment": "Add-computer sheet: title",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "컴퓨터 추가"
+          }
+        }
+      }
+    },
+    "cap.clipboard": {
+      "comment": "Capability name: clipboard",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "클립보드"
+          }
+        }
+      }
+    },
+    "cap.diag": {
+      "comment": "Capability name: diag",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "진단"
+          }
+        }
+      }
+    },
+    "cap.exec": {
+      "comment": "Capability name: exec",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "명령 실행"
+          }
+        }
+      }
+    },
+    "cap.files": {
+      "comment": "Capability name: files",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일"
+          }
+        }
+      }
+    },
+    "cap.input": {
+      "comment": "Capability name: input",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "입력"
+          }
+        }
+      }
+    },
+    "cap.processes": {
+      "comment": "Capability name: processes",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "프로세스"
+          }
+        }
+      }
+    },
+    "cap.pty": {
+      "comment": "Capability name: pty",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "터미널"
+          }
+        }
+      }
+    },
+    "cap.screen": {
+      "comment": "Capability name: screen",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면"
+          }
+        }
+      }
+    },
+    "cap.tunnel": {
+      "comment": "Capability name: tunnel",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "디버그 터널"
+          }
+        }
+      }
+    },
+    "cap.uia": {
+      "comment": "Capability name: uia",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UI 자동화"
           }
         }
       }
@@ -225,6 +885,1518 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "daemon.copyCommand": {
+      "comment": "Daemon start-up screen: copy command",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "명령 복사"
+          }
+        }
+      }
+    },
+    "daemon.field.command": {
+      "comment": "Daemon start-up screen: field command",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "직접 시작"
+          }
+        }
+      }
+    },
+    "daemon.field.log": {
+      "comment": "Daemon start-up screen: field log",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그"
+          }
+        }
+      }
+    },
+    "daemon.openLog": {
+      "comment": "Daemon start-up screen: open log",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그 열기"
+          }
+        }
+      }
+    },
+    "daemon.starting": {
+      "comment": "Daemon start-up screen: starting",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "데몬에 연결하는 중…"
+          }
+        }
+      }
+    },
+    "daemon.starting.detail": {
+      "comment": "Daemon start-up screen: starting detail",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "deskhand daemon이 실행 중이 아니면 시작합니다."
+          }
+        }
+      }
+    },
+    "daemon.timeout": {
+      "comment": "Daemon start-up screen: timeout",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "5초 안에 데몬이 응답하지 않았습니다"
+          }
+        }
+      }
+    },
+    "daemon.unavailable.fix": {
+      "comment": "Daemon start-up screen: unavailable fix",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그에서 원인을 확인하거나 터미널에서 데몬을 직접 시작한 뒤 다시 시도하세요."
+          }
+        }
+      }
+    },
+    "daemon.unavailable.message": {
+      "comment": "Daemon start-up screen: unavailable message",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deskhand는 이 Mac의 백그라운드 데몬을 통해 원격 컴퓨터에 연결합니다. 데몬이 실행되어야 컴퓨터 목록과 작업 공간을 열 수 있습니다."
+          }
+        }
+      }
+    },
+    "daemon.unavailable.title": {
+      "comment": "Daemon start-up screen: unavailable title",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "데몬을 시작할 수 없습니다"
+          }
+        }
+      }
+    },
+    "detail.select.message": {
+      "comment": "Detail column: select message",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사이드바에서 작업할 컴퓨터를 고르세요."
+          }
+        }
+      }
+    },
+    "detail.select.title": {
+      "comment": "Detail column: select title",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "컴퓨터를 선택하세요"
+          }
+        }
+      }
+    },
+    "doctor.allPassed": {
+      "comment": "Diagnostics sheet: all passed",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모든 항목을 통과했습니다"
+          }
+        }
+      }
+    },
+    "doctor.check.agentVersion": {
+      "comment": "Diagnostics sheet: check agent version",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트 버전"
+          }
+        }
+      }
+    },
+    "doctor.check.fingerprint": {
+      "comment": "Diagnostics sheet: check fingerprint",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "인증서 지문"
+          }
+        }
+      }
+    },
+    "doctor.check.firewall": {
+      "comment": "Diagnostics sheet: check firewall",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "방화벽 규칙"
+          }
+        }
+      }
+    },
+    "doctor.check.input": {
+      "comment": "Diagnostics sheet: check input",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "입력"
+          }
+        }
+      }
+    },
+    "doctor.check.quic": {
+      "comment": "Diagnostics sheet: check quic",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보안 연결 (QUIC)"
+          }
+        }
+      }
+    },
+    "doctor.check.screen": {
+      "comment": "Diagnostics sheet: check screen",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면 캡처"
+          }
+        }
+      }
+    },
+    "doctor.check.session": {
+      "comment": "Diagnostics sheet: check session",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용자 세션"
+          }
+        }
+      }
+    },
+    "doctor.check.ssh": {
+      "comment": "Diagnostics sheet: check ssh",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH 접속"
+          }
+        }
+      }
+    },
+    "doctor.check.uia": {
+      "comment": "Diagnostics sheet: check uia",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UI 자동화"
+          }
+        }
+      }
+    },
+    "doctor.count": {
+      "comment": "Diagnostics sheet: count",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ %2$lld"
+          }
+        }
+      }
+    },
+    "doctor.empty.message": {
+      "comment": "Diagnostics sheet: empty message",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "데몬이 이 컴퓨터에 대해 확인할 항목을 돌려주지 않았습니다."
+          }
+        }
+      }
+    },
+    "doctor.empty.title": {
+      "comment": "Diagnostics sheet: empty title",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "진단 항목이 없습니다"
+          }
+        }
+      }
+    },
+    "doctor.fail": {
+      "comment": "Diagnostics sheet: fail",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실패"
+          }
+        }
+      }
+    },
+    "doctor.failed": {
+      "comment": "Diagnostics sheet: failed",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "진단을 실행하지 못했습니다"
+          }
+        }
+      }
+    },
+    "doctor.finishedAt": {
+      "comment": "Diagnostics sheet: finished at",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "마지막 진단 %@"
+          }
+        }
+      }
+    },
+    "doctor.fix": {
+      "comment": "Diagnostics sheet: fix",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "해결 방법"
+          }
+        }
+      }
+    },
+    "doctor.loading": {
+      "comment": "Diagnostics sheet: loading",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "진단하는 중…"
+          }
+        }
+      }
+    },
+    "doctor.loading.detail": {
+      "comment": "Diagnostics sheet: loading detail",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 컴퓨터에 따라 몇 초 걸릴 수 있습니다."
+          }
+        }
+      }
+    },
+    "doctor.pass": {
+      "comment": "Diagnostics sheet: pass",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "통과"
+          }
+        }
+      }
+    },
+    "doctor.rerun": {
+      "comment": "Diagnostics sheet: rerun",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 진단"
+          }
+        }
+      }
+    },
+    "doctor.skip": {
+      "comment": "Diagnostics sheet: skip",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "건너뜀"
+          }
+        }
+      }
+    },
+    "doctor.subtitle": {
+      "comment": "Diagnostics sheet: subtitle",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH, 에이전트, 보안 연결, 세션과 방화벽을 차례로 확인합니다."
+          }
+        }
+      }
+    },
+    "doctor.title": {
+      "comment": "Diagnostics sheet: title",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 진단"
+          }
+        }
+      }
+    },
+    "doctor.warn": {
+      "comment": "Diagnostics sheet: warn",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "경고"
+          }
+        }
+      }
+    },
+    "empty.hosts.message": {
+      "comment": "No-computers state: hosts message",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH로 접속할 수 있는 Windows PC를 추가하면 Deskhand가 에이전트를 설치하고 이 Mac과 안전하게 페어링합니다."
+          }
+        }
+      }
+    },
+    "empty.hosts.title": {
+      "comment": "No-computers state: hosts title",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아직 연결한 컴퓨터가 없습니다"
+          }
+        }
+      }
+    },
+    "empty.prereq.admin.detail": {
+      "comment": "No-computers state: prereq admin detail",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트 설치와 방화벽 규칙 등록에 관리자 권한이 필요합니다."
+          }
+        }
+      }
+    },
+    "empty.prereq.admin.title": {
+      "comment": "No-computers state: prereq admin title",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "관리자 계정을 씁니다"
+          }
+        }
+      }
+    },
+    "empty.prereq.key.command": {
+      "comment": "No-computers state: prereq key command",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ssh <별칭> hostname"
+          }
+        }
+      }
+    },
+    "empty.prereq.key.detail": {
+      "comment": "No-computers state: prereq key detail",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Mac의 터미널에서 ssh 별칭으로 접속해 봅니다. 키 인증만 사용합니다."
+          }
+        }
+      }
+    },
+    "empty.prereq.key.title": {
+      "comment": "No-computers state: prereq key title",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "비밀번호 없이 접속되는지 확인합니다"
+          }
+        }
+      }
+    },
+    "empty.prereq.ssh.detail": {
+      "comment": "No-computers state: prereq ssh detail",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정 › 시스템 › 선택적 기능에서 OpenSSH 서버를 설치하고 서비스를 시작합니다."
+          }
+        }
+      }
+    },
+    "empty.prereq.ssh.title": {
+      "comment": "No-computers state: prereq ssh title",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windows에서 OpenSSH 서버를 켭니다"
+          }
+        }
+      }
+    },
+    "empty.prereq.title": {
+      "comment": "No-computers state: prereq title",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "추가하기 전에 확인하세요"
+          }
+        }
+      }
+    },
+    "error.addedHostMissing": {
+      "comment": "Error message: added host missing",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "컴퓨터를 추가했지만 목록에서 찾지 못했습니다"
+          }
+        }
+      }
+    },
+    "error.connectFailed": {
+      "comment": "Error message: connect failed",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "데몬 소켓에 연결할 수 없습니다 (errno %lld)"
+          }
+        }
+      }
+    },
+    "error.daemonUnavailable": {
+      "comment": "Error message: daemon unavailable",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "데몬이 응답하지 않습니다"
+          }
+        }
+      }
+    },
+    "error.decoding": {
+      "comment": "Error message: decoding",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "데몬 응답 형식이 예상과 다릅니다"
+          }
+        }
+      }
+    },
+    "error.disconnected": {
+      "comment": "Error message: disconnected",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "데몬과 연결이 끊겼습니다"
+          }
+        }
+      }
+    },
+    "error.installFailed": {
+      "comment": "Error message: install failed",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설치하지 못했습니다"
+          }
+        }
+      }
+    },
+    "error.installStalled": {
+      "comment": "Error message: install stalled",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2분 동안 설치 진행 상황이 바뀌지 않았습니다"
+          }
+        }
+      }
+    },
+    "error.installStreamEnded": {
+      "comment": "Error message: install stream ended",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "데몬에서 설치 진행 상황을 더 받지 못했습니다"
+          }
+        }
+      }
+    },
+    "error.protocol": {
+      "comment": "Error message: protocol",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "데몬 응답을 이해할 수 없습니다"
+          }
+        }
+      }
+    },
+    "error.socketPathTooLong": {
+      "comment": "Error message: socket path too long",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "데몬 소켓 경로가 너무 깁니다: %@"
+          }
+        }
+      }
+    },
+    "error.unknown": {
+      "comment": "Error message: unknown",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "알 수 없는 오류가 발생했습니다"
+          }
+        }
+      }
+    },
+    "fix.authRequired": {
+      "comment": "How to fix the error code: auth required",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "터미널에서 이 별칭으로 ssh 접속이 비밀번호 없이 되는지 확인하세요."
+          }
+        }
+      }
+    },
+    "fix.elevation": {
+      "comment": "How to fix the error code: elevation",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 계정에 관리자 권한이 있어야 합니다. 관리자 계정으로 접속하는 SSH 별칭으로 다시 시도하세요."
+          }
+        }
+      }
+    },
+    "fix.inProgress": {
+      "comment": "How to fix the error code: in progress",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "같은 작업이 이미 진행 중입니다. 끝난 뒤 다시 시도하세요."
+          }
+        }
+      }
+    },
+    "fix.offline": {
+      "comment": "How to fix the error code: offline",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "컴퓨터가 켜져 있고 같은 네트워크나 VPN에 있는지 확인하세요."
+          }
+        }
+      }
+    },
+    "fix.portConflict": {
+      "comment": "How to fix the error code: port conflict",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다른 프로그램이 UDP 47600 포트를 쓰고 있습니다. 그 프로그램을 종료한 뒤 다시 시도하세요."
+          }
+        }
+      }
+    },
+    "fix.sessionLocked": {
+      "comment": "How to fix the error code: session locked",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 컴퓨터에서 로그인하거나 잠금을 해제하세요."
+          }
+        }
+      }
+    },
+    "help.addHost": {
+      "comment": "Tooltip: add host",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH 별칭으로 새 컴퓨터를 추가합니다 (⌘N)"
+          }
+        }
+      }
+    },
+    "help.copyCommand": {
+      "comment": "Tooltip: copy command",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "데몬을 시작하는 터미널 명령을 복사합니다"
+          }
+        }
+      }
+    },
+    "help.copyFix": {
+      "comment": "Tooltip: copy fix",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "해결 방법을 클립보드에 복사합니다"
+          }
+        }
+      }
+    },
+    "help.openLog": {
+      "comment": "Tooltip: open log",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finder에서 데몬 로그를 엽니다"
+          }
+        }
+      }
+    },
+    "host.activity.empty": {
+      "comment": "Computer detail: activity empty",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아직 기록된 동작이 없습니다. 사람이나 AI가 이 컴퓨터를 조작하면 여기에 남습니다."
+          }
+        }
+      }
+    },
+    "host.capabilities": {
+      "comment": "Computer detail: capabilities",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기능"
+          }
+        }
+      }
+    },
+    "host.capabilities.allReady": {
+      "comment": "Computer detail: capabilities all ready",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모두 준비됨"
+          }
+        }
+      }
+    },
+    "host.capabilities.count": {
+      "comment": "Computer detail: capabilities count",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld개 중 %2$lld개 준비됨"
+          }
+        }
+      }
+    },
+    "host.capabilities.offline": {
+      "comment": "Computer detail: capabilities while not connected",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결되면 화면, 입력, 명령, 파일 같은 기능의 준비 상태를 보여 줍니다."
+          }
+        }
+      }
+    },
+    "host.capabilities.reason": {
+      "comment": "Computer detail: capability names and why they are not ready",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@: %2$@"
+          }
+        }
+      }
+    },
+    "host.field.address": {
+      "comment": "Computer detail: field address",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "주소"
+          }
+        }
+      }
+    },
+    "host.field.agent": {
+      "comment": "Computer detail: field agent",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트"
+          }
+        }
+      }
+    },
+    "host.field.alias": {
+      "comment": "Computer detail: field alias",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH 별칭"
+          }
+        }
+      }
+    },
+    "host.field.display": {
+      "comment": "Computer detail: field display",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "디스플레이"
+          }
+        }
+      }
+    },
+    "host.field.generation": {
+      "comment": "Computer detail: field generation",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결 세대"
+          }
+        }
+      }
+    },
+    "host.field.lastSeen": {
+      "comment": "Computer detail: when the daemon last heard from the computer",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "마지막 연결"
+          }
+        }
+      }
+    },
+    "host.field.primaryDisplay": {
+      "comment": "Computer detail: field primary display",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "주 디스플레이"
+          }
+        }
+      }
+    },
+    "host.field.session": {
+      "comment": "Computer detail: field session",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션"
+          }
+        }
+      }
+    },
+    "host.field.user": {
+      "comment": "Computer detail: field user",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용자"
+          }
+        }
+      }
+    },
+    "host.section.activity": {
+      "comment": "Computer detail: section activity",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최근 활동"
+          }
+        }
+      }
+    },
+    "host.section.connection": {
+      "comment": "Computer detail: section connection",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결"
+          }
+        }
+      }
+    },
+    "host.section.session": {
+      "comment": "Computer detail: section session",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션과 디스플레이"
+          }
+        }
+      }
+    },
+    "host.session.none": {
+      "comment": "Computer detail: session none",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "정보 없음 · 연결되면 표시됩니다"
+          }
+        }
+      }
+    },
+    "host.status.blocked": {
+      "comment": "Computer detail: status blocked",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "인증서 불일치"
+          }
+        }
+      }
+    },
+    "host.status.lastSeen": {
+      "comment": "Computer detail: status last seen",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "host.status.session": {
+      "comment": "Computer detail: status session",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "hosts.failed": {
+      "comment": "Computer list: failed",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "컴퓨터 목록을 불러오지 못했습니다"
+          }
+        }
+      }
+    },
+    "hosts.loading": {
+      "comment": "Computer list: loading",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "컴퓨터 목록을 불러오는 중"
+          }
+        }
+      }
+    },
+    "install.copy": {
+      "comment": "Installation step: copy",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트 복사"
+          }
+        }
+      }
+    },
+    "install.copy.detail": {
+      "comment": "Installation step: copy detail",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트 실행 파일을 원격 임시 폴더로 보냅니다"
+          }
+        }
+      }
+    },
+    "install.init": {
+      "comment": "Installation step: init",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트 초기화"
+          }
+        }
+      }
+    },
+    "install.init.detail": {
+      "comment": "Installation step: init detail",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트 키를 만들고 이 Mac과 페어링합니다"
+          }
+        }
+      }
+    },
+    "install.install": {
+      "comment": "Installation step: install",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트 설치"
+          }
+        }
+      }
+    },
+    "install.install.detail": {
+      "comment": "Installation step: install detail",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인할 때 시작하는 예약 작업과 방화벽 규칙을 등록합니다"
+          }
+        }
+      }
+    },
+    "install.probe": {
+      "comment": "Installation step: probe",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 컴퓨터 확인"
+          }
+        }
+      }
+    },
+    "install.probe.detail": {
+      "comment": "Installation step: probe detail",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH로 접속해 OS와 아키텍처를 확인합니다"
+          }
+        }
+      }
+    },
+    "install.verify": {
+      "comment": "Installation step: verify",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결 확인"
+          }
+        }
+      }
+    },
+    "install.verify.detail": {
+      "comment": "Installation step: verify detail",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보안 연결로 에이전트에 접속합니다"
+          }
+        }
+      }
+    },
+    "menu.addHost": {
+      "comment": "Menu bar item: add host",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "컴퓨터 추가…"
+          }
+        }
+      }
+    },
+    "menu.computer": {
+      "comment": "Menu bar item: computer",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "컴퓨터"
+          }
+        }
+      }
+    },
+    "notice.blocked.fix": {
+      "comment": "Connection notice in the computer detail: blocked fix",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트를 다시 설치했다면 다시 페어링하세요. 다시 설치한 적이 없다면 다른 컴퓨터가 이 주소를 쓰고 있을 수 있으니 진단을 먼저 실행하세요."
+          }
+        }
+      }
+    },
+    "notice.blocked.title": {
+      "comment": "Connection notice in the computer detail: blocked title",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "인증서가 페어링 때와 다릅니다"
+          }
+        }
+      }
+    },
+    "notice.connecting.title": {
+      "comment": "Connection notice in the computer detail: connecting title",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결하는 중…"
+          }
+        }
+      }
+    },
+    "notice.degraded.message": {
+      "comment": "Connection notice in the computer detail: degraded message",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면이 늦게 바뀌거나 끊길 수 있습니다. 네트워크 상태를 확인하세요."
+          }
+        }
+      }
+    },
+    "notice.degraded.title": {
+      "comment": "Connection notice in the computer detail: degraded title",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결이 불안정합니다"
+          }
+        }
+      }
+    },
+    "notice.offline.lastSeen": {
+      "comment": "Connection notice in the computer detail: offline last seen",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "마지막 연결 %@. 컴퓨터가 켜져 있으면 연결을 눌러 다시 시도하세요."
+          }
+        }
+      }
+    },
+    "notice.offline.message": {
+      "comment": "Connection notice in the computer detail: offline message",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "컴퓨터가 켜져 있으면 연결을 눌러 다시 시도하세요."
+          }
+        }
+      }
+    },
+    "notice.offline.title": {
+      "comment": "Connection notice in the computer detail: offline title",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오프라인입니다"
+          }
+        }
+      }
+    },
+    "notice.reconnecting.message": {
+      "comment": "Connection notice in the computer detail: reconnecting message",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결이 돌아오면 화면과 명령을 바로 다시 쓸 수 있습니다. 결과를 모르는 작업은 다시 실행하지 않습니다."
+          }
+        }
+      }
+    },
+    "notice.reconnecting.title": {
+      "comment": "Connection notice in the computer detail: reconnecting title",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 연결하는 중…"
+          }
+        }
+      }
+    },
+    "outcome.denied": {
+      "comment": "Timeline outcome badge: denied",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "거부됨"
+          }
+        }
+      }
+    },
+    "outcome.failed": {
+      "comment": "Timeline outcome badge: failed",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실패"
+          }
+        }
+      }
+    },
+    "outcome.unknown": {
+      "comment": "Timeline outcome badge: unknown",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "결과 불명"
+          }
+        }
+      }
+    },
+    "remove.keepAgent": {
+      "comment": "Remove-computer confirmation: keep agent",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "목록에서 제거"
+          }
+        }
+      }
+    },
+    "remove.message": {
+      "comment": "Remove-computer confirmation: message",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Mac에서 페어링 정보를 지웁니다. ‘에이전트까지 제거’는 SSH로 원격 컴퓨터의 에이전트와 예약 작업, 방화벽 규칙도 지웁니다."
+          }
+        }
+      }
+    },
+    "remove.title": {
+      "comment": "Remove-computer confirmation: title",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 제거"
+          }
+        }
+      }
+    },
+    "remove.uninstall": {
+      "comment": "Remove-computer confirmation: uninstall",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트까지 제거"
+          }
+        }
+      }
+    },
+    "session.console": {
+      "comment": "Remote session kind: console",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "콘솔"
+          }
+        }
+      }
+    },
+    "session.locked": {
+      "comment": "Remote session kind: locked",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 잠김"
+          }
+        }
+      }
+    },
+    "session.rdp": {
+      "comment": "Remote session kind: rdp",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 데스크톱"
+          }
+        }
+      }
+    },
+    "sidebar.empty": {
+      "comment": "Computer sidebar: empty",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "추가한 컴퓨터가\n여기에 표시됩니다"
+          }
+        }
+      }
+    },
+    "sidebar.section": {
+      "comment": "Computer sidebar: section",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "컴퓨터"
           }
         }
       }

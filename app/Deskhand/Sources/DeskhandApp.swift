@@ -3,10 +3,15 @@ import SwiftUI
 
 @main
 struct DeskhandApp: App {
+    @State private var store = AppLaunch.makeStore()
+
     var body: some Scene {
-        WindowGroup {
-            DS.Color.surface
-                .frame(minWidth: 960, minHeight: 600)
+        Window("Deskhand", id: "main") {
+            RootView(store: store)
+        }
+        .defaultSize(width: 1280, height: 800)
+        .commands {
+            DeskhandCommands(store: store)
         }
         Settings {
             DS.Color.surface
