@@ -64,7 +64,7 @@ func TestStoreMigrates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"events", "hosts", "jobs", "requests", "timeline"}
+	want := []string{"events", "hosts", "jobs", "requests", "timeline", "transfer_files", "transfers"}
 	if got := tables(t, s); !reflect.DeepEqual(got, want) {
 		t.Fatalf("tables after the first open = %v, want %v", got, want)
 	}

@@ -33,6 +33,18 @@ type Stream interface {
 	SetWriteDeadline(time.Time) error
 }
 
+// DataStream is a Stream whose two directions end apart, such as a put or
+// get stream (docs/protocol.md §2).
+type DataStream interface {
+	Stream
+	// CloseWrite ends the daemon's direction; reading goes on.
+	CloseWrite() error
+	// CancelWrite resets the daemon's direction.
+	CancelWrite()
+	// CancelRead asks the agent to stop writing.
+	CancelRead()
+}
+
 // Session is one connection to an agent.
 type Session interface {
 	// OpenStream opens a bidirectional stream; the peer sees it once data
@@ -81,9 +93,13 @@ func (s quicSession) Err() error {
 type quicStream struct{ *quic.Stream }
 
 func (s quicStream) Close() error {
-	s.CancelRead(0)
+	s.Stream.CancelRead(0)
 	return s.Stream.Close()
 }
+
+func (s quicStream) CloseWrite() error { return s.Stream.Close() }
+func (s quicStream) CancelWrite()      { s.Stream.CancelWrite(0) }
+func (s quicStream) CancelRead()       { s.Stream.CancelRead(0) }
 
 // rejected reports whether err, or the end of sess, is a TLS alert the agent
 // sent: the agent does not accept this controller's certificate.

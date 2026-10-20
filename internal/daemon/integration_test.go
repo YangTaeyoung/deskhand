@@ -89,7 +89,7 @@ func startAgent(t *testing.T, port int, id transport.Identity, dataDir string, c
 		var ctx context.Context
 		ctx, cancel = context.WithCancel(context.Background())
 		done = make(chan error, 1)
-		go func() { done <- quicserve.Run(ctx, cfg, id, srv, nil) }()
+		go func() { done <- quicserve.Run(ctx, cfg, id, srv, quicserve.TransferStreams(srv)) }()
 		select {
 		case err := <-done:
 			cancel()

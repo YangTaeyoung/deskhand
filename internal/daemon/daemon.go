@@ -1,6 +1,7 @@
 // Package daemon assembles the Deskhand daemon: the store, the host
-// connections, the jobs and the local API on the unix socket. One daemon
-// runs per home folder, held by the lock run/daemon.lock.
+// connections, the jobs, the transfers and the local API on the unix
+// socket. One daemon runs per home folder, held by the lock
+// run/daemon.lock.
 package daemon
 
 import (
@@ -21,6 +22,7 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/daemon/localapi"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/paths"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/store"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/xfer"
 	"github.com/YangTaeyoung/deskhand/internal/install"
 	"github.com/YangTaeyoung/deskhand/internal/transport"
 )
@@ -63,6 +65,7 @@ type Daemon struct {
 	mgr   *conn.Manager
 	srv   *localapi.Server
 	jobs  *jobs.Registry
+	xfer  *xfer.Manager
 	ln    net.Listener
 	lg    *log.Logger
 	Hosts *hosts.Registry
@@ -144,9 +147,13 @@ func New(opt Options) (*Daemon, error) {
 	controller, _ := os.Hostname()
 	var reg *hosts.Registry
 	var jreg *jobs.Registry
+	var xmgr *xfer.Manager
 	d.mgr = conn.NewManager(conn.Options{Identity: id, Controller: controller, Dial: opt.Dial, Requests: d.st,
-		OnEvent:       func(ev conn.Event) { reg.HandleConnEvent(ev) },
-		OnReady:       func(hostID string, _ uint64) { go jreg.Reconcile(hostID) },
+		OnEvent: func(ev conn.Event) { reg.HandleConnEvent(ev) },
+		OnReady: func(hostID string, _ uint64) {
+			go jreg.Reconcile(hostID)
+			go xmgr.HostReady(hostID)
+		},
 		DropAfterSend: drop, Logger: lg})
 	jreg = jobs.New(d.st, bus, d.mgr)
 	d.jobs = jreg
@@ -157,12 +164,17 @@ func New(opt Options) (*Daemon, error) {
 	reg = hosts.New(hosts.Options{Store: d.st, Bus: bus, Manager: d.mgr, Jobs: jreg, Identity: id, SSHExec: opt.SSHExec,
 		AgentFiles: opt.AgentFiles, Version: opt.Version, Logger: lg})
 	d.Hosts = reg
+	xmgr = xfer.New(xfer.Options{Store: d.st, Bus: bus, Conns: d.mgr, Logger: lg})
+	d.xfer = xmgr
 	if d.ln, err = localapi.Listen(paths.Socket()); err != nil {
 		return nil, err
 	}
-	d.srv = localapi.New(localapi.Deps{Store: d.st, Bus: bus, Hosts: reg, Jobs: jreg, Version: opt.Version, Logger: lg})
+	d.srv = localapi.New(localapi.Deps{Store: d.st, Bus: bus, Hosts: reg, Jobs: jreg, Transfers: xmgr, Version: opt.Version, Logger: lg})
 	if err := reg.Load(); err != nil {
 		return nil, fmt.Errorf("저장된 PC 목록을 읽지 못했습니다. %s를 확인하세요: %w", paths.DB(), err)
+	}
+	if n := xmgr.Load(); n > 0 {
+		lg.Printf("%d transfers were unfinished when the daemon stopped; they go on once their PC is connected", n)
 	}
 	ok = true
 	lg.Printf("deskhand daemon %s listening on %s", opt.Version, paths.Socket())
@@ -193,6 +205,10 @@ func (d *Daemon) Close() {
 		d.ln.Close()
 		_ = os.Remove(paths.Socket())
 		d.ln = nil
+	}
+	if d.xfer != nil {
+		d.xfer.Close()
+		d.xfer = nil
 	}
 	if d.jobs != nil {
 		d.jobs.Close()

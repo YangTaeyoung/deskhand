@@ -25,6 +25,7 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/paths"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/store"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/xfer"
 	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
@@ -78,12 +79,14 @@ func Listen(path string) (net.Listener, error) {
 
 // Deps are what the methods use.
 type Deps struct {
-	Store   *store.Store
-	Bus     *events.Bus
-	Hosts   *hosts.Registry
-	Jobs    *jobs.Registry
-	Version string
-	Logger  *log.Logger
+	Store *store.Store
+	Bus   *events.Bus
+	Hosts *hosts.Registry
+	Jobs  *jobs.Registry
+	// Transfers serves the transfer methods; nil leaves them out.
+	Transfers *xfer.Manager
+	Version   string
+	Logger    *log.Logger
 }
 
 // handler serves one method for a session.
@@ -120,6 +123,7 @@ func New(d Deps) *Server {
 	s.registerJobs()
 	s.registerFiles()
 	s.registerProc()
+	s.registerTransfer()
 	return s
 }
 

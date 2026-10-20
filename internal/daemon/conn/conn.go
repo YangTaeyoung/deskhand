@@ -584,6 +584,7 @@ func (h *Host) establish(ctx context.Context) (*rpcClient, Hello, error) {
 		return nil, Hello{}, cerr
 	}
 	rpc := newRPCClient(st, r, h.onAgentEvent, func() { _ = sess.Close("rpc stream closed") })
+	rpc.sess = sess
 	return rpc, parseHello(msg), nil
 }
 
@@ -852,6 +853,50 @@ func (h *Host) Call(ctx context.Context, op string, params proto.Message, opts C
 			return nil, err
 		}
 	}
+}
+
+// Resolve settles the outcome of the request rid, which went out on an
+// earlier connection or an earlier run of the daemon and whose answer is not
+// known, with req.status as Call does when a connection ends before the
+// answer: it returns the fields of the answer or its error, and the error
+// EXECUTION_OUTCOME_UNKNOWN when the agent has no record of rid or the
+// outcome stays unknown for ResolveWait.
+func (h *Host) Resolve(ctx context.Context, rid string) (proto.Message, error) {
+	return h.resolve(ctx, rid, &CallInfo{RID: rid})
+}
+
+// OpenStream opens a data stream with the header hdr on the host's
+// connection once it is ready or degraded, waiting for it as Call does, and
+// returns the stream and the generation of its connection. A connection
+// that ends before the header is written is an OFFLINE error.
+func (h *Host) OpenStream(ctx context.Context, hdr wire.StreamHeader) (DataStream, uint64, error) {
+	rpc, gen, err := h.waitReady(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	if rpc.sess == nil {
+		return nil, gen, apierr.Internal("이 연결은 데이터 스트림을 열 수 없습니다. 데몬 로그를 확인하세요")
+	}
+	st, err := rpc.sess.OpenStream(ctx)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, gen, ctx.Err()
+		}
+		return nil, gen, lost(h.Target().Name)
+	}
+	ds, ok := st.(DataStream)
+	if !ok {
+		_ = st.Close()
+		return nil, gen, apierr.Internal("이 연결은 데이터 스트림을 열 수 없습니다. 데몬 로그를 확인하세요")
+	}
+	_ = ds.SetWriteDeadline(time.Now().Add(writeTimeout))
+	if err := wire.WriteHeader(ds, hdr); err != nil {
+		ds.CancelWrite()
+		ds.CancelRead()
+		return nil, gen, lost(h.Target().Name)
+	}
+	_ = ds.SetWriteDeadline(time.Time{})
+	return ds, gen, nil
 }
 
 // buildRequest returns the req message of op with params and rid; params

@@ -25,6 +25,7 @@ const (
 	DisplayChanged   = "display.changed"
 	TimelineAppended = "timeline.appended"
 	JobUpdated       = "job.updated"
+	TransferUpdated  = "transfer.updated"
 	EventsDropped    = "events.dropped"
 )
 
@@ -111,10 +112,16 @@ func (b *Bus) Subscribe() *Sub {
 // Publish stores an event and hands it to every subscriber, in the order
 // of its sequence number.
 func (b *Bus) Publish(hostID, jobID, kind string, fields map[string]any) Event {
+	return b.PublishStoring(hostID, jobID, kind, fields, fields)
+}
+
+// PublishStoring hands an event with fields to every subscriber like
+// Publish and stores stored as its payload.
+func (b *Bus) PublishStoring(hostID, jobID, kind string, fields, stored map[string]any) Event {
 	ev := Event{TS: time.Now(), HostID: hostID, JobID: jobID, Kind: kind, Fields: fields}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	payload, err := json.Marshal(fields)
+	payload, err := json.Marshal(stored)
 	if err != nil {
 		payload = []byte("{}")
 	}

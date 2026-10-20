@@ -109,6 +109,9 @@ type pendingCall struct {
 // rpcClient sends requests on an rpc stream after the handshake and
 // matches the answers by id; events go to onEvent.
 type rpcClient struct {
+	// sess is the connection of the stream; nil when the client was made
+	// without one.
+	sess    Session
 	st      Stream
 	r       *lineReader
 	onEvent func(proto.Message)

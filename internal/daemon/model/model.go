@@ -181,6 +181,40 @@ type FileEntry struct {
 	Readonly *bool  `json:"readonly,omitempty"`
 }
 
+// TransferFile is one file of a transfer; Path is where it was put.
+type TransferFile struct {
+	Rel       string        `json:"rel"`
+	Size      int64         `json:"size"`
+	BytesDone int64         `json:"bytes_done"`
+	State     string        `json:"state"`
+	Outcome   string        `json:"outcome,omitempty"`
+	SHA256    string        `json:"sha256,omitempty"`
+	Path      string        `json:"path,omitempty"`
+	Error     *apierr.Error `json:"error,omitempty"`
+}
+
+// Transfer is a file or folder transfer between this Mac and a host. Rev
+// grows by one with every change of the transfer.
+type Transfer struct {
+	TransferID string         `json:"transfer_id"`
+	HostID     string         `json:"host_id"`
+	Direction  string         `json:"direction"`
+	Local      string         `json:"local"`
+	Remote     string         `json:"remote"`
+	OnConflict string         `json:"on_conflict"`
+	State      string         `json:"state"`
+	BytesDone  int64          `json:"bytes_done"`
+	BytesTotal int64          `json:"bytes_total"`
+	FilesDone  int            `json:"files_done"`
+	FilesTotal int            `json:"files_total"`
+	RateBPS    int64          `json:"rate_bps"`
+	Outcome    string         `json:"outcome,omitempty"`
+	Error      *apierr.Error  `json:"error,omitempty"`
+	Files      []TransferFile `json:"files"`
+	Rev        int64          `json:"rev"`
+	UpdatedAt  string         `json:"updated_at"`
+}
+
 // ProcessInfo is a remote process.
 type ProcessInfo struct {
 	PID               int      `json:"pid"`

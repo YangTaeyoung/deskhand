@@ -62,3 +62,46 @@ CREATE TABLE IF NOT EXISTS timeline (
 );
 
 CREATE INDEX IF NOT EXISTS timeline_host ON timeline (host_id, seq);
+
+CREATE TABLE IF NOT EXISTS transfers (
+	transfer_id TEXT PRIMARY KEY,
+	host_id     TEXT NOT NULL,
+	direction   TEXT NOT NULL,
+	local_path  TEXT NOT NULL,
+	remote_path TEXT NOT NULL,
+	on_conflict TEXT NOT NULL,
+	sep         TEXT NOT NULL DEFAULT '/',
+	state       TEXT NOT NULL,
+	planned     INTEGER NOT NULL DEFAULT 0,
+	folder      INTEGER NOT NULL DEFAULT 0,
+	outcome     TEXT NOT NULL DEFAULT '',
+	error_json  TEXT NOT NULL DEFAULT '',
+	rev         INTEGER NOT NULL DEFAULT 0,
+	actor       TEXT NOT NULL DEFAULT '',
+	client_id   TEXT NOT NULL DEFAULT '',
+	client_name TEXT NOT NULL DEFAULT '',
+	created_at  TEXT NOT NULL,
+	updated_at  TEXT NOT NULL,
+	finished_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS transfers_host ON transfers (host_id, created_at);
+
+CREATE TABLE IF NOT EXISTS transfer_files (
+	transfer_id TEXT NOT NULL,
+	seq         INTEGER NOT NULL,
+	rel         TEXT NOT NULL,
+	dir         INTEGER NOT NULL DEFAULT 0,
+	size        INTEGER NOT NULL DEFAULT 0,
+	mtime       TEXT NOT NULL DEFAULT '',
+	sha256      TEXT NOT NULL DEFAULT '',
+	state       TEXT NOT NULL,
+	bytes_done  INTEGER NOT NULL DEFAULT 0,
+	outcome     TEXT NOT NULL DEFAULT '',
+	path        TEXT NOT NULL DEFAULT '',
+	error_json  TEXT NOT NULL DEFAULT '',
+	commit_rid  TEXT NOT NULL DEFAULT '',
+	part        INTEGER NOT NULL DEFAULT 0,
+	refresh     INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (transfer_id, seq)
+);

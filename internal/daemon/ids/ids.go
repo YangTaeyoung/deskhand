@@ -16,6 +16,7 @@ const (
 	Host     = "h-"
 	Session  = "s-"
 	Artifact = "a-"
+	Transfer = "t-"
 )
 
 // crockford is the base32 alphabet of ULIDs.
