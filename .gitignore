@@ -1,0 +1,7 @@
+/build/
+/spikes/*/out/
+*.h264
+*.test
+.DS_Store
+/app/build/
+/app/*.xcodeproj/
