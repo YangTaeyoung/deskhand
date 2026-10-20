@@ -24,6 +24,7 @@ let package = Package(
         ),
         // Renders registered scenes to PNG offscreen, in light and dark mode.
         .executableTarget(name: "DeskhandSnapshots", dependencies: ["DeskhandUI"]),
+        .testTarget(name: "DeskhandClientTests", dependencies: ["DeskhandClient"]),
         .testTarget(name: "DeskhandUITests", dependencies: ["DeskhandUI"]),
     ],
     swiftLanguageModes: [.v6]
