@@ -967,3 +967,46 @@ func TestExecRunCutByTheConnectionSaysItWasInterrupted(t *testing.T) {
 		t.Fatalf("job %v", job)
 	}
 }
+
+func TestFilesListPagesWithCursor(t *testing.T) {
+	e := setup(t, setupOpts{trustDaemon: true})
+	e.waitState(t, "ready")
+	dir := filepath.Join(e.agent.home, "paged")
+	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"b.txt", "A.txt", "c.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, n), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var got []string
+	cursor := ""
+	for i := 0; i < 5; i++ {
+		params := map[string]any{"host_id": "pc", "path": dir, "limit": 2}
+		if cursor != "" {
+			params["cursor"] = cursor
+		}
+		res := e.call(t, "files.list", params)
+		if res["total"] != float64(4) {
+			t.Fatalf("total %v", res["total"])
+		}
+		for _, en := range res["entries"].([]any) {
+			got = append(got, en.(map[string]any)["name"].(string))
+		}
+		next, _ := res["next_cursor"].(string)
+		if next == "" {
+			break
+		}
+		cursor = next
+	}
+	if strings.Join(got, ",") != "sub,A.txt,b.txt,c.txt" {
+		t.Fatalf("paged names %v", got)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var ce *client.Error
+	if err := e.c.Call(ctx, "files.list", map[string]any{"host_id": "pc", "path": dir, "limit": 5001}, nil); !errors.As(err, &ce) || ce.Code != "INVALID_ARGUMENT" {
+		t.Fatalf("limit 5001: %v", err)
+	}
+}

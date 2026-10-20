@@ -83,7 +83,7 @@
 ### 파일
 | 메서드 | 결과 |
 |---|---|
-| `files.list{host_id, path, recursive?}` | `{host_id, path(실제 경로), entries:[FileEntry], truncated, skipped?}` |
+| `files.list{host_id, path, recursive?, cursor?, limit?}` | `{host_id, path(실제 경로), entries:[FileEntry], total, next_cursor?, truncated, skipped?}` — 페이지 규칙은 §8 |
 | `files.stat{host_id, path, sha256?}` | `{host_id, exists, path, name, dir, size, link, mtime?, owner?, sha256?, locked?}` — 없는 경로는 `exists:false` |
 | `files.read{host_id, path, offset, length}` | `{host_id, path, data(base64), size(파일 전체), eof, encoding?}` |
 | `files.write` | 봉투 + `size` |
@@ -200,7 +200,7 @@
 
 ## 8. 파일·전송 세부 계약
 
-- `files.list{host_id, path, cursor?, limit?}` → `{entries:[FileEntry], next_cursor?, total?, truncated?}`. `limit` 기본 500·최대 5000, `cursor`는 이전 결과의 `next_cursor`(불투명 문자열). 에이전트 한 번 목록이 5,000개를 넘으면 `truncated:true`.
+- `files.list{host_id, path, cursor?, limit?}` → `{entries:[FileEntry], next_cursor?, total?, truncated?}`. `limit` 기본 500·최대 5000, `cursor`는 이전 결과의 `next_cursor`(불투명 문자열). 에이전트 한 번 목록이 5,000개를 넘으면 `truncated:true`. 항목은 폴더가 먼저, 그다음 이름(대소문자 무시) 순이고, `total`은 에이전트가 돌려준 전체 항목 수(항상 있다), `next_cursor`는 다음 페이지가 있을 때만 있다. `limit`이 범위 밖이거나 `cursor`를 읽을 수 없으면 JSON-RPC `INVALID_ARGUMENT`다.
 - `files.stat{host_id, path}` → FileEntry, 없으면 JSON-RPC `NOT_FOUND`.
 - `files.mkdir{host_id, path}`, `files.rename{host_id, from, to}`(전체 경로), `files.copy{host_id, from, to, on_conflict, recursive}`, `files.trash{host_id, path}`, `files.delete{host_id, path, permanent:true}`, `files.hash{host_id, path, offset?, length?}` → 모두 §2 봉투(`files.hash`는 봉투 + `sha256`·`offset`·`length`·`size`).
 - `transfer.start{direction, host_id, local, remote, on_conflict}`: `local`·`remote`는 옮길 항목의 전체 경로(대상 폴더가 아님). 결과는 봉투 + `transfer_id`이고 봉투 `job_id`는 그 전송을 따르는 job(§5 Job `kind:"transfer"`)이다. 그 job의 `jobs.cancel`은 `transfer.cancel`과 같다. 폴더는 `on_conflict`를 폴더 안 파일마다 적용한다. `remote`에 `.`이나 `..` 원소가 있으면 JSON-RPC `INVALID_ARGUMENT`다.

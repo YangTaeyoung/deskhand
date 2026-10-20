@@ -43,6 +43,8 @@ type fileParams struct {
 	Overwrite  bool   `json:"overwrite"`
 	Permanent  bool   `json:"permanent"`
 	OnConflict string `json:"on_conflict"`
+	Cursor     string `json:"cursor"`
+	Limit      int    `json:"limit"`
 }
 
 func (p fileParams) needPath(method string) error {
@@ -106,6 +108,9 @@ func (s *Server) filesList(ctx context.Context, _ *session, raw json.RawMessage)
 	if err := p.needPath("files.list"); err != nil {
 		return nil, err
 	}
+	if p.Limit < 0 || p.Limit > maxListLimit {
+		return nil, apierr.Invalid("limit은 1 이상 5000 이하여야 합니다. 범위 안의 값을 주거나 limit 없이 조회하세요")
+	}
 	h, row, err := s.d.Hosts.Conn(p.HostID)
 	if err != nil {
 		return nil, err
@@ -136,7 +141,14 @@ func (s *Server) filesList(ctx context.Context, _ *session, raw json.RawMessage)
 		entries = append(entries, model.FileEntry{Name: path.Base(rel), Path: joinRemote(root, rel, sep), Dir: e.Bool("dir"),
 			Size: int64(size), MTime: apiTime(e.String("mtime")), Link: e.Bool("link")})
 	}
-	out := map[string]any{"host_id": row.HostID, "path": root, "entries": entries, "truncated": res.Bool("truncated")}
+	page, next, total, err := pageEntries(entries, p.Cursor, p.Limit)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]any{"host_id": row.HostID, "path": root, "entries": page, "total": total, "truncated": res.Bool("truncated")}
+	if next != "" {
+		out["next_cursor"] = next
+	}
 	if res.Has("skipped") {
 		out["skipped"] = res.Int("skipped")
 	}
