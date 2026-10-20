@@ -17,14 +17,20 @@ public final class QAModel {
         public var phase: LoadPhase = .idle
         public var loadingMore = false
         public var moreError: OperationError?
+        /// Why the last reload of a loaded list failed; the list keeps what it had.
+        public var reloadError: OperationError?
+        /// Pages read so far.
+        public var pages = 0
 
         public init(ids: Set<String> = [], nextCursor: String? = nil, phase: LoadPhase = .idle, loadingMore: Bool = false,
-                    moreError: OperationError? = nil) {
+                    moreError: OperationError? = nil, reloadError: OperationError? = nil, pages: Int = 0) {
             self.ids = ids
             self.nextCursor = nextCursor
             self.phase = phase
             self.loadingMore = loadingMore
             self.moreError = moreError
+            self.reloadError = reloadError
+            self.pages = pages
         }
     }
 
@@ -40,13 +46,8 @@ public final class QAModel {
 
     public static let pageSize = 50
     public static let recentLimit = 8
-    /// Largest image read for a thumbnail or the viewer.
-    public nonisolated static let imageLimit = 32 << 20
-    /// Largest part of a text file the viewer reads.
-    public nonisolated static let textLimit = 512 << 10
     private static let allHostsKey = "qa.allHosts"
     private static let recentKey = "qa.recentScenarios"
-    private static let cachedImages = 64
 
     public private(set) var records: [String: QARunRecord] = [:]
     public private(set) var listings: [QAScope: Listing] = [:]
@@ -62,13 +63,18 @@ public final class QAModel {
     public var selectedSteps: [String: Int] = [:]
     /// `qa.get` of runs whose steps were asked for.
     public private(set) var stepLoads: [String: LoadPhase] = [:]
+    /// Why the last read of a run whose steps are shown failed.
+    public private(set) var refreshErrors: [String: OperationError] = [:]
+    /// The run whose teardown stop waits for the person's confirmation.
+    public var confirmingTeardownStop: String?
     public private(set) var cancels: [String: QACancelProgress] = [:]
     public private(set) var exports: [String: QAExportState] = [:]
     public var sheet: Sheet?
     public var viewer: QAEvidenceSelection?
     public var notice: DiagnosticsNotice?
     public private(set) var recentScenarios: [QARecentScenario] = []
-    public private(set) var evidence: [String: QAEvidenceContent] = [:]
+    /// Evidence files of the runs, read when they first show.
+    public let evidence: QAEvidenceStore
     /// Fraction of the detail the step list takes over the step pane.
     public var stepsSplit = 0.46
     /// The run list shows; nil follows the window width.
@@ -79,15 +85,16 @@ public final class QAModel {
     @ObservationIgnored private let backoff: AppStore.ResubscribeBackoff
     @ObservationIgnored private var eventsTask: Task<Void, Never>?
     @ObservationIgnored private var reconnectsTask: Task<Void, Never>?
-    @ObservationIgnored private var imageOrder: [String] = []
-    @ObservationIgnored private var evidenceTasks: Set<String> = []
     /// Resyncs so far.
     @ObservationIgnored private(set) var resyncs = 0
+    @ObservationIgnored private var resyncTask: Task<Void, Never>?
+    @ObservationIgnored private var resyncAgain = false
 
     public init(backend: any QABackend & EventsBackend, defaults: UserDefaults, backoff: AppStore.ResubscribeBackoff = .standard) {
         self.backend = backend
         self.defaults = defaults
         self.backoff = backoff
+        evidence = QAEvidenceStore(backend: backend)
         showsAllHosts = defaults.bool(forKey: Self.allHostsKey)
         if let data = defaults.data(forKey: Self.recentKey),
            let list = try? JSONDecoder().decode([QARecentScenario].self, from: data) {
@@ -151,7 +158,8 @@ public final class QAModel {
 
     public func cancelState(of runID: String) -> QACancelState {
         guard let record = records[runID] else { return .hidden }
-        return QACancelState(run: record.run, phase: record.currentPhase, progress: cancels[runID] ?? QACancelProgress())
+        return QACancelState(run: record.run, phase: record.inTeardown ? .teardown : record.currentPhase,
+                             progress: cancels[runID] ?? QACancelProgress())
     }
 
     /// The running run of a computer, when the list knows one.
@@ -173,7 +181,7 @@ public final class QAModel {
             var first = true
             while !Task.isCancelled {
                 let stream = backend.events(kinds: EventKind.qaKinds, hostID: nil)
-                if !first { await self?.resync() }
+                if !first { self?.requestResync() }
                 first = false
                 var received = false
                 do {
@@ -192,7 +200,7 @@ public final class QAModel {
         reconnectsTask = Task { [weak self] in
             for await _ in reconnects {
                 guard !Task.isCancelled else { return }
-                await self?.resync()
+                self?.requestResync()
             }
         }
     }
@@ -200,13 +208,31 @@ public final class QAModel {
     public func stop() {
         eventsTask?.cancel()
         eventsTask = nil
+        resyncTask?.cancel()
+        resyncTask = nil
         reconnectsTask?.cancel()
         reconnectsTask = nil
     }
 
+    /// Starts a resync; requests while one runs make one more run after it.
+    func requestResync() {
+        guard resyncTask == nil else {
+            resyncAgain = true
+            return
+        }
+        resyncTask = Task { [weak self] in
+            guard let self else { return }
+            repeat {
+                self.resyncAgain = false
+                await self.resync()
+            } while self.resyncAgain
+            self.resyncTask = nil
+        }
+    }
+
     /// Reads the first page of every scope asked for so far, and `qa.get` of every running run and
     /// of the selected runs whose steps were read.
-    func resync() async {
+    private func resync() async {
         resyncs += 1
         for scope in Array(listings.keys) {
             await load(scope)
@@ -225,7 +251,8 @@ public final class QAModel {
         Task { await load(scope) }
     }
 
-    /// Reads the first page of the scope's list.
+    /// Reads the first page of the scope's list. Runs already listed stay, and so does the cursor
+    /// of later pages read before.
     public func load(_ scope: QAScope) async {
         var listing = listings[scope] ?? Listing()
         if listing.phase != .loaded { listing.phase = .loading }
@@ -234,15 +261,23 @@ public final class QAModel {
             let page = try await backend.qaList(hostID: scope.hostID, limit: Self.pageSize, cursor: nil)
             take(page.runs)
             var current = listings[scope] ?? Listing()
-            current.ids = Set(page.runs.map(\.runID)).union(current.ids.filter { records[$0]?.run.isRunning == true })
-            current.nextCursor = page.nextCursor
+            current.ids.formUnion(page.runs.map(\.runID))
+            if current.pages <= 1 {
+                current.nextCursor = page.nextCursor
+                current.pages = 1
+            }
             current.phase = .loaded
             current.moreError = nil
+            current.reloadError = nil
             listings[scope] = current
         } catch is CancellationError {
             if listings[scope]?.phase == .loading { listings[scope]?.phase = .idle }
         } catch {
-            if listings[scope]?.phase != .loaded { listings[scope]?.phase = .failed(OperationError(error)) }
+            if listings[scope]?.phase == .loaded {
+                listings[scope]?.reloadError = OperationError(error)
+            } else {
+                listings[scope]?.phase = .failed(OperationError(error))
+            }
         }
     }
 
@@ -257,6 +292,7 @@ public final class QAModel {
             take(page.runs)
             listings[scope]?.ids.formUnion(page.runs.map(\.runID))
             listings[scope]?.nextCursor = page.nextCursor
+            listings[scope]?.pages += 1
         } catch {
             listings[scope]?.moreError = OperationError(error)
         }
@@ -275,7 +311,7 @@ public final class QAModel {
 
     /// Adds a run to the lists it belongs in that have loaded.
     private func list(_ run: QARun) {
-        for scope in [QAScope.all, .host(run.hostID)] where listings[scope] != nil {
+        for scope in [QAScope.all, .host(run.hostID)] where listings[scope].map({ !$0.ids.contains(run.runID) }) ?? false {
             listings[scope]?.ids.insert(run.runID)
         }
     }
@@ -288,17 +324,23 @@ public final class QAModel {
         Task { await refresh(runID) }
     }
 
-    /// Reads a run with its steps.
+    /// Reads a run with its steps. A failure is kept in `stepLoads` while the steps are unknown and
+    /// in `refreshErrors` once they are shown.
     public func refresh(_ runID: String) async {
         if records[runID]?.steps == nil { stepLoads[runID] = .loading }
         do {
             let run = try await backend.qaGet(runID: runID)
             apply(read: run)
             stepLoads[runID] = .loaded
+            refreshErrors[runID] = nil
         } catch is CancellationError {
             if stepLoads[runID] == .loading { stepLoads[runID] = nil }
         } catch {
-            if records[runID]?.steps == nil { stepLoads[runID] = .failed(OperationError(error)) }
+            if records[runID]?.steps == nil {
+                stepLoads[runID] = .failed(OperationError(error))
+            } else {
+                refreshErrors[runID] = OperationError(error)
+            }
         }
     }
 
@@ -329,20 +371,19 @@ public final class QAModel {
         case EventKind.qaUpdated:
             guard let value = event.payload["run"], let run = try? LiveBackend.decode(QARun.self, from: value) else { return }
             let step = event.payload["step"].flatMap { $0 == .null ? nil : try? LiveBackend.decode(QAStep.self, from: $0) }
-            guard var record = records[run.runID] else {
+            guard records[run.runID] != nil else {
                 records[run.runID] = QARunRecord(event: run, step: step)
                 list(run)
                 return
             }
-            let result = record.apply(event: run, step: step)
-            records[run.runID] = record
+            let result = records[run.runID]?.apply(event: run, step: step)
             list(run)
             if !run.isRunning { cancels[run.runID]?.inFlight = false }
-            if result == .appliedWithGap, record.steps != nil {
+            if result == .appliedWithGap, records[run.runID]?.steps != nil {
                 Task { await refresh(run.runID) }
             }
         case EventKind.eventsDropped:
-            Task { await resync() }
+            requestResync()
         default:
             break
         }
@@ -455,7 +496,7 @@ public final class QAModel {
         guard let path = Self.reportPath(run) else { return }
         guard FileManager.default.fileExists(atPath: path) else {
             notice = DiagnosticsNotice(tone: .warning, message: .ui("qa.report.missing", "보고서 파일을 찾을 수 없습니다"),
-                                       detail: .ui("qa.report.missing.detail", "\(path.abbreviatingHome) 에 없습니다. 결과 폴더를 옮기거나 지웠을 수 있습니다."))
+                                       detail: .ui("qa.report.missing.detail", "\(path.abbreviatingHome)에 없습니다. 결과 폴더를 옮기거나 지웠을 수 있습니다."))
             return
         }
         let url = URL(fileURLWithPath: path)
@@ -466,78 +507,13 @@ public final class QAModel {
         }
     }
 
-    // MARK: Evidence
-
-    public func content(of artifact: Artifact) -> QAEvidenceContent? {
-        evidence[artifact.path]
-    }
-
-    /// Reads an evidence file once: images whole up to `imageLimit`, text up to `textLimit`.
-    public func loadEvidence(_ artifact: Artifact) {
-        let path = artifact.path
-        guard evidence[path] == nil || isFailed(path), !evidenceTasks.contains(path) else { return }
-        evidenceTasks.insert(path)
-        evidence[path] = .loading
-        let image = Self.isImage(artifact)
-        let limit = image ? Self.imageLimit : Self.textLimit
-        let backend = backend
-        Task { [weak self] in
-            let content: QAEvidenceContent
-            do {
-                let data = try await backend.evidenceData(path: path, maxBytes: limit + 1)
-                content = image ? Self.image(data) : Self.text(data, limit: limit, json: artifact.mime.contains("json"))
-            } catch {
-                content = .failed(OperationError(error))
-            }
-            self?.store(content, for: path)
-        }
-    }
-
-    private func isFailed(_ path: String) -> Bool {
-        if case .failed = evidence[path] { return true }
-        return false
-    }
-
-    private func store(_ content: QAEvidenceContent, for path: String) {
-        evidenceTasks.remove(path)
-        evidence[path] = content
-        guard case .image = content else { return }
-        imageOrder.removeAll { $0 == path }
-        imageOrder.append(path)
-        while imageOrder.count > Self.cachedImages {
-            evidence[imageOrder.removeFirst()] = nil
-        }
-    }
-
-    nonisolated static func isImage(_ artifact: Artifact) -> Bool {
-        artifact.kind == "screenshot" || artifact.mime.hasPrefix("image/")
-    }
-
-    nonisolated static func image(_ data: Data) -> QAEvidenceContent {
-        guard let image = NSImage(data: data), image.isValid else {
-            return .failed(OperationError(message: .ui("qa.evidence.badImage", "이미지를 읽을 수 없습니다")))
-        }
-        return .image(image)
-    }
-
-    /// The text of `data`, JSON laid out one member per line.
-    nonisolated static func text(_ data: Data, limit: Int, json: Bool) -> QAEvidenceContent {
-        let truncated = data.count > limit
-        let slice = truncated ? data.prefix(limit) : data
-        if json, !truncated, let object = try? JSONSerialization.jsonObject(with: slice),
-           let pretty = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]),
-           let text = String(data: pretty, encoding: .utf8) {
-            return .text(text, truncated: false)
-        }
-        return .text(String(decoding: slice, as: UTF8.self), truncated: truncated)
-    }
-
     // MARK: Seeding
 
     /// Puts runs, lists and evidence in place without asking the backend; the seeded lists do not
     /// load again until a resync. Snapshot scenes use it.
     public func seed(runs: [QARun], listings: [QAScope: Listing], selection: [QAScope: String] = [:], selectedSteps: [String: Int] = [:],
-                     stepLoads: [String: LoadPhase] = [:], cancels: [String: QACancelProgress] = [:], exports: [String: QAExportState] = [:],
+                     stepLoads: [String: LoadPhase] = [:], refreshErrors: [String: OperationError] = [:],
+                     cancels: [String: QACancelProgress] = [:], exports: [String: QAExportState] = [:],
                      evidence: [String: QAEvidenceContent] = [:], viewer: QAEvidenceSelection? = nil, notice: DiagnosticsNotice? = nil,
                      recent: [QARecentScenario] = [], showsAllHosts: Bool = false, filter: QARunFilter = .all, search: String = "",
                      listShown: Bool? = nil) {
@@ -546,9 +522,10 @@ public final class QAModel {
         self.selection = selection
         self.selectedSteps = selectedSteps
         self.stepLoads = stepLoads
+        self.refreshErrors = refreshErrors
         self.cancels = cancels
         self.exports = exports
-        self.evidence = evidence
+        self.evidence.seed(evidence)
         self.viewer = viewer
         self.notice = notice
         recentScenarios = recent
@@ -556,15 +533,5 @@ public final class QAModel {
         self.filter = filter
         self.search = search
         self.listShown = listShown
-    }
-}
-
-extension QARunRecord {
-    /// A run first heard of from a `qa.updated` event.
-    init(event run: QARun, step: QAStep?) {
-        var base = run.summary
-        base.rev = run.rev - 1
-        self.init(base)
-        apply(event: run, step: step)
     }
 }

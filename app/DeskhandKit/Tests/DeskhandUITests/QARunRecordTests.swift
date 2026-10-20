@@ -77,13 +77,27 @@ final class QARunRecordTests: XCTestCase {
         XCTAssertEqual(record.apply(event: run(rev: 9), step: nil), .appliedWithGap)
     }
 
-    func testListedRunReplacesOnlyAnOlderSummaryAndKeepsTheSteps() {
-        var record = QARunRecord(run(rev: 6, steps: fourSteps([.pass, .running, .pending, .pending])))
+    func testListedRunReplacesOnlyAnOlderSummaryAndLeavesStepEventsOfItsRevsToApply() {
+        var record = QARunRecord(run(rev: 6, current: 2, steps: fourSteps([.pass, .running, .pending, .pending])))
         XCTAssertEqual(record.apply(listed: run(rev: 5, current: 1)), .ignored)
-        XCTAssertEqual(record.apply(listed: run(rev: 7, current: 3)), .applied)
+        XCTAssertEqual(record.apply(listed: run(rev: 8, current: 3)), .applied)
         XCTAssertEqual(record.run.currentStep, 3)
-        XCTAssertNotNil(record.steps)
         XCTAssertNil(record.run.steps)
+        XCTAssertEqual(record.apply(event: run(rev: 7, current: 3), step: step(2, .pass)), .applied)
+        XCTAssertEqual(record.apply(event: run(rev: 8, current: 3), step: step(3, .running)), .applied)
+        XCTAssertEqual(record.run.rev, 8)
+        XCTAssertEqual(record.steps?.map(\.stepStatus), [.pass, .pass, .running, .pending])
+    }
+
+    func testListReplyThatBeatsItsEventsStillTakesTheirSteps() {
+        var record = QARunRecord(run(rev: 3, current: 1, steps: fourSteps([.running, .pending, .pending, .pending])))
+        record.apply(listed: run(rev: 6, current: 2, passed: 1))
+        XCTAssertEqual(record.apply(event: run(rev: 4, current: 1), step: step(1, .pass)), .applied)
+        XCTAssertEqual(record.apply(event: run(rev: 5, current: 2), step: step(2, .running)), .applied)
+        XCTAssertEqual(record.apply(event: run(rev: 5, current: 2), step: step(2, .running)), .ignored)
+        XCTAssertEqual(record.run.rev, 6)
+        XCTAssertEqual(record.run.stepsPassed, 1)
+        XCTAssertEqual(record.steps?.map(\.stepStatus), [.pass, .running, .pending, .pending])
     }
 
     // MARK: Summaries
@@ -117,14 +131,17 @@ final class QARunRecordTests: XCTestCase {
         let verdict = QARunVerdict(run(rev: 12, status: .passed, cancel: true, passed: 4))
         XCTAssertEqual(verdict.title, "모든 단계를 통과했습니다")
         XCTAssertEqual(verdict.cancelNote, "취소를 요청했지만 실행이 끝났습니다")
+        XCTAssertEqual(verdict.cancelDetail, "취소가 도착했을 때 멈출 단계가 없었습니다. 실행 결과는 각 단계의 결과를 따릅니다.")
+        XCTAssertFalse(verdict.cancelDetail?.contains("정리 단계") ?? true)
         XCTAssertNil(QARunVerdict(run(rev: 12, status: .cancelled, cancel: true, passed: 2, blocked: 1, notRun: 1)).cancelNote)
         XCTAssertNil(QARunVerdict(run(rev: 12, status: .passed, passed: 4)).cancelNote)
     }
 
-    func testPassedRunWithAFailedOptionalStepSaysItWasLeftOut() {
+    func testPassedRunWithAFailedOptionalStepSaysOnlyTheRequiredStepsPassed() {
         let verdict = QARunVerdict(run(rev: 9, status: .passed, passed: 3, failed: 1))
         XCTAssertEqual(verdict.tone, .passed)
-        XCTAssertEqual(verdict.detail, "선택 단계 1개는 통과하지 못했지만 실행 결과에서 뺐습니다")
+        XCTAssertEqual(verdict.title, "필수 단계를 모두 통과했습니다")
+        XCTAssertEqual(verdict.detail, "선택 단계 1개는 통과하지 못했습니다. 선택 단계는 실행 결과에 들어가지 않습니다.")
     }
 
     // MARK: Cancel
@@ -167,6 +184,16 @@ final class QARunRecordTests: XCTestCase {
         progress.inFlight = false
         XCTAssertEqual(QACancelState(run: run(rev: 9, current: 4, cancel: true), phase: .teardown, progress: progress), .stoppingTeardown)
         XCTAssertFalse(QACancelState.stoppingTeardown.canSend)
+    }
+
+    func testCancelStaysOnTeardownBetweenTeardownSteps() {
+        let steps = [step(1, .pass, phase: .setup), step(2, .blocked), step(3, .pass, phase: .teardown), step(4, .pending, phase: .teardown)]
+        let record = QARunRecord(run(rev: 9, current: nil, cancel: true, steps: steps))
+        XCTAssertTrue(record.inTeardown)
+        let progress = QACancelProgress(firstSent: true)
+        XCTAssertEqual(QACancelState(run: record.run, phase: record.inTeardown ? .teardown : record.currentPhase, progress: progress),
+                       .teardownStoppable)
+        XCTAssertFalse(QARunRecord(run(rev: 3, current: 2, steps: fourSteps([.pass, .running, .pending, .pending]))).inTeardown)
     }
 
     // MARK: Variables

@@ -137,22 +137,3 @@ public struct QAEvidenceSelection: Equatable, Sendable, Identifiable {
         self.artifactID = artifactID
     }
 }
-
-/// An evidence file as the viewer has read it.
-public enum QAEvidenceContent: Equatable {
-    case loading
-    case image(NSImage)
-    /// Text with JSON laid out one member per line; `truncated` when the file was longer than read.
-    case text(String, truncated: Bool)
-    case failed(OperationError)
-
-    public static func == (lhs: QAEvidenceContent, rhs: QAEvidenceContent) -> Bool {
-        switch (lhs, rhs) {
-        case (.loading, .loading): true
-        case (.image(let a), .image(let b)): a === b
-        case (.text(let a, let ta), .text(let b, let tb)): a == b && ta == tb
-        case (.failed(let a), .failed(let b)): a == b
-        default: false
-        }
-    }
-}

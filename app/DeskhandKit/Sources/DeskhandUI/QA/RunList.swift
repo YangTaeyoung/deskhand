@@ -36,7 +36,7 @@ struct RunList: View {
                 HStack(spacing: DS.Space.xs) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DS.Status.neutralText)
                         .accessibilityHidden(true)
                     TextField(String.ui("qa.search.placeholder", "이름·시나리오·실행 ID"), text: $model.search)
                         .textFieldStyle(.plain)
@@ -59,10 +59,26 @@ struct RunList: View {
                 .background(DS.Color.neutral.opacity(0.1), in: RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
                 filterMenu
             }
+            if let error = model.listing(scope).reloadError {
+                HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
+                    Image(systemName: "exclamationmark.arrow.circlepath")
+                        .foregroundStyle(DS.Status.warningText)
+                        .accessibilityHidden(true)
+                    Text(String.ui("qa.list.reloadFailed", "목록을 새로 읽지 못했습니다"))
+                        .font(DS.Font.caption.weight(.semibold))
+                        .help(error.message)
+                    Button(String.ui("action.retry", "다시 시도")) { Task { await model.load(scope) } }
+                        .buttonStyle(.link)
+                        .tint(DS.Color.accent)
+                        .font(DS.Font.caption)
+                    Spacer(minLength: 0)
+                }
+                .accessibilityElement(children: .combine)
+            }
             HStack(spacing: DS.Space.xs) {
                 Text(countText)
                     .font(DS.Font.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DS.Status.neutralText)
                 if model.filter != .all {
                     Button {
                         model.filter = .all
@@ -113,7 +129,7 @@ struct RunList: View {
         } label: {
             Image(systemName: model.filter == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
                 .font(.system(size: 14))
-                .foregroundStyle(model.filter == .all ? AnyShapeStyle(.secondary) : AnyShapeStyle(DS.Color.accent))
+                .foregroundStyle(model.filter == .all ? AnyShapeStyle(DS.Status.neutralText) : AnyShapeStyle(DS.Color.accent))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -146,7 +162,8 @@ struct RunList: View {
             ScrollView {
                 LazyVStack(spacing: 2) {
                     ForEach(runs) { run in
-                        RunRow(run: run, hostName: scope == .all ? hostName(run.hostID) : nil, selected: run.runID == selected)
+                        RunRow(run: run, counts: QAStepCounts(run: run, steps: model.record(run.runID)?.steps),
+                               hostName: scope == .all ? hostName(run.hostID) : nil, selected: run.runID == selected)
                             .id(run.runID)
                             .contentShape(Rectangle())
                             .onTapGesture {
@@ -199,7 +216,7 @@ struct RunList: View {
                             .font(DS.Font.caption.weight(.semibold))
                         Text(error.message)
                             .font(DS.Font.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(DS.Status.neutralText)
                             .multilineTextAlignment(.center)
                         Button(String.ui("action.retry", "다시 시도")) { Task { await model.loadMore(scope) } }
                             .buttonStyle(.link)
@@ -218,51 +235,59 @@ struct RunList: View {
 }
 
 /// One run: the status badge, name and start time over the step counts or progress, the
-/// duration and, in every computer's list, the computer.
+/// duration and, in every computer's list, the computer. A selected row is filled with the
+/// selection color and draws everything in white.
 struct RunRow: View {
     let run: QARun
+    let counts: QAStepCounts
     /// The computer, shown in every computer's list.
     let hostName: String?
     let selected: Bool
     @State private var hovering = false
 
+    private var secondary: AnyShapeStyle { selected ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(DS.Status.neutralText) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.xs) {
             HStack(spacing: DS.Space.s) {
-                QAStatusBadge(run: run.runStatus)
+                QAStatusBadge(run: run, inverted: selected)
                 Text(run.name)
                     .font(DS.Font.body.weight(.semibold))
+                    .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(.primary))
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer(minLength: DS.Space.xs)
                 Text(QAFormat.started(run.startedAt.date))
                     .font(DS.Font.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(secondary)
                     .monospacedDigit()
                     .lineLimit(1)
                     .fixedSize()
             }
             HStack(spacing: DS.Space.s) {
                 if run.isRunning {
-                    RunProgress(run: run)
+                    RunProgress(run: run, inverted: selected)
+                        .layoutPriority(2)
                 } else {
-                    QACountsLine(run: run)
+                    StepTally(counts: counts, inverted: selected)
+                        .layoutPriority(2)
                 }
                 Spacer(minLength: DS.Space.xs)
                 if let hostName {
                     Label(hostName, systemImage: "desktopcomputer")
                         .labelStyle(.titleAndIcon)
                         .font(DS.Font.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(secondary)
                         .lineLimit(1)
                     Text("·")
                         .font(DS.Font.caption)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(secondary)
                         .accessibilityHidden(true)
                 }
                 RunDuration(run: run)
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(secondary)
+                    .lineLimit(1)
                     .fixedSize()
             }
             .padding(.leading, QAStatusBadge.width + DS.Space.s)
@@ -277,21 +302,22 @@ struct RunRow: View {
     }
 
     private var background: AnyShapeStyle {
-        if selected { return AnyShapeStyle(DS.Code.selection) }
+        if selected { return AnyShapeStyle(DS.Status.selectionFill) }
         return hovering ? AnyShapeStyle(DS.Color.neutral.opacity(0.08)) : AnyShapeStyle(.clear)
     }
 
     private var accessibilityText: String {
-        let status = QAFormat.title(run.runStatus)
+        let status = QAStatusBadge.title(run)
         let started = QAFormat.started(run.startedAt.date)
-        let counts = QACountsLine.spoken(run)
-        var text = String.ui("qa.row.a11y", "\(run.name), \(status), \(started) 시작, \(counts)")
+        let tally = StepTally.spoken(counts)
+        var text = String.ui("qa.row.a11y", "\(run.name), \(status), \(started) 시작, \(tally)")
         if let hostName { text += ", " + hostName }
         return text
     }
 }
 
-/// A run's status or a step's status as a tinted capsule with its symbol, of one width.
+/// A run's status or a step's status as a tinted capsule with its symbol, of one width. On a
+/// selected row it draws white on an outline instead.
 struct QAStatusBadge: View {
     static let width: CGFloat = 64
 
@@ -301,14 +327,22 @@ struct QAStatusBadge: View {
     let text: Color
     var spinning = false
     var large = false
+    var inverted = false
 
-    init(run status: QARunStatus?, large: Bool = false) {
-        title = QAFormat.title(status)
-        symbol = QAFormat.symbol(status)
-        tint = QAFormat.tint(status)
-        text = QAFormat.text(status)
-        spinning = status == .running
+    /// 취소하는 중 while a running run has taken a cancel, otherwise the run's status.
+    static func title(_ run: QARun) -> String {
+        run.isRunning && run.cancelRequested ? .ui("qa.status.cancelling", "취소하는 중") : QAFormat.title(run.runStatus)
+    }
+
+    init(run: QARun, large: Bool = false, inverted: Bool = false) {
+        let cancelling = run.isRunning && run.cancelRequested
+        title = Self.title(run)
+        symbol = QAFormat.symbol(run.runStatus)
+        tint = cancelling ? DS.Color.neutral : QAFormat.tint(run.runStatus)
+        text = cancelling ? DS.Status.neutralText : QAFormat.text(run.runStatus)
+        spinning = run.isRunning
         self.large = large
+        self.inverted = inverted
     }
 
     init(step status: QAStepStatus?, large: Bool = false) {
@@ -317,6 +351,15 @@ struct QAStatusBadge: View {
         tint = QAFormat.tint(status)
         text = QAFormat.text(status)
         spinning = status == .running
+        self.large = large
+    }
+
+    init(step: QAStep, large: Bool = false) {
+        title = QAFormat.title(step: step)
+        symbol = StepRow.isHumanControl(step) ? "hand.raised.fill" : QAFormat.symbol(step: step)
+        tint = StepRow.isHumanControl(step) ? DS.Color.human : QAFormat.tint(step: step)
+        text = StepRow.isHumanControl(step) ? DS.Status.humanText : QAFormat.text(step: step)
+        spinning = step.stepStatus == .running
         self.large = large
     }
 
@@ -334,75 +377,44 @@ struct QAStatusBadge: View {
                 .font(.system(size: large ? 12 : 11, weight: .semibold))
                 .lineLimit(1)
         }
-        .foregroundStyle(text)
+        .foregroundStyle(inverted ? DS.Color.onFill : text)
         .padding(.horizontal, DS.Space.s)
         .frame(minWidth: large ? nil : Self.width)
         .frame(height: large ? 22 : 18)
-        .background(tint.opacity(DS.Status.badgeOpacity), in: Capsule())
+        .background(inverted ? AnyShapeStyle(.clear) : AnyShapeStyle(tint.opacity(DS.Status.badgeOpacity)), in: Capsule())
+        .overlay {
+            if inverted { Capsule().strokeBorder(DS.Color.onFill.opacity(0.7), lineWidth: 1) }
+        }
         .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
     }
 }
 
-/// Passed, failed, blocked and not-run counts as symbols with numbers; zero counts other than
-/// passes are left out.
-struct QACountsLine: View {
-    let run: QARun
-
-    static func spoken(_ run: QARun) -> String {
-        let passed = String(run.stepsPassed)
-        let failed = String(run.stepsFailed)
-        let blocked = String(run.stepsBlocked)
-        let notRun = String(run.stepsNotRun)
-        return .ui("qa.counts.a11y", "통과 \(passed), 실패 \(failed), 차단 \(blocked), 실행 안 함 \(notRun)")
-    }
-
-    var body: some View {
-        HStack(spacing: DS.Space.s) {
-            item("checkmark", run.stepsPassed, DS.Status.successText, always: true)
-            item("xmark", run.stepsFailed, DS.Status.dangerText)
-            item("nosign", run.stepsBlocked, DS.Status.warningText)
-            item("minus", run.stepsNotRun, .secondary)
-        }
-        .font(.system(size: 11, weight: .semibold).monospacedDigit())
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Self.spoken(run))
-    }
-
-    @ViewBuilder
-    private func item(_ symbol: String, _ count: Int, _ color: Color, always: Bool = false) -> some View {
-        if always || count > 0 {
-            HStack(spacing: 2) {
-                Image(systemName: symbol)
-                    .font(.system(size: 8, weight: .heavy))
-                Text(String(count))
-            }
-            .foregroundStyle(color)
-        }
-    }
-}
-
-/// A thin bar of the steps that ended and `5/12단계`.
+/// A thin bar of the steps that ended and `5/12단계`, on one line.
 struct RunProgress: View {
     let run: QARun
+    var inverted = false
 
     private var done: Int { run.stepsPassed + run.stepsFailed + run.stepsBlocked + run.stepsNotRun }
 
     var body: some View {
         HStack(spacing: DS.Space.s) {
             Capsule()
-                .fill(DS.Color.neutral.opacity(0.22))
-                .frame(width: 72, height: 4)
+                .fill(inverted ? DS.Color.onFill.opacity(0.3) : DS.Color.neutral.opacity(0.22))
+                .frame(width: 64, height: 4)
                 .overlay(alignment: .leading) {
                     Capsule()
-                        .fill(DS.Color.accent)
-                        .frame(width: 72 * CGFloat(done) / CGFloat(max(run.stepsTotal, 1)), height: 4)
+                        .fill(inverted ? DS.Color.onFill : DS.Color.accent)
+                        .frame(width: 64 * CGFloat(done) / CGFloat(max(run.stepsTotal, 1)), height: 4)
                 }
             Text(String.ui("qa.progress", "\(String(done))/\(String(run.stepsTotal))단계"))
                 .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                .foregroundStyle(DS.Status.accentText)
+                .foregroundStyle(inverted ? DS.Color.onFill : DS.Status.accentText)
+                .lineLimit(1)
+                .fixedSize()
         }
+        .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String.ui("qa.progress.a11y", "\(String(run.stepsTotal))단계 중 \(String(done))단계 끝남"))
     }

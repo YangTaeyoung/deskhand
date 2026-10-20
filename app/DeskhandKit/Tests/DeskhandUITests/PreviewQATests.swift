@@ -146,12 +146,14 @@ final class PreviewQATests: XCTestCase {
         let failed = try await preview.qaGet(runID: PreviewQASamples.failedRunID)
         let evidence = try XCTUnwrap(failed.steps?.first { $0.index == 7 }?.evidence)
         XCTAssertEqual(evidence.map(\.kind), ["screenshot", "ui_tree"])
-        let png = try await preview.evidenceData(path: evidence[0].path, maxBytes: QAModel.imageLimit)
+        let png = try await preview.evidenceData(path: evidence[0].path, maxBytes: QAEvidenceStore.imageLimit)
         XCTAssertEqual(Array(png.prefix(4)), [0x89, 0x50, 0x4E, 0x47])
-        let tree = try await preview.evidenceData(path: evidence[1].path, maxBytes: QAModel.textLimit)
-        guard case .text(let text, false) = QAModel.text(tree, limit: QAModel.textLimit, json: true) else {
-            return XCTFail("the UI snapshot is not text")
-        }
-        XCTAssertTrue(text.contains("\"Transcript\""))
+        let tree = try await preview.evidenceData(path: evidence[1].path, maxBytes: QAEvidenceStore.textLimit)
+        let read = QAEvidenceStore.text(tree, limit: QAEvidenceStore.textLimit, json: true)
+        XCTAssertFalse(read.truncated)
+        XCTAssertTrue(read.text.hasPrefix("{\n  \"window\": {"), "the daemon's key order stays")
+        let thumbnail = try XCTUnwrap(QAEvidenceStore.decodeImage(png, maxPixels: QAEvidenceStore.thumbnailPixels))
+        XCTAssertEqual(max(thumbnail.image.width, thumbnail.image.height), 480)
+        XCTAssertEqual(thumbnail.pixels, CGSize(width: 1600, height: 1000))
     }
 }

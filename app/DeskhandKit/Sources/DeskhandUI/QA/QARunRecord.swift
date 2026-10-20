@@ -9,44 +9,63 @@ public enum QAApplyResult: Equatable, Sendable {
     case appliedWithGap
 }
 
-/// What the app knows of one run: its summary at `run.rev`, and its steps by `index`, each kept
-/// with the rev it was last set at. A summary is replaced only by a higher rev (local-api.md §10);
-/// a step from an event is replaced only by a later event or a read of at least its rev.
+/// What the app knows of one run: its summary at `run.rev`, and its steps in index order, each
+/// kept with the rev of the event or read that last set it. A summary is replaced only by a higher
+/// rev (local-api.md §10). A step is replaced by an event or a read whose rev is higher than its
+/// own, whatever rev a listing moved the summary to. Gaps are measured against the revs of events
+/// and reads.
 public struct QARunRecord: Equatable, Sendable {
-    private struct Entry: Equatable, Sendable {
-        var step: QAStep
-        var rev: Int
-    }
-
     /// The summary, without steps.
     public private(set) var run: QARun
-    private var entries: [Int: Entry] = [:]
+    /// Steps in index order, and the rev that set each.
+    private var ordered: [QAStep] = []
+    private var revs: [Int] = []
+    /// Position in `ordered` of each step index.
+    private var positions: [Int: Int] = [:]
     /// A read listed every step.
     private var listed = false
+    /// The highest rev of an event or read applied.
+    private var seenRev: Int
 
     public init(_ run: QARun) {
         self.run = run.summary
+        seenRev = run.rev
         if let steps = run.steps { take(steps, rev: run.rev) }
+    }
+
+    /// A run first heard of from a `qa.updated` event.
+    public init(event run: QARun, step: QAStep?) {
+        var base = run.summary
+        base.rev = run.rev - 1
+        self.init(base)
+        apply(event: run, step: step)
     }
 
     /// Every step in index order once a read has listed them, otherwise nil.
     public var steps: [QAStep]? {
-        guard listed else { return nil }
-        return entries.values.map(\.step).sorted { $0.index < $1.index }
+        listed ? ordered : nil
     }
 
     public func step(_ index: Int) -> QAStep? {
-        listed ? entries[index]?.step : nil
+        guard listed, let position = positions[index] else { return nil }
+        return ordered[position]
     }
 
     /// The phase of the running step, when the steps are known.
     public var currentPhase: QAStepPhase? {
-        guard let index = run.currentStep else { return nil }
-        return entries[index]?.step.stepPhase
+        guard let index = run.currentStep, let position = positions[index] else { return nil }
+        return ordered[position].stepPhase
+    }
+
+    /// Teardown has begun: the running step is a teardown step, or a teardown step has left
+    /// `pending`. It stays true between teardown steps.
+    public var inTeardown: Bool {
+        if currentPhase == .teardown { return true }
+        return ordered.contains { $0.stepPhase == .teardown && $0.stepStatus != .pending }
     }
 
     /// A read with steps (`qa.run`, `qa.get`, `qa.cancel`): the summary when its rev is higher,
-    /// and every step that no later event set.
+    /// and every step whose own rev is not higher than the read's.
     @discardableResult
     public mutating func apply(read: QARun) -> QAApplyResult {
         var changed = false
@@ -54,16 +73,16 @@ public struct QARunRecord: Equatable, Sendable {
             run = read.summary
             changed = true
         }
+        seenRev = max(seenRev, read.rev)
         if let steps = read.steps {
-            let before = entries
             let wasListed = listed
-            take(steps, rev: read.rev)
-            changed = changed || before != entries || !wasListed
+            changed = take(steps, rev: read.rev) || changed || !wasListed
         }
         return changed ? .applied : .ignored
     }
 
-    /// A run of `qa.list`: the summary when its rev is higher; the steps stay.
+    /// A run of `qa.list`: the summary when its rev is higher. The steps and the revs that gate
+    /// step events stay.
     @discardableResult
     public mutating func apply(listed incoming: QARun) -> QAApplyResult {
         guard incoming.rev > run.rev else { return .ignored }
@@ -71,24 +90,55 @@ public struct QARunRecord: Equatable, Sendable {
         return .applied
     }
 
-    /// A `qa.updated` event: the run and its changed step when the rev is higher.
+    /// A `qa.updated` event: the run when its rev is higher than the summary's, and its step when
+    /// the rev is higher than the step's own.
     @discardableResult
     public mutating func apply(event incoming: QARun, step: QAStep?) -> QAApplyResult {
-        guard incoming.rev > run.rev else { return .ignored }
-        let gap = incoming.rev > run.rev + 1
-        run = incoming.summary
-        if let step {
-            entries[step.index] = Entry(step: step, rev: incoming.rev)
+        var changed = false
+        if let step, set(step, rev: incoming.rev) { changed = true }
+        if incoming.rev > run.rev {
+            run = incoming.summary
+            changed = true
         }
+        guard changed else { return .ignored }
+        let gap = incoming.rev > seenRev + 1
+        seenRev = max(seenRev, incoming.rev)
         return gap ? .appliedWithGap : .applied
     }
 
-    private mutating func take(_ steps: [QAStep], rev: Int) {
-        for step in steps {
-            if let entry = entries[step.index], entry.rev > rev { continue }
-            entries[step.index] = Entry(step: step, rev: rev)
-        }
+    /// Sets each step whose own rev is not higher than `rev`; returns whether anything changed.
+    @discardableResult
+    private mutating func take(_ steps: [QAStep], rev: Int) -> Bool {
+        var changed = false
+        for step in steps where set(step, rev: rev, orEqual: true) { changed = true }
         listed = true
+        return changed
+    }
+
+    /// Puts `step` in place when `rev` is higher than its own (or equal with `orEqual`); returns
+    /// whether the step changed.
+    private mutating func set(_ step: QAStep, rev: Int, orEqual: Bool = false) -> Bool {
+        if let position = positions[step.index] {
+            guard rev > revs[position] || (orEqual && rev == revs[position]) else { return false }
+            revs[position] = rev
+            guard ordered[position] != step else { return false }
+            ordered[position] = step
+            return true
+        }
+        var low = 0
+        var high = ordered.count
+        while low < high {
+            let mid = (low + high) / 2
+            if ordered[mid].index < step.index { low = mid + 1 } else { high = mid }
+        }
+        ordered.insert(step, at: low)
+        revs.insert(rev, at: low)
+        if low == ordered.count - 1 {
+            positions[step.index] = low
+        } else {
+            for position in low..<ordered.count { positions[ordered[position].index] = position }
+        }
+        return true
     }
 }
 

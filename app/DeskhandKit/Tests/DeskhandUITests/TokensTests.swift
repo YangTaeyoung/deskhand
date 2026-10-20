@@ -134,17 +134,21 @@ final class TokensTests: XCTestCase {
         }
     }
 
-    func testStatusTextReachesFourAndAHalfToOneOnItsBadgeAndTheSelection() throws {
+    func testStatusTextReachesFourAndAHalfToOneOnEveryBackgroundItSitsOn() throws {
         let colors: [(String, NSColor, NSColor)] = [
             ("success", DS.Status.successTextNS, .systemGreen), ("danger", DS.Status.dangerTextNS, .systemRed),
             ("warning", DS.Status.warningTextNS, .systemOrange), ("accent", DS.Status.accentTextNS, .systemIndigo),
+            ("neutral", DS.Status.neutralTextNS, .systemGray), ("human", DS.Status.humanTextNS, .systemBlue),
         ]
         for name in [NSAppearance.Name.aqua, .darkAqua] {
             let appearance = try XCTUnwrap(NSAppearance(named: name))
             for (label, color, hue) in colors {
                 var resolved = NSColor.black
                 appearance.performAsCurrentDrawingAppearance { resolved = color.usingColorSpace(.sRGB) ?? color }
-                for (index, background) in DS.Code.backgrounds(in: appearance, tints: DS.Status.tints(hue)).enumerated() {
+                let hues = label == "neutral" ? DS.Status.tintHues : [hue]
+                let backgrounds = DS.Status.backgrounds(in: appearance, hues: hues)
+                XCTAssertEqual(backgrounds.count, 3 * (3 + hues.count * 3 + DS.Status.neutralOpacities.count))
+                for (index, background) in backgrounds.enumerated() {
                     let ratio = DS.Terminal.contrast(resolved, background)
                     XCTAssertGreaterThanOrEqual(ratio, 4.5, "\(label) on background \(index) in \(name.rawValue): \(ratio)")
                 }
@@ -152,39 +156,66 @@ final class TokensTests: XCTestCase {
         }
     }
 
-    /// Draws each status text color on its badge tint and on the selection over the window
-    /// background in an offscreen sRGB window; the drawn pixels reach 4.5:1.
+    /// Draws each status text color on the window, the text background and the run list's
+    /// backdrop, bare and under its badge, box, hovered badge and neutral chip tints — the neutral
+    /// gray also under every other hue's box — in an offscreen sRGB window; the drawn pixels reach
+    /// 4.5:1. White on the selection fill of selected rows does too.
     @MainActor
-    func testDrawnStatusTextReachesFourAndAHalfToOneOnItsBadge() throws {
+    func testDrawnStatusTextReachesFourAndAHalfToOneOnItsDrawnBackgrounds() throws {
         let colors: [(String, Color, Color)] = [
             ("success", DS.Status.successText, DS.Color.success), ("danger", DS.Status.dangerText, DS.Color.danger),
             ("warning", DS.Status.warningText, DS.Color.warning), ("accent", DS.Status.accentText, DS.Color.accent),
+            ("neutral", DS.Status.neutralText, DS.Color.neutral), ("human", DS.Status.humanText, DS.Color.human),
         ]
+        let bases: [(String, Color, Color?)] = [("window", DS.Color.surface, nil), ("text", DS.Code.background, nil),
+                                                ("list", DS.Color.surface, DS.Status.listBackground)]
+        let layers: [(String, (Color) -> [Color])] = [
+            ("bare", { _ in [] }), ("badge", { [$0.opacity(DS.Status.badgeOpacity)] }), ("box", { [$0.opacity(DS.Status.boxOpacity)] }),
+            ("hovered badge", { [DS.Color.neutral.opacity(0.08), $0.opacity(DS.Status.badgeOpacity)] }),
+        ] + DS.Status.neutralOpacities.map { opacity in ("neutral \(opacity)", { _ in [DS.Color.neutral.opacity(opacity)] }) }
+            + [DS.Color.success, DS.Color.danger, DS.Color.warning, DS.Color.accent, DS.Color.human].map { tint in
+                ("box of another hue", { _ in [tint.opacity(DS.Status.boxOpacity)] })
+            }
         let cell: CGFloat = 24
-        let swatches = HStack(spacing: 0) {
-            ForEach(Array(colors.enumerated()), id: \.offset) { _, color in
-                VStack(spacing: 0) {
-                    ZStack { Rectangle().fill(color.1).frame(width: cell / 2, height: cell / 2) }
+        let rows = bases.count * layers.count
+        let swatches = VStack(spacing: 0) {
+            ForEach(Array(bases.enumerated()), id: \.offset) { _, base in
+                ForEach(Array(layers.enumerated()), id: \.offset) { _, layer in
+                    HStack(spacing: 0) {
+                        ForEach(Array(colors.enumerated()), id: \.offset) { _, color in
+                            let fills = layer.1(color.2)
+                            ZStack {
+                                base.1
+                                if let over = base.2 { over }
+                                ForEach(Array(fills.enumerated()), id: \.offset) { _, fill in fill }
+                                Rectangle().fill(color.1).frame(width: cell / 2, height: cell / 2)
+                            }
+                            .frame(width: cell, height: cell)
+                        }
+                        ZStack {
+                            DS.Status.selectionFill
+                            Rectangle().fill(DS.Color.onFill).frame(width: cell / 2, height: cell / 2)
+                        }
                         .frame(width: cell, height: cell)
-                        .background(color.2.opacity(DS.Status.badgeOpacity))
-                    ZStack { Rectangle().fill(color.1).frame(width: cell / 2, height: cell / 2) }
-                        .frame(width: cell, height: cell)
-                        .background(DS.Code.selection)
+                    }
                 }
-                .background(DS.Color.surface)
             }
         }
-        let size = CGSize(width: cell * CGFloat(colors.count), height: cell * 2)
+        let size = CGSize(width: cell * CGFloat(colors.count + 1), height: cell * CGFloat(rows))
         for name in [NSAppearance.Name.aqua, .darkAqua] {
             let bitmap = try Self.draw(swatches, size: size, appearance: name)
             let scale = CGFloat(bitmap.pixelsWide) / size.width
-            for (c, color) in colors.enumerated() {
-                for row in 0..<2 {
-                    let origin = CGPoint(x: CGFloat(c) * cell * scale, y: CGFloat(row) * cell * scale)
+            for row in 0..<rows {
+                for column in 0...colors.count {
+                    let origin = CGPoint(x: CGFloat(column) * cell * scale, y: CGFloat(row) * cell * scale)
                     let swatch = Self.pixel(bitmap, x: Int(origin.x + cell * scale / 2), y: Int(origin.y + cell * scale / 2))
                     let ground = Self.pixel(bitmap, x: Int(origin.x + 2), y: Int(origin.y + 2))
                     let ratio = DS.Terminal.contrast(swatch, ground)
-                    XCTAssertGreaterThanOrEqual(ratio, 4.5, "\(color.0) on \(row == 0 ? "badge" : "selection") in \(name.rawValue): \(ratio)")
+                    let label = column == colors.count ? "white on the selection fill" : colors[column].0
+                    let base = bases[row / layers.count].0
+                    let layer = layers[row % layers.count].0
+                    if layer == "box of another hue", label != "neutral" { continue }
+                    XCTAssertGreaterThanOrEqual(ratio, 4.5, "\(label) on \(layer) over \(base) in \(name.rawValue): \(ratio)")
                 }
             }
         }

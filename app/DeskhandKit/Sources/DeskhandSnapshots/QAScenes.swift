@@ -14,7 +14,8 @@ enum QAScenes {
     static let narrowSize = CGSize(width: 1024, height: 720)
 
     struct Tab {
-        var runs: [QARun]? = nil
+        /// The runs, built when the scene renders; the sample runs when nil.
+        var runs: (@MainActor () -> [QARun])? = nil
         var showsAllHosts = false
         var selected: String?
         var selectedSteps: [String: Int] = [:]
@@ -26,11 +27,13 @@ enum QAScenes {
         var listShown: Bool?
         var filter: QARunFilter = .all
         var search = ""
-        var stepsSplit = 0.5
+        var stepsSplit = 0.46
+        var reloadError: OperationError?
+        var refreshErrors: [String: OperationError] = [:]
     }
 
     static func seed(_ store: AppStore, hostID: String, _ tab: Tab) {
-        let runs = tab.runs ?? Samples.runs()
+        let runs = tab.runs?() ?? Samples.runs()
         let host = QAScope.host(hostID)
         var listings: [QAScope: QAModel.Listing] = [
             .all: QAModel.Listing(ids: Set(runs.map(\.runID)), phase: tab.phase),
@@ -40,12 +43,14 @@ enum QAScenes {
             listings[.all]?.ids = []
             listings[host]?.ids = []
         }
+        listings[host]?.reloadError = tab.reloadError
         var selection: [QAScope: String] = [:]
         if let selected = tab.selected {
             selection[.all] = selected
             selection[host] = selected
         }
-        store.qa.seed(runs: runs, listings: listings, selection: selection, selectedSteps: tab.selectedSteps, cancels: tab.cancels,
+        store.qa.seed(runs: runs, listings: listings, selection: selection, selectedSteps: tab.selectedSteps, refreshErrors: tab.refreshErrors,
+                      cancels: tab.cancels,
                       exports: tab.exports, evidence: Samples.evidence(), viewer: tab.viewer, notice: tab.notice,
                       recent: recent, showsAllHosts: tab.showsAllHosts, filter: tab.filter, search: tab.search, listShown: tab.listShown)
         store.qa.stepsSplit = tab.stepsSplit
@@ -98,6 +103,47 @@ enum QAScenes {
         }
     }
 
+    /// The live run with a cancel taken while its fifth step still stops.
+    static func cancelling() -> [QARun] {
+        Samples.runs().map { run in
+            guard run.runID == Samples.liveRunID else { return run }
+            var run = run
+            run.cancelRequested = true
+            run.rev += 1
+            return run
+        }
+    }
+
+    /// A finished run of 1,000 steps: setup, 998 steps with a failure at 731, and teardown.
+    static func thousandSteps() -> [QARun] {
+        let started = Date.now.addingTimeInterval(-25 * 60)
+        var steps: [QAStep] = []
+        for index in 1...1000 {
+            let phase: QAStepPhase = index == 1 ? .setup : (index == 1000 ? .teardown : .steps)
+            var step = QAStep(index: index, phase: phase, name: index == 1 ? "fixture 실행" : (index == 1000 ? "fixture 닫기" : "주문 \(index - 1) 확인"),
+                              action: index == 1 ? "launch" : (index == 1000 ? "close" : "assert_ui"), line: 8 + index * 3,
+                              params: ["name": .string("주문 \(index - 1)"), "role": .string("text")], status: .pass,
+                              startedAt: Timestamp(date: started.addingTimeInterval(Double(index) * 1.2)), durationMs: 380 + index % 7 * 41)
+            if index == 731 {
+                step.status = QAStepStatus.fail.rawValue
+                step.message = "기대와 다릅니다: text 기대 주문 730 완료, 실제 주문 730 보류"
+                step.assertions = [QAAssertion(kind: "text", expected: .string("주문 730 완료"), actual: .string("주문 730 보류"), passed: false)]
+            } else if index > 731, index < 1000 {
+                step.status = QAStepStatus.notRun.rawValue
+                step.message = "731단계(주문 730 확인)가 실패여서 실행하지 않았습니다"
+                step.startedAt = nil
+                step.durationMs = nil
+            }
+            steps.append(step)
+        }
+        let run = QARun(runID: "q-01JBF9K1000", jobID: "j-01JBF9K1000", hostID: dev, name: "주문 1,000건 확인",
+                        scenarioPath: Samples.scenarioPath("orders-1000.yaml"), status: .failed, rev: 2004, startedAt: Timestamp(date: started),
+                        finishedAt: Timestamp(date: started.addingTimeInterval(14 * 60 + 33)), stepsTotal: 1000, stepsPassed: 731,
+                        stepsFailed: 1, stepsBlocked: 0, stepsNotRun: 268, reportDir: "/Users/qa/Library/Application Support/Deskhand/artifacts/j-01JBF9K1000",
+                        steps: steps)
+        return [run] + Samples.runs()
+    }
+
     /// The meeting room run as if it ran on the offline design workstation.
     static func offlineRuns() -> [QARun] {
         Samples.runs().compactMap { run in
@@ -110,9 +156,9 @@ enum QAScenes {
 
     // MARK: Sheets
 
-    static func runSheet(_ draft: QARunDraft, error: OperationError? = nil) -> (AppStore) -> AnyView {
+    static func runSheet(_ draft: QARunDraft, error: OperationError? = nil, attempted: Bool = false) -> (AppStore) -> AnyView {
         { store in
-            AnyView(RunSheet(store: store, model: store.qa, draft: draft, error: error, dismiss: {}))
+            AnyView(RunSheet(store: store, model: store.qa, draft: draft, error: error, attempted: attempted, dismiss: {}))
         }
     }
 
@@ -132,8 +178,8 @@ enum QAScenes {
         let uiTree = failedEvidence.first { $0.kind == "ui_tree" }?.artifactID ?? ""
         let brokenPath = Samples.scenarioPath("checkout-broken.yaml")
         return [
-            scene("qa-empty", none, Tab(runs: [])),
-            scene("qa-empty-all", none, Tab(runs: [], showsAllHosts: true)),
+            scene("qa-empty", none, Tab(runs: { [] })),
+            scene("qa-empty-all", none, Tab(runs: { [] }, showsAllHosts: true)),
             scene("qa-loading", none, Tab(phase: .loading)),
             scene("qa-error", none, Tab(phase: .failed(OperationError(code: "TIMEOUT", message: "이 Mac의 데몬이 5초 안에 qa.list에 답하지 않았습니다")))),
             scene("qa-runs", none, Tab(showsAllHosts: true, selected: Samples.loginRunID)),
@@ -143,8 +189,9 @@ enum QAScenes {
             scene("qa-run-blocked", none, Tab(selected: Samples.blockedRunID)),
             scene("qa-run-blocked-unsupported", none, Tab(selected: Samples.blockedRunID, selectedSteps: [Samples.blockedRunID: 2])),
             scene("qa-run-running", none, Tab(selected: Samples.liveRunID)),
-            scene("qa-run-cancelling", none, Tab(selected: Samples.liveRunID, cancels: [Samples.liveRunID: QACancelProgress(firstSent: true)])),
-            scene("qa-run-cancel-teardown", none, Tab(runs: cancellingInTeardown(), selected: Samples.liveRunID,
+            scene("qa-run-cancelling", none, Tab(runs: cancelling, selected: Samples.liveRunID,
+                                                cancels: [Samples.liveRunID: QACancelProgress(firstSent: true)])),
+            scene("qa-run-cancel-teardown", none, Tab(runs: cancellingInTeardown, selected: Samples.liveRunID,
                                                      cancels: [Samples.liveRunID: QACancelProgress(firstSent: true)])),
             scene("qa-run-cancelled", none, Tab(selected: Samples.cancelledRunID)),
             scene("qa-run-cancel-late", none, Tab(selected: Samples.lateCancelRunID)),
@@ -161,15 +208,25 @@ enum QAScenes {
             scene("qa-run-sheet-busy", none, Tab(selected: Samples.liveRunID), sheet: runSheet(
                 QARunDraft(scenarioPath: Samples.scenarioPath("login-flow.yaml"), hostID: dev,
                            vars: QAVarsDraft(rows: [QAVarRow(name: "secret_password", value: ""), QAVarRow(name: "2nd_user", value: "qa-bot2")])))),
+            scene("qa-run-sheet-invalid", none, Tab(selected: Samples.failedRunID), sheet: runSheet(
+                QARunDraft(scenarioPath: Samples.scenarioPath("login-flow.yaml"), hostID: PreviewFixtures.meetingPCID,
+                           vars: QAVarsDraft(rows: [QAVarRow(name: "secret_password", value: ""), QAVarRow(name: "2nd_user", value: "qa-bot2"),
+                                                    QAVarRow(name: "user", value: "qa-bot"), QAVarRow(name: "user", value: "qa-bot3")])),
+                attempted: true)),
+            scene("qa-run-1000-steps", none, Tab(runs: thousandSteps, selected: "q-01JBF9K1000")),
+            scene("qa-reload-failed", none, Tab(selected: Samples.failedRunID,
+                                               reloadError: OperationError(code: "TIMEOUT", message: "이 Mac의 데몬이 5초 안에 qa.list에 답하지 않았습니다"),
+                                               refreshErrors: [Samples.failedRunID: OperationError(code: "TIMEOUT",
+                                                                                                   message: "이 Mac의 데몬이 5초 안에 qa.get에 답하지 않았습니다")])),
             scene("qa-export-failed", none, Tab(selected: Samples.blockedRunID, exports: [Samples.blockedRunID: .failed(OperationError(
                 code: "HASH_MISMATCH",
                 message: "report.html의 sha256이 기록과 다릅니다. 산출물이 바뀌었을 수 있으니 원본 폴더 ~/Library/Application Support/Deskhand/artifacts/j-01JBDQ5R7M를 확인하세요"),
                 dir: "/Users/qa/Desktop")])),
             scene("qa-export-done", none, Tab(selected: Samples.failedRunID, exports: [Samples.failedRunID: .exported(ArtifactExport(
                 jobID: "j-01JBF2K9QE", dir: FileManager.default.homeDirectoryForCurrentUser.path + "/Desktop/QA 증거/j-01JBF2K9QE", files: 6,
-                bytes: 412_380, manifest: nil))])),
+                bytes: 412_380, manifest: FileManager.default.homeDirectoryForCurrentUser.path + "/Desktop/QA 증거/j-01JBF2K9QE/manifest.json"))])),
             scene("qa-offline", Setup(selected: PreviewFixtures.designID, tab: .qa, inspector: nil),
-                  Tab(runs: offlineRuns(), selected: Samples.meetingRunID)),
+                  Tab(runs: offlineRuns, selected: Samples.meetingRunID)),
             scene("qa-human-blocked-laptop", Setup(selected: PreviewFixtures.qaLaptopID, tab: .qa, inspector: nil), Tab(selected: Samples.laptopRunID)),
             scene("qa-run-failed-narrow", Setup(selected: dev, tab: .qa, inspector: nil), Tab(selected: Samples.failedRunID), size: narrowSize),
             scene("qa-run-failed-narrow-list", Setup(selected: dev, tab: .qa, inspector: nil), Tab(selected: Samples.failedRunID, listShown: true),

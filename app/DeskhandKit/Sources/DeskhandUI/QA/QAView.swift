@@ -4,8 +4,9 @@ import struct DeskhandClient.Host
 
 /// The QA tab: a toolbar with 시나리오 실행… (⌘R) and the list scope (this computer or every
 /// computer); the runs on the left and the selected run on the right. Below `narrowWidth` the list
-/// folds away behind the toolbar's sidebar button. While the computer is not connected a strip
-/// says that a new run's computer steps will be blocked; past runs stay readable.
+/// folds away behind the toolbar's sidebar button and opens as a floating panel. The workspace's
+/// control banner shows the computer's connection; while it is connected with capabilities that
+/// are not ready, a strip names them.
 public struct QAView: View {
     static let narrowWidth: CGFloat = 900
 
@@ -43,7 +44,6 @@ private struct QAContent: View {
 
     private var narrow: Bool { (width ?? QAView.narrowWidth) < QAView.narrowWidth }
     private var showsList: Bool { model.listShown ?? !narrow }
-    private var availability: HostFeatureAvailability { HostFeatureAvailability(host: host, capability: "exec") }
 
     private func setList(_ shown: Bool) {
         withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) { model.listShown = shown }
@@ -55,9 +55,7 @@ private struct QAContent: View {
             QAToolbar(store: store, model: model, host: host, scope: scope, narrow: narrow, listShown: showsList, hasRuns: !runs.isEmpty) {
                 setList(!showsList)
             }
-            if offline {
-                QAOfflineStrip(host: host, availability: availability)
-            } else if !QACapabilityStrip.missing(host).isEmpty {
+            if connected, !QACapabilityStrip.missing(host).isEmpty {
                 QACapabilityStrip(host: host)
             }
             main(runs)
@@ -89,11 +87,8 @@ private struct QAContent: View {
         }
     }
 
-    private var offline: Bool {
-        switch availability {
-        case .offline, .connecting, .reconnecting, .blocked: true
-        case .ready, .unavailable: false
-        }
+    private var connected: Bool {
+        host.connection == .ready || host.connection == .degraded
     }
 
     @ViewBuilder
@@ -128,7 +123,7 @@ private struct QAContent: View {
             if showsList, !narrow {
                 RunList(store: store, model: model, scope: scope)
                     .frame(width: listWidth)
-                    .background(DS.Color.surfaceRaised.opacity(0.35))
+                    .background(DS.Status.listBackground)
                 Rectangle().fill(DS.Color.separator).frame(width: 1)
             }
             detail
@@ -137,22 +132,24 @@ private struct QAContent: View {
         }
         .overlay(alignment: .leading) {
             if narrow, showsList {
-                Color.black.opacity(colorScheme == .dark ? 0.24 : 0.08)
+                Color.black.opacity(colorScheme == .dark ? 0.4 : 0.2)
                     .contentShape(Rectangle())
                     .onTapGesture { setList(false) }
                     .transition(.opacity)
                     .accessibilityHidden(true)
             }
         }
-        .overlay(alignment: .leading) {
+        .overlay(alignment: .topLeading) {
             if narrow, showsList {
                 RunList(store: store, model: model, scope: scope) { setList(false) }
-                    .frame(width: 320)
-                    .background(DS.Color.surfaceRaised.opacity(0.35))
+                    .frame(width: 340)
+                    .background(DS.Status.listBackground)
                     .background(DS.Color.surface)
-                    .overlay(alignment: .trailing) { Rectangle().fill(DS.Color.separator).frame(width: 1) }
-                    .shadow(color: .black.opacity(colorScheme == .dark ? 0.5 : 0.18), radius: 12, x: 4)
-                    .transition(reduceMotion ? .opacity : .move(edge: .leading))
+                    .clipShape(RoundedRectangle(cornerRadius: DS.Radius.l, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: DS.Radius.l, style: .continuous).strokeBorder(DS.Color.separator, lineWidth: 1))
+                    .shadow(color: .black.opacity(colorScheme == .dark ? 0.55 : 0.25), radius: 20, y: 8)
+                    .padding(DS.Space.s)
+                    .transition(reduceMotion ? .opacity : .move(edge: .leading).combined(with: .opacity))
             }
         }
     }
@@ -186,7 +183,7 @@ private struct QAToolbar: View {
                 Button(action: toggleList) {
                     Image(systemName: "sidebar.left")
                         .font(.system(size: 13))
-                        .foregroundStyle(listShown ? AnyShapeStyle(DS.Color.accent) : AnyShapeStyle(.secondary))
+                        .foregroundStyle(listShown ? AnyShapeStyle(DS.Color.accent) : AnyShapeStyle(DS.Status.neutralText))
                         .frame(width: 28, height: 24)
                         .contentShape(Rectangle())
                 }
@@ -220,7 +217,7 @@ private struct QAToolbar: View {
                         ProgressView().controlSize(.small)
                         Text(runningText(running))
                             .font(DS.Font.body)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(DS.Status.neutralText)
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
@@ -252,48 +249,6 @@ private struct QAToolbar: View {
     }
 }
 
-/// The computer is not connected: a new run starts but blocks its computer steps; past runs stay.
-private struct QAOfflineStrip: View {
-    let host: Host
-    let availability: HostFeatureAvailability
-
-    var body: some View {
-        HStack(spacing: DS.Space.s) {
-            if availability == .connecting || availability == .reconnecting {
-                ProgressView().controlSize(.small)
-            } else {
-                Image(systemName: "bolt.horizontal.circle")
-                    .foregroundStyle(DS.Color.warning)
-                    .accessibilityHidden(true)
-            }
-            Text(message)
-                .font(DS.Font.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, DS.Space.m)
-        .padding(.vertical, DS.Space.s)
-        .background(DS.Color.warning.opacity(0.08))
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(DS.Color.separator).frame(height: 1)
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    private var message: String {
-        let name = host.name
-        switch availability {
-        case .connecting, .reconnecting:
-            return .ui("qa.offline.reconnecting", "\(name)에 다시 연결하는 중입니다. 진행 중인 실행은 데몬이 이어서 기록하고, 연결이 돌아오면 목록을 다시 읽습니다.")
-        case .blocked:
-            return .ui("qa.offline.blocked", "\(name)의 페어링을 다시 해야 합니다. 지금 실행하면 PC가 필요한 단계는 ‘차단’으로 끝납니다. 이전 실행 기록과 보고서는 볼 수 있습니다.")
-        default:
-            return .ui("qa.offline.strip", "\(name)에 연결되어 있지 않습니다. 지금 실행하면 PC가 필요한 단계는 ‘차단’으로 끝납니다. 이전 실행 기록과 보고서는 볼 수 있습니다.")
-        }
-    }
-}
-
 /// The computer is connected but some capabilities QA steps need are not ready: those steps will
 /// be blocked.
 private struct QACapabilityStrip: View {
@@ -320,7 +275,7 @@ private struct QACapabilityStrip: View {
                 .accessibilityHidden(true)
             Text(String.ui("qa.caps.strip", "이 PC에서 지금 쓸 수 없는 기능: \(list). 그 기능이 필요한 단계는 ‘차단’으로 끝납니다."))
                 .font(DS.Font.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DS.Status.neutralText)
                 .lineLimit(2)
             Spacer(minLength: 0)
         }
@@ -351,7 +306,7 @@ private struct QAEmptyView: View {
                     model.presentRunSheet(hostID: host.hostID)
                 }
             HStack(spacing: DS.Space.xl) {
-                hint("doc.text", String.ui("qa.empty.hint.scenario", "준비 → 단계 → 정리 순서로 실행"))
+                hint("doc.text", String.ui("qa.empty.hint.scenario", "준비 → 본 단계 → 정리 순서로 실행"))
                 hint("photo.on.rectangle", String.ui("qa.empty.hint.evidence", "실패하면 화면과 UI 스냅샷"))
                 hint("square.and.arrow.up", String.ui("qa.empty.hint.report", "HTML 보고서와 manifest"))
             }
@@ -362,6 +317,6 @@ private struct QAEmptyView: View {
     private func hint(_ symbol: String, _ text: String) -> some View {
         Label(text, systemImage: symbol)
             .font(DS.Font.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(DS.Status.neutralText)
     }
 }

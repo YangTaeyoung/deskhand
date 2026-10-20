@@ -141,13 +141,20 @@ public enum DS {
 
         /// `base` blended toward black (light) or white (dark) until it reaches `ratio` against every background.
         static func readable(_ base: NSColor, tints: [Tint] = [], ratio: Double = Code.ratio) -> NSColor {
+            readable(base, ratio: ratio) { appearance in Code.backgrounds(in: appearance, tints: tints) }
+        }
+
+        /// `base` blended toward black (light) or white (dark) until it reaches `ratio` against every
+        /// color `backgrounds` gives for the appearance.
+        static func readable(_ base: NSColor, ratio: Double = Code.ratio,
+                             backgrounds: @escaping @Sendable (NSAppearance) -> [NSColor]) -> NSColor {
             NSColor(name: nil) { appearance in
                 let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
                 var resolved = base
                 appearance.performAsCurrentDrawingAppearance {
                     resolved = base.usingColorSpace(.sRGB) ?? base
                 }
-                let backgrounds = backgrounds(in: appearance, tints: tints)
+                let backgrounds = backgrounds(appearance)
                 func passes(_ color: NSColor) -> Bool {
                     backgrounds.allSatisfy { Terminal.contrast(color, $0) >= ratio }
                 }
@@ -166,29 +173,91 @@ public enum DS {
     }
 
     /// Text and symbols in a status color: the system hue blended toward black (light) or white
-    /// (dark) until it reaches `Code.ratio` on the text and window backgrounds, bare, under its own
-    /// badge tint and under the selection tint.
+    /// (dark) until it reaches `Code.ratio` on every background status text sits on (`backgrounds`).
+    /// `neutralText` is the gray of secondary QA text; it sits on the tints of every hue.
     public enum Status {
-        /// Opacity of a status color behind badge text.
+        /// Opacity of a status color behind badge and pill text.
         public static let badgeOpacity: CGFloat = 0.14
+        /// Opacity of a status color behind an outcome box or note.
+        public static let boxOpacity: CGFloat = 0.08
+        /// Opacities of the neutral gray behind chips, hovered rows and empty count pills.
+        public static let neutralOpacities: [CGFloat] = [0.06, 0.08, 0.1, 0.12, 0.14]
+        /// Opacity of `surfaceRaised` over the window under the QA run list.
+        public static let listOpacity: CGFloat = 0.35
 
         public static let successTextNS = readable(.systemGreen)
         public static let dangerTextNS = readable(.systemRed)
         public static let warningTextNS = readable(.systemOrange)
         public static let accentTextNS = readable(.systemIndigo)
+        /// Hues whose badge and box tints QA text sits on.
+        static let tintHues: [NSColor] = [.systemGreen, .systemRed, .systemOrange, .systemIndigo, .systemBlue, .systemGray]
+        public static let neutralTextNS = readable(.systemGray, over: tintHues)
+        public static let humanTextNS = readable(.systemBlue)
 
         public static let successText = SwiftUI.Color(nsColor: successTextNS)
         public static let dangerText = SwiftUI.Color(nsColor: dangerTextNS)
         public static let warningText = SwiftUI.Color(nsColor: warningTextNS)
         public static let accentText = SwiftUI.Color(nsColor: accentTextNS)
+        public static let neutralText = SwiftUI.Color(nsColor: neutralTextNS)
+        /// Text about a person holding control, in the human color.
+        public static let humanText = SwiftUI.Color(nsColor: humanTextNS)
+        /// The backdrop of the QA run list.
+        public static let listBackground = SwiftUI.Color(nsColor: .underPageBackgroundColor).opacity(listOpacity)
+        /// Fill of a selected row: the accent blended toward black until white text on it reaches `Code.ratio`.
+        public static let selectionFillNS = NSColor(name: nil) { appearance in
+            var accent = NSColor.systemIndigo
+            appearance.performAsCurrentDrawingAppearance { accent = NSColor.systemIndigo.usingColorSpace(.sRGB) ?? .systemIndigo }
+            let white = NSColor.white
+            if Terminal.contrast(white, accent) >= Code.ratio { return accent }
+            var low: CGFloat = 0
+            var high: CGFloat = 1
+            for _ in 0..<20 {
+                let mid = (low + high) / 2
+                let mixed = accent.blended(withFraction: mid, of: .black) ?? accent
+                if Terminal.contrast(white, mixed) >= Code.ratio { high = mid } else { low = mid }
+            }
+            return (accent.blended(withFraction: high, of: .black) ?? accent).usingColorSpace(.sRGB) ?? accent
+        }
+        public static let selectionFill = SwiftUI.Color(nsColor: selectionFillNS)
 
-        /// The tints text in `hue` sits on: its badge and the selection.
-        static func tints(_ hue: NSColor) -> [Code.Tint] {
-            [Code.Tint(hue, badgeOpacity), Code.selectionTint]
+        /// The backgrounds status text in `hue` sits on in `appearance`: the text and window
+        /// backgrounds and the run list's backdrop over the window; each bare, under the hue's badge
+        /// and box tints, under a badge on a hovered row, under the selection tint, under the error
+        /// row tint and under each neutral chip tint — as an sRGB window composites them.
+        static func backgrounds(in appearance: NSAppearance, hue: NSColor) -> [NSColor] {
+            backgrounds(in: appearance, hues: [hue])
         }
 
-        private static func readable(_ hue: NSColor) -> NSColor {
-            Code.readable(hue, tints: tints(hue))
+        /// `backgrounds(in:hue:)` for each of `hues`, the bare and neutral ones once.
+        static func backgrounds(in appearance: NSAppearance, hues: [NSColor]) -> [NSColor] {
+            var colors: [NSColor] = []
+            appearance.performAsCurrentDrawingAppearance {
+                func srgb(_ color: NSColor) -> NSColor { color.usingColorSpace(.sRGB) ?? color }
+                func over(_ base: NSColor, _ color: NSColor, _ alpha: CGFloat) -> NSColor {
+                    base.blended(withFraction: alpha, of: srgb(color)) ?? base
+                }
+                let text = srgb(.textBackgroundColor)
+                let window = srgb(.windowBackgroundColor)
+                let list = over(window, .underPageBackgroundColor, listOpacity)
+                let selection = Code.selectionTint
+                for base in [text, window, list] {
+                    colors.append(base)
+                    for hue in hues {
+                        colors.append(over(base, hue, badgeOpacity))
+                        colors.append(over(base, hue, boxOpacity))
+                        colors.append(over(over(base, .systemGray, 0.08), hue, badgeOpacity))
+                    }
+                    colors.append(over(base, selection.color, selection.opacity))
+                    colors.append(over(base, Code.errorRowTint.color, Code.errorRowTint.opacity))
+                    for opacity in neutralOpacities { colors.append(over(base, .systemGray, opacity)) }
+                }
+            }
+            return colors
+        }
+
+        private static func readable(_ hue: NSColor, over hues: [NSColor]? = nil) -> NSColor {
+            let tints = hues ?? [hue]
+            return Code.readable(hue) { appearance in backgrounds(in: appearance, hues: tints) }
         }
     }
 

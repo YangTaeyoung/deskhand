@@ -1,3 +1,4 @@
+import AppKit
 import DeskhandClient
 import Foundation
 
@@ -70,8 +71,8 @@ enum PreviewQAFixtures {
             Spec(phase: .steps, name: "Send 누르기", action: "ui_act", line: 30,
                  params: ["name": .string("Send"), "role": .string("button"), "action": .string("invoke")], ms: 260),
             Spec(phase: .steps, name: "대답이 끝날 때까지 기다리기", action: "assert_ui", line: 32,
-                 params: ["name": .string("Transcript"), "text_contains": .string("[done]"), "text_matches": .string("Bot: echo 안녕 QA"),
-                          "timeout_ms": .int(15_000)], ms: 2_900),
+                 params: ["name": .string("Transcript"), "text_contains": .string("[done]"), "text_matches": .string("Bot: echo 안녕 QA")],
+                 ms: 2_900),
             Spec(phase: .steps, name: "화면 글 확인", action: "assert_screen_text", line: 35,
                  params: ["contains": .array([.string("Send"), .string("한글 라벨"), .string("Transcript")])], ms: 610),
             Spec(phase: .steps, name: "화면 남기기", action: "screenshot", line: 37, params: ["name": .string("대답 뒤")], optional: true,
@@ -119,8 +120,7 @@ enum PreviewQAFixtures {
 
     static let buildCheck = Scenario(name: "빌드 산출물 확인", file: "build-artifacts.yaml", specs: [
         Spec(phase: .steps, name: "빌드 실행", action: "exec", line: 8,
-             params: ["cmd": .string("msbuild Shop.sln /p:Configuration=Release"), "cwd": .string("D:\\src\\shop"), "timeout_ms": .int(600_000)],
-             ms: 184_000),
+             params: ["cmd": .string("msbuild Shop.sln /p:Configuration=Release"), "cwd": .string("D:\\src\\shop")], ms: 184_000),
         Spec(phase: .steps, name: "설치 파일 확인", action: "assert_file", line: 12,
              params: ["path": .string("D:\\src\\shop\\out\\ShopSetup.msi"), "exists": .bool(true)], ms: 300),
         Spec(phase: .teardown, name: "임시 폴더 정리", action: "exec", line: 16,
@@ -267,6 +267,9 @@ enum PreviewQAFixtures {
 
         // Passed login with a secret password.
         var login = passes(1...10)
+        login[2] = Outcome(status: .pass, message: "창 \"Shop Admin 로그인 페이지\"를 찾았습니다",
+                           assertions: [QAAssertion(kind: "window", expected: .string("제목에 \"로그인\""), actual: .string("Shop Admin 로그인 페이지"),
+                                                    passed: true)])
         login[7] = Outcome(status: .pass, assertions: [
             QAAssertion(kind: "contains", expected: .string("환영합니다"), actual: .string("대시보드\n환영합니다, qa-bot 님\n오늘 주문 42건"), passed: true),
             QAAssertion(kind: "contains", expected: .string("qa-bot"), actual: .string("대시보드\n환영합니다, qa-bot 님\n오늘 주문 42건"), passed: true),
@@ -379,8 +382,13 @@ public enum PreviewQASamples {
         var out: [String: QAEvidenceContent] = [:]
         for (path, content) in PreviewQAFixtures.runs(now: now).evidence {
             switch content {
-            case .screen(let screen): out[path] = QAModel.image(PreviewQAImages.png(screen))
-            case .text(let text): out[path] = QAModel.text(Data(text.utf8), limit: QAModel.textLimit, json: path.hasSuffix(".json"))
+            case .screen(let screen):
+                if let decoded = QAEvidenceStore.decodeImage(PreviewQAImages.png(screen), maxPixels: QAEvidenceStore.fullPixels) {
+                    out[path] = .image(NSImage(cgImage: decoded.image, size: .zero), pixels: decoded.pixels)
+                }
+            case .text(let text):
+                let read = QAEvidenceStore.text(Data(text.utf8), limit: QAEvidenceStore.textLimit, json: path.hasSuffix(".json"))
+                out[path] = .text(read.text, truncated: read.truncated)
             }
         }
         return out

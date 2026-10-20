@@ -18,18 +18,20 @@ public struct QARunVerdict: Equatable, Sendable {
     public var detail: String?
     /// 취소를 요청했지만 실행이 끝났습니다: the run ended by its steps although a cancel was taken.
     public var cancelNote: String?
+    public var cancelDetail: String?
 
     public init(_ run: QARun, steps: [QAStep]? = nil) {
         let failedOrBlocked = run.stepsFailed + run.stepsBlocked
         cancelNote = nil
+        cancelDetail = nil
         detail = nil
         switch run.runStatus {
         case .running, nil:
             tone = .running
             if run.cancelRequested {
                 title = .ui("qa.verdict.cancelling", "취소하는 중")
-                let phase = run.currentStep.flatMap { index in steps?.first { $0.index == index } }?.stepPhase
-                detail = phase == .teardown
+                let teardown = steps?.contains { $0.stepPhase == .teardown && $0.stepStatus != .pending } ?? false
+                detail = teardown
                     ? .ui("qa.verdict.cancelling.teardown", "정리 단계를 실행하고 있습니다. 정리 단계도 멈추려면 ‘정리 단계도 중단’을 누르세요.")
                     : .ui("qa.verdict.cancelling.steps", "진행 중인 단계를 멈추고 정리 단계를 실행합니다.")
             } else {
@@ -43,10 +45,12 @@ public struct QARunVerdict: Equatable, Sendable {
             }
         case .passed:
             tone = .passed
-            title = .ui("qa.verdict.passed", "모든 단계를 통과했습니다")
             if failedOrBlocked > 0 {
                 let count = String(failedOrBlocked)
-                detail = .ui("qa.verdict.passedOptional", "선택 단계 \(count)개는 통과하지 못했지만 실행 결과에서 뺐습니다")
+                title = .ui("qa.verdict.passedRequired", "필수 단계를 모두 통과했습니다")
+                detail = .ui("qa.verdict.passedOptional", "선택 단계 \(count)개는 통과하지 못했습니다. 선택 단계는 실행 결과에 들어가지 않습니다.")
+            } else {
+                title = .ui("qa.verdict.passed", "모든 단계를 통과했습니다")
             }
         case .failed:
             tone = .failed
@@ -64,7 +68,7 @@ public struct QARunVerdict: Equatable, Sendable {
         case .cancelled:
             tone = .cancelled
             title = .ui("qa.verdict.cancelled", "취소했습니다")
-            detail = .ui("qa.verdict.cancelled.detail", "진행 중이던 단계를 멈추고 남은 단계를 건너뛴 뒤 정리 단계를 실행했습니다.")
+            detail = Self.cancelled(steps ?? [])
         case .error:
             tone = .error
             if run.error?.code == "EXECUTION_OUTCOME_UNKNOWN" {
@@ -77,7 +81,68 @@ public struct QARunVerdict: Equatable, Sendable {
         }
         if run.cancelRequested, run.runStatus != .cancelled, run.runStatus != .running {
             cancelNote = .ui("qa.verdict.cancelLate", "취소를 요청했지만 실행이 끝났습니다")
+            cancelDetail = .ui("qa.verdict.cancelLate.detail", "취소가 도착했을 때 멈출 단계가 없었습니다. 실행 결과는 각 단계의 결과를 따릅니다.")
         }
+    }
+
+    /// What a cancel stopped, from where the cancel-stopped and skipped steps are.
+    private static func cancelled(_ steps: [QAStep]) -> String {
+        func stopped(_ step: QAStep) -> Bool { QAFormat.isCancelStopped(step) || step.stepStatus == .notRun }
+        let main = steps.filter { $0.stepPhase != .teardown }
+        let teardown = steps.filter { $0.stepPhase == .teardown }
+        let mainStopped = main.contains(where: stopped)
+        let teardownStopped = teardown.contains(where: stopped)
+        switch (mainStopped, teardownStopped) {
+        case (true, true):
+            return .ui("qa.verdict.cancelled.both", "진행 중이던 단계를 멈추고 남은 단계를 건너뛰었고, 정리 단계도 멈췄습니다. PC에 앱이나 파일이 남았는지 확인하세요.")
+        case (false, true):
+            return .ui("qa.verdict.cancelled.teardown", "준비·본 단계는 모두 실행했고, 정리 단계 중에 취소해 정리 단계를 끝까지 실행하지 않았습니다. PC에 앱이나 파일이 남았는지 확인하세요.")
+        case (true, false) where !teardown.isEmpty:
+            return .ui("qa.verdict.cancelled.detail", "진행 중이던 단계를 멈추고 남은 단계를 건너뛴 뒤 정리 단계를 끝까지 실행했습니다.")
+        default:
+            return .ui("qa.verdict.cancelled.noTeardown", "진행 중이던 단계를 멈추고 남은 단계를 건너뛰었습니다.")
+        }
+    }
+}
+
+/// How a run's steps ended. Cancel-stopped steps are counted apart from blocked ones when the
+/// steps are known; otherwise the counts are the daemon's.
+public struct QAStepCounts: Equatable, Sendable {
+    public var passed: Int
+    public var failed: Int
+    public var blocked: Int
+    public var cancelStopped: Int
+    public var notRun: Int
+
+    public init(passed: Int, failed: Int, blocked: Int, cancelStopped: Int, notRun: Int) {
+        self.passed = passed
+        self.failed = failed
+        self.blocked = blocked
+        self.cancelStopped = cancelStopped
+        self.notRun = notRun
+    }
+
+    public init(run: QARun, steps: [QAStep]?) {
+        guard let steps else {
+            self.init(passed: run.stepsPassed, failed: run.stepsFailed, blocked: run.stepsBlocked, cancelStopped: 0, notRun: run.stepsNotRun)
+            return
+        }
+        self.init(steps: steps)
+    }
+
+    public init(steps: [QAStep]) {
+        var counts = QAStepCounts(passed: 0, failed: 0, blocked: 0, cancelStopped: 0, notRun: 0)
+        for step in steps {
+            switch step.stepStatus {
+            case .pass: counts.passed += 1
+            case .fail: counts.failed += 1
+            case .blocked:
+                if QAFormat.isCancelStopped(step) { counts.cancelStopped += 1 } else { counts.blocked += 1 }
+            case .notRun: counts.notRun += 1
+            default: break
+            }
+        }
+        self = counts
     }
 }
 
@@ -120,14 +185,14 @@ enum QAFormat {
         }
     }
 
-    /// Text in the status color, legible on the window and text backgrounds and on its badge tint.
+    /// Text in the status color, legible on every background status text sits on.
     static func text(_ status: QARunStatus?) -> Color {
         switch status {
         case .running: DS.Status.accentText
         case .passed: DS.Status.successText
         case .failed, .error: DS.Status.dangerText
         case .blocked: DS.Status.warningText
-        case .cancelled, nil: .secondary
+        case .cancelled, nil: DS.Status.neutralText
         }
     }
 
@@ -171,14 +236,37 @@ enum QAFormat {
         case .fail: DS.Status.dangerText
         case .blocked: DS.Status.warningText
         case .running: DS.Status.accentText
-        case .pending, .notRun, nil: .secondary
+        case .pending, .notRun, nil: DS.Status.neutralText
         }
+    }
+
+    // MARK: Steps
+
+    /// A blocked step whose request a cancel stopped: the daemon gives it no error code.
+    static func isCancelStopped(_ step: QAStep) -> Bool {
+        step.stepStatus == .blocked && step.error == nil
+    }
+
+    static func title(step: QAStep) -> String {
+        isCancelStopped(step) ? .ui("qa.step.cancelStopped", "취소로 멈춤") : title(step.stepStatus)
+    }
+
+    static func symbol(step: QAStep) -> String {
+        isCancelStopped(step) ? "stop.circle" : symbol(step.stepStatus)
+    }
+
+    static func tint(step: QAStep) -> Color {
+        isCancelStopped(step) ? DS.Color.neutral : tint(step.stepStatus)
+    }
+
+    static func text(step: QAStep) -> Color {
+        isCancelStopped(step) ? DS.Status.neutralText : text(step.stepStatus)
     }
 
     static func phase(_ phase: QAStepPhase?) -> String {
         switch phase {
         case .setup: .ui("qa.phase.setup", "준비")
-        case .steps, nil: .ui("qa.phase.steps", "단계")
+        case .steps, nil: .ui("qa.phase.steps", "본 단계")
         case .teardown: .ui("qa.phase.teardown", "정리")
         }
     }
@@ -227,7 +315,7 @@ enum QAFormat {
         }
     }
 
-    /// The capability a step kind needs, in words, for blocked steps.
+    /// The capability a step kind needs, in words.
     static func feature(of action: String) -> String {
         switch action {
         case "click": .ui("qa.feature.mouse", "마우스 입력")
@@ -281,20 +369,120 @@ enum QAFormat {
         }
     }
 
-    // MARK: Times
+    /// The expected value of an assertion; a `not_contains` value reads 없어야 함.
+    static func expectedText(_ expected: JSONValue, kind: String) -> String {
+        let text = value(expected, kind: kind)
+        return kind == "not_contains" ? .ui("qa.assert.mustNotContain", "없어야 함: \(text)") : text
+    }
 
-    /// `3ms`, `0.4초`, `12.3초`, `1분 12초`, `1시간 2분`.
-    static func duration(ms: Int) -> String {
-        if ms < 100 {
-            let text = String(max(ms, 0))
-            return .ui("qa.duration.ms", "\(text)ms")
+    /// Parts of a failed assertion's actual text to mark: from the first difference of an exact
+    /// `text` check, and every occurrence the `not_contains` value appears.
+    static func highlights(kind: String, expected: JSONValue, actual: JSONValue, passed: Bool) -> [Range<String.Index>] {
+        guard !passed, case .string(let want) = expected, case .string(let got) = actual, !want.isEmpty else { return [] }
+        switch kind {
+        case "text":
+            var a = got.startIndex
+            var b = want.startIndex
+            while a < got.endIndex, b < want.endIndex, got[a] == want[b] {
+                a = got.index(after: a)
+                b = want.index(after: b)
+            }
+            return a < got.endIndex ? [a..<got.endIndex] : []
+        case "not_contains":
+            var ranges: [Range<String.Index>] = []
+            var from = got.startIndex
+            while from < got.endIndex, let found = got.range(of: want, range: from..<got.endIndex) {
+                ranges.append(found)
+                from = found.upperBound
+            }
+            return ranges
+        default:
+            return []
         }
-        if ms < 60_000 {
-            let seconds = Double(max(ms, 0)) / 1000
-            let text = seconds < 10 ? String(format: "%.1f", seconds) : String(Int(seconds.rounded(.down)))
+    }
+
+    /// The line under a failed `contains` check saying what was missing.
+    static func missingNote(kind: String, expected: JSONValue, passed: Bool) -> String? {
+        guard !passed, ["contains", "text_contains", "stdout_contains", "stderr_contains"].contains(kind),
+              case .string(let want) = expected else { return nil }
+        return .ui("qa.assert.missing", "없는 글: \(want)")
+    }
+
+    // MARK: JSON
+
+    /// `text` laid out one member per line with two-space indents and `"key": value`, in the
+    /// order the text has it; nil when it is not JSON.
+    static func prettyJSON(_ text: String) -> String? {
+        guard let data = text.data(using: .utf8), (try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])) != nil else {
+            return nil
+        }
+        var out = ""
+        var depth = 0
+        var inString = false
+        var escaped = false
+        let chars = Array(text)
+        var i = 0
+        func newline() {
+            out.append("\n")
+            out.append(String(repeating: "  ", count: depth))
+        }
+        while i < chars.count {
+            let c = chars[i]
+            if inString {
+                out.append(c)
+                if escaped { escaped = false } else if c == "\\" { escaped = true } else if c == "\"" { inString = false }
+                i += 1
+                continue
+            }
+            switch c {
+            case "\"":
+                inString = true
+                out.append(c)
+            case "{", "[":
+                var j = i + 1
+                while j < chars.count, chars[j].isWhitespace { j += 1 }
+                if j < chars.count, chars[j] == (c == "{" ? "}" : "]") {
+                    out.append(c)
+                    out.append(chars[j])
+                    i = j
+                } else {
+                    out.append(c)
+                    depth += 1
+                    newline()
+                }
+            case "}", "]":
+                depth -= 1
+                newline()
+                out.append(c)
+            case ",":
+                out.append(c)
+                newline()
+            case ":":
+                out.append(": ")
+            case " ", "\n", "\r", "\t":
+                break
+            default:
+                out.append(c)
+            }
+            i += 1
+        }
+        return out
+    }
+
+    // MARK: Times and sizes
+
+    /// `0.1초 미만`, `0.4초`, `12초`, `1분 12초`, `1시간 2분`.
+    static func duration(ms: Int) -> String {
+        if ms < 100 { return .ui("qa.duration.underTenth", "0.1초 미만") }
+        if ms < 10_000 {
+            let text = String(format: "%.1f", Double(ms) / 1000)
             return .ui("qa.duration.seconds", "\(text)초")
         }
         let total = ms / 1000
+        if total < 60 {
+            let seconds = String(total)
+            return .ui("qa.duration.wholeSeconds", "\(seconds)초")
+        }
         if total < 3600 {
             let minutes = String(total / 60)
             let seconds = String(total % 60)
@@ -309,41 +497,38 @@ enum QAFormat {
         duration(ms: Int(end.timeIntervalSince(start) * 1000))
     }
 
-    /// `오늘 14:02`, `어제 09:12`, `10월 19일 14:02`, or with the year when it is not this year.
+    /// `오늘 오후 3:12`, `어제 오후 6:40`, otherwise `10월 18일 오후 5:12`, as the processes tab writes them.
     static func started(_ date: Date, now: Date = .now, calendar: Calendar = .current) -> String {
-        let time = date.formatted(Date.VerbatimFormatStyle(
-            format: "\(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased)):\(minute: .twoDigits)",
-            timeZone: calendar.timeZone, calendar: Calendar(identifier: .gregorian)))
-        if calendar.isDate(date, inSameDayAs: now) { return .ui("qa.time.today", "오늘 \(time)") }
-        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) {
-            return .ui("qa.time.yesterday", "어제 \(time)")
-        }
-        let parts = calendar.dateComponents([.year, .month, .day], from: date)
-        let month = String(parts.month ?? 1)
-        let day = String(parts.day ?? 1)
-        if parts.year == calendar.component(.year, from: now) {
-            return .ui("qa.time.date", "\(month)월 \(day)일 \(time)")
-        }
-        let year = String(parts.year ?? 0)
-        return .ui("qa.time.year", "\(year)년 \(month)월 \(day)일 \(time)")
+        ProcessFormat.started(date, now: now, calendar: calendar)
     }
 
+    /// `563 B`, `192.0 KB`, `4.2 MB`: binary units, one decimal, as the processes tab writes memory.
     static func bytes(_ count: Int) -> String {
-        Int64(count).formatted(.byteCount(style: .file).locale(Locale(identifier: "ko_KR")))
+        if count < 1024 { return String(max(count, 0)) + " B" }
+        return ProcessFormat.memory(kb: count / 1024 + (count % 1024 >= 512 ? 1 : 0))
     }
 
     // MARK: Blocked steps
 
-    /// Why a blocked step did not run, in plain words, and what to do next when the contract
-    /// gives a next step.
+    /// Why a blocked step did not run, in plain words, and what to do next.
     static func blockedReason(_ step: QAStep) -> (title: String, next: String?) {
         switch step.error?.code {
         case "CONTROL_HELD_BY_HUMAN", "CONTROL_PREEMPTED":
             return (.ui("qa.blocked.human", "사람이 조작 중이라 실행하지 않았습니다"),
-                    .ui("qa.blocked.human.next", "사람이 제어권을 AI에게 넘긴 뒤 다시 실행하세요. 실행기는 제어권을 가져오거나 기다리지 않습니다."))
+                    .ui("qa.blocked.human.next", "AI에게 넘긴 뒤 다시 실행하세요. 실행기는 제어권을 가져오거나 기다리지 않습니다."))
         case "CAPABILITY_UNSUPPORTED":
-            let feature = feature(of: step.action)
-            return (.ui("qa.blocked.unsupported", "이 PC에서 아직 지원하지 않는 단계입니다 — \(feature)"), nil)
+            switch step.action {
+            case "click":
+                return (.ui("qa.blocked.noMouse", "Deskhand 데몬이 아직 마우스 입력을 보내지 못해 실행하지 않았습니다"),
+                        .ui("qa.blocked.noInput.next", "ui_act(invoke/set_value)로 바꿔 쓰세요."))
+            case "type", "key":
+                return (.ui("qa.blocked.noKeyboard", "Deskhand 데몬이 아직 키보드 입력을 보내지 못해 실행하지 않았습니다"),
+                        .ui("qa.blocked.noInput.next", "ui_act(invoke/set_value)로 바꿔 쓰세요."))
+            default:
+                let feature = feature(of: step.action)
+                return (.ui("qa.blocked.unavailable", "이 PC의 \(feature) 기능을 지금 쓸 수 없어 실행하지 않았습니다"),
+                        .ui("qa.blocked.unavailable.next", "PC의 \(feature) 상태를 고친 뒤 다시 실행하세요."))
+            }
         case "OFFLINE", "AUTH_REQUIRED":
             return (.ui("qa.blocked.offline", "PC에 연결되어 있지 않아 실행하지 않았습니다"),
                     .ui("qa.blocked.offline.next", "PC를 연결한 뒤 다시 실행하세요."))
@@ -360,9 +545,11 @@ enum QAFormat {
             return (.ui("qa.blocked.unknown", "실행됐는지 확인하지 못했습니다"),
                     .ui("qa.blocked.unknown.next", "PC에서 실제 상태를 확인한 뒤 다시 실행하세요."))
         case nil:
-            return (.ui("qa.blocked.cancel", "취소로 멈췄습니다"), nil)
+            return (.ui("qa.blocked.cancel", "취소로 멈췄습니다"),
+                    .ui("qa.blocked.cancel.next", "필요하면 다시 실행하세요. 다시 실행하면 처음 단계부터 실행합니다."))
         default:
-            return (.ui("qa.blocked.other", "실행할 수 없어 건너뛰었습니다"), nil)
+            return (.ui("qa.blocked.other", "실행하지 못했습니다"),
+                    .ui("qa.blocked.other.next", "오류 코드와 데몬 메시지를 확인한 뒤 다시 실행하세요."))
         }
     }
 }

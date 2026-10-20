@@ -13,6 +13,8 @@ final class FakeQABackend: QABackend, EventsBackend {
         var cancelReply: Result<QARun, RPCErrorInfo>?
         var runReply: Result<QARun, RPCErrorInfo>?
         var exportReply: Result<ArtifactExport, RPCErrorInfo>?
+        var listFailure: RPCErrorInfo?
+        var listDelay: Duration?
         var calls: [String] = []
         var runRequests: [QARunRequest] = []
         var events: [AsyncThrowingStream<DaemonEvent, Error>.Continuation] = []
@@ -57,10 +59,13 @@ final class FakeQABackend: QABackend, EventsBackend {
 
     func qaList(hostID: String?, limit: Int, cursor: String?) async throws -> QARunPage {
         let key = (hostID ?? "*") + (cursor.map { "@" + $0 } ?? "")
-        return state.withLock { s in
+        let (page, failure, delay) = state.withLock { s in
             s.calls.append("qa.list " + key)
-            return s.pages[key] ?? QARunPage(runs: [])
+            return (s.pages[key] ?? QARunPage(runs: []), s.listFailure, s.listDelay)
         }
+        if let delay { try await Task.sleep(for: delay) }
+        if let failure { throw failure }
+        return page
     }
 
     func qaCancel(runID: String) async throws -> QARun {
@@ -305,6 +310,107 @@ final class QAModelTests: XCTestCase {
         backend.state.withLock { $0.exportReply = .success(ArtifactExport(jobID: "j-1", dir: "/Users/qa/Desktop/j-1", files: 5, bytes: 1_024)) }
         await model.export("q-1", to: "/Users/qa/Desktop")
         XCTAssertEqual(model.exports["q-1"], .exported(ArtifactExport(jobID: "j-1", dir: "/Users/qa/Desktop/j-1", files: 5, bytes: 1_024)))
+    }
+
+    func testReloadKeepsRunsOfLaterPagesAndTheirCursor() async throws {
+        let backend = FakeQABackend()
+        backend.state.withLock {
+            $0.pages[self.dev] = QARunPage(runs: [self.run("q-new", rev: 2, status: .passed).summary], nextCursor: "c1")
+            $0.pages[self.dev + "@c1"] = QARunPage(runs: [self.run("q-old", rev: 2, status: .passed, minutesAgo: 90).summary], nextCursor: "c2")
+        }
+        let model = model(backend)
+        model.start()
+        model.ensureLoaded(.host(dev))
+        try await waitUntil { model.listing(.host(self.dev)).phase == .loaded }
+        await model.loadMore(.host(dev))
+        model.select("q-old", in: .host(dev))
+        XCTAssertEqual(model.runs(in: .host(dev)).map(\.runID), ["q-new", "q-old"])
+        backend.state.withLock { $0.pages[self.dev] = QARunPage(runs: [self.run("q-newest", rev: 1).summary, self.run("q-new", rev: 2, status: .passed).summary],
+                                                               nextCursor: "c1") }
+        await model.load(.host(dev))
+        XCTAssertEqual(model.runs(in: .host(dev)).map(\.runID), ["q-newest", "q-new", "q-old"])
+        XCTAssertEqual(model.listing(.host(dev)).nextCursor, "c2")
+        XCTAssertEqual(model.selectedRun(in: .host(dev))?.runID, "q-old")
+    }
+
+    func testReconnectReadsEachListOnce() async throws {
+        let backend = FakeQABackend()
+        let model = try await loaded(backend, runs: [run("q-done", rev: 9, status: .passed)])
+        model.ensureLoaded(.all)
+        try await waitUntil { model.listing(.all).phase == .loaded }
+        let before = backend.calls("qa.list").count
+        backend.reconnect()
+        try await waitUntil { backend.calls("qa.list").count == before + 2 }
+        try await Task.sleep(for: .milliseconds(60))
+        XCTAssertEqual(backend.calls("qa.list").count, before + 2)
+        XCTAssertEqual(model.resyncs, 1)
+    }
+
+    func testTriggersDuringAResyncFoldIntoOneMore() async throws {
+        let backend = FakeQABackend()
+        let model = try await loaded(backend, runs: [run("q-done", rev: 9, status: .passed)])
+        backend.state.withLock { $0.listDelay = .milliseconds(40) }
+        let before = model.resyncs
+        backend.reconnect()
+        try await waitUntil { model.resyncs == before + 1 }
+        backend.send(DaemonEvent(seq: 0, kind: EventKind.eventsDropped, payload: ["count": .int(3)]))
+        backend.reconnect()
+        try await waitUntil { model.resyncs == before + 2 }
+        try await Task.sleep(for: .milliseconds(250))
+        XCTAssertEqual(model.resyncs, before + 2)
+    }
+
+    func testFailedReloadOfALoadedListKeepsItAndSaysSo() async throws {
+        let backend = FakeQABackend()
+        let model = try await loaded(backend, runs: [run("q-done", rev: 9, status: .passed)])
+        backend.state.withLock { $0.listFailure = RPCErrorInfo(message: "데몬이 답하지 않았습니다", code: "TIMEOUT") }
+        await model.load(.host(dev))
+        XCTAssertEqual(model.listing(.host(dev)).phase, .loaded)
+        XCTAssertEqual(model.listing(.host(dev)).reloadError?.code, "TIMEOUT")
+        XCTAssertEqual(model.runs(in: .host(dev)).map(\.runID), ["q-done"])
+        backend.state.withLock { $0.listFailure = nil }
+        await model.load(.host(dev))
+        XCTAssertNil(model.listing(.host(dev)).reloadError)
+    }
+
+    func testFailedReadOfShownStepsIsKeptForTheRun() async throws {
+        let backend = FakeQABackend()
+        let model = try await loaded(backend, runs: [run("q-1", rev: 3, current: 1)])
+        backend.state.withLock { $0.runs["q-1"] = self.run("q-1", rev: 3, current: 1, steps: self.steps([.running, .pending, .pending])) }
+        model.select("q-1", in: .host(dev))
+        try await waitUntil { model.record("q-1")?.steps != nil }
+        backend.state.withLock { $0.runs["q-1"] = nil }
+        await model.refresh("q-1")
+        XCTAssertEqual(model.refreshErrors["q-1"]?.code, "NOT_FOUND")
+        XCTAssertNotNil(model.record("q-1")?.steps)
+    }
+
+    func testThousandStepEventsApplyInPlaceWithinTheBound() async throws {
+        let backend = FakeQABackend()
+        let many = (1...1000).map { QAStep(index: $0, phase: $0 == 1000 ? .teardown : .steps, name: "단계 \($0)", action: "assert_ui", status: .pending) }
+        let model = try await loaded(backend, runs: [])
+        model.seed(runs: [run("q-big", rev: 1, steps: many)], listings: [.host(dev): QAModel.Listing(ids: ["q-big"], phase: .loaded)])
+        let events = (1...1000).map { index -> DaemonEvent in
+            var done = many[index - 1]
+            done.status = QAStepStatus.pass.rawValue
+            return event(run("q-big", rev: index + 1, current: index), step: done)
+        }
+        let clock = ContinuousClock()
+        let elapsed = clock.measure {
+            for event in events { model.handle(event) }
+        }
+        XCTAssertEqual(model.record("q-big")?.steps?.filter { $0.stepStatus == .pass }.count, 1000)
+        XCTAssertLessThan(elapsed, .seconds(2), "1,000 step events took \(elapsed)")
+        var record = QARunRecord(run("q-plain", rev: 1, steps: many))
+        let plain = clock.measure {
+            for index in 1...1000 {
+                var done = many[index - 1]
+                done.status = QAStepStatus.pass.rawValue
+                record.apply(event: run("q-plain", rev: index + 1, current: index), step: done)
+                _ = record.steps?.count
+            }
+        }
+        XCTAssertLessThan(plain, .milliseconds(200), "1,000 record events took \(plain)")
     }
 
     func testRunningRunFocusesItsCurrentStepAndAFinishedOneItsFirstFailure() async throws {

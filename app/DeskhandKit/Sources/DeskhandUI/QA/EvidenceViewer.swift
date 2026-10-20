@@ -74,8 +74,8 @@ struct EvidenceViewer: View {
         .clipShape(RoundedRectangle(cornerRadius: DS.Radius.l, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.l, style: .continuous).strokeBorder(DS.Color.separator, lineWidth: 1))
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.55 : 0.25), radius: 28, y: 14)
-        .onAppear { model.loadEvidence(item.artifact) }
-        .onChange(of: item.artifact.path) { _, _ in model.loadEvidence(item.artifact) }
+        .onAppear { model.evidence.load(item.artifact, size: .full) }
+        .onChange(of: item.artifact.path) { _, _ in model.evidence.load(item.artifact, size: .full) }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(String.ui("qa.viewer.a11y", "증거 보기: \(item.artifact.name)"))
     }
@@ -83,9 +83,9 @@ struct EvidenceViewer: View {
     private func header(_ item: (step: QAStep, artifact: Artifact), position: Int) -> some View {
         let artifact = item.artifact
         return HStack(spacing: DS.Space.m) {
-            Image(systemName: QAModel.isImage(artifact) ? "photo" : EvidenceChip.symbol(artifact.kind))
+            Image(systemName: QAEvidenceStore.isImage(artifact) ? "photo" : EvidenceChip.symbol(artifact.kind))
                 .font(.system(size: 18))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DS.Status.neutralText)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(artifact.name)
@@ -95,7 +95,7 @@ struct EvidenceViewer: View {
                     .textSelection(.enabled)
                 Text(subtitle(item))
                     .font(DS.Font.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DS.Status.neutralText)
                     .lineLimit(1)
             }
             Spacer(minLength: DS.Space.m)
@@ -104,7 +104,7 @@ struct EvidenceViewer: View {
                     navButton("chevron.left", String.ui("qa.viewer.previous", "이전 증거 (←)")) { step(by: -1) }
                     Text(String.ui("qa.viewer.position", "\(String(position + 1)) / \(String(items.count))"))
                         .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DS.Status.neutralText)
                         .frame(minWidth: 40)
                     navButton("chevron.right", String.ui("qa.viewer.next", "다음 증거 (→)")) { step(by: 1) }
                 }
@@ -117,7 +117,7 @@ struct EvidenceViewer: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DS.Status.neutralText)
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
@@ -143,8 +143,8 @@ struct EvidenceViewer: View {
 
     private func subtitle(_ item: (step: QAStep, artifact: Artifact)) -> String {
         var parts = [EvidenceChip.kindTitle(item.artifact.kind)]
-        if case .image(let image) = model.content(of: item.artifact), let rep = image.representations.first {
-            parts.append(String(rep.pixelsWide) + "×" + String(rep.pixelsHigh))
+        if case .image(_, let pixels) = model.evidence.content(of: item.artifact, size: .full) {
+            parts.append(String(Int(pixels.width)) + "×" + String(Int(pixels.height)))
         }
         parts.append(QAFormat.bytes(item.artifact.size))
         parts.append(String(item.step.index) + ". " + item.step.name)
@@ -153,8 +153,8 @@ struct EvidenceViewer: View {
 
     @ViewBuilder
     private func content(_ artifact: Artifact) -> some View {
-        switch model.content(of: artifact) {
-        case .image(let image):
+        switch model.evidence.content(of: artifact, size: .full) {
+        case .image(let image, _):
             ZStack {
                 DS.Color.screenBackdrop
                 Image(nsImage: image)
@@ -169,23 +169,13 @@ struct EvidenceViewer: View {
                 if truncated {
                     Label(String.ui("qa.viewer.truncated", "앞 512 KB만 보여 줍니다. 전체는 기본 앱으로 여세요."), systemImage: "scissors")
                         .font(DS.Font.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DS.Status.neutralText)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, DS.Space.l)
                         .padding(.vertical, DS.Space.s)
                         .background(DS.Color.warning.opacity(0.08))
                 }
-                GeometryReader { proxy in
-                    ScrollView([.vertical, .horizontal]) {
-                        Text(text)
-                            .font(DS.Font.mono)
-                            .textSelection(.enabled)
-                            .fixedSize()
-                            .padding(DS.Space.l)
-                            .frame(minWidth: proxy.size.width, minHeight: proxy.size.height, alignment: .topLeading)
-                    }
-                }
-                .background(DS.Code.background)
+                EvidenceTextView(text: text)
             }
         case .failed(let error):
             DebugPanePlaceholder(symbol: "exclamationmark.triangle", title: String.ui("qa.viewer.failed", "증거 파일을 읽지 못했습니다"),
@@ -193,5 +183,47 @@ struct EvidenceViewer: View {
         case .loading, nil:
             DebugLoadingLine(text: String.ui("qa.viewer.loading", "증거 파일을 읽는 중…"))
         }
+    }
+}
+
+/// Read-only selectable monospaced text in an `NSTextView` that scrolls both ways without wrapping.
+struct EvidenceTextView: NSViewRepresentable {
+    let text: String
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scroll = NSTextView.scrollableTextView()
+        scroll.hasHorizontalScroller = true
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.drawsBackground = true
+        scroll.backgroundColor = .textBackgroundColor
+        if let view = scroll.documentView as? NSTextView {
+            view.isEditable = false
+            view.isSelectable = true
+            view.isRichText = false
+            view.drawsBackground = true
+            view.backgroundColor = .textBackgroundColor
+            view.textColor = .labelColor
+            view.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+            view.textContainerInset = NSSize(width: DS.Space.l, height: DS.Space.l)
+            view.isHorizontallyResizable = true
+            view.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+            view.textContainer?.widthTracksTextView = false
+            view.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+            view.setAccessibilityLabel(String.ui("qa.viewer.text.a11y", "증거 파일 내용"))
+        }
+        update(scroll)
+        return scroll
+    }
+
+    func updateNSView(_ scroll: NSScrollView, context: Context) {
+        update(scroll)
+    }
+
+    private func update(_ scroll: NSScrollView) {
+        guard let view = scroll.documentView as? NSTextView, view.string != text else { return }
+        view.string = text
+        view.textColor = .labelColor
+        view.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
     }
 }

@@ -15,20 +15,26 @@ public struct RunSheet: View {
     @State private var draft: QARunDraft
     @State private var error: OperationError?
     @State private var starting = false
+    /// Variable rows the person has edited.
+    @State private var touched: Set<UUID> = []
+    /// The person pressed 실행 while a variable had an issue.
+    @State private var attempted = false
 
     public init(store: AppStore, model: QAModel, draft: QARunDraft, error: OperationError? = nil, starting: Bool = false,
-                dismiss: @escaping () -> Void) {
+                attempted: Bool = false, dismiss: @escaping () -> Void) {
         self.store = store
         self.model = model
         self.dismiss = dismiss
         _draft = State(initialValue: draft)
         _error = State(initialValue: error)
         _starting = State(initialValue: starting)
+        _attempted = State(initialValue: attempted)
     }
 
     private var host: Host? { store.host(draft.hostID) }
     private var running: QARun? { model.runningRun(hostID: draft.hostID) }
-    private var canStart: Bool { draft.request != nil && !starting && running == nil }
+    private var hasPath: Bool { !draft.scenarioPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var canStart: Bool { hasPath && !starting && running == nil }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.l) {
@@ -37,7 +43,7 @@ public struct RunSheet: View {
                     .font(DS.Font.title)
                 Text(String.ui("qa.sheet.subtitle", "이 Mac의 시나리오 YAML을 PC에서 실행하고 단계별 결과와 증거, 보고서를 남깁니다."))
                     .font(DS.Font.body)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DS.Status.neutralText)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: DS.Space.m, verticalSpacing: DS.Space.l) {
@@ -51,7 +57,7 @@ public struct RunSheet: View {
                 }
                 GridRow {
                     label(String.ui("qa.sheet.vars", "변수"))
-                    VarsEditor(vars: $draft.vars)
+                    VarsEditor(vars: $draft.vars, touched: $touched, attempted: attempted)
                 }
                 GridRow {
                     label(String.ui("qa.sheet.timeout", "실행 제한 시간"))
@@ -65,7 +71,7 @@ public struct RunSheet: View {
                         .fixedSize()
                         Text(String.ui("qa.sheet.timeout.hint", "준비·단계에만 걸립니다. 정리 단계는 제한과 상관없이 끝까지 실행합니다."))
                             .font(DS.Font.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(DS.Status.neutralText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -78,7 +84,7 @@ public struct RunSheet: View {
                     ProgressView().controlSize(.small)
                     Text(String.ui("qa.sheet.starting", "시나리오를 검사하고 실행을 시작하는 중…"))
                         .font(DS.Font.body)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DS.Status.neutralText)
                 }
                 Spacer()
                 Button(String.ui("action.cancel", "취소"), action: dismiss)
@@ -96,7 +102,7 @@ public struct RunSheet: View {
     private func label(_ text: String) -> some View {
         Text(text)
             .font(DS.Font.body)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(DS.Status.neutralText)
             .gridColumnAlignment(.trailing)
             .frame(width: 96, alignment: .trailing)
     }
@@ -132,7 +138,7 @@ public struct RunSheet: View {
             }
             Text(String.ui("qa.sheet.scenario.hint", "push의 상대 경로는 시나리오 파일이 있는 폴더를 기준으로 합니다."))
                 .font(DS.Font.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DS.Status.neutralText)
         }
     }
 
@@ -210,7 +216,7 @@ public struct RunSheet: View {
                 .accessibilityHidden(true)
             Text(text)
                 .font(DS.Font.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DS.Status.neutralText)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .combine)
@@ -228,7 +234,7 @@ public struct RunSheet: View {
     @ViewBuilder
     private func errorView(_ error: OperationError) -> some View {
         if error.code == "INVALID_ARGUMENT", let problem = QAScenarioProblem(message: error.message, path: draft.scenarioPath) {
-            ScenarioProblemBox(problem: problem) { start() }
+            ScenarioProblemBox(problem: problem, canRetry: canStart) { start() }
         } else if error.code == "IN_PROGRESS" {
             ErrorBanner(message: String.ui("qa.sheet.inProgress", "이 PC에서 다른 QA 실행이 진행 중입니다"), fix: error.message, code: error.code)
         } else if error.code == "NOT_FOUND" {
@@ -240,6 +246,10 @@ public struct RunSheet: View {
 
     private func start() {
         guard canStart else { return }
+        guard draft.request != nil else {
+            attempted = true
+            return
+        }
         starting = true
         error = nil
         let draft = draft
@@ -257,9 +267,10 @@ public struct RunSheet: View {
 }
 
 /// A scenario problem with its file and line, the daemon's sentence, and buttons to open the file
-/// in its editor and to check it again.
+/// in its editor and to start the run again.
 struct ScenarioProblemBox: View {
     let problem: QAScenarioProblem
+    var canRetry = true
     let retry: () -> Void
 
     var body: some View {
@@ -274,7 +285,7 @@ struct ScenarioProblemBox: View {
                 HStack(spacing: DS.Space.xs) {
                     Image(systemName: "doc.text")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DS.Status.neutralText)
                         .accessibilityHidden(true)
                     Text((problem.file as NSString).lastPathComponent + ":" + String(problem.line))
                         .font(DS.Font.mono)
@@ -283,17 +294,19 @@ struct ScenarioProblemBox: View {
                 .help(problem.file)
                 Text(problem.message)
                     .font(DS.Font.body)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DS.Status.neutralText)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
-                ErrorCodeLine(code: "INVALID_ARGUMENT")
+                QAErrorCodeLine(code: "INVALID_ARGUMENT")
                 HStack(spacing: DS.Space.s) {
                     if problem.file.hasPrefix("/") {
                         Button(String.ui("qa.problem.edit", "편집기에서 열기")) {
                             NSWorkspace.shared.open(URL(fileURLWithPath: problem.file))
                         }
                     }
-                    Button(String.ui("qa.problem.retry", "고친 뒤 다시 검사"), action: retry)
+                    Button(String.ui("qa.problem.retry", "다시 실행"), action: retry)
+                        .disabled(!canRetry)
+                        .help(String.ui("qa.problem.retry.help", "고친 시나리오를 다시 검사하고 실행을 시작합니다"))
                 }
                 .padding(.top, DS.Space.xs)
             }
@@ -306,10 +319,13 @@ struct ScenarioProblemBox: View {
     }
 }
 
-/// Variable rows: a name and a value, the value hidden for names starting with `secret_`; an
-/// issue line under a bad or repeated name; a button to add a row.
+/// Variable rows: a name and a value, the value hidden for names starting with `secret_`. An
+/// issue shows in the danger color under a row the person edited, or under every row once they
+/// pressed 실행; before that a secret without a value shows a plain hint. A button adds a row.
 struct VarsEditor: View {
     @Binding var vars: QAVarsDraft
+    @Binding var touched: Set<UUID>
+    var attempted = false
 
     static func text(_ issue: QAVarsDraft.Issue) -> String {
         switch issue {
@@ -339,39 +355,47 @@ struct VarsEditor: View {
                         .textFieldStyle(.roundedBorder)
                         .font(DS.Font.mono)
                         .accessibilityLabel(row.isSecret ? String.ui("qa.vars.secret.a11y", "\(row.trimmedName) 비밀값") : String.ui("qa.vars.value.a11y", "\(row.trimmedName) 값"))
-                        Image(systemName: row.isSecret ? "lock.fill" : "lock.open")
-                            .font(.system(size: 11))
-                            .foregroundStyle(row.isSecret ? AnyShapeStyle(DS.Status.accentText) : AnyShapeStyle(.quaternary))
-                            .frame(width: 14)
-                            .help(row.isSecret ? String.ui("qa.vars.masked.help", "결과와 보고서에 ***로 남고 다음 실행을 위해 저장하지 않습니다")
-                                               : String.ui("qa.vars.plain.help", "이름이 secret_로 시작하면 값을 가립니다"))
-                            .accessibilityHidden(true)
+                        Group {
+                            if row.isSecret {
+                                Image(systemName: "lock.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(DS.Status.accentText)
+                                    .help(String.ui("qa.vars.masked.help", "결과와 보고서에 ***로 남고 다음 실행을 위해 저장하지 않습니다"))
+                            }
+                        }
+                        .frame(width: 14)
+                        .accessibilityHidden(true)
                         Button {
                             vars.rows.removeAll { $0.id == row.id }
                         } label: {
                             Image(systemName: "minus.circle")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(DS.Status.neutralText)
                         }
                         .buttonStyle(.plain)
                         .help(String.ui("qa.vars.remove", "변수 지우기"))
                         .accessibilityLabel(String.ui("qa.vars.remove", "변수 지우기"))
                     }
+                    .onChange(of: row) { _, _ in touched.insert(row.id) }
                     if let issue = vars.issue(for: row) {
-                        Text(Self.text(issue))
-                            .font(DS.Font.caption)
-                            .foregroundStyle(DS.Status.dangerText)
+                        let shown = attempted || touched.contains(row.id)
+                        if shown || issue == .missingSecret {
+                            Text(Self.text(issue))
+                                .font(DS.Font.caption)
+                                .foregroundStyle(shown ? DS.Status.dangerText : DS.Status.neutralText)
+                        }
                     }
                 }
             }
             HStack(spacing: DS.Space.m) {
                 Button {
-                    vars.rows.append(QAVarRow())
+                    let row = QAVarRow()
+                    vars.rows.append(row)
                 } label: {
                     Label(String.ui("qa.vars.add", "변수 추가"), systemImage: "plus")
                 }
                 Text(String.ui("qa.vars.hint", "시나리오의 vars를 덮어씁니다. secret_로 시작하는 이름은 값을 가리고 결과에 ***로 남깁니다."))
                     .font(DS.Font.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DS.Status.neutralText)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
