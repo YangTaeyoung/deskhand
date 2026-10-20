@@ -58,17 +58,27 @@ var (
 )
 
 // partLocks holds the part files a put, xfer.prepare, xfer.commit or
-// xfer.abort works on, by their paths in lower case.
+// xfer.abort works on, by their partKey.
 var partLocks = struct {
 	sync.Mutex
 	held map[string]bool
 }{held: map[string]bool{}}
 
+// partKey returns the key of the part file part in partLocks and in the
+// receipts: part with its folder resolved (resolvedPath: links, junctions,
+// short names and letter case), in lower case.
+func partKey(part string) string {
+	if rp, err := resolvedPath(part, false); err == nil {
+		part = rp
+	}
+	return strings.ToLower(part)
+}
+
 // lockPart takes the part file part for one operation and returns the
-// function that gives it back; a part file another operation holds is an
-// IN_PROGRESS error.
+// function that gives it back; a part file another operation holds, under
+// any spelling of its path (partKey), is an IN_PROGRESS error.
 func lockPart(part string) (func(), error) {
-	key := strings.ToLower(part)
+	key := partKey(part)
 	partLocks.Lock()
 	defer partLocks.Unlock()
 	if partLocks.held[key] {
@@ -389,36 +399,57 @@ func (p *putTransfer) receive(st TransferStream) (int64, error) {
 	}
 }
 
+// setMTime gives the part file of p the modification time p.mtime when it
+// has one.
+func (p *putTransfer) setMTime() error {
+	if p.mtime.IsZero() {
+		return nil
+	}
+	return os.Chtimes(p.part, p.mtime, p.mtime)
+}
+
 // finish closes the part file after receive returned received and err, and
-// returns the error of the put: the part file of a stream with too many
-// bytes is cut back to the offset of the put, that of a full volume is
-// removed, and otherwise it keeps what it received and gets p.mtime.
+// returns its size and the error of the put: the part file of a stream with
+// too many bytes is cut back to the offset of the put, that of a full volume
+// is cut to the bytes written and flushed to disk, and otherwise it keeps
+// what it received; it gets p.mtime in each case.
 func (p *putTransfer) finish(received int64, err error) (partSize int64, _ error) {
 	var we writeError
 	switch {
 	case errors.Is(err, errTooLong):
 		terr := p.f.Truncate(p.offset)
 		p.f.Close()
+		if terr == nil {
+			terr = p.setMTime()
+		}
 		if terr != nil {
 			return p.offset + received, fsFailure(fmt.Sprintf("the put stream carried more than the %d bytes from offset %d to the end of the file, and the part file '%s' could not be cut back to %d bytes", p.room, p.offset, p.part, p.offset), terr)
 		}
 		return p.offset, invalidArgument(fmt.Sprintf("the put stream carried more than the %d bytes from offset %d to the size %d of the file, so the part file is back at %d bytes; put only the rest of the file", p.room, p.offset, p.offset+p.room, p.offset))
 	case errors.As(err, &we) && isDiskFull(we.err):
-		p.f.Close()
-		if rerr := os.Remove(p.part); rerr != nil {
-			return p.offset + received, fsFailure(fmt.Sprintf("the volume of '%s' filled up after %d bytes and its part file could not be removed", p.part, p.offset+received), rerr)
+		partSize = p.offset + received
+		kerr := p.f.Truncate(partSize)
+		if kerr == nil {
+			kerr = p.f.Sync()
 		}
-		return 0, coded(wire.CodeDiskFull, fmt.Sprintf("the volume of '%s' filled up after %d bytes, so its part file was removed to free the space; free at least %d bytes there and send the file again from offset 0", p.part, p.offset+received, p.offset+p.room), false)
+		if cerr := p.f.Close(); kerr == nil {
+			kerr = cerr
+		}
+		if kerr == nil {
+			kerr = p.setMTime()
+		}
+		if kerr != nil {
+			return partSize, fsFailure(fmt.Sprintf("the volume of '%s' filled up after %d bytes of the file, and the part file could not be cut to them and flushed", p.part, partSize), kerr)
+		}
+		return partSize, coded(wire.CodeDiskFull, fmt.Sprintf("the volume of '%s' filled up after %d bytes of the file, which the part file keeps; free at least %d more bytes there, then call xfer.prepare and put from its part_size", p.part, partSize, p.offset+p.room-partSize), false)
 	}
 	cerr := p.f.Close()
 	partSize = p.offset + received
 	if err == nil && cerr != nil {
 		err = writeError{cerr}
 	}
-	if !p.mtime.IsZero() {
-		if terr := os.Chtimes(p.part, p.mtime, p.mtime); terr != nil && err == nil {
-			err = writeError{terr}
-		}
+	if terr := p.setMTime(); terr != nil && err == nil {
+		err = writeError{terr}
 	}
 	switch {
 	case err == nil:
@@ -465,7 +496,7 @@ func (s *Server) ServePut(ctx context.Context, st TransferStream, h wire.StreamH
 
 // openGet checks the header h of a get stream: its path, checked like the
 // paths of the file ops, has to name a regular file whose size is h.Offset
-// or more. It returns the open file, its Lstat and the number of bytes the
+// or more; what is not a regular file is refused before it is opened. It returns the open file, its Lstat and the number of bytes the
 // stream carries: h.Length of them from h.Offset, or with h.Length 0 up to
 // the end.
 func (s *Server) openGet(h wire.StreamHeader) (*os.File, fs.FileInfo, int64, error) {
@@ -482,6 +513,9 @@ func (s *Server) openGet(h wire.StreamHeader) (*os.File, fs.FileInfo, int64, err
 	}
 	if h.Offset < 0 || h.Length < 0 {
 		return nil, nil, 0, invalidArgument(fmt.Sprintf("offset %d and length %d must be 0 or more; pass length 0 to read to the end of the file", h.Offset, h.Length))
+	}
+	if isIrregular(path) {
+		return nil, nil, 0, invalidArgument(fmt.Sprintf("'%s' is not a regular file; get reads regular files only", path))
 	}
 	f, err := os.Open(path)
 	if errors.Is(err, fs.ErrNotExist) {

@@ -17,6 +17,11 @@ import (
 )
 
 func (s *Server) registerXfer() {
+	dir := ""
+	if s.opt.DataDir != "" {
+		dir = filepath.Join(s.opt.DataDir, "receipts")
+	}
+	s.receipts = openReceipts(dir, s.opt.Logger)
 	s.register("xfer.prepare", true, s.xferPrepare)
 	s.register("xfer.commit", true, s.xferCommit)
 	s.register("xfer.abort", true, s.xferAbort)
@@ -164,7 +169,9 @@ func (s *Server) xferPrepare(ctx context.Context, req proto.Message) (proto.Mess
 // TRANSFER_CONFLICT errors, rename takes the first free numbered name, and
 // replace replaces a file (replaceFile). A destination that cannot be
 // replaced or written, such as a locked or read-only one, is an error with
-// the destination unchanged and the part file kept for a retry.
+// the destination unchanged and the part file kept for a retry. A commit
+// records a receipt of its answer; a commit whose part file is missing
+// answers from the receipt of its transfer (committed).
 func (s *Server) xferCommit(ctx context.Context, req proto.Message) (proto.Message, error) {
 	v := s.view()
 	target, part, err := xferPaths(v, req)
@@ -191,8 +198,9 @@ func (s *Server) xferCommit(ctx context.Context, req proto.Message) (proto.Messa
 	if err != nil {
 		return nil, err
 	}
+	key := partKey(part)
 	if fi == nil {
-		return nil, coded(wire.CodeNotFound, fmt.Sprintf("there is no part file '%s': nothing was received for this transfer, or it was committed or aborted; call xfer.prepare and put the file", part), false)
+		return committed(s.receipts, key, part, want)
 	}
 	if err := verifyPart(ctx, part, want); err != nil {
 		return nil, err
@@ -204,11 +212,15 @@ func (s *Server) xferCommit(ctx context.Context, req proto.Message) (proto.Messa
 	if err != nil {
 		return nil, err
 	}
+	done := func(path, outcome string) (proto.Message, error) {
+		s.receipts.put(receipt{Key: key, TransferID: req.String("transfer_id"), Request: target, Path: path, Outcome: outcome, SHA256: want, Committed: time.Now().UTC()})
+		return proto.Message{"path": path, "outcome": outcome}, nil
+	}
 	if exists && policy == "skip" {
 		if err := os.Remove(part); err != nil {
 			return nil, fsFailure(fmt.Sprintf("'%s' exists and is kept, but its part file '%s' could not be removed", existing, part), err)
 		}
-		return proto.Message{"path": existing, "outcome": "skipped"}, nil
+		return done(existing, "skipped")
 	}
 	if err := setHidden(part, false); err != nil {
 		return nil, fsFailure(fmt.Sprintf("cannot show the part file '%s'", part), err)
@@ -226,11 +238,26 @@ func (s *Server) xferCommit(ctx context.Context, req proto.Message) (proto.Messa
 		_ = setHidden(part, true)
 		return nil, commitError(target, err)
 	}
-	outcome := "written"
 	if dest != target {
-		outcome = "renamed"
+		return done(dest, "renamed")
 	}
-	return proto.Message{"path": dest, "outcome": outcome}, nil
+	return done(dest, "written")
+}
+
+// committed answers a commit with the SHA-256 want whose part file part,
+// with the partKey key, is missing: with the path and outcome of its
+// receipt when its transfer was committed with that SHA-256, an
+// INVALID_ARGUMENT error when it was committed with another, and a
+// NOT_FOUND error without a receipt.
+func committed(receipts *receiptStore, key, part, want string) (proto.Message, error) {
+	rc, ok := receipts.get(key)
+	switch {
+	case !ok:
+		return nil, coded(wire.CodeNotFound, fmt.Sprintf("there is no part file '%s': nothing was received for this transfer, or it was aborted; call xfer.prepare and put the file", part), false)
+	case rc.SHA256 != want:
+		return nil, invalidArgument(fmt.Sprintf("transfer %s committed '%s' with the SHA-256 %s, not %s; send that file as a new transfer with another transfer_id", rc.TransferID, rc.Path, rc.SHA256, want))
+	}
+	return proto.Message{"path": rc.Path, "outcome": rc.Outcome}, nil
 }
 
 // verifyPart checks that the SHA-256 of the part file part is want and

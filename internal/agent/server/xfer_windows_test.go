@@ -154,3 +154,19 @@ func TestATransferReachesAPathLongerThanMaxPath(t *testing.T) {
 		t.Fatal("a part file is left")
 	}
 }
+
+func TestTheShortNameOfAFolderSharesThePartLock(t *testing.T) {
+	realPC(t)
+	c, s, home := xferHome(t)
+	dir := filepath.Join(home, "a long folder name")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	short := shortPath(t, dir)
+	if short == dir {
+		t.Skipf("the volume gives %s no short name", dir)
+	}
+	holdPut(t, c, s, "ts", filepath.Join(dir, "f.bin"), func() {
+		failsWith(t, c.call("xfer.prepare", proto.Message{"transfer_id": "ts", "path": filepath.Join(short, "f.bin"), "size": 6}), wire.CodeInProgress, "retry")
+	})
+}

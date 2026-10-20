@@ -212,6 +212,9 @@ func TestPutResumeFromOffset(t *testing.T) {
 	if got := readFile(t, part); got != string(data[:n2]) {
 		t.Fatalf("a put past the size left %d bytes in the part file", len(got))
 	}
+	if fi, err := os.Stat(part); err != nil || !fi.ModTime().Equal(mtime) {
+		t.Fatalf("mtime of the part file after a put past the size %v %v", fi.ModTime(), err)
+	}
 	acc, res = put(t, s, h, bytes.NewReader(data[n2:]))
 	if acc["ok"] != true || res["ok"] != true || res.Int("received") != int(size-n2) || res.Int("part_size") != int(size) {
 		t.Fatalf("last put %v %v", acc, res)
@@ -300,17 +303,26 @@ func TestCommitFailureLeavesNoCorruptTarget(t *testing.T) {
 			written += n
 			return n, err
 		}
-		_, res := put(t, s, wire.StreamHeader{TransferID: "t4", Path: dst, Size: int64(len(data))}, bytes.NewReader(data))
+		h := wire.StreamHeader{TransferID: "t4", Path: dst, Size: int64(len(data))}
+		_, res := put(t, s, h, bytes.NewReader(data))
 		failsWith(t, res, wire.CodeDiskFull, "free")
-		if _, err := os.Lstat(part); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("the part file is still there after the volume filled up: %v", err)
+		if res.Int("part_size") != 1<<20 || readFile(t, part) != string(data[:1<<20]) {
+			t.Fatalf("the part file after the volume filled up: %v, %d bytes", res, len(readFile(t, part)))
 		}
 		if readFile(t, dst) != "kept" {
 			t.Fatal("the destination changed")
 		}
 		writePart = write
-		if prep := c.ok("xfer.prepare", proto.Message{"transfer_id": "t4", "path": dst, "size": len(data), "on_conflict": "replace"}); prep.Int("part_size") != 0 {
+		prep := c.ok("xfer.prepare", proto.Message{"transfer_id": "t4", "path": dst, "size": len(data), "on_conflict": "replace"})
+		if prep.Int("part_size") != 1<<20 || prep.String("part_sha256") != sha(data[:1<<20]) {
 			t.Fatalf("prepare after the volume filled up %v", prep)
+		}
+		h.Offset = 1 << 20
+		if _, res := put(t, s, h, bytes.NewReader(data[1<<20:])); res["ok"] != true || res.Int("part_size") != len(data) {
+			t.Fatalf("put after space was freed %v", res)
+		}
+		if res := c.ok("xfer.commit", proto.Message{"transfer_id": "t4", "path": dst, "sha256": sha(data), "on_conflict": "replace"}); readFile(t, dst) != string(data) {
+			t.Fatalf("commit after space was freed %v", res)
 		}
 	})
 
@@ -522,7 +534,7 @@ func TestCommitConflictPoliciesMatchCopy(t *testing.T) {
 	if res := c.ok("xfer.commit", proto.Message{"transfer_id": "tp", "path": dst, "sha256": sha(data), "on_conflict": "replace"}); res.String("outcome") != "written" || readFile(t, dst) != "new" {
 		t.Fatalf("commit with replace %v", res)
 	}
-	failsWith(t, c.call("xfer.commit", proto.Message{"transfer_id": "tp", "path": dst, "sha256": sha(data)}), wire.CodeNotFound, "xfer.prepare")
+	failsWith(t, c.call("xfer.commit", proto.Message{"transfer_id": "never-sent", "path": dst, "sha256": sha(data)}), wire.CodeNotFound, "xfer.prepare")
 
 	if caseInsensitive(t, home) {
 		upper := filepath.Join(home, "DST.TXT")
@@ -654,4 +666,129 @@ func TestTransferStreamsNeedTheFileOps(t *testing.T) {
 	out, _ := st.written()
 	line, _, _ := bufio.NewReader(bytes.NewReader(out)).ReadLine()
 	failsWith(t, jsonLine(t, line), wire.CodeCapabilityUnsupported, "deskhand-agent run")
+}
+
+func TestGetRefusesAFileThatIsNotRegular(t *testing.T) {
+	_, s, home := xferHome(t)
+	fifo := filepath.Join(home, "fifo")
+	if err := mkfifo(fifo); err != nil {
+		t.Skipf("no FIFO here: %v", err)
+	}
+	link := filepath.Join(home, "to-fifo")
+	if err := os.Symlink(fifo, link); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{fifo, link} {
+		done := make(chan proto.Message, 1)
+		go func() {
+			st := &fakeStream{in: strings.NewReader("")}
+			s.ServeGet(context.Background(), st, wire.StreamHeader{S: "get", Path: p})
+			out, _ := st.written()
+			line, _, _ := bytes.Cut(out, []byte("\n"))
+			var m proto.Message
+			json.Unmarshal(line, &m)
+			done <- m
+		}()
+		select {
+		case acc := <-done:
+			failsWith(t, acc, wire.CodeInvalidArgument, "not a regular file")
+		case <-time.After(5 * time.Second):
+			t.Fatalf("get of %s did not answer within 5 s", p)
+		}
+	}
+}
+
+// commitOnce prepares, puts and commits data to dst as transfer id with
+// policy, and returns the answer of the commit.
+func commitOnce(t *testing.T, c *rpcClient, s *Server, id, dst string, data []byte, policy string) proto.Message {
+	t.Helper()
+	c.ok("xfer.prepare", proto.Message{"transfer_id": id, "path": dst, "size": len(data), "on_conflict": policy})
+	if _, res := put(t, s, wire.StreamHeader{TransferID: id, Path: dst, Size: int64(len(data))}, bytes.NewReader(data)); res["ok"] != true {
+		t.Fatalf("put %v", res)
+	}
+	return c.ok("xfer.commit", proto.Message{"transfer_id": id, "path": dst, "sha256": sha(data), "on_conflict": policy, "rid": "r-first-" + id})
+}
+
+func TestACommitSentAgainWithANewRidReturnsItsOutcome(t *testing.T) {
+	c, s, home := xferHome(t)
+	dst := filepath.Join(home, "landed.txt")
+	writeFile(t, filepath.Join(home, "renamed.txt"), "there before")
+	for _, tc := range []struct{ id, path, policy, outcome, landed string }{
+		{"tw", dst, "fail", "written", dst},
+		{"tn", filepath.Join(home, "renamed.txt"), "rename", "renamed", filepath.Join(home, "renamed (1).txt")},
+	} {
+		data := []byte("the bytes of " + tc.id)
+		first := commitOnce(t, c, s, tc.id, tc.path, data, tc.policy)
+		if first.String("path") != tc.landed || first.String("outcome") != tc.outcome {
+			t.Fatalf("first commit of %s %v", tc.id, first)
+		}
+		again := c.ok("xfer.commit", proto.Message{"transfer_id": tc.id, "path": tc.path, "sha256": sha(data), "on_conflict": tc.policy, "rid": "r-again-" + tc.id})
+		if again.String("path") != tc.landed || again.String("outcome") != tc.outcome || again.Has("replayed") {
+			t.Fatalf("commit of %s sent again %v", tc.id, again)
+		}
+		if readFile(t, tc.landed) != string(data) {
+			t.Fatalf("the file of %s changed", tc.id)
+		}
+		other := sha([]byte("other bytes"))
+		res := c.call("xfer.commit", proto.Message{"transfer_id": tc.id, "path": tc.path, "sha256": other, "on_conflict": tc.policy})
+		failsWith(t, res, wire.CodeInvalidArgument, sha(data))
+		failsWith(t, res, wire.CodeInvalidArgument, other)
+		if res := c.ok("xfer.abort", proto.Message{"transfer_id": tc.id, "path": tc.path}); res["removed"] != false || readFile(t, tc.landed) != string(data) {
+			t.Fatalf("abort after the commit of %s %v", tc.id, res)
+		}
+	}
+	if readFile(t, filepath.Join(home, "renamed.txt")) != "there before" {
+		t.Fatal("the file a rename avoided changed")
+	}
+}
+
+func TestACommitReceiptSurvivesARestart(t *testing.T) {
+	home, data := opsDir(t), opsDir(t)
+	c, s := newRPCClient(t, Options{HomeDir: home, DataDir: data})
+	dst := filepath.Join(home, "kept.txt")
+	body := []byte("committed before the restart")
+	if res := commitOnce(t, c, s, "tr", dst, body, "fail"); res.String("outcome") != "written" {
+		t.Fatalf("commit %v", res)
+	}
+	restarted, _ := newRPCClient(t, Options{HomeDir: home, DataDir: data})
+	res := restarted.ok("xfer.commit", proto.Message{"transfer_id": "tr", "path": dst, "sha256": sha(body), "rid": "r-after-restart"})
+	if res.String("path") != dst || res.String("outcome") != "written" {
+		t.Fatalf("commit after a restart %v", res)
+	}
+	failsWith(t, restarted.call("xfer.commit", proto.Message{"transfer_id": "other", "path": dst, "sha256": sha(body)}), wire.CodeNotFound, "xfer.prepare")
+}
+
+func TestTwoSpellingsOfAPartShareItsLock(t *testing.T) {
+	c, s, home := xferHome(t)
+	if !caseInsensitive(t, home) {
+		t.Skip("the volume tells names apart by letter case")
+	}
+	dir := filepath.Join(home, "Folder")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(dir, "f.bin")
+	holdPut(t, c, s, "tk", dst, func() {
+		other := filepath.Join(home, "FOLDER", "f.bin")
+		failsWith(t, c.call("xfer.prepare", proto.Message{"transfer_id": "tk", "path": other, "size": 6}), wire.CodeInProgress, "retry")
+	})
+}
+
+// holdPut runs during while a put of transfer id to dst holds its part
+// file.
+func holdPut(t *testing.T, c *rpcClient, s *Server, id, dst string, during func()) {
+	t.Helper()
+	c.ok("xfer.prepare", proto.Message{"transfer_id": id, "path": dst, "size": 6})
+	g := &gate{data: []byte("abc"), started: make(chan struct{}), release: make(chan struct{})}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.ServePut(context.Background(), &fakeStream{in: g}, wire.StreamHeader{S: "put", TransferID: id, Path: dst, Size: 6})
+	}()
+	<-g.started
+	defer func() {
+		close(g.release)
+		<-done
+	}()
+	during()
 }

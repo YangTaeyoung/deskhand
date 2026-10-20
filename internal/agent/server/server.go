@@ -64,6 +64,8 @@ type Server struct {
 	conns   map[*conn]struct{}
 	jobs    *jobTable
 	journal *journal
+	// receipts holds the outcomes of the transfers committed last.
+	receipts *receiptStore
 
 	// deployMu orders the creations of the deploy root.
 	deployMu sync.Mutex
