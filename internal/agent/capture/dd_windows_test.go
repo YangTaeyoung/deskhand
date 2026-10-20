@@ -298,7 +298,7 @@ func TestOpenGetsDuplicationWhenTheOtherSourceClosesWithinTheRetries(t *testing.
 
 func TestProbeIsReadyInTheConsoleSession(t *testing.T) {
 	info, err := session.Current()
-	if err != nil || info.SessionID == 0 || info.Protocol != session.ProtocolConsole || info.InputDesktop != session.DesktopDefault || info.Locked {
+	if err != nil || info.SessionID == 0 || info.Protocol != session.ProtocolConsole || info.InputDesktop != session.DesktopDefault || info.IsLocked() {
 		t.Skipf("needs the unlocked console session; session %+v (%v)", info, err)
 	}
 	forgetProbe()
@@ -347,7 +347,8 @@ func TestCaptureInSessionZeroIsSession0(t *testing.T) {
 func TestProbeFailureHasAFixedReason(t *testing.T) {
 	console := session.Info{SessionID: 1, ConnectState: session.ConnectActive, Protocol: session.ProtocolConsole, InputDesktop: session.DesktopDefault}
 	rdp, locked := console, console
-	rdp.Protocol, locked.Locked = session.ProtocolRDP, true
+	yes := true
+	rdp.Protocol, locked.Locked = session.ProtocolRDP, &yes
 	denied := fmt.Errorf("BitBlt of the pixel (0,0): %w", windows.ERROR_ACCESS_DENIED)
 	other := fmt.Errorf("BitBlt of the pixel (0,0): %w", windows.ERROR_INVALID_HANDLE)
 	noOutput := &Unavailable{Reason: ReasonNoOutput, Detail: "no display is attached to the desktop"}

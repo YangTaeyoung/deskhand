@@ -20,7 +20,8 @@ func TestAccessDeniedClassified(t *testing.T) {
 		s.SessionID, s.ConnectState, s.InputDesktop = 0, session.ConnectDisconnected, session.DesktopUnknown
 	})
 	winlogon := with(func(s *session.Info) { s.InputDesktop = session.DesktopWinlogon })
-	locked := with(func(s *session.Info) { s.InputDesktop, s.Locked = session.DesktopWinlogon, true })
+	yes := true
+	locked := with(func(s *session.Info) { s.InputDesktop, s.Locked = session.DesktopWinlogon, &yes })
 	disconnected := with(func(s *session.Info) { s.ConnectState = session.ConnectDisconnected })
 	rdp := with(func(s *session.Info) { s.Protocol = session.ProtocolRDP })
 
@@ -34,7 +35,7 @@ func TestAccessDeniedClassified(t *testing.T) {
 		{"session 0 without a failure", com.S_OK, session0, ReasonSession0},
 		{"secure desktop", com.E_ACCESSDENIED, winlogon, ReasonSecureDesktop},
 		{"locked", com.E_ACCESSDENIED, locked, ReasonSessionLocked},
-		{"locked on the default desktop", com.E_ACCESSDENIED, with(func(s *session.Info) { s.Locked = true }), ReasonSessionLocked},
+		{"locked on the default desktop", com.E_ACCESSDENIED, with(func(s *session.Info) { s.Locked = &yes }), ReasonSessionLocked},
 		{"disconnected", com.E_ACCESSDENIED, disconnected, ReasonSessionDisconnected},
 		{"session disconnected result", com.DXGI_ERROR_SESSION_DISCONNECTED, console, ReasonSessionDisconnected},
 		{"rdp access denied", com.E_ACCESSDENIED, rdp, ReasonRDPOutputSuppressed},

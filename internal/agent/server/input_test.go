@@ -133,7 +133,7 @@ func TestInputCapFollowsTheSession(t *testing.T) {
 	zero := testSession
 	zero.SessionID = 0
 	locked := testSession
-	locked.Locked, locked.InputDesktop = true, session.DesktopWinlogon
+	locked.Locked, locked.InputDesktop = boolPtr(true), session.DesktopWinlogon
 	secure := testSession
 	secure.InputDesktop = session.DesktopWinlogon
 	gone := testSession

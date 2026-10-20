@@ -36,9 +36,6 @@ const (
 	// desktopReadObjects is DESKTOP_READOBJECTS and uoiName UOI_NAME.
 	desktopReadObjects = 0x0001
 	uoiName            = 2
-	// wtsSessionStateLock is WTS_SESSIONSTATE_LOCK of
-	// WTSINFOEX_LEVEL1.SessionFlags.
-	wtsSessionStateLock = 0
 )
 
 // connectStates maps WTS_CONNECTSTATE_CLASS to Info.ConnectState: WTSActive
@@ -53,7 +50,7 @@ var connectStates = map[uint32]string{
 
 // Current describes the session of the agent process. Protocol is rdp when
 // the session's client protocol is not the console's; Locked follows the
-// session's lock state; InputDesktop names the desktop that receives input,
+// session's lock state, nil when it cannot be read; InputDesktop names the desktop that receives input,
 // Winlogon also when the agent may not open it, and unknown when the
 // session has none (Session 0).
 func Current() (Info, error) {
@@ -115,10 +112,11 @@ func sessionInfoEx(id uint32) (infoEx, bool) {
 		SessionFlags: int32(binary.LittleEndian.Uint32(b[16:]))}, true
 }
 
-// locked reports whether the session flags of session id say it is locked.
-func locked(id uint32) bool {
+// locked is the lock state the session flags of session id say, nil when
+// they cannot be read or name no state.
+func locked(id uint32) *bool {
 	ex, ok := sessionInfoEx(id)
-	return ok && ex.SessionFlags == wtsSessionStateLock
+	return lockState(ex.SessionFlags, ok)
 }
 
 // InputDesktop names the desktop that receives input in the agent's

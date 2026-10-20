@@ -21,7 +21,7 @@ func Classify(hr com.HRESULT, s session.Info) *Unavailable {
 	switch {
 	case s.SessionID == 0:
 		reason = ReasonSession0
-	case s.Locked:
+	case s.IsLocked():
 		reason = ReasonSessionLocked
 	case s.InputDesktop == session.DesktopWinlogon:
 		reason = ReasonSecureDesktop

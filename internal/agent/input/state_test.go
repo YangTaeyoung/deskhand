@@ -228,13 +228,14 @@ func TestStreamWithANewerGenerationPreemptsARunningText(t *testing.T) {
 }
 
 func TestInputDesktopWinlogonReported(t *testing.T) {
+	yes := true
 	for _, c := range []struct {
 		name   string
 		mutate func(*session.Info)
 		code   string
 		reason string
 	}{
-		{"locked", func(i *session.Info) { i.Locked, i.InputDesktop = true, session.DesktopWinlogon }, wire.CodeSessionLocked, "session_locked"},
+		{"locked", func(i *session.Info) { i.Locked, i.InputDesktop = &yes, session.DesktopWinlogon }, wire.CodeSessionLocked, "session_locked"},
 		{"secure desktop", func(i *session.Info) { i.InputDesktop = session.DesktopWinlogon }, wire.CodeElevationRequired, "secure_desktop"},
 		{"session 0", func(i *session.Info) { i.SessionID, i.InputDesktop = 0, session.DesktopUnknown }, wire.CodeDisplayUnavailable, "session0"},
 		{"disconnected", func(i *session.Info) { i.ConnectState = session.ConnectDisconnected }, wire.CodeDisplayUnavailable, "session_disconnected"},
@@ -278,7 +279,8 @@ func TestReleaseAllAttemptsAndMarksStaleInALockedSession(t *testing.T) {
 	j := newInjector(sys, Options{Logger: discardLogger(), Displays: func() ([]display.Info, error) { return oneDisplay, nil },
 		SessionInfo: func() (session.Info, error) { return cur, nil }, InputDesktop: func() string { return cur.InputDesktop }})
 	mustOK(t, j.Apply(wire.InputEvent{Seq: 1, K: "key", SC: 0x2A, Down: true}))
-	cur.Locked, cur.InputDesktop = true, session.DesktopWinlogon
+	yes := true
+	cur.Locked, cur.InputDesktop = &yes, session.DesktopWinlogon
 	refuse = true
 	before := len(sys.sent())
 	mustFail(t, j.Apply(wire.InputEvent{Seq: 2, K: "release_all"}), wire.CodeSessionLocked)

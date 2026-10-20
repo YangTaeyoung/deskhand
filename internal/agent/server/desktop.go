@@ -21,10 +21,13 @@ func (s *Server) registerDesktop() {
 }
 
 // sessionFields are the docs/protocol.md §3.1 session.info keys of info;
-// sid and integrity are left out when empty.
+// sid and integrity are left out when empty, locked when unknown.
 func sessionFields(info session.Info) proto.Message {
 	m := proto.Message{"session_id": info.SessionID, "user": info.User, "connect_state": info.ConnectState,
-		"protocol": info.Protocol, "locked": info.Locked, "input_desktop": info.InputDesktop}
+		"protocol": info.Protocol, "input_desktop": info.InputDesktop}
+	if info.Locked != nil {
+		m["locked"] = *info.Locked
+	}
 	if info.SID != "" {
 		m["sid"] = info.SID
 	}
