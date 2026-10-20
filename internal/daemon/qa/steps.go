@@ -229,7 +229,7 @@ func (r *runner) push(ctx context.Context, s *PushSpec) stepOut {
 		out.result = res
 		return out
 	}
-	out := pass(fmt.Sprintf("파일 %d개(%d바이트)를 보냈습니다", td.FilesTotal, td.BytesTotal))
+	out := pass(fmt.Sprintf("파일 %d개(%s)를 보냈습니다", td.FilesTotal, byteSize(td.BytesTotal)))
 	if td.Outcome == "skipped" {
 		out.message = "대상에 이미 있어 건너뛰었습니다"
 	}
@@ -875,7 +875,7 @@ func (r *runner) collect(ctx context.Context, s *CollectSpec, i int) stepOut {
 		if err != nil {
 			return failOut(wire.CodeInternal, fmt.Sprintf("모은 파일을 저장하지 못했습니다(%v). 디스크 공간을 확인하세요", err))
 		}
-		out := pass(fmt.Sprintf("%s의 %d바이트를 모았습니다", s.File, len(data)))
+		out := pass(fmt.Sprintf("%s의 %s를 모았습니다", s.File, byteSize(int64(len(data)))))
 		out.evidence = []model.Artifact{a}
 		out.result = map[string]any{"path": s.File, "size": size, "collected_bytes": int64(len(data)), "truncated": start > 0}
 		return out

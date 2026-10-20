@@ -289,7 +289,7 @@ func markdown(rec *record, dir string) string {
 			if a.Kind == "screenshot" {
 				fmt.Fprintf(&b, "![%s](%s)\n\n", a.Name, rel)
 			} else {
-				fmt.Fprintf(&b, "- 증거: [%s](%s) (%s, %d바이트)\n", a.Name, rel, a.Kind, a.Size)
+				fmt.Fprintf(&b, "- 증거: [%s](%s) (%s, %s)\n", a.Name, rel, a.Kind, byteSize(a.Size))
 			}
 		}
 	}
@@ -348,7 +348,7 @@ type htmlAssert struct {
 
 type htmlFile struct {
 	Name, Rel, Kind string
-	Size            int64
+	Size            string
 }
 
 // htmlReport writes the HTML report of rec, whose evidence lies in dir.
@@ -370,7 +370,7 @@ func htmlReport(rec *record, dir string) ([]byte, error) {
 			if !ok {
 				continue
 			}
-			f := htmlFile{Name: a.Name, Rel: rel, Kind: a.Kind, Size: a.Size}
+			f := htmlFile{Name: a.Name, Rel: rel, Kind: a.Kind, Size: byteSize(a.Size)}
 			if a.Kind == "screenshot" {
 				hs.Shots = append(hs.Shots, f)
 			} else {
@@ -456,7 +456,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 <tbody>{{range .Asserts}}<tr><td><code>{{.Kind}}</code></td><td class="wrap">{{.Expected}}</td><td class="wrap">{{.Actual}}</td><td>{{if .Passed}}<span class="ok">통과</span>{{else}}<span class="bad">실패</span>{{end}}</td></tr>
 {{end}}</tbody>
 </table>{{end}}
-{{range .Files}}<p>증거: <a href="{{.Rel}}">{{.Name}}</a> <span class="muted">({{.Kind}}, {{.Size}}바이트)</span></p>
+{{range .Files}}<p>증거: <a href="{{.Rel}}">{{.Name}}</a> <span class="muted">({{.Kind}}, {{.Size}})</span></p>
 {{end}}{{range .Shots}}<figure><img src="{{.Rel}}" alt="{{.Name}}"><figcaption class="muted">{{.Name}}</figcaption></figure>
 {{end}}</section>
 {{end}}{{end}}

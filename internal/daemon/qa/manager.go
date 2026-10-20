@@ -214,7 +214,7 @@ func (m *Manager) Start(ctx context.Context, p StartParams, c model.Caller) (Run
 		src, file, dir = data, p.Path, filepath.Dir(p.Path)
 	}
 	if len(src) > maxScenarioBytes {
-		return Run{}, apierr.Invalid(fmt.Sprintf("시나리오가 %d바이트를 넘습니다. 시나리오를 나누세요", maxScenarioBytes))
+		return Run{}, apierr.Invalid(fmt.Sprintf("시나리오가 %s를 넘습니다. 시나리오를 나누세요", byteSize(maxScenarioBytes)))
 	}
 	runID := ids.New(ids.QARun)
 	sc, err := Parse(src, ParseOptions{File: file, Dir: dir, Vars: p.Vars, RunID: runID})
@@ -280,7 +280,7 @@ func readScenario(path string) ([]byte, error) {
 		return nil, apierr.Invalid(fmt.Sprintf("%s는 폴더입니다. 시나리오 YAML 파일을 주세요", path))
 	}
 	if fi.Size() > maxScenarioBytes {
-		return nil, apierr.Invalid(fmt.Sprintf("시나리오 파일 %s가 %d바이트를 넘습니다. 시나리오를 나누세요", path, maxScenarioBytes))
+		return nil, apierr.Invalid(fmt.Sprintf("시나리오 파일 %s가 %s를 넘습니다. 시나리오를 나누세요", path, byteSize(maxScenarioBytes)))
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
