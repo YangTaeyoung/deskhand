@@ -153,11 +153,19 @@ func recyclable(path string, fi fs.FileInfo) error {
 	if hr, _, _ := procSHQueryRecycleBinW.Call(uintptr(unsafe.Pointer(rootPtr)), uintptr(unsafe.Pointer(&info))); uint32(hr) != 0 {
 		return unsupportedTrash(path, fmt.Sprintf("the volume %s has no Recycle Bin for this user (SHQueryRecycleBin 0x%08X)", root, uint32(hr)), permanently)
 	}
-	if slices.ContainsFunc(policyValues("NoRecycleFiles"), func(v uint64) bool { return v != 0 }) {
+	noRecycle, err := policyValues("NoRecycleFiles")
+	if err != nil {
+		return unreadableSetting(path, err)
+	}
+	if slices.ContainsFunc(noRecycle, func(v uint64) bool { return v != 0 }) {
 		return unsupportedTrash(path, "the policy \"Do not move deleted files to the Recycle Bin\" is on", permanently)
 	}
 	volume := strings.TrimSuffix(strings.TrimPrefix(windows.UTF16ToString(guid), `\\?\Volume`), `\`)
 	limit, err := recycleBinLimit(root, volume)
+	var unread *settingError
+	if errors.As(err, &unread) {
+		return unreadableSetting(path, err)
+	}
 	if err != nil {
 		return unsupportedTrash(path, err.Error(), permanently)
 	}
@@ -227,26 +235,71 @@ func driveKind(t uint32) string {
 }
 
 // policyValues returns the DWORD name of the Explorer policies of
-// HKEY_LOCAL_MACHINE and of HKEY_CURRENT_USER, each that is set.
-func policyValues(name string) []uint64 {
+// HKEY_LOCAL_MACHINE and of HKEY_CURRENT_USER, each that is set, or the
+// *settingError of the first that cannot be read.
+func policyValues(name string) ([]uint64, error) {
 	var out []uint64
-	for _, hive := range []registry.Key{registry.LOCAL_MACHINE, registry.CURRENT_USER} {
-		if v, ok := dwordValue(hive, explorerPolicies, name); ok {
+	for _, hive := range []struct {
+		key  registry.Key
+		name string
+	}{{registry.LOCAL_MACHINE, "HKEY_LOCAL_MACHINE"}, {registry.CURRENT_USER, "HKEY_CURRENT_USER"}} {
+		v, ok, err := dwordValue(hive.key, hive.name, explorerPolicies, name)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
 			out = append(out, v)
 		}
 	}
-	return out
+	return out, nil
 }
 
-// dwordValue returns the integer value name of the key path below hive.
-func dwordValue(hive registry.Key, path, name string) (uint64, bool) {
+// readDWORD reads the integer value name of the key path below hive.
+var readDWORD = registryDWORD
+
+// registryDWORD reads the integer value name of the key path below hive.
+func registryDWORD(hive registry.Key, path, name string) (uint64, error) {
 	k, err := registry.OpenKey(hive, path, registry.QUERY_VALUE)
 	if err != nil {
-		return 0, false
+		return 0, err
 	}
 	defer k.Close()
 	v, _, err := k.GetIntegerValue(name)
-	return v, err == nil
+	return v, err
+}
+
+// settingError is the failure to read a Recycle Bin setting or policy.
+type settingError struct {
+	name, key string
+	err       error
+}
+
+func (e *settingError) Error() string {
+	return fmt.Sprintf("the setting %s in %s could not be read (%v), so whether it keeps deleted files is unknown", e.name, e.key, e.err)
+}
+
+func (e *settingError) Unwrap() error { return e.err }
+
+// unreadableSetting is the CAPABILITY_UNSUPPORTED error of fs.trash for
+// path while the Recycle Bin setting of err cannot be read.
+func unreadableSetting(path string, err error) error {
+	return unsupportedTrash(path, err.Error(), "let the account of the agent read that setting and retry, or delete it permanently with fs.delete instead")
+}
+
+// dwordValue returns the integer value name of the key path below hive,
+// whose name is hiveName, and whether it is set: a key or value that does
+// not exist (registry.ErrNotExist) is not set, and any other failure of the
+// read, such as a denied access or a value that is not an integer, is a
+// *settingError.
+func dwordValue(hive registry.Key, hiveName, path, name string) (uint64, bool, error) {
+	v, err := readDWORD(hive, path, name)
+	switch {
+	case errors.Is(err, registry.ErrNotExist):
+		return 0, false, nil
+	case err != nil:
+		return 0, false, &settingError{name: name, key: hiveName + `\` + path, err: err}
+	}
+	return v, true, nil
 }
 
 // recycleBinLimit returns the most bytes the Recycle Bin of the volume with
@@ -255,17 +308,30 @@ func dwordValue(hive registry.Key, path, name string) (uint64, bool) {
 // the volume's size in percent that the RecycleBinSize policies of
 // HKEY_LOCAL_MACHINE and HKEY_CURRENT_USER set. A setting that removes
 // deleted files at once (NukeOnDelete), a size policy while the volume's
-// size cannot be read, and no limit at all are errors whose text says so.
+// size cannot be read, and no limit at all are errors whose text says so;
+// a setting that cannot be read is a *settingError.
 func recycleBinLimit(root, volume string) (int64, error) {
 	key := bitBucketVolumes + volume
-	if v, ok := dwordValue(registry.CURRENT_USER, key, "NukeOnDelete"); ok && v != 0 {
+	nuke, ok, err := dwordValue(registry.CURRENT_USER, "HKEY_CURRENT_USER", key, "NukeOnDelete")
+	if err != nil {
+		return 0, err
+	}
+	if ok && nuke != 0 {
 		return 0, fmt.Errorf("the Recycle Bin of %s is set to remove files immediately when they are deleted", root)
 	}
 	limit := int64(-1)
-	if mb, ok := dwordValue(registry.CURRENT_USER, key, "MaxCapacity"); ok {
+	mb, ok, err := dwordValue(registry.CURRENT_USER, "HKEY_CURRENT_USER", key, "MaxCapacity")
+	if err != nil {
+		return 0, err
+	}
+	if ok {
 		limit = int64(mb) << 20
 	}
-	if pcts := policyValues("RecycleBinSize"); len(pcts) > 0 {
+	pcts, err := policyValues("RecycleBinSize")
+	if err != nil {
+		return 0, err
+	}
+	if len(pcts) > 0 {
 		var total uint64
 		p, err := windows.UTF16PtrFromString(root)
 		if err == nil {
