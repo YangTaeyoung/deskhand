@@ -96,6 +96,25 @@ func (r *ring) snapshot() ([]byte, bool) {
 	return r.slice(0, len(r.buf)), r.total > len(r.buf)
 }
 
+// tail returns the retained bytes and the count of every byte written.
+func (r *ring) tail() ([]byte, int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.slice(0, len(r.buf)), r.total
+}
+
+// restoredRing returns a ring of size bytes holding the last size bytes of
+// data as the newest of total bytes written.
+func restoredRing(size int, data []byte, total int) *ring {
+	r := newRing(size)
+	if len(data) > size {
+		data = data[len(data)-size:]
+	}
+	r.buf = append(r.buf, data...)
+	r.total = max(total, len(data))
+	return r
+}
+
 func (r *ring) written() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -118,6 +137,14 @@ type job struct {
 	running  bool // the process was started
 	exited   bool
 	code     int
+	// lost is set for a job that was running when the agent stopped; it
+	// counts as exited without a code.
+	lost bool
+
+	// saveMu orders the writes of the job's files; exitSaved is set once
+	// the files of its exit are written.
+	saveMu    sync.Mutex
+	exitSaved bool
 }
 
 // markStarted records the pid of the started process; from then on the job
@@ -146,12 +173,27 @@ func (j *job) state() (exited bool, code int) {
 	return j.exited, j.code
 }
 
+// stateName returns "running", "exited" or "lost".
+func (j *job) stateName() string {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	switch {
+	case j.lost:
+		return "lost"
+	case j.exited:
+		return "exited"
+	}
+	return "running"
+}
+
 func (j *job) closeStdin() {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if !j.stdinOff {
 		j.stdinOff = true
-		_ = j.stdin.Close()
+		if j.stdin != nil {
+			_ = j.stdin.Close()
+		}
 	}
 }
 
@@ -160,6 +202,8 @@ type jobTable struct {
 	jobs  map[string]*job
 	order []string
 	next  int
+	// store keeps the jobs on disk; nil keeps them in memory only.
+	store *jobStore
 }
 
 func newJobTable() *jobTable { return &jobTable{jobs: map[string]*job{}} }
@@ -186,6 +230,7 @@ func (t *jobTable) reserve(j *job) error {
 			if exited, _ := t.jobs[id].state(); exited {
 				delete(t.jobs, id)
 				t.order = append(t.order[:i], t.order[i+1:]...)
+				t.store.remove(id)
 				evicted = true
 				break
 			}
@@ -253,21 +298,32 @@ func (s *Server) execStart(_ context.Context, req proto.Message) (proto.Message,
 	if err := s.jobs.reserve(j); err != nil {
 		return nil, err
 	}
+	store := s.jobs.store
+	if err := store.save(j, nil); err != nil {
+		s.jobs.release(j)
+		store.remove(j.id)
+		return nil, fmt.Errorf("the job was not started because it could not be recorded (%v); check that the agent's data folder is writable", err)
+	}
 	if j.stdin, err = c.StdinPipe(); err != nil {
 		s.jobs.release(j)
+		store.remove(j.id)
 		return nil, startError(err)
 	}
 	if err := c.Start(); err != nil {
 		s.jobs.release(j)
+		store.remove(j.id)
 		return nil, startError(err)
 	}
 	j.markStarted(c.Process.Pid)
+	s.saveJob(j, nil)
+	go s.flushJob(j)
 	go func() {
 		_ = c.Wait()
 		code := -1
 		if c.ProcessState != nil {
 			code = c.ProcessState.ExitCode()
 		}
+		s.saveJob(j, &code)
 		j.mu.Lock()
 		j.exited, j.code = true, code
 		j.mu.Unlock()
@@ -290,6 +346,7 @@ func (s *Server) execRead(_ context.Context, req proto.Message) (proto.Message, 
 		limit = utf8.UTFMax
 	}
 	exited, code := j.state()
+	state := j.stateName()
 	out, outNext, outDropped := j.out.ReadFrom(req.Int("out_offset"), limit)
 	errOut, errNext, errDropped := j.err.ReadFrom(req.Int("err_offset"), limit)
 	finished := exited && outNext == j.out.written() && errNext == j.err.written()
@@ -300,7 +357,7 @@ func (s *Server) execRead(_ context.Context, req proto.Message) (proto.Message, 
 		errOut = errOut[:completeUTF8Len(errOut)]
 	}
 	res := proto.Message{
-		"state":    "running",
+		"state":    state,
 		"pid":      j.processID(),
 		"out":      text(out),
 		"err":      text(errOut),
@@ -308,8 +365,7 @@ func (s *Server) execRead(_ context.Context, req proto.Message) (proto.Message, 
 		"err_next": errNext,
 		"dropped":  outDropped || errDropped,
 	}
-	if exited {
-		res["state"] = "exited"
+	if state == "exited" {
 		res["code"] = code
 	}
 	return res, nil
@@ -342,7 +398,10 @@ func (s *Server) execWrite(_ context.Context, req proto.Message) (proto.Message,
 	if err != nil {
 		return nil, err
 	}
-	if exited, _ := j.state(); exited {
+	switch j.stateName() {
+	case "lost":
+		return nil, fmt.Errorf("job '%s' was running when deskhand-agent stopped and has no input any more; start a new job with exec.start", j.id)
+	case "exited":
 		return nil, fmt.Errorf("job '%s' has exited; start a new job with exec.start", j.id)
 	}
 	data, eof := req.String("data"), req.Bool("eof")
@@ -372,27 +431,22 @@ func (s *Server) execKill(_ context.Context, req proto.Message) (proto.Message, 
 			return nil, errors.New("job did not exit after the kill; call exec.list to check its state")
 		}
 	}
-	exited, _ := j.state()
-	state := "running"
-	if exited {
-		state = "exited"
-	}
-	return proto.Message{"state": state}, nil
+	return proto.Message{"state": j.stateName()}, nil
 }
 
 func (s *Server) execList(context.Context, proto.Message) (proto.Message, error) {
 	jobs := []any{}
 	for _, j := range s.jobs.list() {
-		exited, code := j.state()
+		_, code := j.state()
+		state := j.stateName()
 		m := map[string]any{
 			"job":     j.id,
 			"pid":     j.processID(),
-			"state":   "running",
+			"state":   state,
 			"cmd":     cutChars(j.cmdline, execListCmdChars),
 			"started": j.started.Format(time.RFC3339),
 		}
-		if exited {
-			m["state"] = "exited"
+		if state == "exited" {
 			m["code"] = code
 		}
 		jobs = append(jobs, m)

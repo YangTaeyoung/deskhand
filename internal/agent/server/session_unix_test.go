@@ -205,17 +205,16 @@ func TestCapsAreSentAgainWhenTheClipboardAppears(t *testing.T) {
 	capsCheckInterval = 20 * time.Millisecond
 	t.Cleanup(func() { capsCheckInterval = old })
 	cb := &toggleClipboard{}
-	_, r, w, _ := startServerS(t, Options{Clipboard: cb, HomeDir: t.TempDir()})
+	_, r, _, _ := startServerS(t, Options{Clipboard: cb, HomeDir: t.TempDir()})
 	if capSet(expect(t, r, "hello"))["clipboard"] {
 		t.Fatal("hello lists a clipboard that is not there")
 	}
-	send(t, w, proto.Message{"t": "welcome", "v": 1})
 	cb.on.Store(true)
-	if !capSet(expect(t, r, "caps"))["clipboard"] {
+	if !capSet(expectCaps(t, r))["clipboard"] {
 		t.Fatal("the caps update lacks the clipboard")
 	}
 	cb.on.Store(false)
-	if capSet(expect(t, r, "caps"))["clipboard"] {
+	if capSet(expectCaps(t, r))["clipboard"] {
 		t.Fatal("the caps update keeps a clipboard that is gone")
 	}
 }
@@ -235,7 +234,7 @@ func (c *gatedClipboard) Available() bool {
 	return c.on.Load()
 }
 
-func TestTheHelloCarriesTheCapsFoundLastAndTheirCheckFollowsTheHostsFirstMessage(t *testing.T) {
+func TestTheHelloCarriesTheCapsFoundLastAndTheirCheckFollowsTheWelcome(t *testing.T) {
 	cb := &gatedClipboard{gate: make(chan struct{})}
 	cb.on.Store(true)
 	_, r, _, first := startServerS(t, Options{Clipboard: cb, HomeDir: t.TempDir()})
@@ -256,7 +255,7 @@ func TestTheHelloCarriesTheCapsFoundLastAndTheirCheckFollowsTheHostsFirstMessage
 	}
 	send(t, proto.NewWriter(c), proto.Message{"t": "welcome", "v": 1})
 	close(cb.gate)
-	if capSet(expect(t, r2, "caps"))["clipboard"] {
+	if capSet(expectCaps(t, r2))["clipboard"] {
 		t.Fatal("the caps checked after the host's welcome keep a clipboard that is gone")
 	}
 }
@@ -269,7 +268,7 @@ func TestTheFirstHelloCarriesTheCapsCheckedWhenServeStarted(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { l.Close() })
-	s := New(Options{Clipboard: cb, HomeDir: t.TempDir(), AllowPeers: loopbackPeers, Unauthenticated: true})
+	s := New(Options{Clipboard: cb, HomeDir: t.TempDir()})
 	go s.Serve(l)
 	deadline := time.Now().Add(10 * time.Second)
 	for s.lastCaps.Load() == nil {
@@ -313,7 +312,7 @@ func TestTheCapsOfTheHelloAreCheckedEveryIntervalWithoutAConnection(t *testing.T
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { l.Close() })
-	s := New(Options{Clipboard: cb, HomeDir: t.TempDir(), AllowPeers: loopbackPeers, Unauthenticated: true})
+	s := New(Options{Clipboard: cb, HomeDir: t.TempDir()})
 	go s.Serve(l)
 	deadline := time.Now().Add(10 * time.Second)
 	for s.lastCaps.Load() == nil {
@@ -341,15 +340,14 @@ func TestTheCapsOfTheHelloAreCheckedEveryIntervalWithoutAConnection(t *testing.T
 	}
 }
 
-func TestTheCapsLineWaitsForTheHostsFirstMessageAfterTheHandshake(t *testing.T) {
+func TestNothingFollowsTheHelloBeforeTheWelcomeAndTheCapsUpdateComesFirst(t *testing.T) {
 	old := capsCheckInterval
 	capsCheckInterval = 20 * time.Millisecond
 	t.Cleanup(func() { capsCheckInterval = old })
 	cb := &countedClipboard{}
 	cb.on.Store(true)
-	s, r, w, first := startServerS(t, Options{Clipboard: cb, HomeDir: t.TempDir()})
+	s, r, _, first := startServerS(t, Options{Clipboard: cb, HomeDir: t.TempDir()})
 	expect(t, r, "hello")
-	send(t, w, proto.Message{"t": "welcome", "v": 1})
 	go func() {
 		for {
 			if _, err := r.Next(); err != nil {
@@ -364,7 +362,7 @@ func TestTheCapsLineWaitsForTheHostsFirstMessageAfterTheHandshake(t *testing.T) 
 	}
 	t.Cleanup(func() { c.Close() })
 	c.SetDeadline(time.Now().Add(10 * time.Second))
-	r2, w2 := proto.NewReader(c), proto.NewWriter(c)
+	r2 := proto.NewReader(c)
 	if !capSet(expect(t, r2, "hello"))["clipboard"] {
 		t.Fatal("the hello lacks the clipboard")
 	}
@@ -391,24 +389,20 @@ func TestTheCapsLineWaitsForTheHostsFirstMessageAfterTheHandshake(t *testing.T) 
 			}
 		}
 	}()
-	m, err := r2.Next()
-	close(stop)
-	<-stopped
+	defer func() { close(stop); <-stopped }()
+	c.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
+	if m, err := r2.Next(); err == nil {
+		t.Fatalf("before the host's welcome the agent sent %v", m)
+	} else if ne, ok := err.(net.Error); !ok || !ne.Timeout() {
+		t.Fatalf("before the host's welcome the read failed with %v", err)
+	}
+	c.SetDeadline(time.Now().Add(10 * time.Second))
+	send(t, proto.NewWriter(c), proto.Message{"t": "welcome", "v": 1})
+	m, err := proto.NewReader(c).Next()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Type() != "ev" || m.String("name") != "mark" {
-		t.Fatalf("before the host's first message the agent sent %v", m)
-	}
-	send(t, w2, proto.Message{"t": "welcome", "v": 1})
-	if capSet(expect(t, r2, "caps"))["clipboard"] {
-		t.Fatal("the caps line after the welcome keeps a clipboard that is gone")
-	}
-}
-
-func TestResolutionIsNotACapabilityOutsideWindows(t *testing.T) {
-	_, r, _, _ := startServerS(t, Options{Clipboard: &fakeClipboard{}, HomeDir: t.TempDir()})
-	if capSet(expect(t, r, "hello"))["resolution"] {
-		t.Fatal("the hello lists resolution, which this agent cannot change")
+	if m.String("name") != "caps.changed" || capSet(m)["clipboard"] {
+		t.Fatalf("the first message after the welcome is %v", m)
 	}
 }

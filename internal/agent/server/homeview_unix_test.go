@@ -85,14 +85,16 @@ func TestARequestReadsTheSessionOnce(t *testing.T) {
 	home, outside := linkedHome(t)
 	symlink(t, filepath.Join(outside, "shadow"), filepath.Join(home, "x"))
 	var calls atomic.Int64
+	var armed atomic.Bool
 	_, r, w, _ := startServerS(t, Options{Clipboard: &fakeClipboard{}, AllowExec: true,
 		Session: func() (session.Session, bool) {
-			if calls.Add(1) == 1 {
+			if !armed.Load() || calls.Add(1) == 1 {
 				return session.Session{User: "deskhand", Home: home}, true
 			}
 			return session.Session{}, false
 		}})
 	expect(t, r, "hello")
+	armed.Store(true)
 	c := &rpcClient{t: t, r: r, w: w}
 	res := c.call("fs.write", proto.Message{"path": "x", "data": base64.StdEncoding.EncodeToString([]byte("host text")), "truncate": true})
 	if res["ok"] != false || !strings.Contains(res.String("error"), "home folder of the desktop user") {

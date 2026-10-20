@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"net"
-	"net/netip"
 	"os"
 	"path/filepath"
 	"sync"
@@ -41,8 +40,20 @@ func (f *fakeClipboard) external(s string) {
 	f.seq++
 }
 
-// loopbackPeers is the AllowPeers of the servers the tests connect to.
-var loopbackPeers = []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}
+// dialAgent connects to the server at addr, sends the host's welcome and
+// bounds the connection to 10 s.
+func dialAgent(t *testing.T, addr string) (net.Conn, *proto.Reader, *proto.Writer) {
+	t.Helper()
+	c, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Close() })
+	c.SetDeadline(time.Now().Add(10 * time.Second))
+	w := proto.NewWriter(c)
+	send(t, w, proto.Message{"t": "welcome", "v": 1, "controller": "test"})
+	return c, proto.NewReader(c), w
+}
 
 func startServer(t *testing.T, opt Options) (*proto.Reader, *proto.Writer, net.Conn) {
 	t.Helper()
@@ -50,17 +61,10 @@ func startServer(t *testing.T, opt Options) (*proto.Reader, *proto.Writer, net.C
 	if err != nil {
 		t.Fatal(err)
 	}
-	opt.AllowPeers = loopbackPeers
-	if opt.HostKey == nil {
-		opt.Unauthenticated = true
-	}
+	t.Cleanup(func() { l.Close() })
 	go New(opt).Serve(l)
-	c, err := net.Dial("tcp", l.Addr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { c.Close(); l.Close() })
-	return proto.NewReader(c), proto.NewWriter(c), c
+	c, r, w := dialAgent(t, l.Addr().String())
+	return r, w, c
 }
 
 func expect(t *testing.T, r *proto.Reader, typ string) proto.Message {
@@ -79,17 +83,17 @@ func expect(t *testing.T, r *proto.Reader, typ string) proto.Message {
 func TestHelloClipboardAndFiles(t *testing.T) {
 	home := t.TempDir()
 	cb := &fakeClipboard{}
-	r, w, c := startServer(t, Options{Token: "tok", Clipboard: cb, HomeDir: home, AllowExec: true,
+	r, w, c := startServer(t, Options{Clipboard: cb, HomeDir: home, AllowExec: true,
 		Shutdown: func() error { return errors.New("not in tests") }})
 	c.SetDeadline(time.Now().Add(10 * time.Second))
 
 	hello := expect(t, r, "hello")
-	if hello.String("token") != "tok" || hello.Int("v") != 1 {
+	if hello.Int("v") != 1 {
 		t.Fatalf("hello %v", hello)
 	}
-	caps, _ := hello["caps"].([]any)
-	if len(caps) < 4 {
-		t.Fatalf("caps %v", caps)
+	caps := capSet(hello)
+	if !caps["clipboard"] || !caps["exec"] || !caps["files"] {
+		t.Fatalf("caps %v", hello["caps"])
 	}
 
 	// controller -> PC clipboard
@@ -150,7 +154,7 @@ func TestHelloClipboardAndFiles(t *testing.T) {
 
 func TestFileChunkOverOnePieceEndsThePush(t *testing.T) {
 	home := t.TempDir()
-	r, w, c := startServer(t, Options{Token: "tok", Clipboard: &fakeClipboard{}, HomeDir: home})
+	r, w, c := startServer(t, Options{Clipboard: &fakeClipboard{}, HomeDir: home})
 	c.SetDeadline(time.Now().Add(10 * time.Second))
 	expect(t, r, "hello")
 	send(t, w, proto.Message{"t": "file.begin", "id": "f1", "name": "big.bin", "size": 262145, "dest": "desktop"})
@@ -208,7 +212,7 @@ func TestShutdownClosesTheUIHelperOnlyAfterTheShutdownStarted(t *testing.T) {
 }
 
 func TestExecDisabledByDefault(t *testing.T) {
-	r, w, c := startServer(t, Options{Token: "x", Clipboard: &fakeClipboard{}, HomeDir: t.TempDir()})
+	r, w, c := startServer(t, Options{Clipboard: &fakeClipboard{}, HomeDir: t.TempDir()})
 	c.SetDeadline(time.Now().Add(5 * time.Second))
 	expect(t, r, "hello")
 	w.Send(proto.Message{"t": "exec", "cmd": "echo hi"})

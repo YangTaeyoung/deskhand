@@ -17,14 +17,9 @@ func startSecondConn(t *testing.T, s *Server) (*rpcClient, net.Conn) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { l.Close() })
 	go s.Serve(l)
-	conn, err := net.Dial("tcp", l.Addr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	conn.SetDeadline(time.Now().Add(10 * time.Second))
-	t.Cleanup(func() { conn.Close(); l.Close() })
-	r := proto.NewReader(conn)
+	conn, r, w := dialAgent(t, l.Addr().String())
 	expect(t, r, "hello")
 	deadline := time.Now().Add(5 * time.Second)
 	for {
@@ -39,7 +34,7 @@ func startSecondConn(t *testing.T, s *Server) (*rpcClient, net.Conn) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	return &rpcClient{t: t, r: r, w: proto.NewWriter(conn)}, conn
+	return &rpcClient{t: t, r: r, w: w}, conn
 }
 
 func TestProcKillErrors(t *testing.T) {

@@ -168,3 +168,11 @@ func TestFingerprintIsLowercaseHexSHA256(t *testing.T) {
 		t.Fatalf("got %s", got)
 	}
 }
+
+func TestListenRefusesNilAllowedPeers(t *testing.T) {
+	ln, err := Listen("127.0.0.1:0", newID(t, "agent"), nil)
+	if err == nil {
+		ln.Close()
+		t.Fatal("Listen without allowedPeers succeeded")
+	}
+}

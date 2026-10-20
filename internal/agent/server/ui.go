@@ -61,7 +61,7 @@ func (s *Server) registerUI() {
 			params := make(map[string]any, len(req))
 			for k, v := range req {
 				switch k {
-				case "t", "id", "op":
+				case "t", "id", "op", "rid":
 				default:
 					params[k] = v
 				}

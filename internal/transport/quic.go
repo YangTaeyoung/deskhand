@@ -31,18 +31,24 @@ func peerFingerprint(rawCerts [][]byte) (string, error) {
 	return Fingerprint(rawCerts[0]), nil
 }
 
-// Listen accepts QUIC connections from peers whose certificate fingerprint allowedPeers approves.
+// Listen accepts QUIC connections from peers whose certificate fingerprint
+// allowedPeers approves. Session tickets are off, so allowedPeers runs on
+// every handshake.
 func Listen(addr string, id Identity, allowedPeers func(fp string) bool) (*quic.Listener, error) {
+	if allowedPeers == nil {
+		return nil, errors.New("listen: no allowed peers given; pass the paired controller fingerprints")
+	}
 	cert, err := id.TLSCertificate()
 	if err != nil {
 		return nil, err
 	}
 	tlsConf := &tls.Config{
-		Certificates:       []tls.Certificate{cert},
-		ClientAuth:         tls.RequireAnyClientCert,
-		InsecureSkipVerify: true,
-		NextProtos:         []string{wire.ALPN},
-		MinVersion:         tls.VersionTLS13,
+		Certificates:           []tls.Certificate{cert},
+		ClientAuth:             tls.RequireAnyClientCert,
+		InsecureSkipVerify:     true,
+		NextProtos:             []string{wire.ALPN},
+		MinVersion:             tls.VersionTLS13,
+		SessionTicketsDisabled: true,
 		VerifyPeerCertificate: func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 			fp, err := peerFingerprint(rawCerts)
 			if err != nil {

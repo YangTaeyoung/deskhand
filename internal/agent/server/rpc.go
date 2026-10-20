@@ -3,9 +3,9 @@ package server
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
-	"net"
-	"slices"
+	"maps"
 	"sync"
 	"time"
 
@@ -37,14 +37,14 @@ type opEntry struct {
 	h     Handler
 }
 
-// conn is one open agent connection. A single writer goroutine drains out:
+// conn is one open rpc stream. A single writer goroutine drains out:
 // replies and keepalives wait for room; an event that finds no room is dropped
 // and counted. The count goes out as an events.dropped event at the place of
 // the dropped events: in the queue just before the next event that is queued,
 // or written by the writer when the queue is empty. A write that does not
 // finish within connWriteTimeout closes the connection.
 type conn struct {
-	nc  net.Conn
+	rw  io.ReadWriteCloser
 	w   *proto.Writer
 	lg  *log.Logger
 	out chan outgoing
@@ -56,22 +56,21 @@ type conn struct {
 	done chan struct{} // closed when the writer has stopped
 	stop chan struct{} // closed to ask the writer to stop
 
-	// caps is the capability list sent last on the connection; capsFollowed
-	// is set once the host has sent its first message after the handshake.
+	// caps holds the capabilities sent last on the stream; capsFollowed is
+	// set once the host's welcome has arrived.
 	capsMu       sync.Mutex
-	caps         []string
+	caps         capStates
 	capsFollowed bool
 }
 
-// setCaps records caps as the list sent on the connection.
-func (c *conn) setCaps(caps []string) {
+// setCaps records caps as the capabilities sent on the stream.
+func (c *conn) setCaps(caps capStates) {
 	c.capsMu.Lock()
 	c.caps = caps
 	c.capsMu.Unlock()
 }
 
-// followCaps records that the host has sent its first message after the
-// handshake.
+// followCaps records that the host's welcome has arrived.
 func (c *conn) followCaps() {
 	c.capsMu.Lock()
 	c.capsFollowed = true
@@ -85,12 +84,12 @@ func (c *conn) capsFollowedYet() bool {
 	return c.capsFollowed
 }
 
-// replaceCaps records caps and reports whether it differs from the list
+// replaceCaps records caps and reports whether they differ from the ones
 // sent last.
-func (c *conn) replaceCaps(caps []string) bool {
+func (c *conn) replaceCaps(caps capStates) bool {
 	c.capsMu.Lock()
 	defer c.capsMu.Unlock()
-	if slices.Equal(c.caps, caps) {
+	if maps.Equal(c.caps, caps) {
 		return false
 	}
 	c.caps = caps
@@ -104,8 +103,8 @@ type outgoing struct {
 	line []byte
 }
 
-func newConn(nc net.Conn, lg *log.Logger) *conn {
-	return &conn{nc: nc, w: proto.NewWriter(nc), lg: lg, out: make(chan outgoing, eventQueueSize),
+func newConn(rw io.ReadWriteCloser, lg *log.Logger) *conn {
+	return &conn{rw: rw, w: proto.NewWriter(rw), lg: lg, out: make(chan outgoing, eventQueueSize),
 		done: make(chan struct{}), stop: make(chan struct{})}
 }
 
@@ -188,17 +187,29 @@ func (c *conn) writeLoop() {
 	}
 }
 
+// writeDeadliner is a stream whose writes can be bounded in time.
+type writeDeadliner interface {
+	SetWriteDeadline(time.Time) error
+}
+
+// setWriteDeadline bounds the next writes to rw when it supports it.
+func setWriteDeadline(rw io.Writer, d time.Duration) {
+	if wd, ok := rw.(writeDeadliner); ok {
+		_ = wd.SetWriteDeadline(time.Now().Add(d))
+	}
+}
+
 func (c *conn) write(o outgoing) bool {
-	_ = c.nc.SetWriteDeadline(time.Now().Add(connWriteTimeout))
+	setWriteDeadline(c.rw, connWriteTimeout)
 	var err error
 	if o.line != nil {
-		_, err = c.nc.Write(o.line)
+		_, err = c.rw.Write(o.line)
 	} else {
 		err = c.w.Send(o.m)
 	}
 	if err != nil {
 		c.lg.Printf("send: %v", err)
-		_ = c.nc.Close()
+		_ = c.rw.Close()
 		return false
 	}
 	return true
@@ -247,20 +258,35 @@ func (s *Server) removeConn(c *conn) {
 
 // dispatch runs one "req" message and sends the matching "res" with its
 // encoded line, or with a nil line when it was not encoded. A request without
-// an id is not run. A reply whose line would reach maxReplyLine is replaced by
-// an error that asks for less.
+// an id is not run. req.status reads the journal; a journaled op with a rid
+// runs through dispatchJournaled.
 func (s *Server) dispatch(ctx context.Context, req proto.Message, send func(m proto.Message, line []byte)) {
 	if req["id"] == nil {
 		send(proto.Message{"t": "res", "id": nil, "ok": false, "error": errNoID}, nil)
 		return
 	}
+	op := req.String("op")
+	if op == "req.status" {
+		send(s.reqStatus(req), nil)
+		return
+	}
+	if rid := req.String("rid"); rid != "" && journaledOps[op] {
+		s.dispatchJournaled(ctx, req, rid, send)
+		return
+	}
+	send(s.respond(ctx, req))
+}
+
+// respond runs req and returns its "res" with the encoded line, or with a nil
+// line for a failure. A reply whose line would reach maxReplyLine is replaced
+// by an error that asks for less.
+func (s *Server) respond(ctx context.Context, req proto.Message) (proto.Message, []byte) {
 	fail := func(text string) proto.Message {
 		return proto.Message{"t": "res", "id": req["id"], "ok": false, "error": text}
 	}
 	fields, err := s.invoke(ctx, req)
 	if err != nil {
-		send(fail(err.Error()), nil)
-		return
+		return failure(req["id"], err), nil
 	}
 	res := proto.Message{}
 	for k, v := range fields {
@@ -273,12 +299,11 @@ func (s *Server) dispatch(ctx context.Context, req proto.Message, send func(m pr
 	switch {
 	case err != nil:
 		s.opt.Logger.Printf("op %s: the answer could not be encoded: %v", req.String("op"), err)
-		send(fail(fmt.Sprintf("the answer to '%s' could not be encoded; see the agent log", req.String("op"))), nil)
+		return fail(fmt.Sprintf("the answer to '%s' could not be encoded; see the agent log", req.String("op"))), nil
 	case len(line) >= maxReplyLine:
-		send(fail(fmt.Sprintf("the answer to '%s' is larger than the 8 MiB line the host reads; ask for less (a lower max, depth or limit, a narrower path or a name filter)", req.String("op"))), nil)
-	default:
-		send(res, line)
+		return fail(fmt.Sprintf("the answer to '%s' is larger than the 8 MiB line the host reads; ask for less (a lower max, depth or limit, a narrower path or a name filter)", req.String("op"))), nil
 	}
+	return res, line
 }
 
 // tooManyRequests is the error of a request that arrives while maxInFlight
@@ -315,6 +340,7 @@ func (s *Server) registerBuiltins() {
 	s.registerFiles()
 	s.registerUI()
 	s.registerLaunch()
+	s.registerClipboard()
 	if s.opt.Session != nil {
 		s.register("session.info", true, s.sessionInfo)
 	}

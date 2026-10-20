@@ -12,7 +12,6 @@ import (
 	"io/fs"
 	"log"
 	"net"
-	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,11 +25,8 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/proto"
 )
 
-const AgentVersion = "0.2.1"
-
 // Options configure the agent.
 type Options struct {
-	Token     string
 	AllowExec bool
 	Clipboard clipboard.Clipboard
 	// HomeDir is the home directory of home-relative paths, file drops and
@@ -46,22 +42,13 @@ type Options struct {
 	Logger   *log.Logger
 	// UI serves the ui and win ops; nil means the agent has no ui capability.
 	UI UI
-	// AllowPeers holds the address ranges whose connections are served; empty
-	// means DefaultPeers.
-	AllowPeers []netip.Prefix
-	// HostKey is the host's Ed25519 public key (the controller's key). A
-	// connection is served after the host signed its nonce and Token with the
-	// matching private key. Without a HostKey of 32 bytes and a Token the
-	// server serves nothing, unless Unauthenticated is set.
-	HostKey []byte
-	// Unauthenticated serves every connection from AllowPeers without a
-	// signature and sends a hello without auth.
-	Unauthenticated bool
-	// AuthTimeout bounds the time from the hello to the auth message; 0 means
-	// 30 s.
-	AuthTimeout time.Duration
 	// DeployRoot is a folder the agent keeps locked; nil means none.
 	DeployRoot *DeployRoot
+	// DataDir holds the request journal (journal/) and the exec.start jobs
+	// (jobs/); empty keeps both in memory only.
+	DataDir string
+	// Version is the agent version the hello carries; empty means "dev".
+	Version string
 }
 
 // DeployRoot names a folder that the fs operations create through Lock when
@@ -74,29 +61,19 @@ type DeployRoot struct {
 	Locked func() bool
 }
 
-// DefaultPeers are the private IPv4 ranges whose connections are served when
-// Options.AllowPeers is empty.
-var DefaultPeers = []netip.Prefix{
-	netip.MustParsePrefix("10.0.0.0/8"),
-	netip.MustParsePrefix("172.16.0.0/12"),
-	netip.MustParsePrefix("192.168.0.0/16"),
-}
+// welcomeTimeout bounds the wait for the host's welcome after the hello.
+const welcomeTimeout = 10 * time.Second
 
-// refusalWriteTimeout bounds the write of the refusal line to a peer that is
-// not served.
-const refusalWriteTimeout = 5 * time.Second
-
-// Server serves one connection at a time (the app reconnects as needed).
+// Server serves rpc streams; each runs on its own until it closes.
 type Server struct {
 	opt Options
 
-	ops    map[string]opEntry
-	connMu sync.Mutex
-	conns  map[*conn]struct{}
-	jobs   *jobTable
+	ops     map[string]opEntry
+	connMu  sync.Mutex
+	conns   map[*conn]struct{}
+	jobs    *jobTable
+	journal *journal
 
-	// handshakes holds the connections between their hello and authed.
-	handshakes handshakeQueue
 	// deployMu orders the creations of the deploy root.
 	deployMu sync.Mutex
 
@@ -122,15 +99,12 @@ type Server struct {
 	timing   struct{ caps, pollMin, pollMax time.Duration }
 	clipKick chan struct{}
 
-	// refusals writes the refused connections to the log.
-	refusals refusalLog
-
 	// ownHome is the agent's own home directory, used without HomeDir and
 	// without a session.
 	ownHome string
 
-	// lastCaps is the capability list caps returned last.
-	lastCaps atomic.Pointer[[]string]
+	// lastCaps holds the capabilities caps returned last.
+	lastCaps atomic.Pointer[capStates]
 }
 
 func New(opt Options) *Server {
@@ -146,6 +120,13 @@ func New(opt Options) *Server {
 	s := &Server{opt: opt, ops: map[string]opEntry{}, conns: map[*conn]struct{}{}, jobs: newJobTable(), ownHome: agentHome(),
 		clipKick: make(chan struct{}, 1)}
 	s.timing.caps, s.timing.pollMin, s.timing.pollMax = capsCheckInterval, clipboardPollMin, clipboardPollMax
+	journalDir := ""
+	if opt.DataDir != "" {
+		journalDir = filepath.Join(opt.DataDir, "journal")
+		s.jobs.store = &jobStore{dir: filepath.Join(opt.DataDir, "jobs"), lg: opt.Logger}
+		s.jobs.restore(s.jobs.store.load())
+	}
+	s.journal = openJournal(journalDir, opt.Logger)
 	s.registerBuiltins()
 	return s
 }
@@ -157,19 +138,24 @@ func (s *Server) Close() {
 	}
 }
 
-// Serve checks the capabilities, so that a hello carries them without a
-// check of its own, starts watchCaps and then accepts connections on l until
-// it is closed.
+// Serve accepts connections on l until it is closed and serves each as one
+// rpc stream with ServeConn.
 func (s *Server) Serve(l net.Listener) error {
-	s.caps()
-	s.startCapsWatcher()
+	s.Start()
 	for {
 		c, err := l.Accept()
 		if err != nil {
 			return err
 		}
-		go s.handle(c)
+		go s.ServeConn(context.Background(), c, c.RemoteAddr().String())
 	}
+}
+
+// Start checks the capabilities once and starts watchCaps; it runs before
+// the first stream is served.
+func (s *Server) Start() {
+	s.caps()
+	s.startCapsWatcher()
 }
 
 // session returns the desktop session, when there is one.
@@ -190,41 +176,20 @@ func (s *Server) homeDir() string {
 var capsCheckInterval = 5 * time.Second
 
 // caps checks the capabilities, which on Linux looks up the desktop
-// session, and records the list as the one found last.
-func (s *Server) caps() []string {
+// session, and records them as the ones found last.
+func (s *Server) caps() capStates {
 	caps := s.checkCaps()
 	s.lastCaps.Store(&caps)
 	return caps
 }
 
-// helloCaps returns the capability list found last, or checks it when none
-// was found yet.
-func (s *Server) helloCaps() []string {
+// helloCaps returns the capabilities found last, or checks them when none
+// were found yet.
+func (s *Server) helloCaps() capStates {
 	if caps := s.lastCaps.Load(); caps != nil {
 		return *caps
 	}
 	return s.caps()
-}
-
-func (s *Server) checkCaps() []string {
-	caps := []string{"files", "shutdown"}
-	if resolutionSupported {
-		caps = append(caps, "resolution")
-	}
-	if s.opt.Clipboard.Available() {
-		caps = append(caps, "clipboard")
-	}
-	if s.opt.AllowExec {
-		caps = append(caps, "exec")
-	}
-	caps = append(caps, "rpc")
-	if s.opt.AllowExec {
-		caps = append(caps, "jobs", "proc", "fs")
-	}
-	if s.opt.UI != nil {
-		caps = append(caps, "ui")
-	}
-	return caps
 }
 
 // fileXfer is a file push in progress: f is open on name in fsys, path is
@@ -289,71 +254,60 @@ func (s *Server) beginDrop(dest, name string) (*fileXfer, error) {
 		sum: func() []byte { return h.Sum(nil) }}, nil
 }
 
-// allowPeers returns the address ranges whose connections are served.
-func (s *Server) allowPeers() []netip.Prefix {
-	if len(s.opt.AllowPeers) == 0 {
-		return DefaultPeers
-	}
-	return s.opt.AllowPeers
-}
-
-// peerAllowed returns the IP address of a peer, with an IPv4-mapped IPv6
-// address turned into IPv4, and whether it lies in one of the allowed ranges.
-// A peer without an IP address is not allowed.
-func (s *Server) peerAllowed(remote net.Addr) (netip.Addr, bool) {
-	tcp, ok := remote.(*net.TCPAddr)
-	if !ok {
-		return netip.Addr{}, false
-	}
-	addr := tcp.AddrPort().Addr().Unmap().WithZone("")
-	for _, p := range s.allowPeers() {
-		if p.Contains(addr) {
-			return addr, true
-		}
-	}
-	return addr, false
-}
-
-// refusal is the sentence sent to a peer whose address is not allowed.
-func refusal(allowed []netip.Prefix, addr netip.Addr) string {
-	ranges := make([]string, len(allowed))
-	for i, p := range allowed {
-		ranges[i] = p.String()
-	}
-	head := "deskhand-agent serves only connections from " + strings.Join(ranges, ", ")
-	if !addr.IsValid() {
-		return head + " and this one has no IP address; connect over TCP"
-	}
-	return fmt.Sprintf("%s and this one comes from %s; start deskhand-agent with --allow-peer %s to serve it",
-		head, addr, netip.PrefixFrom(addr, addr.BitLen()))
-}
-
-func (s *Server) handle(c net.Conn) {
-	defer c.Close()
+// greet writes the hello with caps and reads the host's first message, which
+// has to be its welcome within welcomeTimeout. It reports whether the welcome
+// arrived and returns the controller name it carries.
+func (s *Server) greet(rw io.ReadWriteCloser, r *proto.Reader, caps capStates, peer string) (string, bool) {
 	lg := s.opt.Logger
-	addr, ok := s.peerAllowed(c.RemoteAddr())
-	if !ok {
-		sentence := refusal(s.allowPeers(), addr)
-		s.refusals.write(lg, reasonPeer, c.RemoteAddr(), sentence)
-		_ = c.SetWriteDeadline(time.Now().Add(refusalWriteTimeout))
-		_ = proto.NewWriter(c).Send(proto.Message{"t": "refused", "error": sentence})
-		return
+	setWriteDeadline(rw, connWriteTimeout)
+	if err := proto.NewWriter(rw).Send(s.helloMessage(caps)); err != nil {
+		lg.Printf("hello to %s: %v", peer, err)
+		return "", false
 	}
-	limit := &lineLimit{r: c, max: preAuthLineMax}
-	r := proto.NewReader(limit)
+	timer := time.AfterFunc(welcomeTimeout, func() { _ = rw.Close() })
+	m, err := r.Next()
+	if !timer.Stop() {
+		lg.Printf("no welcome from %s within %s; closing the rpc stream", peer, welcomeTimeout)
+		return "", false
+	}
+	if err != nil {
+		if err != io.EOF {
+			lg.Printf("read from %s before its welcome: %v", peer, err)
+		}
+		return "", false
+	}
+	if m.Type() != "welcome" {
+		lg.Printf("the first message from %s is %q, not welcome; closing the rpc stream", peer, m.Type())
+		return "", false
+	}
+	return m.String("controller"), true
+}
+
+// ServeConn serves one rpc stream: it writes the hello, waits for the
+// host's welcome and then answers requests and sends events until the stream
+// or ctx ends. peer names the host in the log.
+func (s *Server) ServeConn(ctx context.Context, rw io.ReadWriteCloser, peer string) {
+	defer rw.Close()
+	lg := s.opt.Logger
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stopClosing := context.AfterFunc(ctx, func() { _ = rw.Close() })
+	defer stopClosing()
+
+	r := proto.NewReader(rw)
 	sentCaps := s.helloCaps()
-	if !s.handshakeWith(c, r, limit, sentCaps) {
+	controller, ok := s.greet(rw, r, sentCaps, peer)
+	if !ok {
 		return
 	}
-	lg.Printf("connection from %s", c.RemoteAddr())
-	cn := newConn(c, lg)
+	lg.Printf("connection from %s (controller %q)", peer, controller)
+	cn := newConn(rw, lg)
 	go cn.writeLoop()
 	defer cn.stopWriter()
 	send := cn.send
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	cn.setCaps(sentCaps)
+	s.sendCapsUpdate(cn)
 	s.addConn(cn)
 	defer s.removeConn(cn)
 
@@ -381,18 +335,13 @@ func (s *Server) handle(c net.Conn) {
 			x.discard()
 		}
 	}()
-	hostReady := false
 	for {
 		m, err := r.Next()
 		if err != nil {
-			if err != io.EOF {
+			if err != io.EOF && ctx.Err() == nil {
 				lg.Printf("read: %v", err)
 			}
 			return
-		}
-		if !hostReady {
-			hostReady = true
-			s.sendCapsUpdate(cn)
 		}
 		switch m.Type() {
 		case "ping":
@@ -555,28 +504,32 @@ func (s *Server) openConns() []*conn {
 	return conns
 }
 
-// sendCapsUpdate runs when the host of c has sent its first message after
-// the handshake: it checks the capabilities, sends {"t":"caps"} with the
-// list to c when it differs from the hello's, and from then on lets
-// watchCaps update c.
+// capsChanged is the caps.changed event with all of caps.
+func capsChanged(caps capStates) proto.Message {
+	return proto.Message{"t": "ev", "name": "caps.changed", "caps": caps}
+}
+
+// sendCapsUpdate runs when the host's welcome on c has arrived: it checks
+// the capabilities, sends caps.changed to c when they differ from the
+// hello's, and from then on lets watchCaps update c.
 func (s *Server) sendCapsUpdate(c *conn) {
 	if caps := s.caps(); c.replaceCaps(caps) {
-		c.send(proto.Message{"t": "caps", "caps": caps})
+		c.send(capsChanged(caps))
 	}
 	c.followCaps()
 }
 
 // watchCaps checks the capabilities every capsCheckInterval, also while no
-// connection is open, so that a hello carries the list of a check at most
-// one interval old, and sends {"t":"caps"} with the new list to each open
-// connection that sendCapsUpdate has followed and whose last list differs.
+// stream is open, so that a hello carries a check at most one interval old,
+// and sends caps.changed to each open stream that sendCapsUpdate has
+// followed and whose last capabilities differ.
 func (s *Server) watchCaps() {
 	for {
 		time.Sleep(s.timing.caps)
 		caps := s.caps()
 		for _, c := range s.openConns() {
 			if c.capsFollowedYet() && c.replaceCaps(caps) {
-				c.send(proto.Message{"t": "caps", "caps": caps})
+				c.send(capsChanged(caps))
 			}
 		}
 	}
@@ -700,3 +653,6 @@ func runShell(cmd string) (string, int) {
 	}
 	return streamText(out, cut), code
 }
+
+// Logger returns the logger of Options.Logger.
+func (s *Server) Logger() *log.Logger { return s.opt.Logger }

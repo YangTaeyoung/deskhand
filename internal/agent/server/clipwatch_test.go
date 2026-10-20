@@ -109,17 +109,11 @@ func TestOneClipboardWatcherPollsLessWhileNothingChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { l.Close() })
-	go New(Options{Clipboard: cb, HomeDir: t.TempDir(), AllowPeers: loopbackPeers, Unauthenticated: true}).Serve(l)
+	go New(Options{Clipboard: cb, HomeDir: t.TempDir()}).Serve(l)
 	var wg sync.WaitGroup
 	readers := make([]*proto.Reader, 3)
 	for i := range readers {
-		c, err := net.Dial("tcp", l.Addr().String())
-		if err != nil {
-			t.Fatal(err)
-		}
-		c.SetDeadline(time.Now().Add(10 * time.Second))
-		t.Cleanup(func() { c.Close() })
-		readers[i] = proto.NewReader(c)
+		_, readers[i], _ = dialAgent(t, l.Addr().String())
 		wg.Add(1)
 		go func(r *proto.Reader) {
 			defer wg.Done()

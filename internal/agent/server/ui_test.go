@@ -46,7 +46,7 @@ func TestUIOpsPassThrough(t *testing.T) {
 	ui := &fakeUI{}
 	_, r, w, _ := startServerS(t, Options{Clipboard: &fakeClipboard{}, HomeDir: t.TempDir(), UI: ui})
 	hello := expect(t, r, "hello")
-	if !capSet(hello)["ui"] {
+	if !capSet(hello)["uia"] {
 		t.Fatalf("caps %v", hello["caps"])
 	}
 
@@ -126,7 +126,7 @@ func TestUIHelperErrorPassesThrough(t *testing.T) {
 func TestNoUICapWithoutHelper(t *testing.T) {
 	_, r, w, _ := startServerS(t, Options{Clipboard: &fakeClipboard{}, HomeDir: t.TempDir()})
 	hello := expect(t, r, "hello")
-	if capSet(hello)["ui"] {
+	if capSet(hello)["uia"] {
 		t.Fatalf("caps %v", hello["caps"])
 	}
 	for i, op := range []string{"ui.tree", "win.list", "ui.ping"} {

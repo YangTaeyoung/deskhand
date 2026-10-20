@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -19,19 +20,11 @@ func startServerS(t *testing.T, opt Options) (*Server, *proto.Reader, *proto.Wri
 	if err != nil {
 		t.Fatal(err)
 	}
-	opt.AllowPeers = loopbackPeers
-	if opt.HostKey == nil {
-		opt.Unauthenticated = true
-	}
+	t.Cleanup(func() { l.Close() })
 	s := New(opt)
 	go s.Serve(l)
-	c, err := net.Dial("tcp", l.Addr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	c.SetDeadline(time.Now().Add(10 * time.Second))
-	t.Cleanup(func() { c.Close(); l.Close() })
-	return s, proto.NewReader(c), proto.NewWriter(c), c
+	c, r, w := dialAgent(t, l.Addr().String())
+	return s, r, w, c
 }
 
 // send writes m and fails the test when the write fails.
@@ -42,34 +35,134 @@ func send(t *testing.T, w *proto.Writer, m proto.Message) {
 	}
 }
 
+// capSet returns the capability keys of a hello or caps.changed whose state
+// is ready.
 func capSet(m proto.Message) map[string]bool {
 	set := map[string]bool{}
-	caps, _ := m["caps"].([]any)
-	for _, c := range caps {
-		if s, ok := c.(string); ok {
-			set[s] = true
+	caps, _ := m["caps"].(map[string]any)
+	for k, v := range caps {
+		if st, _ := v.(map[string]any); st["state"] == "ready" {
+			set[k] = true
 		}
 	}
 	return set
 }
 
-func TestHelloAnnouncesRPC(t *testing.T) {
-	_, r, _, _ := startServerS(t, Options{Clipboard: &fakeClipboard{}, HomeDir: t.TempDir()})
+// expectCaps returns the next caps.changed event.
+func expectCaps(t *testing.T, r *proto.Reader) proto.Message {
+	t.Helper()
+	for {
+		m := expect(t, r, "ev")
+		if m.String("name") == "caps.changed" {
+			return m
+		}
+	}
+}
+
+func TestHelloCarriesEveryCapabilityKey(t *testing.T) {
+	_, r, _, _ := startServerS(t, Options{Clipboard: &fakeClipboard{}, HomeDir: t.TempDir(), Version: "1.2.3"})
 	hello := expect(t, r, "hello")
-	if hello.Int("v") != 1 || hello.Int("proto") != 2 {
+	if hello.Int("v") != 1 || hello.String("agent") != "1.2.3" || hello.String("arch") != runtime.GOARCH || hello.String("os") != runtime.GOOS ||
+		hello.String("boot_id") == "" {
 		t.Fatalf("hello %v", hello)
 	}
-	caps := capSet(hello)
-	if !caps["rpc"] || caps["jobs"] || caps["proc"] || caps["fs"] {
+	caps, _ := hello["caps"].(map[string]any)
+	for _, k := range []string{"screen", "input", "uia", "exec", "files", "processes", "pty", "tunnel", "diag", "clipboard"} {
+		st, _ := caps[k].(map[string]any)
+		if st["state"] == nil || (st["state"] != "ready" && st["reason"] == "") {
+			t.Fatalf("caps.%s %v", k, caps[k])
+		}
+	}
+	for _, k := range []string{"screen", "input", "pty", "tunnel", "diag"} {
+		if st, _ := caps[k].(map[string]any); st["state"] != "unsupported" || st["reason"] != "not implemented in this agent version" {
+			t.Fatalf("caps.%s %v", k, caps[k])
+		}
+	}
+	set := capSet(hello)
+	if set["exec"] || set["files"] || set["processes"] {
 		t.Fatalf("caps without exec %v", hello["caps"])
 	}
 
 	_, r, _, _ = startServerS(t, Options{Clipboard: &fakeClipboard{}, HomeDir: t.TempDir(), AllowExec: true})
-	caps = capSet(expect(t, r, "hello"))
-	for _, c := range []string{"rpc", "jobs", "proc", "fs"} {
-		if !caps[c] {
-			t.Fatalf("caps with exec lack %s: %v", c, caps)
+	set = capSet(expect(t, r, "hello"))
+	for _, c := range []string{"exec", "files", "processes", "clipboard"} {
+		if !set[c] {
+			t.Fatalf("caps with exec lack %s: %v", c, set)
 		}
+	}
+}
+
+func TestTheBootIDStaysForTheProcess(t *testing.T) {
+	_, r1, _, _ := startServerS(t, Options{Clipboard: &fakeClipboard{}, HomeDir: t.TempDir()})
+	_, r2, _, _ := startServerS(t, Options{Clipboard: &fakeClipboard{}, HomeDir: t.TempDir()})
+	if a, b := expect(t, r1, "hello").String("boot_id"), expect(t, r2, "hello").String("boot_id"); a == "" || a != b {
+		t.Fatalf("boot ids %q and %q", a, b)
+	}
+}
+
+func TestARequestBeforeTheWelcomeClosesTheStream(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { l.Close() })
+	s := New(Options{Clipboard: &fakeClipboard{}, HomeDir: t.TempDir()})
+	ran := make(chan struct{}, 1)
+	s.register("t.run", false, func(context.Context, proto.Message) (proto.Message, error) {
+		ran <- struct{}{}
+		return proto.Message{}, nil
+	})
+	go s.Serve(l)
+	c, err := net.Dial("tcp", l.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Close() })
+	c.SetDeadline(time.Now().Add(10 * time.Second))
+	r := proto.NewReader(c)
+	expect(t, r, "hello")
+	send(t, proto.NewWriter(c), proto.Message{"t": "req", "id": 1, "op": "t.run"})
+	if m, err := r.Next(); err != io.EOF {
+		t.Fatalf("after a request before the welcome the agent sent %v, %v", m, err)
+	}
+	select {
+	case <-ran:
+		t.Fatal("the request before the welcome ran")
+	default:
+	}
+}
+
+func TestACodedErrorCarriesItsCode(t *testing.T) {
+	s, r, w, _ := startServerS(t, Options{Clipboard: &fakeClipboard{}, HomeDir: t.TempDir()})
+	s.register("t.coded", false, func(context.Context, proto.Message) (proto.Message, error) {
+		return nil, coded("NOT_FOUND", "no such thing; check the name", false)
+	})
+	expect(t, r, "hello")
+	send(t, w, proto.Message{"t": "req", "id": 5, "op": "t.coded"})
+	res := expect(t, r, "res")
+	if res["ok"] != false || res.String("code") != "NOT_FOUND" || res["retryable"] != false || res.String("error") != "no such thing; check the name" {
+		t.Fatalf("res %v", res)
+	}
+}
+
+func TestClipboardOps(t *testing.T) {
+	cb := &fakeClipboard{text: "on the PC"}
+	_, r, w, _ := startServerS(t, Options{Clipboard: cb, HomeDir: t.TempDir()})
+	expect(t, r, "hello")
+	send(t, w, proto.Message{"t": "req", "id": 1, "op": "clipboard.get"})
+	if res := expect(t, r, "res"); res["ok"] != true || res.String("text") != "on the PC" {
+		t.Fatalf("clipboard.get %v", res)
+	}
+	send(t, w, proto.Message{"t": "req", "id": 2, "op": "clipboard.set", "text": "from the host"})
+	if res := expect(t, r, "res"); res["ok"] != true {
+		t.Fatalf("clipboard.set %v", res)
+	}
+	if got, _ := cb.Text(); got != "from the host" {
+		t.Fatalf("the clipboard holds %q", got)
+	}
+	send(t, w, proto.Message{"t": "req", "id": 3, "op": "clipboard.set"})
+	if res := expect(t, r, "res"); res["ok"] != false || res.String("code") != "INVALID_ARGUMENT" {
+		t.Fatalf("clipboard.set without text %v", res)
 	}
 }
 
@@ -258,13 +351,7 @@ func TestEmitReachesAllConnections(t *testing.T) {
 	}
 	t.Cleanup(func() { l.Close() })
 	go s.Serve(l)
-	c2, err := net.Dial("tcp", l.Addr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { c2.Close() })
-	c2.SetDeadline(time.Now().Add(10 * time.Second))
-	r2 := proto.NewReader(c2)
+	_, r2, _ := dialAgent(t, l.Addr().String())
 	expect(t, r2, "hello")
 
 	deadline := time.Now().Add(5 * time.Second)
