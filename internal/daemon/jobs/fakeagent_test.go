@@ -136,6 +136,7 @@ func connectAgentEnv(t *testing.T, st *store.Store, agent *scriptAgent) *agentEn
 	})
 	t.Cleanup(mgr.Close)
 	r = New(st, bus, mgr)
+	t.Cleanup(r.Close)
 	h := mgr.Add(conn.Target{HostID: "pc", Name: "pc"})
 	h.Connect()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

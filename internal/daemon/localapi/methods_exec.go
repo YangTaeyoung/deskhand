@@ -233,6 +233,9 @@ func (s *Server) execStart(ctx context.Context, sess *session, raw json.RawMessa
 		if j, err := s.d.Jobs.SetRemote(job.JobID, remote, map[string]any{"job": remote, "pid": res.Int("pid")}); err == nil {
 			job = j
 		}
+		if job.Status == model.StatusRunning {
+			s.d.Jobs.ArmTimeout(job.JobID)
+		}
 		o.status = job.Status
 	} else {
 		result := map[string]any{"error": o.err}

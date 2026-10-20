@@ -510,15 +510,38 @@ func TestExecWaitingForUserExitsThree(t *testing.T) {
 	}
 }
 
-func TestExecTimeoutCancelsJobPrintsPartialAndExits124(t *testing.T) {
-	f := startFake(t, execFake(map[string]any{"chunks": []any{map[string]any{"stream": "stdout", "data": "partial"}},
-		"next_cursor": "7:0", "state": "running", "status": "running"}, map[string]handler{"jobs.cancel": ok(envelope("cancelled", nil))}))
+// timedOut is the last jobs.output page of a job the daemon ended at its
+// timeout.
+var timedOut = map[string]any{"chunks": []any{map[string]any{"stream": "stdout", "data": "tail"}}, "next_cursor": "end", "state": "exited",
+	"status": "failed", "code": 1, "timed_out": true, "error": map[string]any{"code": "TIMEOUT", "message": "시간 초과"}}
+
+func TestExecTimeoutIsEnforcedByTheDaemonAndExits124(t *testing.T) {
+	f := startFake(t, execFake(nil, map[string]handler{"jobs.output": runningThenFinal(timedOut), "jobs.cancel": ok(envelope("cancelled", nil))}))
 	r := runCLI(t, false, "", "exec", "h1", "--timeout", "30ms", "--", "slow")
-	if r.code != 124 || !strings.HasPrefix(r.stdout, "partial") || !strings.Contains(r.err, "종료했습니다") {
+	if r.code != 124 || r.stdout != "early tail" || !strings.Contains(r.err, "30ms 안에 끝나지 않아 종료했습니다") {
 		t.Fatalf("code %d stdout %q stderr %q", r.code, r.stdout, r.err)
 	}
-	if len(f.called("jobs.cancel")) != 1 || f.called("exec.start")[0]["timeout_ms"] != float64(30) {
+	if len(f.called("jobs.cancel")) != 0 || f.called("exec.start")[0]["timeout_ms"] != float64(30) {
 		t.Fatalf("cancel %v start %v", f.called("jobs.cancel"), f.called("exec.start"))
+	}
+	startFake(t, execFake(nil, map[string]handler{"jobs.output": runningThenFinal(timedOut)}))
+	r = runCLI(t, false, "", "--json", "exec", "h1", "--timeout", "30ms", "--", "slow")
+	var m map[string]any
+	if r.code != 124 || json.Unmarshal([]byte(r.stdout), &m) != nil || m["timed_out"] != true || m["status"] != "failed" ||
+		m["error"].(map[string]any)["code"] != "TIMEOUT" || m["stdout"] != "early tail" {
+		t.Fatalf("json: code %d stdout %q", r.code, r.stdout)
+	}
+	r = runCLI(t, false, "", "jobs", "watch", "j-1")
+	if r.code != 124 || !strings.Contains(r.err, "j-1") {
+		t.Fatalf("watch: code %d stderr %q", r.code, r.err)
+	}
+}
+
+func TestExecPastItsTimeoutWaitsForTheDaemon(t *testing.T) {
+	f := startFake(t, execFake(nil, map[string]handler{"jobs.output": runningThenFinal(exited(5, "late", ""))}))
+	r := runCLI(t, false, "", "exec", "h1", "--timeout", "30ms", "--", "slow")
+	if r.code != 5 || r.stdout != "early late" || strings.Contains(r.err, "종료했습니다") || len(f.called("jobs.cancel")) != 0 {
+		t.Fatalf("code %d stdout %q stderr %q", r.code, r.stdout, r.err)
 	}
 }
 
@@ -705,40 +728,6 @@ func runningThenFinal(final map[string]any) handler {
 			return map[string]any{"chunks": []any{map[string]any{"stream": "stdout", "data": "early "}}, "next_cursor": "6:0", "state": "running", "status": "running"}, nil
 		}
 		return final, nil
-	}
-}
-
-func TestTimeoutCancelFailureExitsFourWithJobID(t *testing.T) {
-	startFake(t, execFake(nil, map[string]handler{
-		"jobs.output": runningThenFinal(exited(0, "", "")),
-		"jobs.cancel": func(map[string]any, func(any)) (any, *rpcFail) { return nil, &rpcFail{"DROP", ""} },
-	}))
-	r := runCLI(t, false, "", "exec", "h1", "--timeout", "30ms", "--", "slow")
-	if r.code != exitUnknown || !strings.Contains(r.err, "deskhand jobs get j-1") || strings.Contains(r.err, "종료했습니다") {
-		t.Fatalf("code %d stderr %q", r.code, r.err)
-	}
-}
-
-func TestTimeoutAfterJobFinishedReturnsRealResult(t *testing.T) {
-	startFake(t, execFake(nil, map[string]handler{
-		"jobs.output": runningThenFinal(exited(5, "late", "")),
-		"jobs.cancel": ok(envelope("failed", map[string]any{"job": map[string]any{"status": "failed"}})),
-	}))
-	r := runCLI(t, false, "", "exec", "h1", "--timeout", "30ms", "--", "slow")
-	if r.code != 5 || r.stdout != "early late" || strings.Contains(r.err, "종료했습니다") {
-		t.Fatalf("code %d stdout %q stderr %q", r.code, r.stdout, r.err)
-	}
-}
-
-func TestTimeoutCancelledJobDrainsOutputAndExits124(t *testing.T) {
-	cancelled := map[string]any{"chunks": []any{map[string]any{"stream": "stdout", "data": "tail"}}, "next_cursor": "end", "state": "exited", "status": "cancelled"}
-	startFake(t, execFake(nil, map[string]handler{
-		"jobs.output": runningThenFinal(cancelled),
-		"jobs.cancel": ok(envelope("cancelled", nil)),
-	}))
-	r := runCLI(t, false, "", "exec", "h1", "--timeout", "30ms", "--", "slow")
-	if r.code != 124 || r.stdout != "early tail" || !strings.Contains(r.err, "종료했습니다") {
-		t.Fatalf("code %d stdout %q stderr %q", r.code, r.stdout, r.err)
 	}
 }
 

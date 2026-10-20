@@ -39,12 +39,25 @@ type Registry struct {
 	bus *events.Bus
 	mgr *conn.Manager
 
+	// base ends with Close; the kills of timed out jobs run under it.
+	base context.Context
+	stop context.CancelFunc
+
 	mu         sync.Mutex
 	earlyExits map[string]earlyExit
-	// cancelling holds the jobs whose cancel is under way; their exit
-	// finishes them cancelled.
-	cancelling map[string]bool
+	// cancelling holds the jobs whose cancel or timeout kill is under way
+	// with its reason; their exit finishes them by it.
+	cancelling map[string]string
+	// timers hold the timeouts of running exec.start jobs.
+	timers map[string]*time.Timer
+	closed bool
 }
+
+// Reasons a job's remote process is killed.
+const (
+	reasonCancel  = "cancel"
+	reasonTimeout = "timeout"
+)
 
 type earlyExit struct {
 	code int
@@ -54,7 +67,22 @@ type earlyExit struct {
 // New returns a Registry over st that publishes on bus and reaches agents
 // through mgr.
 func New(st *store.Store, bus *events.Bus, mgr *conn.Manager) *Registry {
-	return &Registry{st: st, bus: bus, mgr: mgr, earlyExits: map[string]earlyExit{}, cancelling: map[string]bool{}}
+	r := &Registry{st: st, bus: bus, mgr: mgr, earlyExits: map[string]earlyExit{}, cancelling: map[string]string{},
+		timers: map[string]*time.Timer{}}
+	r.base, r.stop = context.WithCancel(context.Background())
+	return r
+}
+
+// Close stops the timeouts and the kills under way.
+func (r *Registry) Close() {
+	r.mu.Lock()
+	r.closed = true
+	for id, t := range r.timers {
+		t.Stop()
+		delete(r.timers, id)
+	}
+	r.mu.Unlock()
+	r.stop()
 }
 
 func raw(v any) json.RawMessage {
@@ -171,17 +199,115 @@ func mergeResult(j store.Job, extra map[string]any) map[string]any {
 }
 
 // finishExit finishes j after its process exited with code: cancelled
-// while a cancel of j is under way, else by ExitStatus.
+// while a cancel of j is under way, failed with TIMEOUT while its timeout
+// kill is, else by ExitStatus.
 func (r *Registry) finishExit(j store.Job, code int) (model.Job, error) {
 	r.mu.Lock()
-	cancelling := r.cancelling[j.JobID]
+	reason := r.cancelling[j.JobID]
 	r.mu.Unlock()
+	extra := map[string]any{"state": "exited", "code": code}
 	status := ExitStatus(code)
-	if cancelling {
+	switch reason {
+	case reasonCancel:
 		status = model.StatusCancelled
+	case reasonTimeout:
+		status = model.StatusFailed
+		for k, v := range timeoutResult(j) {
+			extra[k] = v
+		}
 	}
-	return r.Finish(j.JobID, status, mergeResult(j, map[string]any{"state": "exited", "code": code}))
+	return r.Finish(j.JobID, status, mergeResult(j, extra))
 }
+
+// timeoutMS returns the timeout_ms param of j, or 0.
+func timeoutMS(j store.Job) int64 {
+	var p struct {
+		TimeoutMS int64 `json:"timeout_ms"`
+	}
+	if len(j.Params) == 0 || json.Unmarshal(j.Params, &p) != nil {
+		return 0
+	}
+	return p.TimeoutMS
+}
+
+// deadline returns when j's timeout_ms ends, counted from its creation, and
+// false when it has none.
+func deadline(j store.Job) (time.Time, bool) {
+	ms := timeoutMS(j)
+	if ms <= 0 {
+		return time.Time{}, false
+	}
+	return j.CreatedAt.Add(time.Duration(ms) * time.Millisecond), true
+}
+
+// timeoutResult holds the result members of a job its timeout killed.
+func timeoutResult(j store.Job) map[string]any {
+	limit := time.Duration(timeoutMS(j)) * time.Millisecond
+	return map[string]any{"timed_out": true, "error": apierr.New(wire.CodeTimeout,
+		fmt.Sprintf("명령이 %s 안에 끝나지 않아 종료했습니다. timeout_ms를 늘리거나 timeout_ms 없이 다시 실행하세요", limit), true, apierr.NextRetry)}
+}
+
+// ArmTimeout starts the timer of a running remote exec job with timeout_ms:
+// when it ends, the job's process is killed as by jobs.cancel and the job
+// ends failed with TIMEOUT. A job without timeout_ms is left alone.
+func (r *Registry) ArmTimeout(jobID string) bool {
+	j, err := r.st.GetJob(jobID)
+	if err != nil || j.FinishedAt != nil || j.Kind != KindExec || j.RemoteJob == "" {
+		return false
+	}
+	at, ok := deadline(j)
+	if !ok {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return false
+	}
+	if t := r.timers[jobID]; t != nil {
+		t.Stop()
+	}
+	r.timers[jobID] = time.AfterFunc(time.Until(at), func() { r.expire(jobID) })
+	return true
+}
+
+// ResumeTimeouts arms the timers of the running remote exec jobs with
+// timeout_ms when the daemon starts and returns how many it armed.
+func (r *Registry) ResumeTimeouts() int {
+	rows, err := r.st.ListJobs(store.JobFilter{Kind: KindExec, Unfinished: true, All: true})
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, j := range rows {
+		if r.ArmTimeout(j.JobID) {
+			n++
+		}
+	}
+	return n
+}
+
+// expire kills the process of a job whose timeout ended. A host that is not
+// connected is left to Reconcile, which kills its jobs whose timeout ended
+// once it is ready.
+func (r *Registry) expire(jobID string) {
+	r.mu.Lock()
+	delete(r.timers, jobID)
+	r.mu.Unlock()
+	j, err := r.st.GetJob(jobID)
+	if err != nil || j.FinishedAt != nil {
+		return
+	}
+	if r.readyHost(j.HostID) == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.base, killTimeout)
+	defer cancel()
+	_, _ = r.kill(ctx, j, reasonTimeout, nil)
+}
+
+// killTimeout bounds the exec.kill of a timeout.
+const killTimeout = 2 * time.Minute
 
 // HandleAgentEvent applies the job.exited event of hostID's agent.
 func (r *Registry) HandleAgentEvent(hostID string, ev proto.Message) {
@@ -307,6 +433,10 @@ func (r *Registry) Reconcile(hostID string) {
 			_, _ = r.finishExit(j, m.Int("code"))
 		case !ok || m.String("state") == "lost":
 			_, _ = r.Finish(j.JobID, model.StatusUnknown, mergeResult(j, map[string]any{"state": "lost"}))
+		default:
+			if at, timed := deadline(j); timed && !time.Now().Before(at) {
+				r.expire(j.JobID)
+			}
 		}
 	}
 }
@@ -427,7 +557,23 @@ func endOutput(j store.Job) map[string]any {
 	if code, ok := res["code"]; ok {
 		out["code"] = code
 	}
+	addFinal(out, j)
 	return out
+}
+
+// addFinal copies timed_out and error of a finished job's result into a
+// jobs.output result.
+func addFinal(out map[string]any, j store.Job) {
+	if j.FinishedAt == nil {
+		return
+	}
+	res := mergeResult(j, nil)
+	if t, ok := res["timed_out"].(bool); ok && t {
+		out["timed_out"] = true
+	}
+	if e, ok := res["error"]; ok && e != nil {
+		out["error"] = e
+	}
 }
 
 // remoteOutput reads the output of j's remote job from cursor with
@@ -474,20 +620,21 @@ func (r *Registry) remoteOutput(ctx context.Context, j store.Job, cursor string,
 	if res.Has("code") {
 		out["code"] = res.Int("code")
 	}
-	status := j.Status
 	if eof && j.FinishedAt == nil {
 		switch state {
 		case "exited":
-			if mj, err := r.finishExit(j, res.Int("code")); err == nil {
-				status = mj.Status
-			}
+			_, _ = r.finishExit(j, res.Int("code"))
 		case "lost":
-			if mj, err := r.Finish(j.JobID, model.StatusUnknown, mergeResult(j, map[string]any{"state": "lost"})); err == nil {
-				status = mj.Status
-			}
+			_, _ = r.Finish(j.JobID, model.StatusUnknown, mergeResult(j, map[string]any{"state": "lost"}))
 		}
 	}
-	out["status"] = status
+	if eof {
+		if cur, err := r.st.GetJob(j.JobID); err == nil {
+			j = cur
+		}
+		addFinal(out, j)
+	}
+	out["status"] = j.Status
 	return out, nil
 }
 
@@ -506,21 +653,36 @@ func (r *Registry) Cancel(ctx context.Context, jobID string, info *conn.CallInfo
 	if j.Kind != KindExec || j.RemoteJob == "" {
 		return model.Job{}, apierr.Invalid(fmt.Sprintf("job %s는 취소할 수 없는 종류입니다. 끝날 때까지 기다리세요", jobID))
 	}
+	return r.kill(ctx, j, reasonCancel, info)
+}
+
+// kill sends exec.kill for j's remote job and finishes j by reason:
+// cancelled for a cancel, failed with TIMEOUT for a timeout. An exit that
+// arrives while the kill is under way finishes j the same way.
+func (r *Registry) kill(ctx context.Context, j store.Job, reason string, info *conn.CallInfo) (model.Job, error) {
 	h := r.mgr.Get(j.HostID)
 	if h == nil {
 		return model.Job{}, apierr.NotFound(fmt.Sprintf("job %s의 PC %s가 등록돼 있지 않습니다. host.list로 확인하세요", j.JobID, j.HostID))
 	}
 	r.mu.Lock()
-	r.cancelling[jobID] = true
+	if r.cancelling[j.JobID] == "" {
+		r.cancelling[j.JobID] = reason
+	}
+	if t := r.timers[j.JobID]; t != nil && reason == reasonCancel {
+		t.Stop()
+		delete(r.timers, j.JobID)
+	}
 	r.mu.Unlock()
 	defer func() {
 		r.mu.Lock()
-		delete(r.cancelling, jobID)
+		if r.cancelling[j.JobID] == reason {
+			delete(r.cancelling, j.JobID)
+		}
 		r.mu.Unlock()
 	}()
 	res, err := h.Call(ctx, "exec.kill", proto.Message{"job": j.RemoteJob}, conn.CallOpts{Info: info})
 	if err != nil {
-		cur, cerr := r.current(jobID)
+		cur, cerr := r.current(j.JobID)
 		if cerr != nil {
 			cur = model.JobFrom(j)
 		}
@@ -530,7 +692,14 @@ func (r *Registry) Cancel(ctx context.Context, jobID string, info *conn.CallInfo
 	if s := res.String("state"); s != "" {
 		extra["state"] = s
 	}
-	return r.Finish(j.JobID, model.StatusCancelled, mergeResult(j, extra))
+	status := model.StatusCancelled
+	if reason == reasonTimeout {
+		status = model.StatusFailed
+		for k, v := range timeoutResult(j) {
+			extra[k] = v
+		}
+	}
+	return r.Finish(j.JobID, status, mergeResult(j, extra))
 }
 
 // StartedPIDs returns the process ids of the running exec.start jobs of a

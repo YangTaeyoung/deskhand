@@ -31,7 +31,7 @@ type execStartInput struct {
 	Cwd       string            `json:"cwd,omitempty" jsonschema:"Working directory on the PC, for example C:\\Users\\me\\project."`
 	Env       map[string]string `json:"env,omitempty" jsonschema:"Extra environment variables for the command."`
 	Stdin     *string           `json:"stdin,omitempty" jsonschema:"Text written to the command's standard input."`
-	TimeoutMS int               `json:"timeout_ms,omitempty" jsonschema:"Optional time limit in milliseconds; omit for no limit."`
+	TimeoutMS int               `json:"timeout_ms,omitempty" jsonschema:"Optional time limit in milliseconds, counted by the daemon from the start. When it passes the daemon kills the command and the job ends with status failed, error TIMEOUT and timed_out true; the output so far stays readable with job_output. Omit for no limit."`
 }
 
 // exactlyOne requires exactly one of the named properties.

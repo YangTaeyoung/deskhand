@@ -137,7 +137,8 @@ type followOpts struct {
 	// lines prints one JSON object per chunk and state change.
 	lines          bool
 	stdout, stderr io.Writer
-	// timeout cancels the job once it has run that long; 0 waits for the end.
+	// timeout is the time limit the daemon enforces on the job, named in
+	// the message of a job it ended at that limit.
 	timeout time.Duration
 }
 
@@ -155,10 +156,6 @@ type followResult struct {
 // follow polls jobs.output of id with the cursor until the output ends.
 func (r *run) follow(ctx context.Context, c *client.Client, id string, o followOpts) followResult {
 	r.jobID = id
-	var deadline time.Time
-	if o.timeout > 0 {
-		deadline = time.Now().Add(o.timeout)
-	}
 	cursor, lastState := "", ""
 	res := followResult{}
 	for {
@@ -179,11 +176,14 @@ func (r *run) follow(ctx context.Context, c *client.Client, id string, o followO
 		res.status = out.str("status")
 		res.code, res.hasCode = out.num("code")
 		if watchDone(out, cursor) {
+			if out.boolean("timed_out") {
+				res.timedOut = true
+				r.timedOut(id, o)
+				res.exit = exitTimeout
+				return res
+			}
 			res.exit = r.watchExit(id, out)
 			return res
-		}
-		if !deadline.IsZero() && time.Now().After(deadline) {
-			return r.timeoutJob(ctx, c, id, o, &cursor, &lastState)
 		}
 		select {
 		case <-ctx.Done():
@@ -192,6 +192,15 @@ func (r *run) follow(ctx context.Context, c *client.Client, id string, o followO
 		case <-time.After(r.PollInterval):
 		}
 	}
+}
+
+// timedOut reports a job the daemon ended at its time limit.
+func (r *run) timedOut(id string, o followOpts) {
+	if o.timeout > 0 {
+		fmt.Fprintf(r.Stderr, "명령 실행: 명령이 %s 안에 끝나지 않아 종료했습니다. --timeout을 늘리거나 --timeout 0으로 다시 실행하세요\n", o.timeout)
+		return
+	}
+	fmt.Fprintf(r.Stderr, "작업 %s: 시간 제한 안에 끝나지 않아 종료됐습니다. 제한을 늘려 다시 실행하세요\n", id)
 }
 
 // emit prints the chunks and the state change of one jobs.output result.
@@ -219,62 +228,6 @@ func (r *run) emit(out obj, id string, lastState *string, o followOpts) {
 		}
 	}
 }
-
-// timeoutJob cancels a job that ran past its time limit and settles the
-// result by what the cancel did: a cancelled job ends with the timeout exit
-// code, a job that had already finished returns its real result, and a
-// cancel whose result is unknown exits 4.
-func (r *run) timeoutJob(ctx context.Context, c *client.Client, id string, o followOpts, cursor, lastState *string) followResult {
-	res := followResult{}
-	cancel, err := r.call(ctx, c, "jobs.cancel", map[string]any{"job_id": id}, callTimeout)
-	status := cancel.str("status")
-	finished := status == model.StatusSucceeded || (status == model.StatusFailed && cancel.sub("error") == nil)
-	if err != nil || !(status == model.StatusCancelled || finished) {
-		why := "취소 결과를 확인하지 못했습니다"
-		if err != nil {
-			why = "취소 요청이 실패했습니다(" + apierrMessage(err) + ")"
-		}
-		fmt.Fprintf(r.Stderr, "작업 %s: 시간 제한을 넘겼지만 %s. 명령이 아직 실행 중일 수 있습니다. deskhand jobs get %s 로 상태를 확인하세요\n", id, why, id)
-		res.exit = exitUnknown
-		return res
-	}
-	last := r.drain(ctx, c, id, o, cursor, lastState)
-	if finished {
-		res.status = last.str("status")
-		res.code, res.hasCode = last.num("code")
-		res.exit = r.watchExit(id, last)
-		return res
-	}
-	res.timedOut = true
-	fmt.Fprintf(r.Stderr, "명령 실행: 명령이 %s 안에 끝나지 않아 종료했습니다. --timeout을 늘리거나 --timeout 0으로 다시 실행하세요\n", o.timeout)
-	res.exit = exitTimeout
-	return res
-}
-
-// drain prints the remaining output of id until it ends or cannot be read
-// and returns the last jobs.output result.
-func (r *run) drain(ctx context.Context, c *client.Client, id string, o followOpts, cursor, lastState *string) obj {
-	var last obj
-	for i := 0; i < drainPolls; i++ {
-		out, err := r.call(ctx, c, "jobs.output", map[string]any{"job_id": id, "cursor": *cursor}, callTimeout)
-		if err != nil {
-			return last
-		}
-		last = out
-		r.emit(out, id, lastState, o)
-		if next := out.str("next_cursor"); next != "" {
-			*cursor = next
-		}
-		if watchDone(out, *cursor) {
-			return last
-		}
-		time.Sleep(r.PollInterval)
-	}
-	return last
-}
-
-// drainPolls bounds the reads that follow a cancel.
-const drainPolls = 20
 
 func apierrMessage(err error) string {
 	var ae *apierr.Error

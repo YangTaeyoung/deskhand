@@ -71,7 +71,7 @@
 | 메서드 | 결과 |
 |---|---|
 | `exec.run{host_id, argv|cmd, shell, cwd, env, stdin, timeout_ms}` | 봉투 + `code`, `stdout`, `stderr` (큰 출력은 artifact) |
-| `exec.start{…}` | 봉투(job) |
+| `exec.start{…, timeout_ms?}` | 봉투(job). `timeout_ms`는 데몬이 job을 만든 시각부터 잰다. 넘으면 `jobs.cancel`과 같은 길로 프로세스를 끝내고 job을 `failed` + `TIMEOUT`(`result.timed_out:true`)으로 끝낸다. 그때까지의 출력은 `jobs.output`으로 읽을 수 있다. 데몬이 다시 시작해도 남은 시간을 이어 재고, 연결이 끊긴 동안 시간이 다 된 job은 다시 연결될 때 끝낸다 |
 | `jobs.list{host_id?, kind?, status?}` / `jobs.get{job_id}` / `jobs.cancel{job_id}` | job 목록·상세 |
 | `jobs.output{job_id, cursor}` | `chunks`, `next_cursor`, `state` |
 | `proc.list` / `proc.kill` / `app.launch` | 에이전트 op와 동일 + 봉투 |
@@ -181,7 +181,7 @@
 - `exec.run`의 0이 아닌 종료 코드는 `status:"failed"`, `error:null`, `code`에 종료 코드. 명령 시간 초과는 `failed` + `TIMEOUT`.
 - `host.add`/`host.repair`는 동기 호출이다(진행은 `host.install.progress` 이벤트). 결과는 봉투 + `host`(Host) + `job`(Job, kind `install`). 이미 페어링된 PC에 `force` 없는 `host.add`는 봉투 `failed` + `INVALID_ARGUMENT` + `next_action:"host_add_force"`(오류 문장에 `deskhand host add <이름> --ssh <별칭> --force`)이고, `host.add{force:true}`는 그 PC를 새 에이전트 키로 다시 페어링하며, `host.remove{uninstall:true}`는 PC의 에이전트 키·설정·데이터까지 지운다(`uninstall --purge`). 같은 이름 중복은 JSON-RPC `INVALID_ARGUMENT`.
 - `host.connect`/`host.disconnect` 결과는 Host. `host.remove` 결과 `{host_id, removed, uninstalled}`. `host.doctor` 결과 `{host_id, checks}`.
-- `jobs.list` → `{jobs}`, `jobs.get` → Job, `jobs.cancel` → 봉투(`cancelled`) + `job`, `jobs.output{job_id, cursor?}` → `{chunks:[{stream:"stdout"|"stderr", data}], next_cursor, state, status, code?, dropped?}` (`next_cursor`는 `"<out>:<err>"` 바이트 위치. 프로세스가 끝나고 출력을 모두 돌려준 뒤에만 `"end"`다. 프로세스가 끝난 뒤에도 출력이 남아 있으면 `state:"exited"`인 채로 바이트 위치를 계속 주므로, 클라이언트는 `"end"`가 나올 때까지 읽는다. exec job이 아닌 job은 끝나면 출력 없이 `"end"`).
+- `jobs.list` → `{jobs}`, `jobs.get` → Job, `jobs.cancel` → 봉투(`cancelled`) + `job`, `jobs.output{job_id, cursor?}` → `{chunks:[{stream:"stdout"|"stderr", data}], next_cursor, state, status, code?, dropped?, timed_out?, error?}`(`timed_out`·`error`는 끝난 job의 결과에 있을 때 `"end"` 쪽에 붙는다) (`next_cursor`는 `"<out>:<err>"` 바이트 위치. 프로세스가 끝나고 출력을 모두 돌려준 뒤에만 `"end"`다. 프로세스가 끝난 뒤에도 출력이 남아 있으면 `state:"exited"`인 채로 바이트 위치를 계속 주므로, 클라이언트는 `"end"`가 나올 때까지 읽는다. exec job이 아닌 job은 끝나면 출력 없이 `"end"`).
 - 데몬이 시작할 때 끝나지 않았고 원격 job id가 없는 job(진행 중이던 `exec.run`, 응답 전의 `exec.start`, `install`)은 `status:"unknown"`(`result.state:"interrupted"`, `error.code` `EXECUTION_OUTCOME_UNKNOWN`, `next_action:"check_state"`)으로 끝내고 `job.updated`와 행위자 `system`의 타임라인 항목을 남긴다. 호스트가 ready가 될 때마다 데몬은 `exec.list`를 한 번 불러 그 호스트의 실행 중 exec job 가운데 에이전트가 `exited`로 보고한 것은 종료 코드로, `lost`이거나 목록에 없는 것은 `unknown`(`result.state:"lost"`)으로 끝낸다.
 - `timeline.list`는 `cursor`(이전 결과의 `next_cursor`, seq)도 받는다. `since`는 RFC 3339. 행위자: `mcp` 클라이언트 → `ai`, `app`/`cli` → `human`, 데몬 자신 → `system`.
 - Host에는 준비되지 않은 이유 `reason?`이 있다. `hello` 결과 `{client_id, daemon_version, api_version}`, `events.subscribe` 결과 `{subscribed, host_id, kinds}`.

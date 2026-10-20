@@ -23,7 +23,7 @@ const execHelp = `사용법: deskhand exec <호스트> [옵션] -- <명령...>
   --shell powershell|cmd|none
                            none(기본): -- 뒤의 인수를 그대로 argv로 실행합니다.
                            powershell|cmd: 명령 전체를 따옴표 하나로 묶은 문자열 하나를 셸로 실행합니다.
-  --timeout 120s           명령 제한 시간. 넘으면 작업을 취소하고 종료 코드 124로 끝납니다.
+  --timeout 120s           명령 제한 시간. 데몬이 시간을 재고, 넘으면 작업을 취소해 종료 코드 124로 끝납니다.
                            0이면 제한 없이 끝날 때까지 기다립니다. --detach와는 함께 쓸 수 없습니다.
                            출력은 실시간으로 보여 주며, Ctrl-C는 종료 코드 4와 job id를 남깁니다.
   --detach                 시작만 하고 job id를 출력합니다.

@@ -781,3 +781,48 @@ func TestJobsLeftRunningAreSettledAtStartAndOnReady(t *testing.T) {
 		t.Fatalf("timeline %v", entries)
 	}
 }
+
+func TestExecStartTimeoutEndsTheJobWithTimeoutAndKeepsItsOutput(t *testing.T) {
+	e := setup(t, setupOpts{trustDaemon: true})
+	e.waitState(t, "ready")
+	res := e.call(t, "exec.start", map[string]any{"host_id": "pc", "cmd": "echo started; sleep 30", "shell": "sh", "timeout_ms": 400})
+	jobID := res["job_id"].(string)
+	var job map[string]any
+	for deadline := time.Now().Add(15 * time.Second); ; {
+		job = e.call(t, "jobs.get", map[string]any{"job_id": jobID})
+		if job["status"] != "running" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("job still running %v", job)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	result := job["result"].(map[string]any)
+	if job["status"] != "failed" || result["timed_out"] != true || result["error"].(map[string]any)["code"] != "TIMEOUT" {
+		t.Fatalf("job %v", job)
+	}
+	var text strings.Builder
+	var last map[string]any
+	for cursor := ""; cursor != "end"; {
+		last = e.call(t, "jobs.output", map[string]any{"job_id": jobID, "cursor": cursor})
+		for _, c := range last["chunks"].([]any) {
+			text.WriteString(c.(map[string]any)["data"].(string))
+		}
+		cursor = last["next_cursor"].(string)
+	}
+	if text.String() != "started\n" || last["timed_out"] != true || last["status"] != "failed" {
+		t.Fatalf("output %q, last %v", text.String(), last)
+	}
+
+	var stdout, stderr strings.Builder
+	app := cli.New("test")
+	app.Stdin, app.Stdout, app.Stderr = strings.NewReader(""), &stdout, &stderr
+	app.Interactive = func() bool { return false }
+	app.PollInterval = 20 * time.Millisecond
+	start := time.Now()
+	code := app.Run(context.Background(), []string{"exec", "pc", "--timeout", "500ms", "--shell", "none", "--", "sh", "-c", "echo hi; sleep 30"})
+	if code != 124 || stdout.String() != "hi\n" || !strings.Contains(stderr.String(), "500ms 안에 끝나지 않아 종료했습니다") || time.Since(start) > 10*time.Second {
+		t.Fatalf("exit %d after %s, stdout %q, stderr %q", code, time.Since(start), stdout.String(), stderr.String())
+	}
+}

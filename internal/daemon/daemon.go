@@ -62,6 +62,7 @@ type Daemon struct {
 	st    *store.Store
 	mgr   *conn.Manager
 	srv   *localapi.Server
+	jobs  *jobs.Registry
 	ln    net.Listener
 	lg    *log.Logger
 	Hosts *hosts.Registry
@@ -148,9 +149,11 @@ func New(opt Options) (*Daemon, error) {
 		OnReady:       func(hostID string, _ uint64) { go jreg.Reconcile(hostID) },
 		DropAfterSend: drop, Logger: lg})
 	jreg = jobs.New(d.st, bus, d.mgr)
+	d.jobs = jreg
 	if n := jreg.SettleInterrupted(); n > 0 {
 		lg.Printf("%d jobs were running without a remote job when the daemon stopped; they are recorded unknown", n)
 	}
+	jreg.ResumeTimeouts()
 	reg = hosts.New(hosts.Options{Store: d.st, Bus: bus, Manager: d.mgr, Jobs: jreg, Identity: id, SSHExec: opt.SSHExec,
 		AgentFiles: opt.AgentFiles, Version: opt.Version, Logger: lg})
 	d.Hosts = reg
@@ -190,6 +193,10 @@ func (d *Daemon) Close() {
 		d.ln.Close()
 		_ = os.Remove(paths.Socket())
 		d.ln = nil
+	}
+	if d.jobs != nil {
+		d.jobs.Close()
+		d.jobs = nil
 	}
 	if d.mgr != nil {
 		d.mgr.Close()
