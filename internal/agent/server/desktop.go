@@ -11,12 +11,8 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
-// screenImplemented and inputImplemented report whether this agent version
-// captures the screen and injects input.
-const (
-	screenImplemented = false
-	inputImplemented  = false
-)
+// inputImplemented reports whether this agent version injects input.
+const inputImplemented = false
 
 // reasonSession0 is the reason of a capability that needs a desktop while
 // the agent runs in Session 0.

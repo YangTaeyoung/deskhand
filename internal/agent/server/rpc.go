@@ -347,6 +347,7 @@ func (s *Server) registerBuiltins() {
 	s.registerLaunch()
 	s.registerClipboard()
 	s.registerDesktop()
+	s.registerScreen()
 }
 
 // desktopSessionInfo describes the desktop session that Options.Session

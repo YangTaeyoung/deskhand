@@ -79,7 +79,7 @@ func TestHelloCarriesEveryCapabilityKey(t *testing.T) {
 			t.Fatalf("caps.%s %v", k, caps[k])
 		}
 	}
-	for _, k := range []string{"screen", "input", "pty", "tunnel", "diag"} {
+	for _, k := range []string{"input", "pty", "tunnel", "diag"} {
 		if st, _ := caps[k].(map[string]any); st["state"] != "unsupported" || st["reason"] != "not implemented in this agent version" {
 			t.Fatalf("caps.%s %v", k, caps[k])
 		}

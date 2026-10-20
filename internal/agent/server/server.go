@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/YangTaeyoung/deskhand/internal/agent/capture"
 	"github.com/YangTaeyoung/deskhand/internal/agent/clipboard"
 	"github.com/YangTaeyoung/deskhand/internal/agent/display"
 	"github.com/YangTaeyoung/deskhand/internal/agent/session"
@@ -48,6 +49,12 @@ type Options struct {
 	// Displays lists the displays for display.list and the hello; nil means
 	// display.List.
 	Displays func() ([]display.Info, error)
+	// Capture takes the still image of screen.capture; nil means
+	// capture.CaptureStill.
+	Capture func(display int, format string, maxWidth, quality int) (capture.StillResult, error)
+	// ScreenState reports whether the screen can be captured, for the
+	// screen capability; nil means capture.Probe.
+	ScreenState func() error
 }
 
 // DeployRoot names a folder that the fs operations create through Lock when
@@ -121,6 +128,12 @@ func New(opt Options) *Server {
 	}
 	if opt.Displays == nil {
 		opt.Displays = display.List
+	}
+	if opt.Capture == nil {
+		opt.Capture = capture.CaptureStill
+	}
+	if opt.ScreenState == nil {
+		opt.ScreenState = capture.Probe
 	}
 	s := &Server{opt: opt, ops: map[string]opEntry{}, conns: map[*conn]struct{}{}, jobs: newJobTable(), ownHome: agentHome(),
 		clipKick: make(chan struct{}, 1)}

@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/agent/config"
+	"github.com/YangTaeyoung/deskhand/internal/agent/display"
 	"github.com/YangTaeyoung/deskhand/internal/agent/logfile"
 	"github.com/YangTaeyoung/deskhand/internal/agent/quicserve"
 	"github.com/YangTaeyoung/deskhand/internal/agent/server"
@@ -206,6 +207,7 @@ func cmdRun(args []string, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, "설정을 읽지 못했습니다", err)
 	}
+	display.EnsureDPIAware()
 	certPath, keyPath := config.KeyPaths(*cfgPath)
 	id, err := transport.LoadIdentity(certPath, keyPath)
 	if err != nil {
