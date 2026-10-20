@@ -12,14 +12,20 @@
 #   files    3: Korean/emoji folder: mkdir, files.write, cat, ls
 #   drop     4: daemon with DESKHAND_TEST_DROP_AFTER_SEND=exec.run settles an
 #               appended line through req.status; the file has one line
-#   restart  5: Stop-Process the agent, start its task; reconnecting -> ready,
-#               generation +1, an earlier exec.start job keeps its result
+#   restart  5: Stop-Process the agent and start its task DESKHAND_E2E_RESTARTS
+#               times (default 5): reconnecting -> ready, generation +1 each
+#               time, p50 agent kill -> ready <= 15 s, an earlier exec.start
+#               job keeps its result
 #   mcp      6: deskhand mcp through an MCP client: hosts_list, exec_run
+#   reregister  remove --uninstall then a plain add; then from a new Mac home
+#               add fails with the add --force next step and add --force pairs
+#               (the new home becomes DESKHAND_HOME)
 #   cleanup  8: remove the PC's E2E folder, stop the daemon (the agent stays)
 #
 # Environment: DESKHAND_E2E_SSH (ssh alias, default windows), DESKHAND_E2E_HOST
 # (host name, default windows-dev), DESKHAND_HOME (default: a new
 # /tmp/dh-e2e-XXXX, remembered in build/e2e-home for later steps).
+# Needs jq and python3 on the Mac.
 # Every check prints "CHECK <step> PASS|FAIL <what>"; the exit code is the
 # number of failed checks.
 set -uo pipefail
@@ -206,43 +212,82 @@ EOF
   wait_ready 30
 }
 
+# pc_offset_ms prints the PC clock minus the Mac clock in milliseconds: the
+# largest difference between a PC time stamp and the Mac time it arrives at.
+pc_offset_ms() {
+  python3 -I - "$ssh_alias" <<'PY'
+import base64, subprocess, sys, time
+script = "1..8 | ForEach-Object { [Console]::Out.WriteLine([DateTimeOffset]::Now.ToUnixTimeMilliseconds()); [Console]::Out.Flush(); Start-Sleep -Milliseconds 150 }"
+enc = base64.b64encode(script.encode("utf-16-le")).decode()
+p = subprocess.Popen(["ssh", "-o", "BatchMode=yes", "-o", "ClearAllForwardings=yes", sys.argv[1], "powershell",
+                      "-NoProfile", "-NonInteractive", "-EncodedCommand", enc],
+                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+best = None
+for line in p.stdout:
+    now = time.time() * 1000
+    line = line.strip()
+    if line.isdigit():
+        d = int(line) - now
+        best = d if best is None else max(best, d)
+p.wait()
+print(round(best))
+PY
+}
+
+# iso_ms prints the Unix time in milliseconds of an RFC 3339 UTC time.
+iso_ms() {
+  python3 -I -c 'import sys, datetime; print(int(datetime.datetime.strptime(sys.argv[1], "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=datetime.timezone.utc).timestamp() * 1000))' "$1"
+}
+
 step_restart() {
   log "== 5 agent restart"
   start_daemon
   wait_ready 30
-  local job before gen0 gen1 t0 after
+  local runs=${DESKHAND_E2E_RESTARTS:-5} job before after offset i gen0 gen1 out ev kill_ms ready states secs p50
+  local all=()
   job=$(dh exec "$host" --detach -- cmd /c "echo before-restart & exit 3" | head -1)
   sleep 2
   before=$(api jobs.get "{\"job_id\":\"$job\"}")
   log "job before: $before"
-  gen0=$(hostfield connection_generation)
-  api -events connection.state -host "$host" -for 90s >"$DESKHAND_HOME/restart.events" &
-  local ev=$!
-  sleep 0.5
-  rps <<'EOF'
-$p = Get-Process deskhand-agent
-(Get-Date -Format o) + " Stop-Process " + $p.Id
-Stop-Process -Id $p.Id -Force
-Start-Sleep -Seconds 1
-(Get-Date -Format o) + " schtasks /Run"
-schtasks /Run /TN "Deskhand Agent" | Out-Null
-Start-Sleep -Seconds 2
-$n = Get-Process deskhand-agent
-"new agent pid=" + $n.Id + " session=" + $n.SessionId
-EOF
-  t0=$(date +%s)
-  for _ in $(seq 1 120); do
-    [ "$(hostfield connection_generation)" = $((gen0 + 1)) ] && [ "$(hostfield state)" = ready ] && break
+  offset=$(pc_offset_ms)
+  log "PC clock minus Mac clock: $offset ms"
+  for i in $(seq 1 "$runs"); do
+    gen0=$(hostfield connection_generation)
+    api -events connection.state -host "$host" -for 60s >"$DESKHAND_HOME/restart-$i.events" &
+    ev=$!
     sleep 0.5
+    out=$(rps <<'EOF'
+$p = Get-Process deskhand-agent
+Stop-Process -Id $p.Id -Force
+'kill=' + [DateTimeOffset]::Now.ToUnixTimeMilliseconds() + ' pid=' + $p.Id
+Start-Sleep -Seconds 1
+schtasks /Run /TN "Deskhand Agent" | Out-Null
+'run=' + [DateTimeOffset]::Now.ToUnixTimeMilliseconds()
+EOF
+)
+    for _ in $(seq 1 120); do
+      [ "$(hostfield connection_generation)" = $((gen0 + 1)) ] && [ "$(hostfield state)" = ready ] && break
+      sleep 0.5
+    done
+    gen1=$(hostfield connection_generation)
+    kill "$ev" 2>/dev/null
+    wait "$ev" 2>/dev/null
+    kill_ms=$(sed -n 's/^kill=\([0-9]*\).*/\1/p' <<<"$out")
+    ready=$(jq -rs --argjson g $((gen0 + 1)) 'map(select(.state == "ready" and .connection_generation == $g)) | .[0].ts // empty' "$DESKHAND_HOME/restart-$i.events")
+    states=$(jq -rs 'map(.state + "@" + .ts[11:23]) | join(" > ")' "$DESKHAND_HOME/restart-$i.events")
+    secs=NaN
+    if [ -n "$ready" ] && [ -n "$kill_ms" ]; then
+      secs=$(python3 -I -c 'import sys; print("%.1f" % ((int(sys.argv[1]) - (int(sys.argv[2]) - int(sys.argv[3]))) / 1000))' "$(iso_ms "$ready")" "$kill_ms" "$offset")
+    fi
+    log "run $i: kill $(sed -n 's/^kill=[0-9]* //p' <<<"$out"), $states, generation $gen0 -> $gen1, agent kill -> ready $secs s"
+    jq -s -e 'map(.state) | (index("reconnecting") != null) and (.[-1] == "ready")' "$DESKHAND_HOME/restart-$i.events" >/dev/null &&
+      [ "$gen1" = $((gen0 + 1)) ]
+    check restart $? "run $i: reconnecting -> ready, generation $gen0 -> $gen1"
+    all+=("$secs")
   done
-  gen1=$(hostfield connection_generation)
-  log "ready again $(($(date +%s) - t0)) s after the restart script returned"
-  kill "$ev" 2>/dev/null
-  wait "$ev" 2>/dev/null
-  cat "$DESKHAND_HOME/restart.events"
-  jq -s -e 'map(.state) | (index("reconnecting") != null) and (.[-1] == "ready")' "$DESKHAND_HOME/restart.events" >/dev/null
-  check restart $? "connection.state went reconnecting -> ready"
-  check restart "$([ "$gen1" = $((gen0 + 1)) ] && echo 0 || echo 1)" "generation $gen0 -> $gen1"
+  p50=$(printf '%s\n' "${all[@]}" | sort -n | sed -n "$(((runs + 1) / 2))p")
+  log "agent kill -> ready over $runs runs: ${all[*]} s, p50 $p50 s"
+  check restart "$(python3 -I -c 'import sys; print(0 if float(sys.argv[1]) <= 15 else 1)' "$p50")" "p50 agent kill -> ready $p50 s <= 15 s"
   after=$(api jobs.get "{\"job_id\":\"$job\"}")
   log "job after: $after"
   check restart "$([ "$(jq -c '{status, result}' <<<"$before")" = "$(jq -c '{status, result}' <<<"$after")" ] && jq -e '.result.code == 3' <<<"$after" >/dev/null && echo 0 || echo 1)" "jobs.get keeps the earlier exec.start result"
@@ -263,17 +308,58 @@ step_mcp() {
   check mcp $? "exec_run hostname succeeds with output"
 }
 
+step_reregister() {
+  log "== 1b re-register"
+  start_daemon
+  wait_ready 30
+  local out err code
+  dh host remove "$host" --uninstall
+  check reregister $? "deskhand host remove $host --uninstall"
+  out=$(rps <<'EOF'
+'left task=' + [bool](Get-ScheduledTask -TaskName 'Deskhand Agent' -ErrorAction SilentlyContinue) + ' rule=' + [bool](Get-NetFirewallRule -DisplayName 'Deskhand Agent' -ErrorAction SilentlyContinue) + ' program=' + (Test-Path 'C:\Program Files\Deskhand') + ' data=' + (Test-Path 'C:\ProgramData\Deskhand')
+EOF
+)
+  printf '%s\n' "$out"
+  grep -q 'left task=False rule=False program=False data=False' <<<"$out"
+  check reregister $? "remove --uninstall left no task, rule, program or data (key) on the PC"
+  dh host add "$host" --ssh "$ssh_alias"
+  check reregister $? "plain host add after remove --uninstall"
+  wait_ready 30
+  check reregister $? "host ready after the plain add"
+  stop_daemon
+  DESKHAND_HOME=$(mktemp -d /tmp/dh-e2e-XXXX)
+  echo "$DESKHAND_HOME" >build/e2e-home
+  log "new Mac home $DESKHAND_HOME"
+  start_daemon
+  err=$(dh host add "$host" --ssh "$ssh_alias" 2>&1 >/dev/null)
+  code=$?
+  printf '%s\n' "$err"
+  check reregister "$([ "$code" = 1 ] && echo 0 || echo 1)" "host add from the new home exits 1 (exit $code)"
+  grep -qF "다음 단계: deskhand host add $host --ssh $ssh_alias --force 를 실행하세요" <<<"$err"
+  check reregister $? "the next step is deskhand host add $host --ssh $ssh_alias --force"
+  out=$(dh --json host add "$host" --ssh "$ssh_alias" 2>/dev/null)
+  log "json: $(jq -c '{status, error, next_action}' <<<"$out")"
+  jq -e '(.error.next_action // .next_action) == "host_add_force"' <<<"$out" >/dev/null
+  check reregister $? "--json carries next_action host_add_force"
+  dh host add "$host" --ssh "$ssh_alias" --force
+  check reregister $? "deskhand host add $host --ssh $ssh_alias --force exits 0"
+  wait_ready 30
+  check reregister $? "host ready after add --force"
+  out=$(dh exec "$host" -- 'C:\Windows\System32\hostname.exe')
+  check reregister $? "exec after add --force ($(tr -d '\r\n' <<<"$out"))"
+}
+
 step_cleanup() {
   log "== 8 cleanup"
-  rps <<<"Remove-Item -LiteralPath '$remote_dir' -Recurse -Force -ErrorAction SilentlyContinue; 'e2e folder left=' + (Test-Path '$remote_dir'); 'agent running=' + [bool](Get-Process deskhand-agent -ErrorAction SilentlyContinue)"
+  rps <<<"Remove-Item -LiteralPath '$remote_dir' -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item -Path (Join-Path \$env:TEMP 'deskhand-agent-*.exe.old') -Force -ErrorAction SilentlyContinue; 'e2e folder left=' + (Test-Path '$remote_dir'); 'agent running=' + [bool](Get-Process deskhand-agent -ErrorAction SilentlyContinue)"
   stop_daemon
-  log "daemon stopped; DESKHAND_HOME $DESKHAND_HOME kept for its logs"
+  log "daemon stopped; the agent stays paired with DESKHAND_HOME $DESKHAND_HOME"
 }
 
 for s in "${steps[@]}"; do
   case "$s" in
-  all) for a in build reset add exec files drop restart mcp cleanup; do "step_$a"; done ;;
-  build | reset | add | exec | files | drop | restart | mcp | cleanup) "step_$s" ;;
+  all) for a in build reset add exec files drop restart mcp reregister cleanup; do "step_$a"; done ;;
+  build | reset | add | exec | files | drop | restart | mcp | reregister | cleanup) "step_$s" ;;
   *) echo "unknown step $s" >&2; exit 2 ;;
   esac
 done
