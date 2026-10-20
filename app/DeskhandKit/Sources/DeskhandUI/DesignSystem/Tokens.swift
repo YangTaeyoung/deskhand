@@ -165,6 +165,33 @@ public enum DS {
         }
     }
 
+    /// Text and symbols in a status color: the system hue blended toward black (light) or white
+    /// (dark) until it reaches `Code.ratio` on the text and window backgrounds, bare, under its own
+    /// badge tint and under the selection tint.
+    public enum Status {
+        /// Opacity of a status color behind badge text.
+        public static let badgeOpacity: CGFloat = 0.14
+
+        public static let successTextNS = readable(.systemGreen)
+        public static let dangerTextNS = readable(.systemRed)
+        public static let warningTextNS = readable(.systemOrange)
+        public static let accentTextNS = readable(.systemIndigo)
+
+        public static let successText = SwiftUI.Color(nsColor: successTextNS)
+        public static let dangerText = SwiftUI.Color(nsColor: dangerTextNS)
+        public static let warningText = SwiftUI.Color(nsColor: warningTextNS)
+        public static let accentText = SwiftUI.Color(nsColor: accentTextNS)
+
+        /// The tints text in `hue` sits on: its badge and the selection.
+        static func tints(_ hue: NSColor) -> [Code.Tint] {
+            [Code.Tint(hue, badgeOpacity), Code.selectionTint]
+        }
+
+        private static func readable(_ hue: NSColor) -> NSColor {
+            Code.readable(hue, tints: tints(hue))
+        }
+    }
+
     /// Spacing scale in points. Layout uses only these values.
     public enum Space {
         public static let xs: CGFloat = 4

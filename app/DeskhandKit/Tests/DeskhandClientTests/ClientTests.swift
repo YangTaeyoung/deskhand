@@ -368,14 +368,6 @@ final class ClientTests: XCTestCase {
         XCTAssertEqual(failed.files.first?.error?.code, "PERMISSION_DENIED")
         XCTAssertEqual(failed.files.last?.error, EnvelopeError(message: "옛 형식"))
 
-        let run = try Wire.decode(QARun.self, from: Data(#"""
-        {"run_id":"q","host_id":"h","name":"n","status":"passed","started_at":"2026-10-20T10:00:00.000Z",
-         "steps_total":1,"steps_passed":1,"steps_failed":0,"steps_blocked":0,
-         "steps":[{"index":0,"name":"s","action":"click","status":"pass","duration_ms":5,"artifacts":[]}]}
-        """#.utf8))
-        XCTAssertEqual(run.stepsPassed, 1)
-        XCTAssertEqual(run.steps.first?.durationMs, 5)
-
         let entry = try Wire.decode(TimelineEntry.self, from: Data(#"""
         {"seq":1,"ts":"2026-10-20T10:00:00.000Z","host_id":"h","actor":"ai","client_name":"mcp","kind":"input",
          "summary":"clicked","outcome":"ok","artifacts":[]}

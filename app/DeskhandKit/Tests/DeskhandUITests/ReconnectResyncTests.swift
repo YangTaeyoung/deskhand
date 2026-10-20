@@ -4,8 +4,8 @@ import Foundation
 import XCTest
 @testable import DeskhandUI
 
-/// The debugger tab, the store and the transfer queue read their state again when the real
-/// client's socket drops and comes back, against `MockDaemon`.
+/// The debugger tab, the QA tab, the store and the transfer queue read their state again when the
+/// real client's socket drops and comes back, against `MockDaemon`.
 @MainActor
 final class ReconnectResyncTests: XCTestCase {
     private let dev = PreviewFixtures.devPCID
@@ -22,6 +22,8 @@ final class ReconnectResyncTests: XCTestCase {
     private func handle(_ daemon: MockDaemon) {
         let host = Self.host
         let session = Self.session
+        let qaListed = Self.qaRun(steps: false)
+        let qaRead = Self.qaRun(steps: true)
         daemon.setHandler { request in
             switch request.method {
             case "host.list": .result(#"{"hosts":[\#(host)]}"#)
@@ -33,10 +35,17 @@ final class ReconnectResyncTests: XCTestCase {
                     .result(#"{"entries":[{"seq":1,"time":"2026-10-20T10:00:00.000Z","target_id":"t-page","source":"console","level":"log","text":"처음"},{"seq":2,"time":"2026-10-20T10:00:01.000Z","target_id":"t-page","source":"console","level":"log","text":"둘째"}],"next_cursor":2,"first_seq":1,"has_more":false,"has_earlier":false,"gap":false,"dropped":0}"#)
                 }
             case "transfer.list": .result(#"{"transfers":[]}"#)
+            case "qa.list": .result(#"{"runs":[\#(qaListed)]}"#)
+            case "qa.get": .result(qaRead)
             case "timeline.list": .result(#"{"entries":[]}"#)
             default: nil
             }
         }
+    }
+
+    nonisolated private static func qaRun(steps: Bool) -> String {
+        let list = steps ? #","steps":[{"index":1,"phase":"steps","name":"창 기다리기","action":"wait_window","line":3,"params":{},"optional":false,"continue_on_fail":false,"status":"running","assertions":[],"evidence":[]}]"# : ""
+        return #"{"run_id":"q-1","job_id":"j-1","host_id":"windows-dev","name":"fixture-smoke","status":"running","rev":3,"started_at":"2026-10-20T10:00:00.000Z","updated_at":"2026-10-20T10:00:01.000Z","steps_total":1,"steps_passed":0,"steps_failed":0,"steps_blocked":0,"steps_not_run":0,"current_step":1,"cancel_requested":false,"unsupported":null"# + list + "}"
     }
 
     /// Waits until the client has its reconnect watcher, then drops the socket.
@@ -73,6 +82,27 @@ final class ReconnectResyncTests: XCTestCase {
         let lists = daemon.requests(method: "host.list").count
         try await drop(daemon, client: client)
         try await waitUntil(timeout: .seconds(5)) { daemon.requests(method: "host.list").count == lists + 1 }
+        await client.close()
+    }
+
+    func testTheQATabReadsItsListAndTheRunInViewAgainAfterTheSocketComesBack() async throws {
+        let daemon = MockDaemon()
+        defer { daemon.stop() }
+        handle(daemon)
+        let (backend, client) = try await connected(daemon)
+        let model = QAModel(backend: backend, defaults: UserDefaults(suiteName: "resync-qa-\(UUID())")!)
+        model.start()
+        model.ensureLoaded(.host(dev))
+        try await waitUntil { model.listing(.host(self.dev)).phase == .loaded }
+        model.select("q-1", in: .host(dev))
+        try await waitUntil { model.record("q-1")?.steps != nil }
+        XCTAssertEqual(daemon.requests(method: "qa.list").count, 1)
+        XCTAssertEqual(daemon.requests(method: "qa.get").count, 1)
+        try await drop(daemon, client: client)
+        try await waitUntil(timeout: .seconds(5)) { daemon.requests(method: "qa.list").count == 2 }
+        try await waitUntil(timeout: .seconds(5)) { daemon.requests(method: "qa.get").count == 2 }
+        XCTAssertEqual(daemon.requests(method: "qa.get").last?.params["run_id"] as? String, "q-1")
+        model.stop()
         await client.close()
     }
 

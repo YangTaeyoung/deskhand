@@ -55,6 +55,8 @@ public final class PreviewBackend: Backend, LocalOverlayProviding {
     let processes = PreviewProcessStore()
     /// Debugging sessions of the simulated Electron app.
     let debugger = PreviewDebugStore()
+    /// QA runs: the sample runs and the ones started in the preview.
+    let qa: PreviewQAStore
 
     /// `screenVideo` is an Annex-B H.264 file whose first access unit is a keyframe; screen
     /// streams play it in a loop. Without one they report the stream as paused.
@@ -66,6 +68,7 @@ public final class PreviewBackend: Backend, LocalOverlayProviding {
         let timelines = Dictionary(uniqueKeysWithValues: hosts.map { ($0.hostID, PreviewFixtures.timeline(hostID: $0.hostID)) })
         state = Mutex(State(hosts: hosts, controls: PreviewFixtures.controls(for: hosts), timelines: timelines))
         files = PreviewFileStore(hosts: hosts, includesTransfers: scenario == .standard)
+        qa = PreviewQAStore(includesFixtures: scenario == .standard)
         let jobEvents = JobEventRelay()
         terminals = PreviewTerminals(hosts: hosts, includesFixtures: scenario == .standard) { job in
             jobEvents.backend?.emit(kind: EventKind.jobUpdated, hostID: job.hostID, payload: ["job": PreviewBackend.payload(job)])
@@ -125,6 +128,14 @@ public final class PreviewBackend: Backend, LocalOverlayProviding {
     /// The listed host, or `NOT_FOUND`.
     func listedHost(_ hostID: String) throws -> Host {
         try host(hostID)
+    }
+
+    /// The host as it is now and who holds its control, when it is listed.
+    func hostAndOwner(_ hostID: String) -> (host: Host, owner: String)? {
+        state.withLock { s in
+            guard let host = s.hosts.first(where: { $0.hostID == hostID }) else { return nil }
+            return (host, s.controls[hostID]?.owner ?? host.owner)
+        }
     }
 
     private func pause(_ multiple: Int = 1) async {

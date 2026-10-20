@@ -89,6 +89,8 @@ public final class AppStore {
     public let terminalPreferences: TerminalPreferences
     /// A remote file the files tab asked the logs tab to show.
     public var logSelection: LogSelection?
+    /// QA runs of every computer, their selection and the run sheet.
+    public let qa: QAModel
 
     private var controls: [String: ControlState] = [:]
     /// Hosts whose next control state is applied whatever its `gen`, after the event stream
@@ -118,6 +120,7 @@ public final class AppStore {
         self.controlActions = ControlActions(backend: backend)
         self.filesPreferences = FilesPreferences(defaults: defaults)
         self.terminalPreferences = TerminalPreferences(defaults: defaults)
+        self.qa = QAModel(backend: backend, defaults: defaults, backoff: backoff)
         controlActions.store = self
     }
 

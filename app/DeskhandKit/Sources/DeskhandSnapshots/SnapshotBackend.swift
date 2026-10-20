@@ -151,3 +151,16 @@ extension SnapshotBackend {
     func debugConsoleClear(debugID: String) async throws -> Int { 0 }
     func debugClose(debugID: String, keepProcess: Bool) async throws -> DebugCloseResult { DebugCloseResult() }
 }
+
+/// QA reads come from the preview daemon's sample runs and evidence; scenes seed the QA tab, and
+/// starting, cancelling and exporting change nothing.
+extension SnapshotBackend {
+    func qaRun(_ request: QARunRequest) async throws -> QARun { throw ClientError.notConnected }
+    func qaGet(runID: String) async throws -> QARun { try await base.qaGet(runID: runID) }
+    func qaList(hostID: String?, limit: Int, cursor: String?) async throws -> QARunPage {
+        try await base.qaList(hostID: hostID, limit: limit, cursor: cursor)
+    }
+    func qaCancel(runID: String) async throws -> QARun { try await base.qaGet(runID: runID) }
+    func artifactsExport(jobID: String, dir: String) async throws -> ArtifactExport { throw ClientError.notConnected }
+    func evidenceData(path: String, maxBytes: Int) async throws -> Data { try await base.evidenceData(path: path, maxBytes: maxBytes) }
+}

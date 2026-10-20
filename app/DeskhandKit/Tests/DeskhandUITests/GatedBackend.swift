@@ -436,3 +436,14 @@ extension GatedBackend {
         try await base.debugClose(debugID: debugID, keepProcess: keepProcess)
     }
 }
+
+extension GatedBackend {
+    func qaRun(_ request: QARunRequest) async throws -> QARun { try await base.qaRun(request) }
+    func qaGet(runID: String) async throws -> QARun { try await base.qaGet(runID: runID) }
+    func qaList(hostID: String?, limit: Int, cursor: String?) async throws -> QARunPage {
+        try await base.qaList(hostID: hostID, limit: limit, cursor: cursor)
+    }
+    func qaCancel(runID: String) async throws -> QARun { try await base.qaCancel(runID: runID) }
+    func artifactsExport(jobID: String, dir: String) async throws -> ArtifactExport { try await base.artifactsExport(jobID: jobID, dir: dir) }
+    func evidenceData(path: String, maxBytes: Int) async throws -> Data { try await base.evidenceData(path: path, maxBytes: maxBytes) }
+}

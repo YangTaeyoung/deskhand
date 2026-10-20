@@ -7,7 +7,7 @@ import struct DeskhandClient.ProcessInfo
 /// protocol below and joins it to this list; `LiveBackend` and `PreviewBackend` implement each
 /// feature protocol in their own extension.
 public protocol Backend: BackendLifecycle, HostsBackend, ControlBackend, TimelineBackend, EventsBackend, ScreenBackend, FilesBackend,
-    TerminalBackend, ProcessesBackend, DiagnosticsBackend, DebuggerBackend {}
+    TerminalBackend, ProcessesBackend, DiagnosticsBackend, DebuggerBackend, QABackend {}
 
 /// A process of the remote computer (`ProcessInfo` of DeskhandClient).
 public typealias RemoteProcess = ProcessInfo
@@ -157,6 +157,40 @@ public protocol DebuggerBackend: Sendable {
     func debugConsoleClear(debugID: String) async throws -> Int
     /// Ends the session; a launched app ends with it unless `keepProcess`.
     func debugClose(debugID: String, keepProcess: Bool) async throws -> DebugCloseResult
+}
+
+/// `qa.*` and `artifacts.export` (local-api.md §3 QA·산출물, §10), and the evidence files the
+/// daemon writes on this Mac. Reads and request problems throw the JSON-RPC error.
+public protocol QABackend: Sendable {
+    /// Reads and checks the scenario and starts a run; a scenario problem throws `INVALID_ARGUMENT`
+    /// whose message starts with `<file>:<line>:`, a run already going on the computer `IN_PROGRESS`.
+    func qaRun(_ request: QARunRequest) async throws -> QARun
+    func qaGet(runID: String) async throws -> QARun
+    /// Runs newest first, of one computer or of all when `hostID` is nil.
+    func qaList(hostID: String?, limit: Int, cursor: String?) async throws -> QARunPage
+    /// Returns the run with `cancel_requested`; a run that already ended otherwise throws `INVALID_ARGUMENT`.
+    func qaCancel(runID: String) async throws -> QARun
+    /// Copies the job's result bundle to a new folder in `dir` after checking it against its manifest.
+    func artifactsExport(jobID: String, dir: String) async throws -> ArtifactExport
+    /// The first `maxBytes` bytes of an evidence file.
+    func evidenceData(path: String, maxBytes: Int) async throws -> Data
+}
+
+/// Parameters of `qa.run`.
+public struct QARunRequest: Sendable, Equatable {
+    public var hostID: String
+    /// Absolute path of the scenario file on this Mac.
+    public var scenarioPath: String
+    public var vars: [String: String]
+    /// Limit of setup and steps; nil keeps the scenario's.
+    public var timeoutMS: Int?
+
+    public init(hostID: String, scenarioPath: String, vars: [String: String] = [:], timeoutMS: Int? = nil) {
+        self.hostID = hostID
+        self.scenarioPath = scenarioPath
+        self.vars = vars
+        self.timeoutMS = timeoutMS
+    }
 }
 
 /// The result of `debug.close`: the closed session when the result carries it, and whether a Node
@@ -395,6 +429,13 @@ public enum EventKind {
     public static let debugConsoleCleared = "debug.console_cleared"
     /// `debug_id`, `reason`, `exit_code?`, `rev`.
     public static let debugClosed = "debug.closed"
+    /// `run` (QARun without steps), `step?` (the QAStep that changed).
+    public static let qaUpdated = "qa.updated"
+    /// `count`: events this connection could not read; sent whatever the filter, without `host_id`.
+    public static let eventsDropped = "events.dropped"
+
+    /// Every kind the QA tab follows.
+    public static let qaKinds = [qaUpdated, eventsDropped]
 
     /// Every kind the debugger tab follows.
     public static let debuggerKinds = [

@@ -134,6 +134,62 @@ final class TokensTests: XCTestCase {
         }
     }
 
+    func testStatusTextReachesFourAndAHalfToOneOnItsBadgeAndTheSelection() throws {
+        let colors: [(String, NSColor, NSColor)] = [
+            ("success", DS.Status.successTextNS, .systemGreen), ("danger", DS.Status.dangerTextNS, .systemRed),
+            ("warning", DS.Status.warningTextNS, .systemOrange), ("accent", DS.Status.accentTextNS, .systemIndigo),
+        ]
+        for name in [NSAppearance.Name.aqua, .darkAqua] {
+            let appearance = try XCTUnwrap(NSAppearance(named: name))
+            for (label, color, hue) in colors {
+                var resolved = NSColor.black
+                appearance.performAsCurrentDrawingAppearance { resolved = color.usingColorSpace(.sRGB) ?? color }
+                for (index, background) in DS.Code.backgrounds(in: appearance, tints: DS.Status.tints(hue)).enumerated() {
+                    let ratio = DS.Terminal.contrast(resolved, background)
+                    XCTAssertGreaterThanOrEqual(ratio, 4.5, "\(label) on background \(index) in \(name.rawValue): \(ratio)")
+                }
+            }
+        }
+    }
+
+    /// Draws each status text color on its badge tint and on the selection over the window
+    /// background in an offscreen sRGB window; the drawn pixels reach 4.5:1.
+    @MainActor
+    func testDrawnStatusTextReachesFourAndAHalfToOneOnItsBadge() throws {
+        let colors: [(String, Color, Color)] = [
+            ("success", DS.Status.successText, DS.Color.success), ("danger", DS.Status.dangerText, DS.Color.danger),
+            ("warning", DS.Status.warningText, DS.Color.warning), ("accent", DS.Status.accentText, DS.Color.accent),
+        ]
+        let cell: CGFloat = 24
+        let swatches = HStack(spacing: 0) {
+            ForEach(Array(colors.enumerated()), id: \.offset) { _, color in
+                VStack(spacing: 0) {
+                    ZStack { Rectangle().fill(color.1).frame(width: cell / 2, height: cell / 2) }
+                        .frame(width: cell, height: cell)
+                        .background(color.2.opacity(DS.Status.badgeOpacity))
+                    ZStack { Rectangle().fill(color.1).frame(width: cell / 2, height: cell / 2) }
+                        .frame(width: cell, height: cell)
+                        .background(DS.Code.selection)
+                }
+                .background(DS.Color.surface)
+            }
+        }
+        let size = CGSize(width: cell * CGFloat(colors.count), height: cell * 2)
+        for name in [NSAppearance.Name.aqua, .darkAqua] {
+            let bitmap = try Self.draw(swatches, size: size, appearance: name)
+            let scale = CGFloat(bitmap.pixelsWide) / size.width
+            for (c, color) in colors.enumerated() {
+                for row in 0..<2 {
+                    let origin = CGPoint(x: CGFloat(c) * cell * scale, y: CGFloat(row) * cell * scale)
+                    let swatch = Self.pixel(bitmap, x: Int(origin.x + cell * scale / 2), y: Int(origin.y + cell * scale / 2))
+                    let ground = Self.pixel(bitmap, x: Int(origin.x + 2), y: Int(origin.y + 2))
+                    let ratio = DS.Terminal.contrast(swatch, ground)
+                    XCTAssertGreaterThanOrEqual(ratio, 4.5, "\(color.0) on \(row == 0 ? "badge" : "selection") in \(name.rawValue): \(ratio)")
+                }
+            }
+        }
+    }
+
     /// The pixel at `x`, `y` of an sRGB bitmap as an sRGB color, read from its stored components.
     static func pixel(_ bitmap: NSBitmapImageRep, x: Int, y: Int) -> NSColor {
         var components = [Int](repeating: 0, count: max(4, bitmap.samplesPerPixel))

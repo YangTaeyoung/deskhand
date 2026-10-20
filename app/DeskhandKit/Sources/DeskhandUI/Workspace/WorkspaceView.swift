@@ -33,6 +33,7 @@ public struct WorkspaceView: View {
         framed
             .task(id: host.hostID) {
                 store.debugger(for: host).start()
+                store.qa.start()
                 await store.loadControl(for: host.hostID)
                 await store.loadTimeline(for: host.hostID)
             }
@@ -117,7 +118,8 @@ public struct WorkspaceView: View {
             DebuggerView(store: store, host: host, chrome: chrome)
                 .id(host.hostID)
         case .qa:
-            TabPlaceholderView(tab: store.layout.tab)
+            QAView(store: store, host: host, chrome: chrome)
+                .id(host.hostID)
         }
     }
 
@@ -213,25 +215,6 @@ struct TabButton: View {
     private var background: AnyShapeStyle {
         if isSelected { return AnyShapeStyle(DS.Color.accent.opacity(0.14)) }
         return hovering ? AnyShapeStyle(DS.Color.neutral.opacity(0.12)) : AnyShapeStyle(.clear)
-    }
-}
-
-/// Placeholder of a tab whose content is not built yet: what the tab will do.
-struct TabPlaceholderView: View {
-    let tab: WorkspaceTab
-
-    var body: some View {
-        VStack(spacing: 0) {
-            EmptyStateView(symbol: tab.symbol, title: tab.heading, message: tab.summary)
-            Text(String.ui("tab.placeholder.badge", "준비 중인 탭입니다"))
-                .font(DS.Font.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, DS.Space.m)
-                .padding(.vertical, DS.Space.xs)
-                .background(DS.Color.neutral.opacity(0.12), in: Capsule())
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityElement(children: .combine)
     }
 }
 
