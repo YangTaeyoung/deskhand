@@ -47,7 +47,7 @@ Alcove 에이전트 프로토콜 2층과 같은 NDJSON(`t`로 구분). 한 줄 �
 - 데몬은 헤더 `{"s":"rpc"}` 말고는 아무것도 쓰지 않고 기다린다. 헤더를 받으면 에이전트가 `{"t":"hello","v":1,"agent":"<버전>","os":"windows","arch":"amd64","host":"<컴퓨터 이름>","caps":{…},"session":{…},"displays":[…],"boot_id":"…"}`를 보낸다. 데몬은 `{"t":"welcome","v":1,"controller":"<이름>"}`으로 답하고 그 뒤에 요청을 보낸다.
 - 에이전트는 welcome 전에는 요청을 처리하지 않고 이벤트도 보내지 않는다. 첫 메시지가 welcome이 아니거나 10초 안에 오지 않으면 스트림을 닫는다.
 - hello·welcome 뒤에는 `req`(데몬→에이전트)와 `res`·`ev`(에이전트→데몬)만 흐른다. 에이전트는 그 밖의 `t`를 받으면 실행하지 않고 `{"t":"res","id":<그 메시지의 id 또는 null>,"ok":false,"code":"INVALID_ARGUMENT","error":"…","retryable":false}` 한 줄로 답한다. 두 번째 welcome은 무시한다.
-- `session`: Windows는 `session_id`, `user`(에이전트 계정), `connect_state`(`active`/`connected`/`disconnected`/`other`) 중 읽은 것. `displays`는 화면 기능 전까지 `[]`. `boot_id`는 에이전트 프로세스가 시작할 때마다 바뀐다.
+- `session`: Windows는 `session.info` 결과와 같은 필드(§3.1), 그 밖의 OS는 데스크톱 세션의 `session_id`·`user` 중 읽은 것. `displays`는 `display.list`의 `displays`이고, 읽을 수 없으면(Session 0 등) `[]`. `boot_id`는 에이전트 프로세스가 시작할 때마다 바뀐다.
 - `rid`(요청 ID): 데몬은 비멱등 op에 항상 붙인다. 기록 대상 op는 `exec.run`, `exec.start`, `exec.write`, `exec.kill`, `proc.kill`, `fs.write`, `fs.rename`, `fs.mkdir`, `fs.delete`, `app.launch`, `clipboard.set`, `win.action`, `ui.act`이고, `rid`가 없는 요청은 기록 없이 실행한다. 형식은 영문자·숫자·`-`·`_` 1–128자의 문자열(Windows 장치 이름 제외)이다. 요청에 `rid`가 있으면 op와 상관없이 형식을 검사하고, 어기면(문자열이 아님, 빈 문자열, 허용하지 않는 문자) 실행하지 않고 `INVALID_ARGUMENT`로 답한다.
 - 에이전트는 실행 전에 `DataDir/journal/<rid>.json`에 실행 중 기록을 쓰고, 끝나면 응답(`t`, `id` 제외)으로 바꾼다. 끝난 기록은 24시간 보존한다. 같은 `rid`가 다시 오면 실행하지 않고 저장한 응답을 `"replayed":true`와 함께 돌려준다(저장한 응답이 실패면 그 실패 그대로). 실행 중이면 `{"ok":false,"code":"IN_PROGRESS","retryable":true}`. 다른 op에 쓴 `rid`면 `INVALID_ARGUMENT`.
 - 에이전트가 실행 중에 멈췄던 `rid`는 다시 실행하지 않고 `{"ok":false,"code":"EXECUTION_OUTCOME_UNKNOWN"}`를 저장한 응답으로 삼는다.
@@ -85,6 +85,9 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 | `diag.events` | `log`(`Application`/`System`), `since`, `level`, `provider`, `max` | `events` |
 | `diag.crashes` | `since` | `dumps`(WER 덤프 목록) |
 | `agent.update` | `path`(이미 put한 새 실행 파일), `sha256` | 자기 교체 후 재시작 예약 |
+
+- `session.info`: `user`(`DOMAIN\이름`)·`sid`·`integrity`(`untrusted`/`low`/`medium`/`high`/`system`/`protected`)는 에이전트 프로세스 토큰 기준이다. `connect_state`는 WTS 상태를 접는다(Active·Shadow → `active`, Connected·ConnectQuery·Init → `connected`, 나머지 → `disconnected`). `protocol`은 세션의 클라이언트 프로토콜이 콘솔이 아니면 `rdp`. `input_desktop`은 에이전트가 입력 데스크톱을 열 권한이 없으면 `Winlogon`, 입력 데스크톱이 없는 세션(Session 0)이면 `unknown`. Linux 에이전트는 Alcove의 데스크톱 세션 필드(`session`, `user`, `uid`, `home`, `type`, `locked`, exec 허용 시)를 돌려주고, 그 밖의 OS는 `CAPABILITY_UNSUPPORTED`.
+- `display.list`: 크기·위치는 물리 픽셀(에이전트는 Per-Monitor DPI aware v2), `scale`은 `dpi`/96, `index`는 주 디스플레이가 0이고 나머지는 왼쪽→오른쪽, 위→아래 순. Session 0에서는 `DISPLAY_UNAVAILABLE`, Windows가 아닌 에이전트는 `CAPABILITY_UNSUPPORTED`.
 
 이벤트(`ev`): Alcove의 `job.exited`, `process.exited`, 창 이벤트, `events.dropped`에 더해 `clipboard.changed`(`text`: 에이전트가 쓰지 않은 PC 클립보드 변경, 700000바이트까지), `session.changed`, `display.changed`, `caps.changed`, `input.preempted`.
 

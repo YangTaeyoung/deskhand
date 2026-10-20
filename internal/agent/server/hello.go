@@ -43,15 +43,19 @@ func newBootID() string {
 	return hex.EncodeToString(b)
 }
 
-// checkCaps returns the state of every capability key. exec, files and
-// processes follow Options.AllowExec, uia the UI helper and clipboard the
-// clipboard's availability; the other keys are unsupported.
+// checkCaps returns the state of every capability key. screen and input
+// follow the agent's session (sessionCap), exec, files and processes
+// Options.AllowExec, uia the UI helper and clipboard the clipboard's
+// availability; the other keys are unsupported.
 func (s *Server) checkCaps() capStates {
 	ready := capState{State: capReady}
 	caps := capStates{}
-	for _, k := range []string{"screen", "input", "pty", "tunnel", "diag"} {
+	for _, k := range []string{"pty", "tunnel", "diag"} {
 		caps[k] = capState{State: capUnsupported, Reason: notImplemented}
 	}
+	info, err := s.opt.SessionInfo()
+	caps["screen"] = sessionCap(screenImplemented, info, err)
+	caps["input"] = sessionCap(inputImplemented, info, err)
 	for _, k := range []string{"exec", "files", "processes"} {
 		if s.opt.AllowExec {
 			caps[k] = ready
@@ -88,5 +92,5 @@ func (s *Server) version() string {
 func (s *Server) helloMessage(caps capStates) proto.Message {
 	host, _ := os.Hostname()
 	return proto.Message{"t": "hello", "v": proto.Version, "agent": s.version(), "os": runtime.GOOS, "arch": runtime.GOARCH,
-		"host": host, "caps": caps, "session": s.helloSession(), "displays": []any{}, "boot_id": bootID}
+		"host": host, "caps": caps, "session": s.helloSession(), "displays": s.helloDisplays(), "boot_id": bootID}
 }

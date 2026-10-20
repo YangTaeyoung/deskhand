@@ -50,7 +50,7 @@ func TestListGivesTheSessionIDs(t *testing.T) {
 
 func TestShowGivesEachSession(t *testing.T) {
 	got := ParseShow(ubuntuShow)
-	want := []Info{
+	want := []Logind{
 		{ID: "1", User: "deskhand", UID: 1000, Seat: "seat0", Active: true, Type: "wayland", Class: "user", State: "active", Started: 13074278},
 		{ID: "2", User: "deskhand", UID: 1000, Active: true, Type: "unspecified", Class: "manager", State: "active", Started: 13095058},
 	}
@@ -74,7 +74,7 @@ func TestPickTakesTheActiveSeat0Session(t *testing.T) {
 }
 
 func TestPickSkipsTheGreeterAndClosingSessions(t *testing.T) {
-	sessions := []Info{
+	sessions := []Logind{
 		{ID: "c1", User: "gdm", Seat: "seat0", Active: true, Type: "wayland", Class: "greeter", State: "active"},
 		{ID: "4", User: "bob", Seat: "seat0", Active: true, Type: "wayland", Class: "user", State: "closing"},
 	}
@@ -84,7 +84,7 @@ func TestPickSkipsTheGreeterAndClosingSessions(t *testing.T) {
 }
 
 func TestPickTakesTheOnlyGraphicalSessionWhenNoneIsActiveOnSeat0(t *testing.T) {
-	sessions := []Info{
+	sessions := []Logind{
 		{ID: "5", User: "deskhand", Type: "tty", Class: "user", State: "online", Started: 1},
 		{ID: "6", User: "bob", Seat: "seat0", Type: "x11", Class: "user", State: "online", Started: 9},
 	}
@@ -94,21 +94,21 @@ func TestPickTakesTheOnlyGraphicalSessionWhenNoneIsActiveOnSeat0(t *testing.T) {
 }
 
 func TestPickPrefersTheGraphicalSessionOverAnActiveConsoleLogin(t *testing.T) {
-	sessions := []Info{
+	sessions := []Logind{
 		{ID: "1", User: "deskhand", Seat: "seat0", Type: "wayland", Class: "user", State: "online", Started: 1},
 		{ID: "9", User: "mallory", Seat: "seat0", Active: true, Type: "tty", Class: "user", State: "active", Started: 50},
 	}
 	if got, ok := Pick(sessions); !ok || got.ID != "1" {
 		t.Fatalf("picked %+v %v", got, ok)
 	}
-	sessions = append(sessions, Info{ID: "2", User: "bob", Seat: "seat0", Active: true, Type: "x11", Class: "user", State: "active", Started: 60})
+	sessions = append(sessions, Logind{ID: "2", User: "bob", Seat: "seat0", Active: true, Type: "x11", Class: "user", State: "active", Started: 60})
 	if got, ok := Pick(sessions); !ok || got.ID != "2" {
 		t.Fatalf("with an active graphical session picked %+v %v", got, ok)
 	}
 }
 
 func TestPickTakesTheActiveConsoleSessionWithoutADesktop(t *testing.T) {
-	sessions := []Info{
+	sessions := []Logind{
 		{ID: "5", User: "deskhand", Type: "tty", Class: "user", State: "online", Started: 1},
 		{ID: "6", User: "bob", Seat: "seat0", Active: true, Type: "tty", Class: "user", State: "active", Started: 9},
 	}
@@ -118,7 +118,7 @@ func TestPickTakesTheActiveConsoleSessionWithoutADesktop(t *testing.T) {
 }
 
 func TestPickTakesTheFirstUserSessionWithoutADesktop(t *testing.T) {
-	sessions := []Info{
+	sessions := []Logind{
 		{ID: "8", User: "bob", Type: "tty", Class: "user", State: "active", Started: 50},
 		{ID: "7", User: "deskhand", Type: "tty", Class: "user", State: "active", Started: 20},
 		{ID: "9", User: "deskhand", Class: "manager", State: "active", Started: 1},
@@ -141,7 +141,7 @@ func TestEnvironmentOfAWaylandSession(t *testing.T) {
 }
 
 func TestEnvironmentOfAnX11SessionWithoutARuntimeFolder(t *testing.T) {
-	info := Info{ID: "3", Type: "x11", Display: ":1"}
+	info := Logind{ID: "3", Type: "x11", Display: ":1"}
 	a := Account{Name: "bob", UID: 1001, Home: "/home/bob"}
 	got := Environment(info, a, nil, "", nil)
 	want := []string{"HOME=/home/bob", "USER=bob", "LOGNAME=bob", "PATH=" + DefaultPath, "DISPLAY=:1", "XDG_SESSION_TYPE=x11"}
@@ -160,7 +160,7 @@ func TestLocaleFileGivesTheLocaleVariables(t *testing.T) {
 }
 
 func TestEnvironmentCarriesTheLocale(t *testing.T) {
-	info := Info{ID: "3", Type: "x11", Display: ":1"}
+	info := Logind{ID: "3", Type: "x11", Display: ":1"}
 	a := Account{Name: "bob", UID: 1001, Home: "/home/bob"}
 	got := Environment(info, a, nil, "/usr/bin", []string{"LANG=ko_KR.UTF-8"})
 	if got[len(got)-1] != "LANG=ko_KR.UTF-8" {

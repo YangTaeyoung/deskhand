@@ -346,14 +346,15 @@ func (s *Server) registerBuiltins() {
 	s.registerUI()
 	s.registerLaunch()
 	s.registerClipboard()
-	if s.opt.Session != nil {
-		s.register("session.info", true, s.sessionInfo)
-	}
+	s.registerDesktop()
 }
 
-// sessionInfo describes the desktop session; without one the reply has no
-// fields.
-func (s *Server) sessionInfo(context.Context, proto.Message) (proto.Message, error) {
+// desktopSessionInfo describes the desktop session that Options.Session
+// returns; without one the reply has no fields.
+func (s *Server) desktopSessionInfo() (proto.Message, error) {
+	if !s.opt.AllowExec {
+		return nil, fmt.Errorf("%s", errExecDisabled)
+	}
 	sess, ok := s.session()
 	if !ok {
 		return proto.Message{}, nil

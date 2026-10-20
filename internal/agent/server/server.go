@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/agent/clipboard"
+	"github.com/YangTaeyoung/deskhand/internal/agent/display"
 	"github.com/YangTaeyoung/deskhand/internal/agent/session"
 	"github.com/YangTaeyoung/deskhand/internal/proto"
 	"github.com/YangTaeyoung/deskhand/internal/wire"
@@ -40,6 +41,13 @@ type Options struct {
 	DataDir string
 	// Version is the agent version the hello carries; empty means "dev".
 	Version string
+	// SessionInfo describes the Windows session the agent runs in, for
+	// session.info, the hello's session and the screen and input
+	// capabilities; nil means session.Current.
+	SessionInfo func() (session.Info, error)
+	// Displays lists the displays for display.list and the hello; nil means
+	// display.List.
+	Displays func() ([]display.Info, error)
 }
 
 // DeployRoot names a folder that the fs operations create through Lock when
@@ -107,6 +115,12 @@ func New(opt Options) *Server {
 	}
 	if opt.Clipboard == nil {
 		opt.Clipboard = newClipboard(opt.Session)
+	}
+	if opt.SessionInfo == nil {
+		opt.SessionInfo = session.Current
+	}
+	if opt.Displays == nil {
+		opt.Displays = display.List
 	}
 	s := &Server{opt: opt, ops: map[string]opEntry{}, conns: map[*conn]struct{}{}, jobs: newJobTable(), ownHome: agentHome(),
 		clipKick: make(chan struct{}, 1)}
