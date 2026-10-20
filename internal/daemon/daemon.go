@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/daemon/conn"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/debug"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/events"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/flock"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/hosts"
@@ -71,6 +72,7 @@ type Daemon struct {
 	xfer  *xfer.Manager
 	ptys  *pty.Hub
 	tuns  *tunnel.Manager
+	dbg   *debug.Manager
 	qa    *qa.Manager
 	ln    net.Listener
 	lg    *log.Logger
@@ -155,12 +157,23 @@ func New(opt Options) (*Daemon, error) {
 	var jreg *jobs.Registry
 	var xmgr *xfer.Manager
 	var hub *pty.Hub
+	var dbgMgr *debug.Manager
 	d.mgr = conn.NewManager(conn.Options{Identity: id, Controller: controller, Dial: opt.Dial, Requests: d.st,
-		OnEvent: func(ev conn.Event) { reg.HandleConnEvent(ev) },
+		OnEvent: func(ev conn.Event) {
+			reg.HandleConnEvent(ev)
+			if dbgMgr != nil && ev.Kind == conn.KindConnectionState {
+				if st := conn.ConnState(ev.Payload.String("state")); st != conn.StateReady && st != conn.StateDegraded {
+					go dbgMgr.HostDropped(ev.HostID)
+				}
+			}
+		},
 		OnReady: func(hostID string, _ uint64) {
 			go jreg.Reconcile(hostID)
 			go xmgr.HostReady(hostID)
 			go hub.Refresh(context.Background(), hostID)
+			if dbgMgr != nil {
+				go dbgMgr.HostReady(hostID)
+			}
 		},
 		DropAfterSend: drop, Logger: lg})
 	jreg = jobs.New(d.st, bus, d.mgr)
@@ -177,6 +190,8 @@ func New(opt Options) (*Daemon, error) {
 	hub = pty.New(pty.Options{Store: d.st, Conns: d.mgr, Jobs: jreg, Logger: lg})
 	d.ptys = hub
 	d.tuns = tunnel.New(lg)
+	d.dbg = debug.New(debug.Deps{Tunnels: d.tuns, Hosts: debug.HostsFrom(reg), Bus: bus, Jobs: jreg, Version: opt.Version, Logger: lg})
+	dbgMgr = d.dbg
 	d.qa = qa.New(qa.Options{Store: d.st, Bus: bus, Jobs: jreg, Hosts: qa.HostsFrom(reg), Push: qa.XferPusher(xmgr), Version: opt.Version, Logger: lg})
 	if n := d.qa.Load(); n > 0 {
 		lg.Printf("%d QA runs were running when the daemon stopped; they are recorded as interrupted", n)
@@ -184,7 +199,7 @@ func New(opt Options) (*Daemon, error) {
 	if d.ln, err = localapi.Listen(paths.Socket()); err != nil {
 		return nil, err
 	}
-	d.srv = localapi.New(localapi.Deps{Store: d.st, Bus: bus, Hosts: reg, Jobs: jreg, Transfers: xmgr, PTYs: hub, Tunnels: d.tuns, QA: d.qa, Version: opt.Version, Logger: lg})
+	d.srv = localapi.New(localapi.Deps{Store: d.st, Bus: bus, Hosts: reg, Jobs: jreg, Transfers: xmgr, PTYs: hub, Tunnels: d.tuns, Debug: d.dbg, QA: d.qa, Version: opt.Version, Logger: lg})
 	if err := reg.Load(); err != nil {
 		return nil, fmt.Errorf("저장된 PC 목록을 읽지 못했습니다. %s를 확인하세요: %w", paths.DB(), err)
 	}
@@ -220,6 +235,10 @@ func (d *Daemon) Close() {
 		d.ln.Close()
 		_ = os.Remove(paths.Socket())
 		d.ln = nil
+	}
+	if d.dbg != nil {
+		d.dbg.Shutdown()
+		d.dbg = nil
 	}
 	if d.tuns != nil {
 		d.tuns.Shutdown()

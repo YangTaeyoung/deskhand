@@ -80,6 +80,7 @@ func New(version string, dial Dialer) *mcp.Server {
 	s.registerProc(srv)
 	s.registerDiag(srv)
 	s.registerTunnel(srv)
+	s.registerDebug(srv)
 	s.registerQA(srv)
 	return srv
 }

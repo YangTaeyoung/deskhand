@@ -12,14 +12,15 @@ func TestErrorCodeValues(t *testing.T) {
 		"TRANSFER_CONFLICT": CodeTransferConflict, "HASH_MISMATCH": CodeHashMismatch,
 		"DISK_FULL": CodeDiskFull, "NOT_FOUND": CodeNotFound, "PERMISSION_DENIED": CodePermissionDenied,
 		"INVALID_ARGUMENT": CodeInvalidArgument, "IN_PROGRESS": CodeInProgress,
-		"EXECUTION_OUTCOME_UNKNOWN": CodeExecutionOutcomeUnknown, "TIMEOUT": CodeTimeout, "INTERNAL": CodeInternal,
+		"EXECUTION_OUTCOME_UNKNOWN": CodeExecutionOutcomeUnknown, "TIMEOUT": CodeTimeout, "EXITED_EARLY": CodeExitedEarly,
+		"INTERNAL": CodeInternal,
 	}
 	for want, c := range got {
 		if c != want {
 			t.Errorf("got %q want %q", c, want)
 		}
 	}
-	if len(got) != 21 {
+	if len(got) != 22 {
 		t.Fatalf("len = %d", len(got))
 	}
 }

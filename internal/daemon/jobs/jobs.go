@@ -35,6 +35,8 @@ const (
 	KindPTY = "pty"
 	// KindDiag is a diagnostics result the daemon kept as an artifact.
 	KindDiag = "diag"
+	// KindDebug is a CDP debug session.
+	KindDebug = "debug"
 	// KindQA is a QA scenario run; its run manager sets its state.
 	KindQA = "qa"
 )

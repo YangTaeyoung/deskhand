@@ -72,6 +72,8 @@ type Server struct {
 	receipts *receiptStore
 	// started holds the processes exec, app.launch and pty started.
 	started startedTable
+	// debug holds the apps launched for debug sessions.
+	debug debugState
 
 	// deployMu orders the creations of the deploy root.
 	deployMu sync.Mutex

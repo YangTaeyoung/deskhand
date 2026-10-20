@@ -82,6 +82,7 @@ const usageText = `사용법: deskhand [--json] [--quiet] <명령> ...
   shell <호스트> [--shell S]             원격 대화형 셸 (Ctrl-]로 분리, --attach <job>으로 다시 연결)
   tunnel <호스트> <포트> [--local P]     PC의 루프백 포트를 이 Mac의 127.0.0.1로 연결 (Ctrl-C로 닫음)
   tunnel list|close                    열린 터널 조회와 닫기
+  debug launch|attach|list|bp|…        CDP 디버거 (deskhand debug help)
   proc ls|kill                         원격 프로세스
   diag system|services|events|crashes  원격 PC 진단 (--save로 결과를 산출물로 저장)
   qa run|list|get|report|cancel        QA 시나리오 실행과 결과 묶음 (deskhand qa --help)
@@ -121,6 +122,8 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		code = r.qa(ctx, args[1:])
 	case "tunnel":
 		code = r.tunnel(ctx, args[1:])
+	case "debug":
+		code = r.debug(ctx, args[1:])
 	case "shell":
 		code = r.shell(ctx, args[1:])
 	case "daemon":

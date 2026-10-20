@@ -11,7 +11,8 @@ import (
 var journaledOps = map[string]bool{
 	"exec.run": true, "exec.start": true, "exec.write": true, "exec.kill": true, "proc.kill": true,
 	"fs.write": true, "fs.rename": true, "fs.mkdir": true, "fs.delete": true, "fs.copy": true, "fs.trash": true,
-	"xfer.commit": true, "xfer.abort": true, "app.launch": true, "clipboard.set": true, "win.action": true, "ui.act": true,
+	"xfer.commit": true, "xfer.abort": true, "app.launch": true, "debug.electron.launch": true, "clipboard.set": true,
+	"win.action": true, "ui.act": true,
 }
 
 // Journaled reports whether op is a journaled op.

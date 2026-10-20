@@ -53,6 +53,9 @@ func (o obj) str(key string) string {
 	return ""
 }
 
+// get returns the raw value at key.
+func (o obj) get(key string) any { return o[key] }
+
 func (o obj) num(key string) (int64, bool) {
 	n, ok := o[key].(json.Number)
 	if !ok {

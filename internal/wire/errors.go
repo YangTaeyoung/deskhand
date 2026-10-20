@@ -22,5 +22,6 @@ const (
 	CodeInProgress              = "IN_PROGRESS"
 	CodeExecutionOutcomeUnknown = "EXECUTION_OUTCOME_UNKNOWN"
 	CodeTimeout                 = "TIMEOUT"
+	CodeExitedEarly             = "EXITED_EARLY"
 	CodeInternal                = "INTERNAL"
 )

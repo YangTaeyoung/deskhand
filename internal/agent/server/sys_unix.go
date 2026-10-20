@@ -15,6 +15,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
 // childEnvironment returns the agent's own environment.
@@ -290,4 +292,54 @@ func processParents() map[int]int {
 		parents[p.PID] = p.PPID
 	}
 	return parents
+}
+
+// signalInspector asks the Node process pid to open its inspector by
+// sending it SIGUSR1, the documented activation signal (node(1)).
+func signalInspector(pid int) (bool, error) {
+	if err := syscall.Kill(pid, syscall.SIGUSR1); err != nil {
+		if errors.Is(err, syscall.ESRCH) {
+			return false, coded(wire.CodeNotFound, fmt.Sprintf("no process has pid %d; call proc.list to check it", pid), false)
+		}
+		return false, coded(wire.CodeCapabilityUnsupported, fmt.Sprintf("cannot signal pid %d to open its inspector (%v); start the app with --inspect and attach by port", pid, err), false)
+	}
+	return true, nil
+}
+
+// listeningPorts returns the loopback TCP ports that pid listens on, read
+// from lsof.
+func listeningPorts(pid int) map[int]bool {
+	out := map[int]bool{}
+	c := exec.Command("lsof", "-nP", "-a", "-p", strconv.Itoa(pid), "-iTCP", "-sTCP:LISTEN")
+	c.Env = append(os.Environ(), "LC_ALL=C")
+	data, err := c.Output()
+	if err != nil {
+		return out
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		for _, f := range strings.Fields(line) {
+			host, port, ok := strings.Cut(f, ":")
+			if !ok || (host != "127.0.0.1" && host != "[::1]" && host != "localhost" && host != "*") {
+				continue
+			}
+			n, err := strconv.Atoi(port)
+			if err == nil && n > 0 {
+				out[n] = true
+			}
+		}
+	}
+	return out
+}
+
+// processCmdlines returns the running processes with their command lines.
+func processCmdlines() []procCmd {
+	procs, err := listProcesses()
+	if err != nil {
+		return nil
+	}
+	out := make([]procCmd, 0, len(procs))
+	for _, p := range procs {
+		out = append(out, procCmd{pid: p.PID, cmd: p.Cmd})
+	}
+	return out
 }

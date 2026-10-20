@@ -15,6 +15,7 @@ import (
 	"unsafe"
 
 	"github.com/YangTaeyoung/deskhand/internal/agent/sysfolder"
+	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
 const createNoWindow = 0x08000000
@@ -270,3 +271,16 @@ func processParents() map[int]int {
 	}
 	return parents
 }
+
+// signalInspector refuses on Windows: the inspector of a running process
+// can be activated only through a mechanism this agent does not use.
+func signalInspector(int) (bool, error) {
+	return false, coded(wire.CodeCapabilityUnsupported,
+		"attaching to a running process by pid is not supported on this PC; start the app with --inspect and attach by its port, or launch it with debug.electron.launch", false)
+}
+
+// listeningPorts is unused on Windows, where pid attach is unsupported.
+func listeningPorts(int) map[int]bool { return map[int]bool{} }
+
+// processCmdlines is unused on Windows, where pid attach is unsupported.
+func processCmdlines() []procCmd { return nil }

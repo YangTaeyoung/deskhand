@@ -1,0 +1,10 @@
+{
+  "name": "deskhand-debug-fixture",
+  "version": "1.0.0",
+  "description": "Minimal Electron app for the Deskhand CDP debugger tests.",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron ."
+  }
+}

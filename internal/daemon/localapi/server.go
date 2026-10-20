@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/daemon/apierr"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/debug"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/events"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/hosts"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/ids"
@@ -92,6 +93,8 @@ type Deps struct {
 	PTYs *pty.Hub
 	// Tunnels serves the tunnel methods; nil leaves them out.
 	Tunnels *tunnel.Manager
+	// Debug serves the debug methods; nil leaves them out.
+	Debug *debug.Manager
 	// QA serves the qa methods; nil leaves them out.
 	QA      *qa.Manager
 	Version string
@@ -143,6 +146,7 @@ func New(d Deps) *Server {
 	s.registerTransfer()
 	s.registerPTY()
 	s.registerTunnel()
+	s.registerDebug()
 	s.registerDiag()
 	s.registerQA()
 	return s

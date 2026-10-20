@@ -170,50 +170,9 @@ func (s *Server) appLaunch(ctx context.Context, req proto.Message) (proto.Messag
 		waitMs = maxLaunchWaitMs
 	}
 
-	v := s.view()
-	program, err := resolveProgram(path)
+	c, started, err := s.buildChild(path, req.Strings("args"), req.String("cwd"), req.StringMap("env"))
 	if err != nil {
 		return nil, err
-	}
-	var c *exec.Cmd
-	if runtime.GOOS == "windows" {
-		c = &exec.Cmd{Path: program, Args: append([]string{program}, req.Strings("args")...)}
-	} else {
-		c = exec.Command(program, req.Strings("args")...)
-	}
-	if cwd := req.String("cwd"); cwd != "" {
-		c.Dir = resolveHomePath(v.dir, cwd)
-	} else if filepath.IsAbs(c.Path) {
-		c.Dir = filepath.Dir(c.Path)
-	}
-	var extra []string
-	if env := req.StringMap("env"); len(env) > 0 {
-		keys := make([]string, 0, len(env))
-		for k := range env {
-			if k == "" || strings.Contains(k, "=") {
-				return nil, errors.New("env names cannot be empty or contain '='")
-			}
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			extra = append(extra, k+"="+env[k])
-		}
-	}
-	started := c.Path
-	if sess, ok := v.sess, v.hasSess; ok {
-		runInSession(c, append(append([]string{}, sess.Env...), extra...), sess.Credential(), sess.ScopePrefix())
-	} else if runtime.GOOS == "windows" || len(extra) > 0 {
-		base, err := childEnvironment()
-		if err != nil {
-			return nil, err
-		}
-		c.Env = append(base, extra...)
-	}
-	if file, err := prepareProgram(c); err != nil {
-		return nil, err
-	} else if file != "" {
-		started = file
 	}
 
 	watch := waitMs > 0 && s.opt.UI != nil
@@ -228,9 +187,81 @@ func (s *Server) appLaunch(ctx context.Context, req proto.Message) (proto.Messag
 		}
 	}
 
+	pid, exited, err := s.startChild(c, started, nil)
+	if err != nil {
+		return nil, fmt.Errorf("cannot start '%s': %v; check the path with fs.stat", path, err)
+	}
+
+	res := proto.Message{"pid": pid}
+	if watch {
+		if w := s.waitLaunchWindow(ctx, pid, before, exited, time.Duration(waitMs)*time.Millisecond); w != nil {
+			res["window"] = w
+		}
+	}
+	return res, nil
+}
+
+// buildChild builds the command that starts program path with args in the
+// working directory cwd (home-relative) and the extra environment env, run
+// in the desktop session when there is one. It returns the command and the
+// file it runs.
+func (s *Server) buildChild(path string, args []string, cwd string, env map[string]string) (*exec.Cmd, string, error) {
+	v := s.view()
+	program, err := resolveProgram(path)
+	if err != nil {
+		return nil, "", err
+	}
+	var c *exec.Cmd
+	if runtime.GOOS == "windows" {
+		c = &exec.Cmd{Path: program, Args: append([]string{program}, args...)}
+	} else {
+		c = exec.Command(program, args...)
+	}
+	if cwd != "" {
+		c.Dir = resolveHomePath(v.dir, cwd)
+	} else if filepath.IsAbs(c.Path) {
+		c.Dir = filepath.Dir(c.Path)
+	}
+	var extra []string
+	if len(env) > 0 {
+		keys := make([]string, 0, len(env))
+		for k := range env {
+			if k == "" || strings.Contains(k, "=") {
+				return nil, "", errors.New("env names cannot be empty or contain '='")
+			}
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			extra = append(extra, k+"="+env[k])
+		}
+	}
+	started := c.Path
+	if sess, ok := v.sess, v.hasSess; ok {
+		runInSession(c, append(append([]string{}, sess.Env...), extra...), sess.Credential(), sess.ScopePrefix())
+	} else if runtime.GOOS == "windows" || len(extra) > 0 {
+		base, err := childEnvironment()
+		if err != nil {
+			return nil, "", err
+		}
+		c.Env = append(base, extra...)
+	}
+	if file, err := prepareProgram(c); err != nil {
+		return nil, "", err
+	} else if file != "" {
+		started = file
+	}
+	return c, started, nil
+}
+
+// startChild starts c, tracks the process as started by the agent and
+// spawns a goroutine that records its end, emits process.exited with the
+// file started and calls onExit (when set) with the exit code. It returns
+// the pid and a channel closed when the process ends.
+func (s *Server) startChild(c *exec.Cmd, started string, onExit func(code int)) (int, chan struct{}, error) {
 	notBefore := time.Now()
 	if err := startProgram(c); err != nil {
-		return nil, fmt.Errorf("cannot start '%s': %v; check the path with fs.stat", path, err)
+		return 0, nil, err
 	}
 	pid := c.Process.Pid
 	s.trackStarted(pid, notBefore)
@@ -244,15 +275,11 @@ func (s *Server) appLaunch(ctx context.Context, req proto.Message) (proto.Messag
 		}
 		close(exited)
 		s.emit("process.exited", proto.Message{"pid": pid, "code": code, "path": started})
-	}()
-
-	res := proto.Message{"pid": pid}
-	if watch {
-		if w := s.waitLaunchWindow(ctx, pid, before, exited, time.Duration(waitMs)*time.Millisecond); w != nil {
-			res["window"] = w
+		if onExit != nil {
+			onExit(code)
 		}
-	}
-	return res, nil
+	}()
+	return pid, exited, nil
 }
 
 // claimWindow picks a window not listed before the launch and not already

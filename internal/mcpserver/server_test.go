@@ -180,6 +180,9 @@ var allTools = []string{"hosts_list", "host_doctor", "session_inspect", "exec_ru
 	"files_list", "files_stat", "files_read", "files_write", "files_mkdir", "files_rename", "proc_list", "proc_kill", "app_launch",
 	"files_push", "files_pull", "files_move", "files_copy", "files_trash", "files_hash", "transfer_get", "transfer_list", "transfer_cancel", "transfer_resume", "transfer_pause",
 	"diag_system", "diag_services", "diag_events", "diag_crashes", "tunnel_open", "tunnel_close", "tunnel_list",
+	"debug_launch", "debug_attach", "debug_list", "debug_get", "debug_breakpoint_set", "debug_breakpoint_remove", "debug_exceptions",
+	"debug_pause", "debug_resume", "debug_step", "debug_state", "debug_variables", "debug_evaluate", "debug_scripts", "debug_source",
+	"debug_console", "debug_close",
 	"qa_run", "qa_get", "qa_list", "qa_cancel"}
 
 func TestToolsListed(t *testing.T) {

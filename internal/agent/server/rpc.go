@@ -348,6 +348,7 @@ func (s *Server) registerBuiltins() {
 	s.registerFiles()
 	s.registerUI()
 	s.registerLaunch()
+	s.registerDebug()
 	s.registerClipboard()
 	s.registerDiag()
 	if s.opt.Session != nil {

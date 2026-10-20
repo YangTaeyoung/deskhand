@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'" />
+    <title>Deskhand 디버그 픽스처</title>
+    <style>
+      body { font-family: -apple-system, system-ui, sans-serif; margin: 24px; }
+      button { font-size: 16px; padding: 8px 16px; margin-right: 12px; }
+      #result { margin-top: 16px; font-size: 18px; }
+    </style>
+  </head>
+  <body>
+    <h1>Deskhand 디버그 픽스처</h1>
+    <p>디버거 연결을 확인하는 최소 Electron 앱입니다.</p>
+    <button id="compute">합계 계산</button>
+    <button id="boom">예외 일으키기</button>
+    <div id="result">결과: -</div>
+    <script src="renderer.js"></script>
+  </body>
+</html>
