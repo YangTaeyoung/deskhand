@@ -240,6 +240,7 @@ func (s *Server) ServeConn(ctx context.Context, rw io.ReadWriteCloser, peer stri
 	defer stopClosing()
 
 	r := proto.NewReader(rw)
+	s.startWatchers()
 	sentCaps := s.helloCaps()
 	controller, ok := s.greet(rw, r, sentCaps, peer)
 	if !ok {
@@ -256,7 +257,6 @@ func (s *Server) ServeConn(ctx context.Context, rw io.ReadWriteCloser, peer stri
 	s.addConn(cn)
 	defer s.removeConn(cn)
 
-	s.startWatchers()
 	inFlight := make(chan struct{}, maxInFlight)
 	for {
 		m, err := r.Next()
@@ -298,10 +298,16 @@ func (s *Server) startCapsWatcher() {
 }
 
 // startWatchers starts, once per agent, the watchers of the capabilities and
-// of the clipboard.
+// of the clipboard; the clipboard watcher's first sequence number is read
+// before startWatchers returns.
 func (s *Server) startWatchers() {
 	s.startCapsWatcher()
-	s.watchOnce.Do(func() { go s.watchClipboard() })
+	s.watchOnce.Do(func() {
+		s.ownMu.Lock()
+		s.lastSeq = s.opt.Clipboard.Sequence()
+		s.ownMu.Unlock()
+		go s.watchClipboard()
+	})
 }
 
 // openConns returns the open connections.
@@ -361,12 +367,10 @@ func (s *Server) markOwnClipboard() {
 
 // watchClipboard polls the clipboard while a connection is open and the
 // clipboard is available, every clipboardPollMin after a change and up to
-// every clipboardPollMax while nothing changes, and sends a change the agent
-// did not make to every open stream as the event clipboard.changed.
+// every clipboardPollMax while nothing changes, and sends a change from the
+// sequence number startWatchers read that the agent did not make to every
+// open stream as the event clipboard.changed.
 func (s *Server) watchClipboard() {
-	s.ownMu.Lock()
-	s.lastSeq = s.opt.Clipboard.Sequence()
-	s.ownMu.Unlock()
 	wait := s.timing.pollMin
 	for {
 		select {

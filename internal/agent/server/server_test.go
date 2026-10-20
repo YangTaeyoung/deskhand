@@ -92,6 +92,28 @@ func TestTheClipboardWatcherReportsOnlyThePCsChanges(t *testing.T) {
 	}
 }
 
+// slowFirstSequence is a fake clipboard whose first Sequence call takes
+// 300 ms before it reads the sequence number.
+type slowFirstSequence struct {
+	*fakeClipboard
+	once sync.Once
+}
+
+func (f *slowFirstSequence) Sequence() uint64 {
+	f.once.Do(func() { time.Sleep(300 * time.Millisecond) })
+	return f.fakeClipboard.Sequence()
+}
+
+func TestAClipboardChangeRightAfterHelloIsReported(t *testing.T) {
+	cb := &slowFirstSequence{fakeClipboard: &fakeClipboard{}}
+	r, _, _ := startServer(t, Options{Clipboard: cb, HomeDir: t.TempDir()})
+	expect(t, r, "hello")
+	cb.external("copied as the agent connected")
+	if m := expectEvent(t, r, "clipboard.changed"); m.String("text") != "copied as the agent connected" {
+		t.Fatalf("the first clipboard.changed is %v", m)
+	}
+}
+
 func TestExecDisabledByDefault(t *testing.T) {
 	r, w, _ := startServer(t, Options{Clipboard: &fakeClipboard{}, HomeDir: t.TempDir()})
 	expect(t, r, "hello")
