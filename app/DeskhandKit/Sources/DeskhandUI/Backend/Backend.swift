@@ -1,12 +1,16 @@
 import DeskhandClient
 import Foundation
 import struct DeskhandClient.Host
+import struct DeskhandClient.ProcessInfo
 
 /// Everything the screens ask of the daemon, grouped by feature. A feature adds its own
 /// protocol below and joins it to this list; `LiveBackend` and `PreviewBackend` implement each
 /// feature protocol in their own extension.
 public protocol Backend: BackendLifecycle, HostsBackend, ControlBackend, TimelineBackend, EventsBackend, ScreenBackend, FilesBackend,
-    TerminalBackend {}
+    TerminalBackend, ProcessesBackend, DiagnosticsBackend {}
+
+/// A process of the remote computer (`ProcessInfo` of DeskhandClient).
+public typealias RemoteProcess = ProcessInfo
 
 public protocol BackendLifecycle: Sendable {
     /// Makes the daemon reachable and says hello. Throws `ClientError.daemonUnavailable` when the
@@ -93,6 +97,87 @@ public protocol TerminalBackend: Sendable {
     func ptyJobs(hostID: String) async throws -> [Job]
     /// Ends the shell of a pty job (`jobs.cancel`).
     func ptyKill(jobID: String) async throws
+}
+
+/// `proc.list` and `proc.kill{host_id, pid, tree?}` (local-api.md §3 진단, protocol.md §3.1).
+public protocol ProcessesBackend: Sendable {
+    /// Every process of the computer.
+    func procList(hostID: String) async throws -> [RemoteProcess]
+    /// Ends `pid`, and with `tree` its descendants. A `failed` or `unknown` envelope comes back
+    /// as the receipt's status; request problems throw.
+    func procKill(hostID: String, pid: Int, tree: Bool) async throws -> KillReceipt
+}
+
+/// `diag.system`, `diag.events` and `diag.crashes` (local-api.md §3 진단, protocol.md §3.1).
+/// A `failed` or `unknown` envelope throws `OperationError`.
+public protocol DiagnosticsBackend: Sendable {
+    func diagSystem(hostID: String) async throws -> DiagSystem
+    /// Events of one log, newest first.
+    func diagEvents(_ query: EventLogQuery) async throws -> EventLogPage
+    /// Crash dumps and error reports since `since` (the agent's default, 30 days, when nil), newest first.
+    func diagCrashes(hostID: String, since: Date?) async throws -> [CrashDump]
+}
+
+/// The envelope of `proc.kill`: its status, how many processes ended, and the error and next
+/// action of a `failed` or `unknown` status.
+public struct KillReceipt: Sendable, Equatable {
+    public var status: EnvelopeStatus
+    public var killed: Int
+    public var error: OperationError?
+
+    public init(status: EnvelopeStatus, killed: Int = 0, error: OperationError? = nil) {
+        self.status = status
+        self.killed = killed
+        self.error = error
+    }
+}
+
+/// `log` of `diag.events`.
+public enum EventLogName: String, Sendable, CaseIterable, Identifiable {
+    case system = "System"
+    case application = "Application"
+
+    public var id: String { rawValue }
+}
+
+/// Parameters of `diag.events`.
+public struct EventLogQuery: Sendable, Equatable {
+    /// Largest `max` the agent accepts.
+    public static let maximumCount = 1000
+
+    public var hostID: String
+    public var log: EventLogName
+    public var since: Date?
+    public var until: Date?
+    /// Levels to return; nil returns every level.
+    public var levels: [EventLevel]?
+    /// Exact provider name.
+    public var provider: String?
+    public var max: Int
+
+    public init(hostID: String, log: EventLogName, since: Date? = nil, until: Date? = nil, levels: [EventLevel]? = nil,
+                provider: String? = nil, max: Int = 200) {
+        self.hostID = hostID
+        self.log = log
+        self.since = since
+        self.until = until
+        self.levels = levels
+        self.provider = provider
+        self.max = max
+    }
+}
+
+/// Result of `diag.events`.
+public struct EventLogPage: Sendable, Equatable {
+    /// Newest first.
+    public var events: [EventLogEntry]
+    /// The agent stopped at `max`; older events in the range were not returned.
+    public var truncated: Bool
+
+    public init(events: [EventLogEntry], truncated: Bool) {
+        self.events = events
+        self.truncated = truncated
+    }
 }
 
 /// What `stream.attach{kind:"pty"}` attaches to.

@@ -93,9 +93,13 @@ public struct WorkspaceView: View {
         case .files:
             FilesView(store: store, host: host)
                 .id(host.hostID)
+        case .processes:
+            ProcessesView(store: store, host: host, chrome: chrome)
+                .id(host.hostID)
         case .logs:
-            TabPlaceholderView(tab: .logs, logPath: store.logSelection?.hostID == host.hostID ? store.logSelection?.path : nil)
-        case .processes, .debugger, .qa:
+            LogsView(store: store, host: host, chrome: chrome)
+                .id(host.hostID)
+        case .debugger, .qa:
             TabPlaceholderView(tab: store.layout.tab)
         }
     }
@@ -185,31 +189,13 @@ struct TabButton: View {
     }
 }
 
-/// Placeholder of a tab whose content is not built yet: what the tab will do, and the remote
-/// file the files tab asked the logs tab to open.
+/// Placeholder of a tab whose content is not built yet: what the tab will do.
 struct TabPlaceholderView: View {
     let tab: WorkspaceTab
-    var logPath: String?
 
     var body: some View {
         VStack(spacing: 0) {
             EmptyStateView(symbol: tab.symbol, title: tab.heading, message: tab.summary)
-            if let logPath {
-                VStack(spacing: DS.Space.xs) {
-                    Text(String.ui("logs.selected", "열 파일"))
-                        .font(DS.Font.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Text(logPath)
-                        .font(DS.Font.mono)
-                        .lineLimit(2)
-                        .truncationMode(.middle)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(DS.Space.m)
-                .frame(maxWidth: 520)
-                .background(DS.Color.neutral.opacity(0.08), in: RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous))
-                .padding(.bottom, DS.Space.l)
-            }
             Text(String.ui("tab.placeholder.badge", "준비 중인 탭입니다"))
                 .font(DS.Font.caption.weight(.medium))
                 .foregroundStyle(.secondary)

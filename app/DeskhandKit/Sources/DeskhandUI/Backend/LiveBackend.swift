@@ -428,3 +428,109 @@ extension LiveBackend {
         try Self.check(envelope)
     }
 }
+
+// MARK: Processes and diagnostics
+
+private struct ProcKillParams: Encodable {
+    let hostID: String
+    let pid: Int
+    let tree: Bool
+}
+
+private struct DiagEventsParams: Encodable {
+    let hostID: String
+    let log: String
+    let since: Timestamp?
+    let until: Timestamp?
+    let levels: [String]?
+    let provider: String?
+    let max: Int
+}
+
+private struct DiagCrashesParams: Encodable {
+    let hostID: String
+    let since: Timestamp?
+}
+
+/// `procs` of `proc.list`.
+private struct ProcListResult: Decodable {
+    let procs: [RemoteProcess]
+}
+
+/// `killed` of `proc.kill` alongside the envelope.
+private struct ProcKillResult: Decodable {
+    let killed: Int?
+}
+
+/// `events` and `truncated` of `diag.events`.
+private struct DiagEventsResult: Decodable {
+    let events: [EventLogEntry]
+    let truncated: Bool?
+}
+
+/// `dumps` of `diag.crashes`.
+private struct DiagCrashesResult: Decodable {
+    let dumps: [CrashDump]
+}
+
+extension LiveBackend {
+    public func procList(hostID: String) async throws -> [RemoteProcess] {
+        try await enveloped("proc.list", HostIDParams(hostID: hostID), as: ProcListResult.self).procs
+    }
+
+    public func procKill(hostID: String, pid: Int, tree: Bool) async throws -> KillReceipt {
+        let value: JSONValue = try await client.call("proc.kill", ProcKillParams(hostID: hostID, pid: pid, tree: tree))
+        let envelope = try Self.decode(Envelope<ProcKillResult>.self, from: value)
+        guard value["status"] != nil else {
+            return KillReceipt(status: .succeeded, killed: envelope.payload.killed ?? 1)
+        }
+        return Self.killReceipt(envelope)
+    }
+
+    /// The receipt of a `proc.kill` envelope: `succeeded` with its count, `failed` with the
+    /// agent's error, anything else as an unknown outcome whose next action is to check the list.
+    private static func killReceipt(_ envelope: Envelope<ProcKillResult>) -> KillReceipt {
+        switch envelope.status {
+        case .succeeded:
+            return KillReceipt(status: .succeeded, killed: envelope.payload.killed ?? 1)
+        case .failed, .cancelled:
+            let error = envelope.error.map(OperationError.init)
+                ?? OperationError(message: .ui("error.unknown", "알 수 없는 오류가 발생했습니다"))
+            return KillReceipt(status: .failed, error: OperationError(
+                code: error.code, message: error.message, nextAction: envelope.nextAction ?? error.nextAction))
+        case .unknown, .running, .waitingForUser:
+            return KillReceipt(status: .unknown, error: OperationError(
+                code: envelope.error?.code ?? "EXECUTION_OUTCOME_UNKNOWN",
+                message: envelope.error?.message ?? .ui("error.outcomeUnknown", "원격 PC에서 실행됐는지 확인하지 못했습니다"),
+                nextAction: envelope.nextAction ?? envelope.error?.nextAction ?? "check_state"))
+        }
+    }
+
+    public func diagSystem(hostID: String) async throws -> DiagSystem {
+        try await enveloped("diag.system", HostIDParams(hostID: hostID), as: DiagSystem.self)
+    }
+
+    public func diagEvents(_ query: EventLogQuery) async throws -> EventLogPage {
+        let params = DiagEventsParams(
+            hostID: query.hostID, log: query.log.rawValue, since: query.since.map(Timestamp.init(date:)),
+            until: query.until.map(Timestamp.init(date:)), levels: query.levels?.map(\.rawValue), provider: query.provider,
+            max: min(max(query.max, 1), EventLogQuery.maximumCount))
+        let result = try await enveloped("diag.events", params, as: DiagEventsResult.self)
+        return EventLogPage(events: result.events, truncated: result.truncated ?? false)
+    }
+
+    public func diagCrashes(hostID: String, since: Date?) async throws -> [CrashDump] {
+        try await enveloped("diag.crashes", DiagCrashesParams(hostID: hostID, since: since.map(Timestamp.init(date:))),
+                            as: DiagCrashesResult.self).dumps
+    }
+
+    /// Calls a method whose result may carry the envelope of local-api.md §2, throws the
+    /// envelope's error unless it succeeded, then decodes `T` from the same object.
+    private func enveloped<T: Decodable>(_ method: String, _ params: some Encodable & Sendable, as type: T.Type) async throws -> T {
+        let value: JSONValue = try await client.call(method, params)
+        if value["status"] != nil {
+            try Self.check(try Self.decode(Envelope<Empty>.self, from: value))
+        }
+        return try Self.decode(T.self, from: value)
+    }
+}

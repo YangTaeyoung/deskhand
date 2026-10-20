@@ -5,8 +5,8 @@ import struct DeskhandClient.Host
 
 /// `Backend` for snapshot scenes. Control and timeline reads return exactly what the scene
 /// seeded; a timeline can stay pending or fail, and control changes can fail. File changes,
-/// transfers and terminals do nothing; scenes seed those tabs. Everything else goes to a
-/// `PreviewBackend`.
+/// transfers, terminals and process kills do nothing; scenes seed those tabs. Everything else
+/// goes to a `PreviewBackend`.
 final class SnapshotBackend: Backend {
     enum TimelineReply: Sendable {
         case entries([TimelineEntry])
@@ -109,4 +109,12 @@ final class SnapshotBackend: Backend {
     func ptyAttach(_ target: PTYTarget) async throws -> any FrameStream { throw ClientError.notConnected }
     func ptyJobs(hostID: String) async throws -> [Job] { [] }
     func ptyKill(jobID: String) async throws {}
+
+    /// Process and diagnostics reads come from the preview daemon; scenes seed those tabs, and
+    /// a kill changes nothing.
+    func procList(hostID: String) async throws -> [RemoteProcess] { try await base.procList(hostID: hostID) }
+    func procKill(hostID: String, pid: Int, tree: Bool) async throws -> KillReceipt { KillReceipt(status: .succeeded, killed: 1) }
+    func diagSystem(hostID: String) async throws -> DiagSystem { try await base.diagSystem(hostID: hostID) }
+    func diagEvents(_ query: EventLogQuery) async throws -> EventLogPage { try await base.diagEvents(query) }
+    func diagCrashes(hostID: String, since: Date?) async throws -> [CrashDump] { try await base.diagCrashes(hostID: hostID, since: since) }
 }

@@ -127,8 +127,21 @@ extension PreviewFixtures {
             dir(windows, "System32", 20), dir(windows, "Temp", 0.5), file(windows, "MEMORY.DMP", 2_147_483_648, 28),
         ]
         folders[system32] = [dir(system32, "config", 20), dir(system32, "drivers", 20), file(system32, "notepad.exe", 360_448, 400)]
-        folders[programData] = [dir(programData, "Shop", 30)]
+        folders[programData] = [dir(programData, "Microsoft", 300), dir(programData, "Shop", 30)]
         folders[programData + "\\Shop"] = [dir(programData + "\\Shop", "CrashDumps", 1)]
+        let wer = programData + "\\Microsoft\\Windows\\WER"
+        folders[programData + "\\Microsoft"] = [dir(programData + "\\Microsoft", "Windows", 300)]
+        folders[programData + "\\Microsoft\\Windows"] = [dir(programData + "\\Microsoft\\Windows", "WER", 52)]
+        folders[wer] = [dir(wer, "ReportArchive", 52), dir(wer, "ReportQueue", 400)]
+        folders[wer + "\\ReportQueue"] = []
+        folders[wer + "\\ReportArchive"] = [dir(wer + "\\ReportArchive", FilePath.lastComponent(crashReportFolder, style: .windows), 52)]
+        folders[crashReportFolder] = [file(crashReportFolder, "Report.wer", 41_872, 52)]
+        let appData = home + "\\AppData"
+        folders[appData] = [dir(appData, "Local", 1), dir(appData, "Roaming", 3)]
+        folders[appData + "\\Roaming"] = []
+        folders[appData + "\\Local"] = [dir(appData + "\\Local", "CrashDumps", 19.4), dir(appData + "\\Local", "Temp", 0.2)]
+        folders[appData + "\\Local\\Temp"] = []
+        folders[appData + "\\Local\\CrashDumps"] = [file(appData + "\\Local\\CrashDumps", "dotnet.exe.7712.dmp", 1_482_418_176, 19.4)]
         folders[crashDumps] = (1...7).map { n in
             file(crashDumps, "Shop.exe.\(4_000 + n * 13).dmp", 48_000_000 + n * 3_100_000, Double(n))
         }

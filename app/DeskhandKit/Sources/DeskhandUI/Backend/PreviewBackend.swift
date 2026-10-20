@@ -51,6 +51,8 @@ public final class PreviewBackend: Backend, LocalOverlayProviding {
     public let localOverlay = LocalOverlay()
     /// Simulated shells of the terminal tab.
     let terminals: PreviewTerminals
+    /// Processes the preview ended.
+    let processes = PreviewProcessStore()
 
     /// `screenVideo` is an Annex-B H.264 file whose first access unit is a keyframe; screen
     /// streams play it in a loop. Without one they report the stream as paused.

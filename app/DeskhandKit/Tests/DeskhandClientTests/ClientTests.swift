@@ -368,23 +368,6 @@ final class ClientTests: XCTestCase {
         XCTAssertEqual(failed.files.first?.error?.code, "PERMISSION_DENIED")
         XCTAssertEqual(failed.files.last?.error, EnvelopeError(message: "옛 형식"))
 
-        let proc = try Wire.decode(ProcessInfo.self, from: Data(#"""
-        {"pid":4,"ppid":1,"name":"n","mem_kb":10,"started_by_deskhand":true}
-        """#.utf8))
-        XCTAssertEqual(proc.memKb, 10)
-        XCTAssertTrue(proc.startedByDeskhand)
-
-        let diag = try Wire.decode(DiagSystem.self, from: Data(#"""
-        {"os":"windows","version":"11","build":"26100","arch":"amd64","hostname":"w",
-         "cpu":{"name":"c","cores":4,"threads":8,"load_pct":12.5},"memory":{"total_bytes":8,"available_bytes":4},
-         "disks":[{"name":"C:","total_bytes":100,"free_bytes":50}],"gpus":[{"name":"g","driver":"1.0"}],
-         "uptime_s":99,"boot_time":"2026-10-20T10:00:00.000Z"}
-        """#.utf8))
-        XCTAssertEqual(diag.cpu.loadPct, 12.5)
-        XCTAssertEqual(diag.memory.availableBytes, 4)
-        XCTAssertEqual(diag.disks.first?.freeBytes, 50)
-        XCTAssertEqual(diag.uptimeS, 99)
-
         let launch = try Wire.decode(DebugLaunch.self, from: Data(#"""
         {"debug_id":"d-1","pid":42,"targets":[{"id":"t1","role":"main","type":"page","url":"file:///a","title":"A"}]}
         """#.utf8))
@@ -411,11 +394,68 @@ final class ClientTests: XCTestCase {
         """#.utf8))
         XCTAssertEqual(entry.clientName, "mcp")
         XCTAssertNil(entry.clientID)
+    }
+
+    func testDiagnosticsModelsDecodeProtocolFields() throws {
+        let proc = try Wire.decode(ProcessInfo.self, from: Data(#"""
+        {"pid":7712,"ppid":5520,"name":"node.exe","path":"C:\\Program Files\\nodejs\\node.exe","cmd":"node server.js",
+         "mem_kb":184320,"cpu_pct":12.5,"user":"DEV-PC\\taeyoung","started":"2026-10-20T09:12:00.000Z","started_by_deskhand":true}
+        """#.utf8))
+        XCTAssertEqual(proc.memKb, 184_320)
+        XCTAssertEqual(proc.cpuPct, 12.5)
+        XCTAssertEqual(proc.user, "DEV-PC\\taeyoung")
+        XCTAssertEqual(proc.started, Timestamp(string: "2026-10-20T09:12:00.000Z"))
+        XCTAssertTrue(proc.startedByDeskhand)
+
+        let system = try Wire.decode(ProcessInfo.self, from: Data(#"""
+        {"pid":4,"ppid":0,"name":"System","mem_kb":144,"cpu_pct":0.1,"started_by_deskhand":false}
+        """#.utf8))
+        XCTAssertNil(system.started)
+        XCTAssertNil(system.user)
+        XCTAssertNil(system.path)
+
+        let diag = try Wire.decode(DiagSystem.self, from: Data(#"""
+        {"os":{"name":"Windows 11 Pro","version":"24H2","build":"26100.2314","edition":"Professional"},"computer_name":"DEV-PC",
+         "cpu":{"name":"AMD Ryzen 9 7950X","cores":16,"threads":32,"usage_pct":12.5},"memory":{"total_bytes":68719476736,"used_bytes":21474836480},
+         "disks":[{"root":"C:\\","label":"Windows","fs":"NTFS","total_bytes":100,"free_bytes":50},{"root":"D:\\","fs":"exFAT","total_bytes":10,"free_bytes":1}],
+         "gpus":[{"name":"NVIDIA GeForce RTX 2070","driver_version":"32.0.15.6636","memory_bytes":8589934592},{"name":"Microsoft Basic Display Adapter"}],
+         "boot_time":"2026-10-18T10:00:00.000Z","uptime_s":187200}
+        """#.utf8))
+        XCTAssertEqual(diag.os.name, "Windows 11 Pro")
+        XCTAssertEqual(diag.os.build, "26100.2314")
+        XCTAssertEqual(diag.os.edition, "Professional")
+        XCTAssertEqual(diag.computerName, "DEV-PC")
+        XCTAssertEqual(diag.cpu.usagePct, 12.5)
+        XCTAssertEqual(diag.cpu.threads, 32)
+        XCTAssertEqual(diag.memory.usedBytes, 21_474_836_480)
+        XCTAssertEqual(diag.disks.first?.root, "C:\\")
+        XCTAssertEqual(diag.disks.first?.label, "Windows")
+        XCTAssertNil(diag.disks.last?.label)
+        XCTAssertEqual(diag.disks.last?.fs, "exFAT")
+        XCTAssertEqual(diag.gpus.first?.driverVersion, "32.0.15.6636")
+        XCTAssertEqual(diag.gpus.first?.memoryBytes, 8_589_934_592)
+        XCTAssertNil(diag.gpus.last?.driverVersion)
+        XCTAssertEqual(diag.bootTime, Timestamp(string: "2026-10-18T10:00:00.000Z"))
+        XCTAssertEqual(diag.uptimeS, 187_200)
 
         let log = try Wire.decode(EventLogEntry.self, from: Data(#"""
-        {"time":"2026-10-20T10:00:00.000Z","log":"System","level":"error","provider":"p","event_id":41,"message":"m"}
+        {"record_id":88123,"time":"2026-10-20T10:00:00.000Z","level":"information","provider":"Service Control Manager","event_id":7036,"message":"m"}
         """#.utf8))
-        XCTAssertEqual(log.eventID, 41)
+        XCTAssertEqual(log.recordID, 88_123)
+        XCTAssertEqual(log.eventID, 7036)
+        XCTAssertEqual(log.eventLevel, .information)
+        let odd = try Wire.decode(EventLogEntry.self, from: Data(#"""
+        {"record_id":1,"time":"2026-10-20T10:00:00.000Z","level":"audit_success","provider":"p","event_id":1,"message":""}
+        """#.utf8))
+        XCTAssertNil(odd.eventLevel)
+
+        let dump = try Wire.decode(CrashDump.self, from: Data(#"""
+        {"path":"C:\\ProgramData\\Shop\\CrashDumps\\Shop.exe.4013.dmp","app":"Shop.exe","time":"2026-10-20T09:00:00.000Z",
+         "size_bytes":51200000,"kind":"minidump"}
+        """#.utf8))
+        XCTAssertEqual(dump.app, "Shop.exe")
+        XCTAssertEqual(dump.sizeBytes, 51_200_000)
+        XCTAssertEqual(dump.dumpKind, .minidump)
     }
 
     func testFrameParserLimits() throws {

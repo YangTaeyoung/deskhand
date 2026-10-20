@@ -100,6 +100,8 @@ public final class AppStore {
     private var streamQualities: [String: StreamQuality] = [:]
     @ObservationIgnored private var filesModels: [String: FilesModel] = [:]
     @ObservationIgnored private var terminalWorkspaces: [String: TerminalWorkspace] = [:]
+    @ObservationIgnored private var processModels: [String: ProcessesModel] = [:]
+    @ObservationIgnored private var logModels: [String: LogsModel] = [:]
     @ObservationIgnored private var eventsTask: Task<Void, Never>?
     @ObservationIgnored private var reloadTask: Task<Void, Never>?
     @ObservationIgnored private var reloadToken = 0
@@ -175,19 +177,39 @@ public final class AppStore {
         return workspace
     }
 
+    /// The processes tab state of a host, created on first use and kept while the host is listed.
+    public func processes(for host: Host) -> ProcessesModel {
+        if let model = processModels[host.hostID] { return model }
+        let model = ProcessesModel(hostID: host.hostID, backend: backend, defaults: defaults)
+        processModels[host.hostID] = model
+        return model
+    }
+
+    /// The logs tab state of a host, created on first use and kept while the host is listed.
+    public func logs(for host: Host) -> LogsModel {
+        if let model = logModels[host.hostID] { return model }
+        let model = LogsModel(hostID: host.hostID, backend: backend)
+        model.store = self
+        logModels[host.hostID] = model
+        return model
+    }
+
     /// Shows the logs tab with a remote file selected.
     public func openLog(hostID: String, path: String) {
         logSelection = LogSelection(hostID: hostID, path: path)
         layout.tab = .logs
     }
 
-    /// Stops and drops the files and terminal tab state of a host that left the list.
+    /// Stops and drops the files, terminal, processes and logs tab state of a host that left the list.
     private func forgetTabState(_ hostID: String) {
         filesModels[hostID]?.stop()
         filesModels[hostID] = nil
         if logSelection?.hostID == hostID { logSelection = nil }
         terminalWorkspaces[hostID]?.stop()
         terminalWorkspaces[hostID] = nil
+        processModels[hostID]?.setVisible(false)
+        processModels[hostID] = nil
+        logModels[hostID] = nil
     }
 
     /// Records the quality of the host's screen stream; `nil` when the stream closes.

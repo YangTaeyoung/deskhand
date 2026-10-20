@@ -14,8 +14,9 @@ struct ControlCall: Equatable {
 }
 
 /// Backend that forwards to a `PreviewBackend`, counts `hostList` calls, can hold `hostList`
-/// replies until the test resumes them in any order, can fail `timelineList`, and records,
-/// holds or fails `control.*` changes.
+/// replies until the test resumes them in any order, can fail `timelineList`, records, holds or
+/// fails `control.*` changes, counts or fails `procList`, records or answers `procKill`, and
+/// records or holds `diagEvents`.
 final class GatedBackend: Backend, LocalOverlayProviding {
     let base: PreviewBackend
 
@@ -37,6 +38,13 @@ final class GatedBackend: Backend, LocalOverlayProviding {
         var onePageListing = false
         var transferRequests: [TransferRequest] = []
         var fileCalls: [FileCall] = []
+        var procListCalls = 0
+        var procListFailure: OperationError?
+        var killCalls: [KillCall] = []
+        var killReceipt: KillReceipt?
+        var eventQueries: [EventLogQuery] = []
+        var heldEventQueries: [CheckedContinuation<Void, Never>] = []
+        var holdEvents = false
     }
 
     private let state = Mutex(State())
@@ -234,12 +242,80 @@ final class GatedBackend: Backend, LocalOverlayProviding {
     func transferResume(transferID: String) async throws -> Transfer { try await base.transferResume(transferID: transferID) }
     func transferCancel(transferID: String) async throws -> Transfer { try await base.transferCancel(transferID: transferID) }
 
+    var procListCalls: Int { state.withLock { $0.procListCalls } }
+    var killCalls: [KillCall] { state.withLock { $0.killCalls } }
+    var eventQueries: [EventLogQuery] { state.withLock { $0.eventQueries } }
+    var pendingEventQueryCount: Int { state.withLock { $0.heldEventQueries.count } }
+
+    /// Makes `procList` throw `error`, or answer again when nil.
+    func failProcList(with error: OperationError?) {
+        state.withLock { $0.procListFailure = error }
+    }
+
+    /// Answers `procKill` with `receipt` without asking the preview daemon, or forwards again when nil.
+    func answerKill(with receipt: KillReceipt?) {
+        state.withLock { $0.killReceipt = receipt }
+    }
+
+    /// Holds `diagEvents` calls until `releaseEventQuery()`.
+    func holdEventQueries(_ hold: Bool) {
+        state.withLock { $0.holdEvents = hold }
+    }
+
+    /// Lets the oldest held `diagEvents` call reach the preview daemon.
+    func releaseEventQuery() {
+        let continuation = state.withLock { $0.heldEventQueries.isEmpty ? nil : $0.heldEventQueries.removeFirst() }
+        continuation?.resume()
+    }
+
+    func procList(hostID: String) async throws -> [RemoteProcess] {
+        let failure = state.withLock { s -> OperationError? in
+            s.procListCalls += 1
+            return s.procListFailure
+        }
+        if let failure { throw failure }
+        return try await base.procList(hostID: hostID)
+    }
+
+    func procKill(hostID: String, pid: Int, tree: Bool) async throws -> KillReceipt {
+        let receipt = state.withLock { s -> KillReceipt? in
+            s.killCalls.append(KillCall(hostID: hostID, pid: pid, tree: tree))
+            return s.killReceipt
+        }
+        if let receipt { return receipt }
+        return try await base.procKill(hostID: hostID, pid: pid, tree: tree)
+    }
+
+    func diagSystem(hostID: String) async throws -> DiagSystem { try await base.diagSystem(hostID: hostID) }
+
+    func diagEvents(_ query: EventLogQuery) async throws -> EventLogPage {
+        let hold = state.withLock { s -> Bool in
+            s.eventQueries.append(query)
+            return s.holdEvents
+        }
+        if hold {
+            await withCheckedContinuation { continuation in
+                state.withLock { $0.heldEventQueries.append(continuation) }
+            }
+        }
+        return try await base.diagEvents(query)
+    }
+
+    func diagCrashes(hostID: String, since: Date?) async throws -> [CrashDump] { try await base.diagCrashes(hostID: hostID, since: since) }
+
     private func record(_ call: FileCall) {
         state.withLock { $0.fileCalls.append(call) }
     }
 }
 
 /// One `filesList` call as `GatedBackend` received it.
+/// One `proc.kill` call as `GatedBackend` received it.
+struct KillCall: Equatable {
+    let hostID: String
+    let pid: Int
+    let tree: Bool
+}
+
 struct FilesListCall: Equatable {
     let path: String
     let cursor: String?
