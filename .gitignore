@@ -6,3 +6,5 @@
 /app/build/
 /app/*.xcodeproj/
 /.superpowers/
+/app/DeskhandKit/.build/
+/app/DeskhandKit/.swiftpm/

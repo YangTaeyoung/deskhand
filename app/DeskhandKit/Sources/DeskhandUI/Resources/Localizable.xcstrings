@@ -1,0 +1,282 @@
+{
+  "sourceLanguage": "ko",
+  "strings": {
+    "a11y.capability": {
+      "comment": "VoiceOver label of a capability chip: capability name, state",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@: %2$@"
+          }
+        }
+      }
+    },
+    "a11y.connectionState": {
+      "comment": "VoiceOver label of a status dot",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결 상태: %@"
+          }
+        }
+      }
+    },
+    "a11y.control": {
+      "comment": "VoiceOver label of the control pill",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제어권: %@"
+          }
+        }
+      }
+    },
+    "a11y.step": {
+      "comment": "VoiceOver label of a step: index, count, title, status",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld/%2$lld단계, %3$@, %4$@"
+          }
+        }
+      }
+    },
+    "action.retry": {
+      "comment": "Button that repeats a failed operation",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 시도"
+          }
+        }
+      }
+    },
+    "capability.needsUser": {
+      "comment": "Capability state: someone must act on the remote PC",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용자 조치 필요"
+          }
+        }
+      }
+    },
+    "capability.ready": {
+      "comment": "Capability state",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "준비됨"
+          }
+        }
+      }
+    },
+    "capability.unavailable": {
+      "comment": "Capability state: supported but not working now",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용 불가"
+          }
+        }
+      }
+    },
+    "capability.unsupported": {
+      "comment": "Capability state: not supported on this computer",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지원 안 함"
+          }
+        }
+      }
+    },
+    "connection.blocked": {
+      "comment": "Connection state",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "차단됨"
+          }
+        }
+      }
+    },
+    "connection.connecting": {
+      "comment": "Connection state",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결 중"
+          }
+        }
+      }
+    },
+    "connection.degraded": {
+      "comment": "Connection state",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결 불안정"
+          }
+        }
+      }
+    },
+    "connection.offline": {
+      "comment": "Connection state",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오프라인"
+          }
+        }
+      }
+    },
+    "connection.ready": {
+      "comment": "Connection state",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결됨"
+          }
+        }
+      }
+    },
+    "connection.reconnecting": {
+      "comment": "Connection state",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "재연결 중"
+          }
+        }
+      }
+    },
+    "control.ai": {
+      "comment": "Control owner: an AI client holds input",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 조작 중"
+          }
+        }
+      }
+    },
+    "control.human": {
+      "comment": "Control owner: the user at this Mac holds input",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "내가 조작 중"
+          }
+        }
+      }
+    },
+    "control.none": {
+      "comment": "Control owner: nobody holds input",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "관찰 중"
+          }
+        }
+      }
+    },
+    "control.withClient": {
+      "comment": "Control pill text: owner title, client name",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "step.active": {
+      "comment": "Step status",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "진행 중"
+          }
+        }
+      }
+    },
+    "step.done": {
+      "comment": "Step status",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "완료"
+          }
+        }
+      }
+    },
+    "step.failed": {
+      "comment": "Step status",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실패"
+          }
+        }
+      }
+    },
+    "step.pending": {
+      "comment": "Step status",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대기"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}
