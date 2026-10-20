@@ -18,7 +18,7 @@
 - AI lease TTL 60초, AI 입력·UI 계열 op마다 갱신. 만료되면 owner=none, gen+1.
 - 사람 입력의 `gen`은 데몬이 덮어쓴다. AI 입력이 `human` 소유 중에 오면 `CONTROL_HELD_BY_HUMAN`, ai_paused 중이면 `CONTROL_HELD_BY_HUMAN`(next_action `human_resume_ai`).
 - 화면 허브: 뷰어가 0이면 에이전트 `video` 스트림을 닫는다(5초 유예). 뷰어 프리셋이 다르면 가장 높은 품질로 열고, 다른 프리셋 요청은 `config`로 반영한다. 새 뷰어가 붙으면 `keyframe`을 요청한다. 데몬은 30초마다 `keyframe`을 요청해 손실 회복을 보장한다.
-- 지연: 데몬은 연결마다 `time.sync`(에이전트 op, 미디어 트랙 M2가 남긴 미구현 — 이 단계에서 추가)를 5회 측정해 최소 RTT 표본으로 시계 오프셋을 정하고, 1초마다 `0x30 {"type":"latency","capture_to_receive_ms","clock_offset_ms"}`를 뷰어에 보낸다.
+- 지연: 데몬은 연결마다 `time.sync`(에이전트 op, 미디어 트랙 M5에서 구현됨)를 5회 측정해 최소 RTT 표본으로 시계 오프셋을 정하고, 1초마다 `0x30 {"type":"latency","capture_to_receive_ms","clock_offset_ms"}`를 뷰어에 보낸다.
 - AI 정지 화면: `screen.capture`는 에이전트 정지 화면을 받아 산출물(`kind:"screenshot"`)로 저장하고 `capture_id`를 발급한다. 좌표 환산 표는 capture_id별로 10분 보존한다. 다른 connection_generation이나 디스플레이 구성 변경 뒤의 capture_id는 `STALE_TARGET`.
 - MCP `screen_capture`는 이미지를 MCP 이미지 콘텐츠(PNG/JPEG base64)로 돌려준다(최대 폭 1568).
 - 입력 결과 봉투의 `action.executed`는 에이전트 ack(`0x42` ok)가 왔을 때만 true. ack 전에 연결이 끊기면 `unknown`.
@@ -52,7 +52,7 @@
 ### Task P3: 화면 허브와 사람 입력 (`internal/daemon/screen`)
 
 **Interfaces:**
-- Consumes: `conn.Host.OpenStream(ctx, wire.StreamHeader) (*quic.Stream, error)`(이 태스크에서 추가), 에이전트 `video`/`cursor`/`input` 스트림(protocol §4–§6), 에이전트 `time.sync` op(이 태스크에서 에이전트에 추가: `{"mono_us"}`).
+- Consumes: `conn.Host.OpenStream(ctx, wire.StreamHeader) (*quic.Stream, error)`(이 태스크에서 추가), 에이전트 `video`/`cursor`/`input` 스트림(protocol §4–§6), 에이전트 `time.sync` op(`{"mono_us"}`, 미디어 트랙에서 구현됨).
 - Produces: `screen.Hub` — `Attach(ctx, hostID, display, preset, viewer)`; 뷰어에 `0x01–0x04`, `0x10/0x11`, `0x30` 전달; 뷰어 `0x40`(keyframe, preset) 처리; `0x41` 사람 입력 → control 확인(owner ai면 버리고 `control_denied`, none이면 human으로 자동 획득) → gen 덮어쓰기 → 에이전트 input 스트림 → ack 무시(사람 입력은 화면 피드백이 결과). 뷰어 분리 시 release_all.
 - 로컬 API `stream.attach{kind:"screen", host_id, display, preset}`(local-api §4).
 - [ ] **Tests:** `TestTwoViewersShareOneAgentStream`, `TestNewViewerGetsKeyframe`, `TestPausedForwardedAndResumeStartsWithKeyframe`, `TestHumanInputBlockedWhileAIOwns`, `TestHumanInputAutoAcquires`, `TestViewerDetachReleasesKeys`, `TestLatencyNoticeUsesClockOffset`, `TestIdleAgentStreamClosedAfterGrace`.
