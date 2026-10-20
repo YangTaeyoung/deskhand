@@ -112,7 +112,7 @@ func TestOutcomeResolvedAfterReconnect(t *testing.T) {
 	if len(st) == 0 || st[0].String("rid") != info.RID {
 		t.Fatalf("req.status requests %v, rid %s", st, info.RID)
 	}
-	if !info.Interrupted || !info.Resolved {
+	if !info.Sent || !info.Interrupted || !info.Resolved || !info.Answered {
 		t.Fatalf("call info %+v", info)
 	}
 	if got := l.history(info.RID); !reflect.DeepEqual(got, []string{"sent", "unknown", "done"}) {
@@ -143,6 +143,9 @@ func TestOutcomeUnknownWhenAgentLostIt(t *testing.T) {
 	}
 	if !strings.Contains(e.Message, info.RID) {
 		t.Fatalf("message %q does not name the request %s", e.Message, info.RID)
+	}
+	if !info.Sent || info.Answered {
+		t.Fatalf("call info %+v", info)
 	}
 	if n := f.execCount(); n != 1 {
 		t.Fatalf("the agent ran exec.run %d times", n)
@@ -356,4 +359,19 @@ func TestDegradedWithoutPong(t *testing.T) {
 	f.noPong = false
 	f.mu.Unlock()
 	waitState(t, h, StateReady)
+}
+
+func TestBlockReason(t *testing.T) {
+	f := newFakeAgent(t)
+	f.dialErr = func(int) error { return transport.ErrPeerMismatch }
+	m, _, _ := testManager(t, f, nil)
+	h := m.Add(target)
+	if h.BlockReason() != "" {
+		t.Fatal("block reason before connecting")
+	}
+	h.Connect()
+	waitState(t, h, StateBlocked)
+	if h.BlockReason() != BlockFingerprint {
+		t.Fatalf("block reason %q", h.BlockReason())
+	}
 }

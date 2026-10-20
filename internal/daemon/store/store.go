@@ -38,6 +38,7 @@ const (
 	RequestSent    = "sent"
 	RequestDone    = "done"
 	RequestUnknown = "unknown"
+	RequestNotSent = "not_sent"
 )
 
 var (
@@ -395,4 +396,94 @@ func (s *Store) MarkSentUnknown() (int64, error) {
 		return 0, err
 	}
 	return res.RowsAffected()
+}
+
+// Timeline is a row of timeline: one action of a person, an AI client or
+// the daemon. Artifacts is a JSON array.
+type Timeline struct {
+	Seq        int64
+	TS         time.Time
+	HostID     string
+	Actor      string
+	ClientID   string
+	ClientName string
+	Kind       string
+	Summary    string
+	Outcome    string
+	JobID      string
+	Artifacts  json.RawMessage
+}
+
+const timelineColumns = `seq, ts, host_id, actor, client_id, client_name, kind, summary, outcome, job_id, artifacts_json`
+
+// AppendTimeline stores e and returns it with its sequence number.
+func (s *Store) AppendTimeline(e Timeline) (Timeline, error) {
+	res, err := s.db.Exec(`INSERT INTO timeline (ts, host_id, actor, client_id, client_name, kind, summary, outcome, job_id, artifacts_json)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		FormatTime(e.TS), e.HostID, e.Actor, e.ClientID, e.ClientName, e.Kind, e.Summary, e.Outcome, e.JobID, rawOr(e.Artifacts, "[]"))
+	if err != nil {
+		return Timeline{}, err
+	}
+	e.Seq, err = res.LastInsertId()
+	return e, err
+}
+
+// TimelineFilter selects timeline rows: HostID when set, rows at or after
+// Since when set, rows before the sequence number Before when it is above 0.
+type TimelineFilter struct {
+	HostID string
+	Since  time.Time
+	Before int64
+	Limit  int
+}
+
+// ListTimeline returns the rows f selects, newest first, at most f.Limit
+// (100 when 0).
+func (s *Store) ListTimeline(f TimelineFilter) ([]Timeline, error) {
+	q := `SELECT ` + timelineColumns + ` FROM timeline WHERE 1 = 1`
+	var args []any
+	if f.HostID != "" {
+		q += ` AND host_id = ?`
+		args = append(args, f.HostID)
+	}
+	if !f.Since.IsZero() {
+		q += ` AND ts >= ?`
+		args = append(args, FormatTime(f.Since))
+	}
+	if f.Before > 0 {
+		q += ` AND seq < ?`
+		args = append(args, f.Before)
+	}
+	limit := f.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+	q += ` ORDER BY seq DESC LIMIT ?`
+	args = append(args, limit)
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Timeline{}
+	for rows.Next() {
+		var e Timeline
+		var ts, arts string
+		if err := rows.Scan(&e.Seq, &ts, &e.HostID, &e.Actor, &e.ClientID, &e.ClientName, &e.Kind, &e.Summary, &e.Outcome, &e.JobID, &arts); err != nil {
+			return nil, err
+		}
+		e.TS, e.Artifacts = parseTime(ts), json.RawMessage(arts)
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// Prune removes the events older than events and the settled requests
+// (done or not sent) older than requests.
+func (s *Store) Prune(events, requests time.Time) error {
+	if _, err := s.db.Exec(`DELETE FROM events WHERE ts < ?`, FormatTime(events)); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`DELETE FROM requests WHERE state IN (?, ?) AND created_at < ?`, RequestDone, RequestNotSent, FormatTime(requests))
+	return err
 }

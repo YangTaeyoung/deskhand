@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -63,7 +64,7 @@ func TestStoreMigrates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"events", "hosts", "jobs", "requests"}
+	want := []string{"events", "hosts", "jobs", "requests", "timeline"}
 	if got := tables(t, s); !reflect.DeepEqual(got, want) {
 		t.Fatalf("tables after the first open = %v, want %v", got, want)
 	}
@@ -212,5 +213,60 @@ func TestRequestsAndEvents(t *testing.T) {
 	seq2, err := s.AppendEvent(time.Now(), "pc", "j-1", "jobs.changed", json.RawMessage(`{}`))
 	if err != nil || seq2 != seq1+1 {
 		t.Fatalf("seq %d then %d (%v)", seq1, seq2, err)
+	}
+}
+
+func TestTimelineNewestFirst(t *testing.T) {
+	s := openTemp(t)
+	base := time.Date(2026, 10, 20, 1, 0, 0, 0, time.UTC)
+	for i, host := range []string{"a", "b", "a", "a"} {
+		if _, err := s.AppendTimeline(Timeline{TS: base.Add(time.Duration(i) * time.Minute), HostID: host, Actor: "ai", Kind: "exec",
+			Summary: fmt.Sprintf("run %d", i), Outcome: "ok"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.ListTimeline(TimelineFilter{HostID: "a", Limit: 2})
+	if err != nil || len(got) != 2 || got[0].Summary != "run 3" || got[1].Summary != "run 2" || string(got[0].Artifacts) != "[]" {
+		t.Fatalf("first page %+v, %v", got, err)
+	}
+	more, err := s.ListTimeline(TimelineFilter{HostID: "a", Before: got[1].Seq})
+	if err != nil || len(more) != 1 || more[0].Summary != "run 0" {
+		t.Fatalf("second page %+v, %v", more, err)
+	}
+	since, err := s.ListTimeline(TimelineFilter{Since: base.Add(time.Minute)})
+	if err != nil || len(since) != 3 {
+		t.Fatalf("since %+v, %v", since, err)
+	}
+}
+
+func TestPruneKeepsRecentAndUnsettled(t *testing.T) {
+	s := openTemp(t)
+	old := time.Now().Add(-48 * time.Hour)
+	if _, err := s.AppendEvent(old, "pc", "", "connection.state", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AppendEvent(time.Now(), "pc", "", "connection.state", nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range []struct{ rid, state string }{{"r-done", RequestDone}, {"r-unknown", RequestUnknown}} {
+		if err := s.RequestSent(r.rid, "pc", "exec.run"); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.SetRequestState(r.rid, r.state, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.Prune(time.Now().Add(-time.Hour), time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM events`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("events left %d, %v", n, err)
+	}
+	if _, err := s.GetRequest("r-done"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("settled request kept: %v", err)
+	}
+	if r, err := s.GetRequest("r-unknown"); err != nil || r.State != RequestUnknown {
+		t.Fatalf("unknown request %+v, %v", r, err)
 	}
 }

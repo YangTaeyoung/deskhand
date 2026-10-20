@@ -46,3 +46,19 @@ CREATE TABLE IF NOT EXISTS requests (
 	result_json TEXT NOT NULL DEFAULT '',
 	created_at  TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS timeline (
+	seq            INTEGER PRIMARY KEY AUTOINCREMENT,
+	ts             TEXT NOT NULL,
+	host_id        TEXT NOT NULL DEFAULT '',
+	actor          TEXT NOT NULL,
+	client_id      TEXT NOT NULL DEFAULT '',
+	client_name    TEXT NOT NULL DEFAULT '',
+	kind           TEXT NOT NULL,
+	summary        TEXT NOT NULL,
+	outcome        TEXT NOT NULL,
+	job_id         TEXT NOT NULL DEFAULT '',
+	artifacts_json TEXT NOT NULL DEFAULT '[]'
+);
+
+CREATE INDEX IF NOT EXISTS timeline_host ON timeline (host_id, seq);

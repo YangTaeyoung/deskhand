@@ -57,6 +57,8 @@ const (
 	RequestSent    = "sent"
 	RequestDone    = "done"
 	RequestUnknown = "unknown"
+	// RequestNotSent is a recorded request that no connection took.
+	RequestNotSent = "not_sent"
 )
 
 // RequestLog records the requests sent with a request id.
@@ -281,6 +283,27 @@ type Host struct {
 	cancel   context.CancelFunc
 	loopDone chan struct{}
 	pinging  bool
+	// blockKind is BlockFingerprint or BlockRejected while blocked.
+	blockKind string
+}
+
+// Reasons of a blocked host.
+const (
+	// BlockFingerprint: the agent's certificate is not the paired one.
+	BlockFingerprint = "fingerprint"
+	// BlockRejected: the agent refused this controller's certificate.
+	BlockRejected = "rejected"
+)
+
+// BlockReason returns BlockFingerprint or BlockRejected while the host is
+// blocked, and "" otherwise.
+func (h *Host) BlockReason() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.state != StateBlocked {
+		return ""
+	}
+	return h.blockKind
 }
 
 // ID returns the host id.
@@ -453,6 +476,10 @@ func (h *Host) loop(ctx context.Context, done chan struct{}) {
 			h.change(func() *Event {
 				if h.loopDone == done {
 					h.cancel, h.loopDone = nil, nil
+				}
+				h.blockKind = BlockRejected
+				if be.mismatch {
+					h.blockKind = BlockFingerprint
 				}
 				return h.setStateLocked(StateBlocked, be.apiError(h.target.Name))
 			})
@@ -708,6 +735,9 @@ func (h *Host) waitReady(ctx context.Context) (*rpcClient, uint64, error) {
 			if lastErr != nil {
 				return nil, 0, lastErr
 			}
+			if st == StateConnecting {
+				return nil, 0, apierr.New(wire.CodeOffline, fmt.Sprintf("%s PC에 아직 연결하는 중입니다. 잠시 뒤 다시 시도하세요", name), true, apierr.NextRetry)
+			}
 			return nil, 0, lost(name)
 		}
 	}
@@ -721,14 +751,17 @@ type CallOpts struct {
 	Info *CallInfo
 }
 
-// CallInfo describes a sent request: its rid, the generation of the
-// connection it went out on, whether that connection ended before the
-// answer and whether req.status then settled the outcome.
+// CallInfo describes a request: its rid, the generation of the connection
+// it went out on, whether it was written to a connection, whether that
+// connection ended before the answer, whether req.status then settled the
+// outcome and whether an answer (direct or settled) arrived.
 type CallInfo struct {
 	RID         string
 	Generation  uint64
+	Sent        bool
 	Interrupted bool
 	Resolved    bool
+	Answered    bool
 }
 
 // Call sends op with params to the agent and returns the fields of its
@@ -764,8 +797,8 @@ func (h *Host) Call(ctx context.Context, op string, params proto.Message, opts C
 	for {
 		rpc, gen, err := h.waitReady(ctx)
 		if err != nil {
-			if recorded {
-				return h.resolve(ctx, rid, info)
+			if recorded && log != nil {
+				_ = log.SetRequestState(rid, RequestNotSent, nil)
 			}
 			return nil, err
 		}
@@ -776,15 +809,19 @@ func (h *Host) Call(ctx context.Context, op string, params proto.Message, opts C
 			}
 		}
 		recorded = recorded || rid != ""
+		sentBefore := info.Sent
+		info.Sent = true
 		res, err := rpc.call(ctx, req, h.m.takeDrop(op))
 		switch {
 		case err == nil:
 			h.touch()
+			info.Answered = true
 			if rid != "" && log != nil {
 				_ = log.SetRequestState(rid, RequestDone, encode(res))
 			}
 			return answer(res)
 		case errors.Is(err, errNotSent):
+			info.Sent = sentBefore
 			continue
 		case errors.Is(err, errConnLost):
 			if rid == "" {
@@ -841,7 +878,7 @@ func (h *Host) resolve(ctx context.Context, rid string, info *CallInfo) (proto.M
 		switch res.String("state") {
 		case "done":
 			delete(res, "state")
-			info.Resolved = true
+			info.Resolved, info.Answered = true, true
 			if log != nil {
 				_ = log.SetRequestState(rid, RequestDone, encode(res))
 			}
