@@ -87,7 +87,7 @@
 | `transfer.cancel` / `transfer.resume` | 상태 |
 
 ### 진단
-`diag.system{host_id}`, `diag.services{host_id, name?}`, `diag.events{host_id, …}`, `diag.crashes{host_id, since?}` — 에이전트 op(protocol.md §3.1)와 같은 파라미터·결과 + 봉투, `save:true`면 결과 JSON을 artifact로 저장해 `artifact_id`를 붙인다. 크래시 덤프 받기는 `transfer.start{direction:"pull"}`. 프로세스 표는 `proc.list{host_id, name?}`(protocol.md §3.1의 확장 필드 포함), 종료는 `proc.kill{host_id, pid, tree?}`.
+`diag.system{host_id}`, `diag.services{host_id, name?}`, `diag.events{host_id, …}`, `diag.crashes{host_id, since?}` — 에이전트 op(protocol.md §3.1)와 같은 파라미터·결과 + 봉투, `save:true`면 결과 JSON을 artifact로 저장해 `artifact_id`를 붙인다. 크래시 덤프 받기는 `transfer.start{direction:"pull"}`. 프로세스 표는 `proc.list{host_id, name?}` → `procs`(protocol.md §3.1의 확장 필드 포함), 종료는 `proc.kill{host_id, pid, started?, tree?}` → 봉투 + `killed`.
 
 ### 디버깅
 | 메서드 | 결과 |
@@ -140,9 +140,9 @@
 | FileEntry | `name`, `path`, `dir`, `size`, `mtime`, `link`, `hidden?`, `readonly?` |
 | Transfer | `transfer_id`, `host_id`, `direction`(`push`/`pull`/`move_push`/`move_pull`), `local`, `remote`, `on_conflict`, `state`(`queued`/`running`/`paused`/`verifying`/`done`/`failed`/`cancelled`), `bytes_done`, `bytes_total`, `files_done`, `files_total`, `rate_bps`, `outcome?`(`written`/`skipped`/`renamed`/`copied_source_retained`/`partial`/`failed`), `error?`, `files`([TransferFile]), `rev`(전송마다 바뀔 때마다 1씩 오르는 정수 — 클라이언트는 더 큰 rev만 반영), `updated_at` |
 | TransferFile | `rel`, `size`, `bytes_done`, `state`, `outcome?`, `sha256?`, `error?` |
-| ProcessInfo | `pid`, `ppid`, `name`, `path?`, `cmd?`, `mem_kb`, `cpu_pct?`, `user?`, `started_by_deskhand` |
-| DiagSystem | `os`, `version`, `build`, `arch`, `hostname`, `cpu`{`name`, `cores`, `threads`, `load_pct`}, `memory`{`total_bytes`, `available_bytes`}, `disks`[{`name`, `total_bytes`, `free_bytes`}], `gpus`[{`name`, `driver`}], `uptime_s`, `boot_time` |
-| EventLogEntry | `time`, `log`, `level`(`critical`/`error`/`warning`/`info`/`verbose`), `provider`, `event_id`, `message` |
+| ProcessInfo | protocol.md §3.1 `proc.list` 항목과 같다(`pid`, `ppid`, `name`, `path`, `cmd`, `mem_kb`, `cpu_pct`, `user?`, `started`, `started_by_deskhand`, `self`) |
+| DiagSystem | protocol.md §3.1 `diag.system` 결과와 같다 |
+| EventLogEntry | protocol.md §3.1 `diag.events`의 `events` 항목과 같다(`record_id`, `time`, `level`, `provider`, `event_id`, `message`) |
 | DebugTarget | `id`, `role`(`main`/`renderer`), `type`, `url`, `title` |
 | CallFrame | `id`, `function`, `url`, `line`, `column`, `scopes`[{`type`, `name?`, `object_id`}] |
 | QARun | `run_id`, `host_id`, `name`, `status`(`running`/`passed`/`failed`/`blocked`/`error`), `started_at`, `finished_at?`, `steps_total`, `steps_passed`, `steps_failed`, `steps_blocked`, `report_dir?`, `steps`([QAStep], `qa.get`에서만) |
