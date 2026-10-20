@@ -111,28 +111,60 @@ type Artifact struct {
 	CreatedAt  string `json:"created_at"`
 }
 
-// Job is a background or recorded operation.
+// Job is a background or recorded operation. Its result never carries the
+// command output; OutputBytes counts the bytes of the recorded stdout and
+// stderr, which jobs.output returns.
 type Job struct {
-	JobID      string          `json:"job_id"`
-	HostID     string          `json:"host_id"`
-	Kind       string          `json:"kind"`
-	Status     string          `json:"status"`
-	RequestID  string          `json:"request_id,omitempty"`
-	Summary    string          `json:"summary"`
-	Progress   *float64        `json:"progress,omitempty"`
-	CreatedAt  string          `json:"created_at"`
-	UpdatedAt  string          `json:"updated_at"`
-	FinishedAt string          `json:"finished_at,omitempty"`
-	Result     json.RawMessage `json:"result,omitempty"`
+	JobID       string          `json:"job_id"`
+	HostID      string          `json:"host_id"`
+	Kind        string          `json:"kind"`
+	Status      string          `json:"status"`
+	RequestID   string          `json:"request_id,omitempty"`
+	Summary     string          `json:"summary"`
+	Progress    *float64        `json:"progress,omitempty"`
+	CreatedAt   string          `json:"created_at"`
+	UpdatedAt   string          `json:"updated_at"`
+	FinishedAt  string          `json:"finished_at,omitempty"`
+	Result      json.RawMessage `json:"result,omitempty"`
+	OutputBytes *int64          `json:"output_bytes,omitempty"`
 }
 
-// JobFrom returns the API form of a stored job.
+// outputKeys are the result members that hold command output.
+var outputKeys = []string{"stdout", "stderr"}
+
+// JobFrom returns the API form of a stored job: its result without
+// outputKeys, whose byte count becomes OutputBytes.
 func JobFrom(j store.Job) Job {
 	out := Job{JobID: j.JobID, HostID: j.HostID, Kind: j.Kind, Status: j.Status, RequestID: j.RequestID, Summary: j.Summary,
 		CreatedAt: Time(j.CreatedAt), UpdatedAt: Time(j.UpdatedAt), Result: j.Result}
 	if j.FinishedAt != nil {
 		out.FinishedAt = Time(*j.FinishedAt)
 	}
+	var res map[string]json.RawMessage
+	if len(j.Result) == 0 || json.Unmarshal(j.Result, &res) != nil {
+		return out
+	}
+	var n int64
+	found := false
+	for _, k := range outputKeys {
+		raw, ok := res[k]
+		if !ok {
+			continue
+		}
+		found = true
+		var s string
+		if json.Unmarshal(raw, &s) == nil {
+			n += int64(len(s))
+		}
+		delete(res, k)
+	}
+	if !found {
+		return out
+	}
+	if b, err := json.Marshal(res); err == nil {
+		out.Result = b
+	}
+	out.OutputBytes = &n
 	return out
 }
 

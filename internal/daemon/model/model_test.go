@@ -3,6 +3,7 @@ package model
 import (
 	"encoding/json"
 	"reflect"
+	"slices"
 	"sort"
 	"testing"
 	"time"
@@ -75,5 +76,34 @@ func TestTimesHaveMilliseconds(t *testing.T) {
 	want := []string{"created_at", "host_id", "job_id", "kind", "status", "summary", "updated_at"}
 	if got := keys(t, j); !reflect.DeepEqual(got, want) {
 		t.Fatalf("job keys %v", got)
+	}
+}
+
+func TestJobLeavesTheOutputOutAndCountsItsBytes(t *testing.T) {
+	now := time.Now()
+	j := JobFrom(store.Job{JobID: "j-1", HostID: "pc", Kind: "exec", Status: StatusSucceeded, CreatedAt: now, UpdatedAt: now,
+		Result: json.RawMessage(`{"code":0,"stdout":"안녕\n","stderr":"e","timed_out":false}`)})
+	var res map[string]any
+	if err := json.Unmarshal(j.Result, &res); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := res["stdout"]; ok {
+		t.Fatalf("result keeps stdout: %s", j.Result)
+	}
+	if _, ok := res["stderr"]; ok {
+		t.Fatalf("result keeps stderr: %s", j.Result)
+	}
+	if res["code"] != float64(0) || res["timed_out"] != false {
+		t.Fatalf("result %s", j.Result)
+	}
+	if j.OutputBytes == nil || *j.OutputBytes != int64(len("안녕\n")+1) {
+		t.Fatalf("output_bytes %v", j.OutputBytes)
+	}
+	plain := JobFrom(store.Job{JobID: "j-2", Kind: "install", Status: StatusSucceeded, Result: json.RawMessage(`{"host_id":"pc"}`)})
+	if plain.OutputBytes != nil || string(plain.Result) != `{"host_id":"pc"}` {
+		t.Fatalf("job without output %+v", plain)
+	}
+	if got := keys(t, plain); slices.Contains(got, "output_bytes") {
+		t.Fatalf("keys %v", got)
 	}
 }

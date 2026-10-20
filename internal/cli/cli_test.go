@@ -766,3 +766,12 @@ func TestJobsCancelLostConnectionNamesJob(t *testing.T) {
 		t.Fatalf("code %d stderr %q", r.code, r.err)
 	}
 }
+
+func TestJobsGetShowsTheOutputSizeNotTheOutput(t *testing.T) {
+	startFake(t, map[string]handler{"jobs.get": ok(map[string]any{"job_id": "j-3", "host_id": "pc", "kind": "exec", "status": "succeeded",
+		"summary": "echo hi", "updated_at": "2026-10-20T00:00:00.000Z", "result": map[string]any{"code": 0}, "output_bytes": 12})})
+	r := runCLI(t, false, "", "jobs", "get", "j-3")
+	if r.code != 0 || !strings.Contains(r.stdout, "출력: 12바이트 (deskhand jobs watch j-3 로 보기)") {
+		t.Fatalf("code %d stdout %q", r.code, r.stdout)
+	}
+}

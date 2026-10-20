@@ -30,7 +30,7 @@ func (s *Server) registerHosts(srv *mcp.Server) {
 		"Show the interactive Windows session of a PC: user, connect_state, locked, input_desktop, displays, capabilities, control owner (none/human/ai) and connection_generation. Call it before acting and whenever an outcome is unknown.",
 		spec{Method: "session.inspect"}, nil)
 	add[jobInput](s, srv, "job_get",
-		"Get a job by id: kind, status (running/succeeded/failed/waiting_for_user/unknown/cancelled), summary and result. Use it to follow exec_start and to check what happened when an outcome is unknown.",
+		"Get a job by id: kind, status (running/succeeded/failed/waiting_for_user/unknown/cancelled), summary and result (exit code and state, never the output; output_bytes counts recorded output). Read the output with job_output. Use it to follow exec_start and to check what happened when an outcome is unknown.",
 		spec{Method: "jobs.get"}, nil)
 	add[jobOutputInput](s, srv, "job_output",
 		"Read the stdout/stderr chunks of a job. Pass the returned next_cursor to read on and keep reading until next_cursor is \"end\", which means the output is complete; a job that has exited can still have output left (state exited with a numeric cursor).",

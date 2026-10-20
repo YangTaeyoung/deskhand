@@ -686,3 +686,55 @@ func TestCLIExecFollowsBigOutputToTheEnd(t *testing.T) {
 		t.Fatalf("exit %d, %d bytes on stdout, stderr %q", code, stdout.Len(), stderr.String())
 	}
 }
+
+func TestJobPayloadsCarryNoOutput(t *testing.T) {
+	e := setup(t, setupOpts{trustDaemon: true})
+	e.waitState(t, "ready")
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	evs, err := e.c.Subscribe(ctx, []string{"job.updated"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := e.call(t, "exec.run", map[string]any{"host_id": "pc", "cmd": "echo out; echo err >&2", "shell": "sh"})
+	if res["stdout"] != "out\n" || res["stderr"] != "err\n" {
+		t.Fatalf("exec.run %v", res)
+	}
+	jobID := res["job_id"].(string)
+	noOutput := func(where string, job map[string]any) {
+		t.Helper()
+		result, _ := job["result"].(map[string]any)
+		if _, ok := result["stdout"]; ok {
+			t.Fatalf("%s carries stdout: %v", where, job)
+		}
+		if _, ok := result["stderr"]; ok {
+			t.Fatalf("%s carries stderr: %v", where, job)
+		}
+	}
+	got := e.call(t, "jobs.get", map[string]any{"job_id": jobID})
+	noOutput("jobs.get", got)
+	if got["output_bytes"] != float64(8) || got["result"].(map[string]any)["code"] != float64(0) {
+		t.Fatalf("jobs.get %v", got)
+	}
+	for _, j := range e.call(t, "jobs.list", map[string]any{"host_id": "pc"})["jobs"].([]any) {
+		noOutput("jobs.list", j.(map[string]any))
+	}
+	for done := false; !done; {
+		select {
+		case ev := <-evs:
+			j := ev.Params["job"].(map[string]any)
+			noOutput("job.updated", j)
+			done = j["job_id"] == jobID && j["status"] == "succeeded"
+		case <-ctx.Done():
+			t.Fatal("no job.updated with the final status")
+		}
+	}
+	out := e.call(t, "jobs.output", map[string]any{"job_id": jobID})
+	var text strings.Builder
+	for _, c := range out["chunks"].([]any) {
+		text.WriteString(c.(map[string]any)["data"].(string))
+	}
+	if text.String() != "out\nerr\n" || out["next_cursor"] != "end" {
+		t.Fatalf("jobs.output %v", out)
+	}
+}
