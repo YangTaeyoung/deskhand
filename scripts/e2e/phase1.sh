@@ -7,7 +7,9 @@
 #   build    scripts/build.sh and the apicall and mcpprobe helpers
 #   reset    remove an installed agent with uninstall --purge, its leftover
 #            data and the E2E folder, so that add pairs from scratch
-#   add      1: deskhand host add; the agent runs in the console session
+#   add      1: deskhand host add; deskhand-agentw.exe runs in the console
+#               session without a console host, and the console build
+#               deskhand-agent.exe returns its exit codes under cmd
 #   exec     2: cmd /c "echo 안녕 & exit 7" gives 안녕 and exit code 7
 #   files    3: Korean/emoji folder: mkdir, files.write, cat, ls
 #   drop     4: daemon with DESKHAND_TEST_DROP_AFTER_SEND=exec.run settles an
@@ -70,6 +72,11 @@ rps() {
   ssh -o BatchMode=yes -o ClearAllForwardings=yes "$ssh_alias" powershell -NoProfile -NonInteractive -EncodedCommand "$enc" 2> >(grep -v '^\*\* ' >&2)
 }
 
+# rcmd runs the command line $1 in the PC's default SSH shell (cmd.exe).
+rcmd() {
+  ssh -o BatchMode=yes -o ClearAllForwardings=yes "$ssh_alias" "$1" 2> >(grep -v '^\*\* ' >&2)
+}
+
 # hostfield prints the field of the host from host.list.
 hostfield() { api host.list | jq -r --arg h "$host" ".hosts[] | select(.name == \$h) | .$1"; }
 
@@ -107,7 +114,7 @@ Remove-Item -LiteralPath 'C:\ProgramData\Deskhand' -Recurse -Force -ErrorAction 
 Remove-Item -LiteralPath (Join-Path $env:TEMP 'deskhand-install') -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -Path (Join-Path $env:TEMP 'deskhand-agent-*.exe.old') -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath 'C:\deskhand-e2e' -Recurse -Force -ErrorAction SilentlyContinue
-'left task=' + [bool](Get-ScheduledTask -TaskName 'Deskhand Agent' -ErrorAction SilentlyContinue) + ' rule=' + [bool](Get-NetFirewallRule -DisplayName 'Deskhand Agent' -ErrorAction SilentlyContinue) + ' program=' + (Test-Path 'C:\Program Files\Deskhand') + ' data=' + (Test-Path 'C:\ProgramData\Deskhand') + ' process=' + [bool](Get-Process deskhand-agent -ErrorAction SilentlyContinue)
+'left task=' + [bool](Get-ScheduledTask -TaskName 'Deskhand Agent' -ErrorAction SilentlyContinue) + ' rule=' + [bool](Get-NetFirewallRule -DisplayName 'Deskhand Agent' -ErrorAction SilentlyContinue) + ' program=' + (Test-Path 'C:\Program Files\Deskhand') + ' data=' + (Test-Path 'C:\ProgramData\Deskhand') + ' process=' + [bool](Get-Process deskhand-agent, deskhand-agentw -ErrorAction SilentlyContinue)
 EOF
 )
   printf '%s\n' "$out"
@@ -125,21 +132,36 @@ step_add() {
   t1=$(date +%s)
   log "host add took $((t1 - t0)) s; state $(hostfield state), generation $(hostfield connection_generation)"
   out=$(rps <<'EOF'
-$p = Get-Process deskhand-agent -ErrorAction SilentlyContinue
+$p = Get-Process deskhand-agentw -ErrorAction SilentlyContinue
 "agent pid=" + $p.Id + " session=" + $p.SessionId + " path=" + $p.Path
 "console children=" + @(Get-CimInstance Win32_Process -Filter ("ParentProcessId=" + $p.Id + " AND Name='conhost.exe'")).Count
+"console agent processes=" + @(Get-Process deskhand-agent -ErrorAction SilentlyContinue).Count
+"installed=" + ((Get-ChildItem 'C:\Program Files\Deskhand' -Filter '*.exe' | ForEach-Object Name | Sort-Object) -join ',')
 $t = Get-ScheduledTask -TaskName 'Deskhand Agent'
-"task state=" + $t.State + " run level=" + $t.Principal.RunLevel + " logon=" + $t.Principal.LogonType
+"task state=" + $t.State + " run level=" + $t.Principal.RunLevel + " logon=" + $t.Principal.LogonType + " action=" + $t.Actions[0].Execute + " " + $t.Actions[0].Arguments
 $r = Get-NetFirewallRule -DisplayName 'Deskhand Agent'
 "rule enabled=" + $r.Enabled + " remote=" + ($r | Get-NetFirewallAddressFilter).RemoteAddress + " port=" + ($r | Get-NetFirewallPortFilter).LocalPort + "/" + ($r | Get-NetFirewallPortFilter).Protocol
 "defender detections (10 min)=" + @(Get-MpThreatDetection | Where-Object { $_.InitialDetectionTime -gt (Get-Date).AddMinutes(-10) }).Count
 EOF
 )
   printf '%s\n' "$out"
-  grep -q 'session=1 ' <<<"$out"
-  check add $? "Get-Process deskhand-agent SessionId is 1"
-  grep -q 'console children=0' <<<"$out"
-  check add $? "the agent has no console host"
+  grep -q 'session=1 path=C:\\Program Files\\Deskhand\\deskhand-agentw.exe' <<<"$out"
+  check add $? "the running agent is deskhand-agentw.exe in session 1"
+  grep -q 'console children=0' <<<"$out" && grep -q 'console agent processes=0' <<<"$out"
+  check add $? "the agent has no console host and no console build runs"
+  grep -q 'installed=deskhand-agent.exe,deskhand-agentw.exe' <<<"$out" &&
+    grep -q 'action="C:\\Program Files\\Deskhand\\deskhand-agentw.exe" run' <<<"$out"
+  check add $? "both builds are installed and the task runs deskhand-agentw.exe"
+  grep -q 'defender detections (10 min)=0' <<<"$out"
+  check add $? "no Defender detection in the last 10 minutes"
+  out=$(rcmd 'cmd /v:on /c ""C:\Program Files\Deskhand\deskhand-agent.exe" version & echo errorlevel=!ERRORLEVEL!"')
+  printf '%s\n' "$out"
+  grep -q '"os":"windows"' <<<"$out" && grep -q 'errorlevel=0' <<<"$out"
+  check add $? "the console build prints its version and errorlevel 0 under cmd"
+  out=$(rcmd 'cmd /v:on /c ""C:\Program Files\Deskhand\deskhand-agent.exe" bogus & echo errorlevel=!ERRORLEVEL!"' 2>&1)
+  printf '%s\n' "$out" | head -3
+  grep -q '사용법' <<<"$out" && grep -q 'errorlevel=2' <<<"$out"
+  check add $? "the console build prints usage and errorlevel 2 for an unknown command"
   out=$(dh exec "$host" --shell powershell -- "@(Get-Process | Where-Object { \$_.MainWindowTitle -like '*deskhand-agent*' }).Count")
   check add "$([ "$(tr -d '\r\n ' <<<"$out")" = 0 ] && echo 0 || echo 1)" "no window in the session is titled deskhand-agent (count $(tr -d '\r\n ' <<<"$out"))"
   dh host doctor "$host"
@@ -257,7 +279,7 @@ step_restart() {
     ev=$!
     sleep 0.5
     out=$(rps <<'EOF'
-$p = Get-Process deskhand-agent
+$p = Get-Process deskhand-agentw
 Stop-Process -Id $p.Id -Force
 'kill=' + [DateTimeOffset]::Now.ToUnixTimeMilliseconds() + ' pid=' + $p.Id
 Start-Sleep -Seconds 1
@@ -351,7 +373,7 @@ EOF
 
 step_cleanup() {
   log "== 8 cleanup"
-  rps <<<"Remove-Item -LiteralPath '$remote_dir' -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item -Path (Join-Path \$env:TEMP 'deskhand-agent-*.exe.old') -Force -ErrorAction SilentlyContinue; 'e2e folder left=' + (Test-Path '$remote_dir'); 'agent running=' + [bool](Get-Process deskhand-agent -ErrorAction SilentlyContinue)"
+  rps <<<"Remove-Item -LiteralPath '$remote_dir' -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item -Path (Join-Path \$env:TEMP 'deskhand-agent-*.exe.old') -Force -ErrorAction SilentlyContinue; 'e2e folder left=' + (Test-Path '$remote_dir'); 'agent running=' + [bool](Get-Process deskhand-agentw -ErrorAction SilentlyContinue)"
   stop_daemon
   log "daemon stopped; the agent stays paired with DESKHAND_HOME $DESKHAND_HOME"
 }
