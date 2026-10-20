@@ -1,7 +1,9 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -83,7 +85,31 @@ func (s *Server) diagEvents(ctx context.Context, req proto.Message) (proto.Messa
 	if err != nil {
 		return nil, diagError(err)
 	}
-	return proto.Message{"events": res.Events, "truncated": res.Truncated}, nil
+	events, cut := fitEvents(res.Events, maxEventsBytes)
+	return proto.Message{"events": events, "truncated": res.Truncated || cut}, nil
+}
+
+// maxEventsBytes bounds the encoded events of a diag.events reply, 64 KiB
+// below maxReplyLine.
+const maxEventsBytes = maxReplyLine - 64<<10
+
+// fitEvents returns the leading events, newest first, whose JSON array
+// takes at most limit bytes, and whether it left any out.
+func fitEvents(events []diag.Event, limit int) ([]diag.Event, bool) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	total := 2
+	for i, e := range events {
+		buf.Reset()
+		if err := enc.Encode(e); err != nil {
+			return events[:i], true
+		}
+		if total += buf.Len(); total > limit {
+			return events[:i], true
+		}
+	}
+	return events, false
 }
 
 func (s *Server) diagCrashes(ctx context.Context, req proto.Message) (proto.Message, error) {
@@ -136,6 +162,9 @@ func eventsQuery(req proto.Message, now time.Time) (wire.DiagEventsQuery, error)
 	}
 	if v, ok := req["max"]; ok && v != nil {
 		f, isNum := v.(float64)
+		if n, isInt := v.(int); isInt {
+			f, isNum = float64(n), true
+		}
 		if !isNum || f != math.Trunc(f) || math.Abs(f) > math.MaxInt32 {
 			return wire.DiagEventsQuery{}, invalidArgument(fmt.Sprintf("max must be a whole number from 1 to %d", wire.DiagEventsMaxLimit))
 		}

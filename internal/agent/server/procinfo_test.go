@@ -255,3 +255,24 @@ func TestProcListCPU(t *testing.T) {
 	}
 	t.Logf("busy process %d: %v%%; %d processes: %v%% in all", busy, cpu, len(procs), sum)
 }
+
+func TestTheTreeOfAPIDListsItsDescendantsChildrenFirst(t *testing.T) {
+	at := func(s int) time.Time { return time.Unix(1000+int64(s), 0) }
+	procs := []procEntry{
+		{PID: 1, PPID: 0, Created: at(0)},
+		{PID: 5, PPID: 1, Name: "root.exe"},
+		{PID: 6, PPID: 5, Name: "child.exe", Created: at(6)},
+		{PID: 7, PPID: 6, Name: "grandchild.exe", Created: at(7)},
+		{PID: 8, PPID: 5, Name: "older.exe", Created: at(4)},
+		{PID: 9, PPID: 5, Name: "agent.exe", Created: at(9)},
+		{PID: 10, PPID: 9, Name: "job.exe", Created: at(10)},
+		{PID: 11, PPID: 5, Name: "unknown.exe"},
+	}
+	got := treeTargets(procs, 5, at(5), 9)
+	if fmt.Sprint(targetPIDs(got)) != "[7 6]" || !got[0].Created.Equal(at(7)) {
+		t.Fatalf("targets %+v", got)
+	}
+	if got := treeTargets(procs, 6, at(6), 9); fmt.Sprint(targetPIDs(got)) != "[7]" {
+		t.Fatalf("targets of 6 %v", targetPIDs(got))
+	}
+}

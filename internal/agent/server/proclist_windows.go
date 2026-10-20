@@ -5,11 +5,15 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"syscall"
 	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
 // systemProcess is one entry of SystemProcessInformation: its creation time
@@ -243,28 +247,51 @@ func pidCreation(pid int) (time.Time, bool) {
 	return processCreation(h)
 }
 
-// processStarted returns the creation time of the running process that has
-// pid now, as proc.list lists it, and false when no running process has
-// it. A process that ended but is still open elsewhere does not run.
-func processStarted(pid int) (time.Time, bool) {
-	if h, err := syscall.OpenProcess(processQueryLimitedInformation|syscall.SYNCHRONIZE, false, uint32(pid)); err == nil {
-		defer syscall.CloseHandle(h)
-		if ev, _ := syscall.WaitForSingleObject(h, 0); ev != uint32(syscall.WAIT_TIMEOUT) {
-			return time.Time{}, false
-		}
-		return processCreation(h)
-	}
-	procs, err := systemProcesses()
+// killStarted ends pid through one handle opened for querying, waiting and
+// termination when the running process of that handle was created at want
+// to the millisecond. With tree it first ends the descendants of the
+// snapshot that follows (treeTargets), each through its own handle after
+// the same creation check, and reports those that refused access after
+// ending pid. A refused open is answered as it is.
+func killStarted(pid int, want time.Time, tree bool) error {
+	h, err := syscall.OpenProcess(syscall.PROCESS_TERMINATE|syscall.SYNCHRONIZE|processQueryLimitedInformation, false, uint32(pid))
 	if err != nil {
-		return time.Time{}, false
-	}
-	for _, p := range procs {
-		if p.pid == pid {
-			if p.created <= 0 {
-				return time.Now().Add(-windows.DurationSinceBoot()), true
-			}
-			return time.Unix(0, (p.created-unixEpochFiletime)*100), true
+		switch {
+		case errors.Is(err, syscall.ERROR_ACCESS_DENIED):
+			return coded(wire.CodePermissionDenied, fmt.Sprintf("Windows denied the agent access to pid %d, so it was not ended; such a process is protected or runs with more rights than the agent", pid), false)
+		case errors.Is(err, windows.ERROR_INVALID_PARAMETER):
+			return noProcess(pid)
 		}
+		return fmt.Errorf("cannot open pid %d (%v); call proc.list to check it", pid, err)
 	}
-	return time.Time{}, false
+	root := windowsKillHandle{h}
+	defer root.close()
+	if ev, _ := syscall.WaitForSingleObject(h, 0); ev != uint32(syscall.WAIT_TIMEOUT) {
+		return noProcess(pid)
+	}
+	created, ok := root.creation()
+	if !ok {
+		return fmt.Errorf("the creation time of pid %d could not be read, so it was not ended; call proc.list again", pid)
+	}
+	if !sameMillisecond(created, want) {
+		return otherProcess(pid, created, want)
+	}
+	denied := 0
+	if tree {
+		procs, err := processEntries()
+		if err != nil {
+			return fmt.Errorf("the processes of the tree of pid %d could not be listed (%v), so nothing was ended; retry", pid, err)
+		}
+		_, denied = killListed(treeTargets(procs, pid, created, os.Getpid()), openForKill, killEndWait)
+	}
+	if err := root.terminate(); err != nil {
+		if errors.Is(err, errKillDenied) {
+			return coded(wire.CodePermissionDenied, fmt.Sprintf("Windows denied ending pid %d; such a process is protected or runs with more rights than the agent", pid), false)
+		}
+		return fmt.Errorf("cannot kill pid %d: %v; call proc.list to check it", pid, err)
+	}
+	if denied > 0 {
+		return coded(wire.CodePermissionDenied, fmt.Sprintf("pid %d was ended, but %d of its descendants refused access and still run; call proc.list to see them", pid, denied), false)
+	}
+	return nil
 }

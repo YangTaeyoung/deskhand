@@ -277,8 +277,18 @@ func (s *Server) procKill(_ context.Context, req proto.Message) (proto.Message, 
 		return nil, err
 	}
 	if pid := req.Int("pid"); pid > 0 {
-		if err := checkKillTarget(pid, tree, started); err != nil {
+		if err := checkKillTarget(pid, tree); err != nil {
 			return nil, err
+		}
+		if started != "" {
+			want, err := wire.ParseDiagTime(started)
+			if err != nil {
+				return nil, invalidArgument(fmt.Sprintf("started '%s' is not an RFC 3339 time; pass the started value of proc.list", cutChars(started, 64)))
+			}
+			if err := killStarted(pid, want, tree); err != nil {
+				return nil, err
+			}
+			return proto.Message{"killed": 1}, nil
 		}
 		if tree {
 			err = killTree(pid)
@@ -309,9 +319,8 @@ func (s *Server) procKill(_ context.Context, req proto.Message) (proto.Message, 
 }
 
 // checkKillTarget refuses a kill by pid that would end the agent, itself or
-// with tree through its tree, and one whose pid no longer runs the process
-// that proc.list listed as created at started when started is set.
-func checkKillTarget(pid int, tree bool, started string) error {
+// with tree through its tree.
+func checkKillTarget(pid int, tree bool) error {
 	self := os.Getpid()
 	if pid == self {
 		return coded(wire.CodePermissionDenied, fmt.Sprintf("pid %d is deskhand-agent itself, which proc.kill does not end; restart the agent through its scheduled task instead", pid), false)
@@ -325,22 +334,69 @@ func checkKillTarget(pid int, tree bool, started string) error {
 			return coded(wire.CodePermissionDenied, fmt.Sprintf("the process tree of pid %d holds deskhand-agent itself, which proc.kill does not end; end the processes of the tree one by one without tree", pid), false)
 		}
 	}
-	if started == "" {
-		return nil
-	}
-	want, err := wire.ParseDiagTime(started)
-	if err != nil {
-		return invalidArgument(fmt.Sprintf("started '%s' is not an RFC 3339 time; pass the started value of proc.list", cutChars(started, 64)))
-	}
-	cur, ok := processStarted(pid)
-	if !ok {
-		return coded(wire.CodeStaleTarget, fmt.Sprintf("no process with pid %d runs now; call proc.list again", pid), false)
-	}
-	if !sameMillisecond(cur, want) {
-		return coded(wire.CodeStaleTarget, fmt.Sprintf("pid %d now belongs to a process created at %s, not at %s; call proc.list again", pid,
-			wire.FormatDiagTime(cur), wire.FormatDiagTime(want)), false)
-	}
 	return nil
+}
+
+// noProcess is the refusal of a kill by pid and started when no process
+// runs with pid.
+func noProcess(pid int) error {
+	return coded(wire.CodeStaleTarget, fmt.Sprintf("no process with pid %d runs now; call proc.list again", pid), false)
+}
+
+// otherProcess is the refusal of a kill by pid and started when the process
+// that runs with pid was created at created, not at want.
+func otherProcess(pid int, created, want time.Time) error {
+	return coded(wire.CodeStaleTarget, fmt.Sprintf("pid %d now belongs to a process created at %s, not at %s; call proc.list again", pid,
+		wire.FormatDiagTime(created), wire.FormatDiagTime(want)), false)
+}
+
+// childMap returns procs by pid and the children of each pid: a process is
+// a child of its parent only when both creation times are known and the
+// child was not created before the parent.
+func childMap(procs []procEntry) (map[int]procEntry, map[int][]int) {
+	byPID := make(map[int]procEntry, len(procs))
+	for _, p := range procs {
+		byPID[p.PID] = p
+	}
+	children := map[int][]int{}
+	for _, p := range procs {
+		parent, ok := byPID[p.PPID]
+		if !ok || p.PPID == p.PID {
+			continue
+		}
+		if p.Created.IsZero() || parent.Created.IsZero() || p.Created.Before(parent.Created) {
+			continue
+		}
+		children[p.PPID] = append(children[p.PPID], p.PID)
+	}
+	return byPID, children
+}
+
+// treeTargets returns the descendants of root, created at created, each
+// child before its parent, without following the tree into self.
+func treeTargets(procs []procEntry, root int, created time.Time, self int) []procEntry {
+	list := make([]procEntry, 0, len(procs))
+	for _, p := range procs {
+		if p.PID == root {
+			p.Created = created
+		}
+		list = append(list, p)
+	}
+	byPID, children := childMap(list)
+	seen := map[int]bool{self: true, root: true}
+	out := []procEntry{}
+	var visit func(pid int)
+	visit = func(pid int) {
+		for _, c := range children[pid] {
+			if !seen[c] {
+				seen[c] = true
+				visit(c)
+				out = append(out, byPID[c])
+			}
+		}
+	}
+	visit(root)
+	return out
 }
 
 // killNamed kills the processes of a name for proc.kill.
@@ -454,21 +510,7 @@ func nameKillTargets(procs []procEntry, name string, tree bool, self int) []proc
 	if filepath.Ext(name) == "" {
 		name += ".exe"
 	}
-	byPID := make(map[int]procEntry, len(procs))
-	for _, p := range procs {
-		byPID[p.PID] = p
-	}
-	children := map[int][]int{}
-	for _, p := range procs {
-		parent, ok := byPID[p.PPID]
-		if !ok || p.PPID == p.PID {
-			continue
-		}
-		if p.Created.IsZero() || parent.Created.IsZero() || p.Created.Before(parent.Created) {
-			continue
-		}
-		children[p.PPID] = append(children[p.PPID], p.PID)
-	}
+	byPID, children := childMap(procs)
 	seen := map[int]bool{self: true}
 	out := []procEntry{}
 	var visit func(pid int)

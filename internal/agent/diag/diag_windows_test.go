@@ -5,10 +5,12 @@ package diag
 import (
 	"context"
 	"os"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
@@ -151,6 +153,13 @@ func TestEventsFilter(t *testing.T) {
 		t.Errorf("record %d of %s is not found by its provider, level and time", first.RecordID, first.Provider)
 	}
 
+	verbose := wire.DiagEventsQuery{Log: "System", Since: now.AddDate(0, 0, -7).UTC(), Levels: []string{"warning", "verbose"}, Max: 50}
+	res, err = Local().Events(context.Background(), verbose)
+	if err != nil {
+		t.Fatalf("warning and verbose: %v", err)
+	}
+	checkEvents(t, res, verbose)
+
 	app := wire.DiagEventsQuery{Log: "Application", Since: now.AddDate(0, 0, -1).UTC(), Max: 3}
 	res, err = Local().Events(context.Background(), app)
 	if err != nil {
@@ -226,3 +235,19 @@ func TestCrashesShape(t *testing.T) {
 }
 
 func fileName(p string) string { return p[strings.LastIndexByte(p, '\\')+1:] }
+
+func TestTheDiskQueriesRestoreTheThreadErrorMode(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	var old uint32
+	if r, _, err := procSetThreadErrorMode.Call(0, uintptr(unsafe.Pointer(&old))); r == 0 {
+		t.Fatalf("SetThreadErrorMode: %v", err)
+	}
+	defer procSetThreadErrorMode.Call(uintptr(old), 0)
+	if disks := readDisks(); len(disks) == 0 {
+		t.Fatal("no disk listed")
+	}
+	if mode := threadErrorMode(); mode != 0 {
+		t.Fatalf("the thread error mode is %#x after readDisks", mode)
+	}
+}

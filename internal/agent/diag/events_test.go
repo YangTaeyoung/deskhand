@@ -80,6 +80,8 @@ func TestEventXPathSelectsTheLevelsTheTimeRangeAndTheProvider(t *testing.T) {
 			`*[System[(Level=1 or Level=2) and TimeCreated[@SystemTime>='2026-10-20T00:00:00.000Z' and @SystemTime<='2026-10-21T12:30:15.250Z']]]`},
 		{wire.DiagEventsQuery{Since: since, Levels: []string{"information"}, Provider: "Service Control Manager"},
 			`*[System[(Level=0 or Level=4) and TimeCreated[@SystemTime>='2026-10-20T00:00:00.000Z'] and Provider[@Name='Service Control Manager']]]`},
+		{wire.DiagEventsQuery{Since: since, Levels: []string{"warning", "verbose"}},
+			`*[System[(Level=3 or Level>=5) and TimeCreated[@SystemTime>='2026-10-20T00:00:00.000Z']]]`},
 		{wire.DiagEventsQuery{Since: since, Provider: "Bob's Service"},
 			`*[System[TimeCreated[@SystemTime>='2026-10-20T00:00:00.000Z'] and Provider[@Name="Bob's Service"]]]`},
 	}

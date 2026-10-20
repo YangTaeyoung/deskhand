@@ -34,7 +34,10 @@ const dxgiAdapterFlagSoftware = 2
 type comObject struct{ vtbl *[16]uintptr }
 
 // call calls the method in slot with the object and args and returns its
-// HRESULT.
+// HRESULT. Pointers converted to uintptr in its arguments stay on the heap
+// and alive until it returns.
+//
+//go:uintptrescapes
 func (o *comObject) call(slot int, args ...uintptr) int32 {
 	r, _, _ := syscall.SyscallN(o.vtbl[slot], append([]uintptr{uintptr(unsafe.Pointer(o))}, args...)...)
 	return int32(r)

@@ -3,9 +3,11 @@ package diag
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -180,32 +182,65 @@ type crash struct {
 	at time.Time
 }
 
-// listCrashes reads each source once and returns its dumps and crash
-// reports from since on, newest first and by path at the same time. A
-// report folder with dump files lists them with the report's app and time;
-// one without lists its Report.wer as a report. A dump's kind and time come
-// from its minidump header, a kernel dump's from its source and file time,
-// and a dump without a readable header is a minidump of its file time.
-func listCrashes(sources []crashSource, since time.Time) []Dump {
+// maxFolderCrashes bounds the entries listCrashes takes of one folder: the
+// newest by file time.
+const maxFolderCrashes = 2000
+
+// crashScanWait bounds the wait of listCrashes for its sources.
+var crashScanWait = 10 * time.Second
+
+// scanSource returns the crashes of one source from since on by file time,
+// reading while ctx lasts.
+var scanSource = func(ctx context.Context, s crashSource, since time.Time) []crash {
+	switch s.kind {
+	case sourceDumps:
+		return folderDumps(ctx, s.path, since, nil)
+	case sourceReports:
+		return reportCrashes(ctx, s.path, since)
+	case sourceKernelDumps:
+		return folderDumps(ctx, s.path, since, &crash{Dump: Dump{App: windowsApp, Kind: KindMinidump}})
+	case sourceKernelDump:
+		if fi, err := os.Stat(s.path); err == nil && fi.Mode().IsRegular() && !fi.ModTime().Before(since) {
+			return []crash{{Dump: Dump{Path: s.path, App: windowsApp, SizeBytes: fi.Size(), Kind: KindFull}, at: fi.ModTime()}}
+		}
+	}
+	return nil
+}
+
+// listCrashes reads each source once, all at once, and returns their dumps
+// and crash reports from since on, newest first and by path at the same
+// time. A source that has not answered within crashScanWait, or when ctx
+// ends, is left out. A report folder with dump files lists them with the
+// report's app and time; one without lists its Report.wer as a report. A
+// dump's kind and time come from its minidump header, a kernel dump's from
+// its source and file time, and a dump without a readable header is a
+// minidump of its file time. Files and folders whose file time is before
+// since are not read.
+func listCrashes(ctx context.Context, sources []crashSource, since time.Time) []Dump {
 	seen := map[string]bool{}
-	var all []crash
+	var unique []crashSource
 	for _, s := range sources {
 		key := strings.ToLower(filepath.Clean(s.path))
-		if seen[key] {
-			continue
+		if !seen[key] {
+			seen[key] = true
+			unique = append(unique, s)
 		}
-		seen[key] = true
-		switch s.kind {
-		case sourceDumps:
-			all = append(all, folderDumps(s.path, nil)...)
-		case sourceReports:
-			all = append(all, reportCrashes(s.path)...)
-		case sourceKernelDumps:
-			all = append(all, folderDumps(s.path, &crash{Dump: Dump{App: windowsApp, Kind: KindMinidump}})...)
-		case sourceKernelDump:
-			if fi, err := os.Stat(s.path); err == nil && fi.Mode().IsRegular() {
-				all = append(all, crash{Dump: Dump{Path: s.path, App: windowsApp, SizeBytes: fi.Size(), Kind: KindFull}, at: fi.ModTime()})
-			}
+	}
+	ctx, cancel := context.WithTimeout(ctx, crashScanWait)
+	defer cancel()
+	scan := scanSource
+	results := make(chan []crash, len(unique))
+	for _, s := range unique {
+		go func() { results <- scan(ctx, s, since) }()
+	}
+	var all []crash
+wait:
+	for range unique {
+		select {
+		case r := <-results:
+			all = append(all, r...)
+		case <-ctx.Done():
+			break wait
 		}
 	}
 	out := []Dump{}
@@ -225,30 +260,68 @@ func listCrashes(sources []crashSource, since time.Time) []Dump {
 	return out
 }
 
-// folderDumps returns the .dmp files of dir. With kernel nil each is a
-// user-mode dump of its LocalDumps app and minidump header; otherwise each
-// has kernel's app and kind and its file time.
-func folderDumps(dir string, kernel *crash) []crash {
-	entries, err := os.ReadDir(dir)
+// folderEntry is an entry of a folder with its file info.
+type folderEntry struct {
+	name string
+	info os.FileInfo
+}
+
+// recentEntries returns the entries of dir that keep accepts and whose file
+// time is from since on, the newest maxFolderCrashes of them, reading while
+// ctx lasts.
+func recentEntries(ctx context.Context, dir string, since time.Time, keep func(fs.DirEntry) bool) []folderEntry {
+	f, err := os.Open(dir)
 	if err != nil {
 		return nil
 	}
-	var out []crash
-	for _, e := range entries {
-		if !strings.EqualFold(filepath.Ext(e.Name()), ".dmp") || !e.Type().IsRegular() {
-			continue
+	defer f.Close()
+	var out []folderEntry
+	for ctx.Err() == nil {
+		batch, err := f.ReadDir(256)
+		for _, e := range batch {
+			if !keep(e) {
+				continue
+			}
+			fi, err := e.Info()
+			if err != nil || fi.ModTime().Before(since) {
+				continue
+			}
+			out = append(out, folderEntry{e.Name(), fi})
 		}
-		fi, err := e.Info()
 		if err != nil {
-			continue
+			break
 		}
-		path := filepath.Join(dir, e.Name())
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if a, b := out[i].info.ModTime(), out[j].info.ModTime(); !a.Equal(b) {
+			return a.After(b)
+		}
+		return out[i].name < out[j].name
+	})
+	if len(out) > maxFolderCrashes {
+		out = out[:maxFolderCrashes]
+	}
+	return out
+}
+
+// dumpFile reports whether e is a regular .dmp file.
+func dumpFile(e fs.DirEntry) bool {
+	return e.Type().IsRegular() && strings.EqualFold(filepath.Ext(e.Name()), ".dmp")
+}
+
+// folderDumps returns the recent .dmp files of dir. With kernel nil each is
+// a user-mode dump of its LocalDumps app and minidump header; otherwise each
+// has kernel's app and kind and its file time.
+func folderDumps(ctx context.Context, dir string, since time.Time, kernel *crash) []crash {
+	var out []crash
+	for _, e := range recentEntries(ctx, dir, since, dumpFile) {
+		path := filepath.Join(dir, e.name)
 		if kernel != nil {
-			out = append(out, crash{Dump: Dump{Path: path, App: kernel.App, SizeBytes: fi.Size(), Kind: kernel.Kind}, at: fi.ModTime()})
+			out = append(out, crash{Dump: Dump{Path: path, App: kernel.App, SizeBytes: e.info.Size(), Kind: kernel.Kind}, at: e.info.ModTime()})
 			continue
 		}
-		c := userDump(path, fi)
-		c.App = localDumpApp(e.Name())
+		c := userDump(path, e.info)
+		c.App = localDumpApp(e.name)
 		out = append(out, c)
 	}
 	return out
@@ -281,28 +354,25 @@ func userDump(path string, fi os.FileInfo) crash {
 var reportDumpExts = map[string]bool{".dmp": true, ".mdmp": true, ".hdmp": true}
 
 // reportCrashes returns the crashes of the crash and hang reports among the
-// report folders of dir.
-func reportCrashes(dir string) []crash {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil
-	}
+// recent report folders of dir whose Report.wer has a file time from since
+// on.
+func reportCrashes(ctx context.Context, dir string, since time.Time) []crash {
 	var out []crash
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
+	for _, e := range recentEntries(ctx, dir, since, fs.DirEntry.IsDir) {
+		if ctx.Err() != nil {
+			break
 		}
-		folder := filepath.Join(dir, e.Name())
+		folder := filepath.Join(dir, e.name)
 		wer := filepath.Join(folder, "Report.wer")
 		fi, err := os.Stat(wer)
-		if err != nil || !fi.Mode().IsRegular() || fi.Size() > maxReportBytes {
+		if err != nil || !fi.Mode().IsRegular() || fi.Size() > maxReportBytes || fi.ModTime().Before(since) {
 			continue
 		}
 		data, err := os.ReadFile(wer)
 		if err != nil {
 			continue
 		}
-		r, err := parseReport(data, e.Name())
+		r, err := parseReport(data, e.name)
 		if err != nil || !crashReport(r.EventType) {
 			continue
 		}

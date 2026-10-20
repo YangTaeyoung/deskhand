@@ -1,6 +1,7 @@
 package diag
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"os"
@@ -160,7 +161,7 @@ func TestCrashesAreListedNewestFirstFromEverySource(t *testing.T) {
 		{dumps, sourceDumps}, {archive, sourceReports}, {queue, sourceReports}, {kernel, sourceKernelDumps}, {memory, sourceKernelDump},
 		{dumps, sourceDumps}, {filepath.Join(root, "missing"), sourceReports},
 	}
-	got := listCrashes(sources, day(10, 0))
+	got := listCrashes(context.Background(), sources, day(10, 0))
 	var lines []string
 	for _, d := range got {
 		rel, _ := filepath.Rel(root, d.Path)
@@ -180,5 +181,75 @@ func TestCrashesAreListedNewestFirstFromEverySource(t *testing.T) {
 	}
 	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("crashes\n%s\nexpected\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestAFolderListsItsNewestCrashesUpToTheCap(t *testing.T) {
+	dir := t.TempDir()
+	base := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	for i := range maxFolderCrashes + 5 {
+		at := base.Add(time.Duration(i) * time.Minute)
+		writeFile(t, filepath.Join(dir, fmt.Sprintf("app%04d.exe.%d.dmp", i, i)), minidump(at, 0), at)
+	}
+	got := listCrashes(context.Background(), []crashSource{{dir, sourceDumps}}, base.Add(-time.Hour))
+	if len(got) != maxFolderCrashes {
+		t.Fatalf("%d crashes listed", len(got))
+	}
+	if got[0].App != fmt.Sprintf("app%04d.exe", maxFolderCrashes+4) || got[len(got)-1].App != "app0005.exe" {
+		t.Fatalf("listed %s to %s", got[0].App, got[len(got)-1].App)
+	}
+}
+
+func TestFilesOlderThanSinceAreNotRead(t *testing.T) {
+	root := t.TempDir()
+	since := time.Date(2026, 10, 10, 0, 0, 0, 0, time.UTC)
+	old := since.Add(-24 * time.Hour)
+	hang := "AppHang_Microsoft.Gaming_a056cec6e8c88e3521e677ba3c4a21746e51111_d6656dfd_d0fa8ee9-2f8a-4e2a-aee8-7087caa1bff8"
+	shop := "AppCrash_Shop.exe_0f0e0d0c0b0a090807060504030201_00000000_cab_0b1c2d3e-0000-4000-8000-000000000001"
+	stale := filepath.Join(root, "stale")
+	copyReport(t, hang, stale)
+	if err := os.Chtimes(filepath.Join(stale, hang, "Report.wer"), old, old); err != nil {
+		t.Fatal(err)
+	}
+	oldFolder := filepath.Join(root, "oldfolder")
+	copyReport(t, shop, oldFolder)
+	if err := os.Chtimes(filepath.Join(oldFolder, shop), old, old); err != nil {
+		t.Fatal(err)
+	}
+	fresh := filepath.Join(root, "fresh")
+	copyReport(t, hang, fresh)
+	dumps := filepath.Join(root, "dumps")
+	writeFile(t, filepath.Join(dumps, "late.exe.1.dmp"), minidump(since.Add(time.Hour), 0), old)
+	got := listCrashes(context.Background(), []crashSource{{stale, sourceReports}, {oldFolder, sourceReports}, {fresh, sourceReports}, {dumps, sourceDumps}}, since)
+	if len(got) != 1 || !strings.HasPrefix(got[0].Path, fresh) {
+		t.Fatalf("crashes %+v", got)
+	}
+}
+
+func TestASlowSourceIsLeftOutAtTheWaitLimit(t *testing.T) {
+	wait, scan := crashScanWait, scanSource
+	t.Cleanup(func() { crashScanWait, scanSource = wait, scan })
+	crashScanWait = 200 * time.Millisecond
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	scanSource = func(ctx context.Context, s crashSource, since time.Time) []crash {
+		if s.path == "slow" {
+			<-release
+			return nil
+		}
+		return scan(ctx, s, since)
+	}
+	dir := t.TempDir()
+	at := time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)
+	writeFile(t, filepath.Join(dir, "a.exe.1.dmp"), minidump(at, 0), at)
+	began := time.Now()
+	got := listCrashes(context.Background(), []crashSource{{"slow", sourceDumps}, {dir, sourceDumps}}, at.Add(-time.Hour))
+	if took := time.Since(began); took > 2*time.Second || len(got) != 1 || got[0].App != "a.exe" {
+		t.Fatalf("after %s: %+v", took, got)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if got := listCrashes(ctx, []crashSource{{"slow", sourceDumps}}, at); len(got) != 0 {
+		t.Fatalf("a cancelled scan listed %+v", got)
 	}
 }

@@ -15,13 +15,14 @@ import (
 // maxMessageChars bounds the characters of an event message.
 const maxMessageChars = 4000
 
-// levelNumbers are the event levels of each level name of diag.events.
-var levelNumbers = map[string][]int{
-	"critical":    {1},
-	"error":       {2},
-	"warning":     {3},
-	"information": {0, 4},
-	"verbose":     {5},
+// levelTerms are the query terms of each level name of diag.events, as
+// levelName names the levels.
+var levelTerms = map[string][]string{
+	"critical":    {"Level=1"},
+	"error":       {"Level=2"},
+	"warning":     {"Level=3"},
+	"information": {"Level=0", "Level=4"},
+	"verbose":     {"Level>=5"},
 }
 
 // levelName returns the diag.events name of an event level: 0 (log always)
@@ -48,9 +49,7 @@ func eventXPath(q wire.DiagEventsQuery) (string, error) {
 	if len(q.Levels) > 0 {
 		var terms []string
 		for _, l := range q.Levels {
-			for _, n := range levelNumbers[l] {
-				terms = append(terms, "Level="+strconv.Itoa(n))
-			}
+			terms = append(terms, levelTerms[l]...)
 		}
 		parts = append(parts, "("+strings.Join(terms, " or ")+")")
 	}

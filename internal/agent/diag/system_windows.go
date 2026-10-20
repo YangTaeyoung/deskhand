@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 	"unsafe"
@@ -21,7 +22,14 @@ var (
 	procGetSystemTimes                   = kernel32.NewProc("GetSystemTimes")
 	procGlobalMemoryStatusEx             = kernel32.NewProc("GlobalMemoryStatusEx")
 	procGetLogicalProcessorInformationEx = kernel32.NewProc("GetLogicalProcessorInformationEx")
+	procSetThreadErrorMode               = kernel32.NewProc("SetThreadErrorMode")
+	procGetThreadErrorMode               = kernel32.NewProc("GetThreadErrorMode")
 )
+
+// volumeErrorMode is the thread error mode of the volume queries: no
+// critical-error or open-file message box, such as "There is no disk in the
+// drive".
+const volumeErrorMode = windows.SEM_FAILCRITICALERRORS | windows.SEM_NOOPENFILEERRORBOX
 
 const (
 	// currentVersionKey holds the name, version and edition of Windows.
@@ -160,8 +168,15 @@ func registryString(key, name string) string {
 }
 
 // readDisks returns the fixed, removable and RAM drives that have a volume,
-// in drive letter order.
+// in drive letter order. It queries them on one thread with the thread
+// error mode volumeErrorMode, and restores the thread's mode afterwards.
 func readDisks() []Disk {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	var old uint32
+	if r, _, _ := procSetThreadErrorMode.Call(volumeErrorMode, uintptr(unsafe.Pointer(&old))); r != 0 {
+		defer procSetThreadErrorMode.Call(uintptr(old), 0)
+	}
 	out := []Disk{}
 	n, err := windows.GetLogicalDriveStrings(0, nil)
 	if err != nil || n == 0 {
@@ -181,7 +196,8 @@ func readDisks() []Disk {
 }
 
 // readDisk returns the volume of a drive root, and false for a drive that
-// is not fixed, removable or a RAM drive or that has no readable volume.
+// is not fixed, removable or a RAM drive, a removable drive without media,
+// or a drive whose volume cannot be read.
 func readDisk(root string) (Disk, bool) {
 	if root == "" {
 		return Disk{}, false
@@ -190,20 +206,31 @@ func readDisk(root string) (Disk, bool) {
 	if err != nil {
 		return Disk{}, false
 	}
-	switch windows.GetDriveType(p) {
+	kind := windows.GetDriveType(p)
+	switch kind {
 	case windows.DRIVE_FIXED, windows.DRIVE_REMOVABLE, windows.DRIVE_RAMDISK:
 	default:
+		return Disk{}, false
+	}
+	label := make([]uint16, windows.MAX_PATH+1)
+	fs := make([]uint16, windows.MAX_PATH+1)
+	hasVolume := windows.GetVolumeInformation(p, &label[0], uint32(len(label)), nil, nil, nil, &fs[0], uint32(len(fs))) == nil
+	if kind == windows.DRIVE_REMOVABLE && !hasVolume {
 		return Disk{}, false
 	}
 	var avail, total, free uint64
 	if windows.GetDiskFreeSpaceEx(p, &avail, &total, &free) != nil {
 		return Disk{}, false
 	}
-	label := make([]uint16, windows.MAX_PATH+1)
-	fs := make([]uint16, windows.MAX_PATH+1)
 	d := Disk{Root: root, TotalBytes: total, FreeBytes: free}
-	if windows.GetVolumeInformation(p, &label[0], uint32(len(label)), nil, nil, nil, &fs[0], uint32(len(fs))) == nil {
+	if hasVolume {
 		d.Label, d.FS = windows.UTF16ToString(label), windows.UTF16ToString(fs)
 	}
 	return d, true
+}
+
+// threadErrorMode returns the error mode of the calling thread.
+func threadErrorMode() uint32 {
+	r, _, _ := procGetThreadErrorMode.Call()
+	return uint32(r)
 }

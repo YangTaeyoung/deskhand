@@ -13,6 +13,7 @@ import (
 	"unsafe"
 
 	"github.com/YangTaeyoung/deskhand/internal/proto"
+	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
 // copySystemProgram copies a program of the system folder to name in a
@@ -187,3 +188,34 @@ func busyCommand() proto.Message {
 
 // unrelatedPID is a process the agent did not start.
 func unrelatedPID() int { return 4 }
+
+func TestAStartedTreeKillEndsTheTreeThroughItsHandles(t *testing.T) {
+	c, _ := newRPCClient(t, Options{})
+	start := c.ok("exec.start", shellWithChild())
+	job, pid := start.String("job"), start.Int("pid")
+	t.Cleanup(func() { c.call("exec.kill", proto.Message{"job": job}) })
+	child := childOf(t, c, pid)
+	childPID := int(child["pid"].(float64))
+	root := listed(c, pid)
+	waitRoot, waitChild := openForWait(t, pid), openForWait(t, childPID)
+	res := c.call("proc.kill", proto.Message{"pid": pid, "started": "2001-01-01T00:00:00.000Z", "tree": true})
+	if res.String("code") != wire.CodeStaleTarget {
+		t.Fatalf("stale tree kill %v", res)
+	}
+	if listed(c, childPID) == nil || listed(c, pid) == nil {
+		t.Fatal("a stale tree kill ended a process")
+	}
+	if res := c.ok("proc.kill", proto.Message{"pid": pid, "started": root["started"], "tree": true}); res.Int("killed") != 1 {
+		t.Fatalf("tree kill %v", res)
+	}
+	expectEnded(t, waitChild, childPID)
+	expectEnded(t, waitRoot, pid)
+}
+
+func TestAStartedKillOfAProcessThatRefusesAccessAnswersTheRefusal(t *testing.T) {
+	c, _ := newRPCClient(t, Options{})
+	res := c.call("proc.kill", proto.Message{"pid": 4, "started": "2001-01-01T00:00:00.000Z"})
+	if res["ok"] != false || res.String("code") != wire.CodePermissionDenied {
+		t.Fatalf("kill of System %v", res)
+	}
+}

@@ -225,6 +225,26 @@ func processStarted(pid int) (time.Time, bool) {
 	return at, err == nil
 }
 
+// killStarted ends pid, with tree its process group, when the process that
+// runs with pid was created at want to the millisecond as ps lists it.
+func killStarted(pid int, want time.Time, tree bool) error {
+	created, ok := processStarted(pid)
+	if !ok {
+		return noProcess(pid)
+	}
+	if !sameMillisecond(created, want) {
+		return otherProcess(pid, created, want)
+	}
+	kill := killPID
+	if tree {
+		kill = killTree
+	}
+	if err := kill(pid); err != nil {
+		return fmt.Errorf("cannot kill pid %d: %v; call proc.list to check it", pid, err)
+	}
+	return nil
+}
+
 // pidCreation reports false: outside Windows the creation time of a
 // started process is not read.
 func pidCreation(int) (time.Time, bool) { return time.Time{}, false }

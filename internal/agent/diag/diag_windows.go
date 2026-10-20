@@ -27,6 +27,6 @@ func (local) Events(ctx context.Context, q wire.DiagEventsQuery) (Events, error)
 	return readEvents(ctx, q)
 }
 
-func (local) Crashes(_ context.Context, since time.Time) ([]Dump, error) {
-	return listCrashes(crashSources(), since), nil
+func (local) Crashes(ctx context.Context, since time.Time) ([]Dump, error) {
+	return listCrashes(ctx, crashSources(), since), nil
 }

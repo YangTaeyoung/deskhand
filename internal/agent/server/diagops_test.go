@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -193,5 +194,39 @@ func TestTheDiagCapabilityFollowsTheSource(t *testing.T) {
 	caps, _ = expect(t, r, "hello")["caps"].(map[string]any)
 	if st, _ := caps["diag"].(map[string]any); st["state"] != "unavailable" || st["reason"] != errExecDisabled {
 		t.Fatalf("caps.diag without exec %v", st)
+	}
+}
+
+// bigEvents is a diag.Source whose events carry long multibyte messages.
+type bigEvents struct {
+	fakeDiag
+	n int
+}
+
+func (b *bigEvents) Events(_ context.Context, q wire.DiagEventsQuery) (diag.Events, error) {
+	msg := string([]rune(strings.Repeat("서비스가 예기치 않게 종료되었습니다 <&> ", 200))[:3990])
+	events := make([]diag.Event, min(b.n, q.Max))
+	for i := range events {
+		events[i] = diag.Event{RecordID: uint64(b.n - i), Time: "2026-10-20T15:29:11.077Z", Level: "error", Provider: "p", EventID: 7031, Message: msg}
+	}
+	return diag.Events{Events: events}, nil
+}
+
+func TestAnEventsReplyAboveTheLineLimitDropsTheOldestRecords(t *testing.T) {
+	s := New(Options{AllowExec: true, Clipboard: &fakeClipboard{}, HomeDir: t.TempDir(), Diag: &bigEvents{n: 1000}})
+	res, line := s.respond(context.Background(), proto.Message{"t": "req", "id": 1, "op": "diag.events", "max": 1000})
+	events, _ := res["events"].([]diag.Event)
+	if res["ok"] != true || line == nil || len(line) >= maxReplyLine {
+		t.Fatalf("reply ok %v, error %v, %d bytes", res["ok"], res["error"], len(line))
+	}
+	if res["truncated"] != true || len(events) == 0 || len(events) >= 1000 {
+		t.Fatalf("%d events, truncated %v", len(events), res["truncated"])
+	}
+	if events[0].RecordID != 1000 || events[len(events)-1].RecordID != uint64(1000-len(events)+1) {
+		t.Fatalf("the kept records are not the newest: %d to %d", events[0].RecordID, events[len(events)-1].RecordID)
+	}
+	small, _ := s.respond(context.Background(), proto.Message{"t": "req", "id": 2, "op": "diag.events", "max": 10})
+	if small["truncated"] != false || len(small["events"].([]diag.Event)) != 10 {
+		t.Fatalf("a reply within the limit: truncated %v", small["truncated"])
 	}
 }
