@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/YangTaeyoung/deskhand/internal/agent/monoclock"
 	"github.com/YangTaeyoung/deskhand/internal/proto"
 )
 
@@ -344,6 +345,9 @@ func (s *Server) invoke(ctx context.Context, req proto.Message) (out proto.Messa
 func (s *Server) registerBuiltins() {
 	s.register("ping", false, func(context.Context, proto.Message) (proto.Message, error) {
 		return proto.Message{"pong": true}, nil
+	})
+	s.register("time.sync", false, func(context.Context, proto.Message) (proto.Message, error) {
+		return proto.Message{"mono_us": monoclock.NowUS()}, nil
 	})
 	s.registerShell()
 	s.registerFiles()
