@@ -186,18 +186,37 @@ func TestNextNoNewFrameOnStaticScreen(t *testing.T) {
 	}
 }
 
-func TestSecondOpenOfADisplayFallsBackToGDI(t *testing.T) {
+// served is the source that src serves frames from now.
+func served(src Source) Source {
+	if s, ok := src.(*switchSource); ok {
+		return s.cur
+	}
+	return src
+}
+
+func TestSecondOpenOfADisplayServesGDIUntilTheFirstCloses(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	first := openOrSkip(t, 0)
-	defer first.Close()
+	closed := false
+	defer func() {
+		if !closed {
+			first.Close()
+		}
+	}()
 	if _, ok := first.(*ddSource); !ok {
 		t.Skipf("the first source is %T, not Desktop Duplication", first)
 	}
+	start := time.Now()
 	second := openOrSkip(t, 0)
 	defer second.Close()
-	if _, ok := second.(*gdiSource); !ok {
-		t.Fatalf("the second source of a duplicated display is %T", second)
+	took := time.Since(start)
+	t.Logf("the second Open took %v and gave %T serving %T", took, second, served(second))
+	if took < dupRetryFor-dupRetryEvery || took > dupRetryFor+time.Second {
+		t.Fatalf("the second Open of a duplicated display took %v, want about %v of retries", took, dupRetryFor)
+	}
+	if _, ok := served(second).(*gdiSource); !ok {
+		t.Fatalf("the second source of a duplicated display serves %T", served(second))
 	}
 	f := firstImage(t, second)
 	lit := 0
@@ -210,6 +229,71 @@ func TestSecondOpenOfADisplayFallsBackToGDI(t *testing.T) {
 		t.Fatal("the GDI frame is black")
 	}
 	firstImage(t, first)
+
+	first.Close()
+	closed = true
+	closedAt := time.Now()
+	for {
+		_, err := second.Next(context.Background(), 100*time.Millisecond)
+		if errors.Is(err, ErrReset) {
+			break
+		}
+		if err != nil && !errors.Is(err, ErrNoNewFrame) {
+			t.Fatalf("Next of the GDI source after the first closed: %v", err)
+		}
+		if time.Since(closedAt) > ddRetryEvery+time.Second {
+			t.Fatalf("no switch to Desktop Duplication within %v of the first source closing", ddRetryEvery+time.Second)
+		}
+	}
+	t.Logf("switched to %T %v after the first source closed", served(second), time.Since(closedAt))
+	if _, ok := served(second).(*ddSource); !ok {
+		t.Fatalf("after ErrReset the source serves %T", served(second))
+	}
+	if f := firstImage(t, second); f.Texture == 0 || f.CPU != nil {
+		t.Fatalf("the first frame after the switch has texture %#x and %d CPU bytes", f.Texture, len(f.CPU))
+	}
+}
+
+func TestOpenGetsDuplicationWhenTheOtherSourceClosesWithinTheRetries(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	opened := make(chan Source, 1)
+	release := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+		defer close(done)
+		src, err := Open(0)
+		if err != nil {
+			opened <- nil
+			return
+		}
+		opened <- src
+		<-release
+		time.Sleep(300 * time.Millisecond)
+		src.Close()
+	}()
+	first := <-opened
+	if first == nil {
+		t.Skip("display 0 cannot be opened now")
+	}
+	if _, ok := first.(*ddSource); !ok {
+		close(release)
+		<-done
+		t.Skipf("the first source is %T, not Desktop Duplication", first)
+	}
+	close(release)
+	start := time.Now()
+	second := openOrSkip(t, 0)
+	defer second.Close()
+	<-done
+	took := time.Since(start)
+	t.Logf("Open gave %T after %v", second, took)
+	if _, ok := second.(*ddSource); !ok || took > time.Second {
+		t.Fatalf("Open while another source of the display closed within 300 ms gave %T after %v", second, took)
+	}
+	firstImage(t, second)
 }
 
 func TestProbeIsReadyInTheConsoleSession(t *testing.T) {
@@ -353,8 +437,8 @@ func TestGDIFrameStaysWhileNoNewFrameComes(t *testing.T) {
 		src = openOrSkip(t, index)
 		defer src.Close()
 	}
-	if _, ok := src.(*gdiSource); !ok {
-		t.Fatalf("the source is %T, not GDI", src)
+	if _, ok := served(src).(*gdiSource); !ok {
+		t.Fatalf("the source serves %T, not GDI", served(src))
 	}
 	f := firstImage(t, src)
 	kept := bytes.Clone(f.CPU)

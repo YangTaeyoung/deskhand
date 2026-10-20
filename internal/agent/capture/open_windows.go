@@ -30,9 +30,14 @@ var openMu sync.Mutex
 // Open opens a source of the display with index displayIndex of
 // display.List on a device of its own: Desktop Duplication, or GDI when
 // duplication is refused, unsupported or already open for the display in
-// this process, or when the display is rotated. When neither works the
-// error is an *Unavailable if the session or the failure names a reason.
-// Call it on a goroutine locked to its thread and use the source there.
+// this process, or when the display is rotated. While DuplicateOutput
+// fails with E_INVALIDARG it tries again every dupRetryEvery for up to
+// dupRetryFor, holding openMu only during each try. A GDI source opened
+// after a passing refusal tries Desktop Duplication again every
+// ddRetryEvery and switches to it with ErrReset once it works. When
+// neither works the error is an *Unavailable if the session or the
+// failure names a reason. Call it on a goroutine locked to its thread and
+// use the source there.
 func Open(displayIndex int) (Source, error) {
 	openMu.Lock()
 	defer openMu.Unlock()
@@ -44,11 +49,39 @@ func Open(displayIndex int) (Source, error) {
 	if err != nil {
 		return nil, classifyErr(err)
 	}
-	src, err := openOn(dev, d, true, nil)
+	dd := &ddSource{dev: dev, disp: d}
+	start := time.Now()
+	hr, err := dd.duplicate()
+	for err == nil && retryDuplicate(hr, time.Since(start)) {
+		openMu.Unlock()
+		time.Sleep(dupRetryEvery)
+		openMu.Lock()
+		hr, err = dd.duplicate()
+	}
+	src, err := dd.orGDI(hr, err)
 	if err != nil {
 		dev.Close()
+		return nil, err
 	}
-	return src, err
+	if g, ok := src.(*gdiSource); ok && passingRefusal(hr) {
+		return newSwitchSource(g, func() (Source, bool) { return duplicateAgain(dev, g.disp) }, ddRetryEvery, dev.Close), nil
+	}
+	ownDevice(src)
+	return src, nil
+}
+
+// duplicateAgain makes a Desktop Duplication source of display d on dev,
+// which the source does not close, or reports false while the output
+// cannot be duplicated.
+func duplicateAgain(dev *d3d.Device, d display.Info) (Source, bool) {
+	openMu.Lock()
+	defer openMu.Unlock()
+	dd := &ddSource{dev: dev, disp: d}
+	if hr, err := dd.duplicate(); err != nil || hr.Failed() {
+		return nil, false
+	}
+	dd.reg = register()
+	return dd, true
 }
 
 // openOn opens a source of display d on dev, which the source closes with
@@ -57,8 +90,29 @@ func Open(displayIndex int) (Source, error) {
 // into the staging texture stage gives for its size, and GDI keeps one
 // DIB section.
 func openOn(dev *d3d.Device, d display.Info, owned bool, stage func(w, h int) (uintptr, error)) (Source, error) {
-	dd := &ddSource{dev: dev, disp: d, ownsDev: owned, stage: stage}
-	hr, err := dd.duplicate()
+	dd := &ddSource{dev: dev, disp: d, stage: stage}
+	src, err := dd.orGDI(dd.duplicate())
+	if err == nil && owned {
+		ownDevice(src)
+	}
+	return src, err
+}
+
+// ownDevice makes src, a source of orGDI, close its device with itself.
+func ownDevice(src Source) {
+	switch s := src.(type) {
+	case *ddSource:
+		s.ownsDev = true
+	case *gdiSource:
+		s.ownsDev = true
+	}
+}
+
+// orGDI returns dd once its duplication, which ended with hr and err,
+// worked, and else a GDI source of its display on its device when the
+// failure leaves GDI to try. Neither source closes the device.
+func (dd *ddSource) orGDI(hr com.HRESULT, err error) (Source, error) {
+	d := dd.disp
 	switch {
 	case err == nil && hr.Succeeded():
 		dd.reg = register()
@@ -72,12 +126,11 @@ func openOn(dev *d3d.Device, d display.Info, owned bool, stage func(w, h int) (u
 		return nil, fmt.Errorf("IDXGIOutput1::DuplicateOutput of %s: %w", d.Name, hr)
 	}
 	buffers := 2
-	if stage != nil {
+	if dd.stage != nil {
 		buffers = 1
 	}
-	g, gerr := openGDI(dev, d, buffers)
+	g, gerr := openGDI(dd.dev, d, buffers)
 	if gerr == nil {
-		g.ownsDev = owned
 		g.reg = register()
 		return g, nil
 	}

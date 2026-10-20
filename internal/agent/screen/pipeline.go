@@ -657,7 +657,9 @@ func (r *run) polling(now uint64) bool {
 	return r.warming(now) || (now < r.lastEncodeUS+uint64(pollWindow/time.Microsecond) && r.enc.Pending() > 0)
 }
 
-// took handles the result of the source's Next.
+// took handles the result of the source's Next. An image of another
+// capture method than the images before it is encoded after an info frame
+// as an IDR.
 func (r *run) took(f capture.Frame, err error) error {
 	var u *capture.Unavailable
 	switch {
@@ -665,11 +667,15 @@ func (r *run) took(f capture.Frame, err error) error {
 		if !f.Dirty {
 			return nil
 		}
-		r.last, r.haveLast, r.pending, r.repeat, r.dd = f, true, true, false, f.Texture != 0
-		r.imageAtUS = r.clock.NowUS()
-		if r.paused != "" {
+		dd := f.Texture != 0
+		if r.enc != nil && dd != r.dd {
+			r.log.Printf("video: display %d now captures with %s", r.set.display, method(f))
+		}
+		if r.paused != "" || (r.enc != nil && dd != r.dd) {
 			r.needInfo, r.forceKey = true, true
 		}
+		r.last, r.haveLast, r.pending, r.repeat, r.dd = f, true, true, false, dd
+		r.imageAtUS = r.clock.NowUS()
 	case errors.Is(err, capture.ErrNoNewFrame):
 	case errors.Is(err, capture.ErrReset):
 		r.haveLast, r.pending = false, false
@@ -897,14 +903,18 @@ func (r *run) forward(enc encode.Encoder, epoch uint64, stop, done chan struct{}
 
 // writeInfo queues the info frame of the encoder for frames like f.
 func (r *run) writeInfo(f capture.Frame) error {
-	method := capture.MethodGDI
-	if f.Texture != 0 {
-		method = capture.MethodDD
-	}
 	info := r.enc.Info()
 	r.needInfo, r.paused = false, ""
 	return r.post(wire.KindVideoInfo, wire.VideoInfo{Codec: "h264", Width: r.encW, Height: r.encH, SrcWidth: f.Width, SrcHeight: f.Height,
-		FPS: r.encFPS, Bitrate: r.encBPS, Encoder: info.Name, Hardware: info.Hardware, Capture: method, Display: r.set.display})
+		FPS: r.encFPS, Bitrate: r.encBPS, Encoder: info.Name, Hardware: info.Hardware, Capture: method(f), Display: r.set.display})
+}
+
+// method is the capture method of f: dd for a texture, gdi otherwise.
+func method(f capture.Frame) string {
+	if f.Texture != 0 {
+		return capture.MethodDD
+	}
+	return capture.MethodGDI
 }
 
 // maybeStats queues the stats frame of the second that ended, while

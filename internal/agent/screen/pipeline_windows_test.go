@@ -165,3 +165,81 @@ func countKeys(aus []wire.AU) int {
 	}
 	return n
 }
+
+// waitInfo returns the index of the first info frame of rec at or after
+// from whose capture is method, and fails the test when none comes within
+// limit.
+func waitInfo(t *testing.T, rec *recorder, from int, method string, limit time.Duration) int {
+	t.Helper()
+	deadline := time.Now().Add(limit)
+	for {
+		frames := rec.all(false)
+		for i := from; i < len(frames); i++ {
+			if frames[i].kind == wire.KindVideoInfo && decode[wire.VideoInfo](t, frames[i]).Capture == method {
+				return i
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no info with capture %s within %v:%s", method, limit, describe(t, frames))
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestAStreamOpenedWhileAnotherHoldsTheDisplaySwitchesToDuplicationAfterItCloses(t *testing.T) {
+	d := streamDisplay(t)
+	start := func(rec *recorder, logs *bytes.Buffer) (context.CancelFunc, chan error) {
+		ctx, cancel := context.WithCancel(context.Background())
+		p := New(Options{Logger: log.New(logs, "", log.Lmicroseconds)})
+		done := make(chan error, 1)
+		go func() { done <- p.Start(ctx, wire.StreamHeader{S: "video", Display: d.Index, MaxWidth: 1280}, rec.out) }()
+		return cancel, done
+	}
+	var logsA, logsB bytes.Buffer
+	recA, recB := &recorder{}, &recorder{}
+	stopA, doneA := start(recA, &logsA)
+	stoppedA := false
+	defer func() {
+		if !stoppedA {
+			stopA()
+			<-doneA
+		}
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for len(recA.all(false)) == 0 || recA.all(false)[0].kind != wire.KindVideoInfo {
+		if time.Now().After(deadline) {
+			t.Fatalf("stream A wrote no info within 5 s:%s\n%s", describe(t, recA.all(false)), logsA.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if info := decode[wire.VideoInfo](t, recA.all(false)[0]); info.Capture != capture.MethodDD {
+		t.Skipf("stream A captures with %s, not Desktop Duplication", info.Capture)
+	}
+
+	openedB := time.Now()
+	stopB, doneB := start(recB, &logsB)
+	defer func() { stopB(); <-doneB }()
+	gdiInfo := waitInfo(t, recB, 0, capture.MethodGDI, 5*time.Second)
+	t.Logf("stream B's first info (gdi) came %v after it was opened", time.Since(openedB))
+
+	stopA()
+	errA := <-doneA
+	stoppedA = true
+	if errA != nil {
+		t.Fatalf("stream A: %v", errA)
+	}
+	closedA := time.Now()
+	ddInfo := waitInfo(t, recB, gdiInfo+1, capture.MethodDD, 3*time.Second)
+	t.Logf("stream B's info with capture dd came %v after stream A closed\nB log:\n%s", time.Since(closedA), logsB.String())
+	frames := recB.all(false)
+	for ddInfo+1 >= len(frames) && time.Since(closedA) < 4*time.Second {
+		time.Sleep(10 * time.Millisecond)
+		frames = recB.all(false)
+	}
+	if ddInfo+1 >= len(frames) || frames[ddInfo+1].kind != wire.KindAU {
+		t.Fatalf("no access unit right after the dd info:%s", describe(t, frames))
+	}
+	if au, err := wire.UnmarshalAU(frames[ddInfo+1].payload); err != nil || !au.Key || !au.HasConfig {
+		t.Fatalf("the access unit after the dd info: %+v %v", au, err)
+	}
+}

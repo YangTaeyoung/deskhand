@@ -75,7 +75,7 @@ func (s *fakeSource) Next(ctx context.Context, timeout time.Duration) (capture.F
 		f.Width, f.Height = s.w, s.h
 		s.mu.Unlock()
 		f.MonoUS, f.Dirty = s.clk.NowUS(), true
-		if f.Texture == 0 {
+		if f.Texture == 0 && f.CPU == nil {
 			f.Texture = 1
 		}
 	}
@@ -611,6 +611,57 @@ func TestReinitOnSizeChange(t *testing.T) {
 	encs := hs.encs.list()
 	if len(encs) != 2 || !encs[0].closed || encs[1].srcW != 1280 {
 		t.Fatalf("%d encoders, first closed %v", len(encs), len(encs) > 0 && encs[0].closed)
+	}
+}
+
+func TestASwitchFromGDIToDuplicationSendsInfoAndAKeyFrame(t *testing.T) {
+	frames := periodic(time.Second / 30)
+	switched := false
+	p := func(s *fakeSource, now uint64, timeout time.Duration) (capture.Frame, error, time.Duration) {
+		if now >= 1_000_000 && !switched {
+			switched = true
+			return capture.Frame{}, capture.ErrReset, 0
+		}
+		f, err, wait := frames(s, now, timeout)
+		if err == nil && !switched {
+			f.CPU = []byte{0, 0, 0, 0}
+		}
+		return f, err, wait
+	}
+	hs := newHarness(p, 1920, 1080)
+	hs.run(t, wire.StreamHeader{S: "video"}, 2_000_000, nil)
+	got := hs.rec.all(false)
+	t.Logf("frames:%s", describe(t, got))
+	var infos []int
+	for i, f := range got {
+		if f.kind == wire.KindVideoInfo {
+			infos = append(infos, i)
+		}
+	}
+	if len(infos) != 2 || infos[0] != 0 || infos[1]+1 >= len(got) {
+		t.Fatalf("info frames at %v of %d frames, want one first and one after the switch", infos, len(got))
+	}
+	if first, second := decode[wire.VideoInfo](t, got[infos[0]]), decode[wire.VideoInfo](t, got[infos[1]]); first.Capture != capture.MethodGDI ||
+		second.Capture != capture.MethodDD || second.Width != 1920 || second.SrcWidth != 1920 {
+		t.Fatalf("infos %+v then %+v", first, second)
+	}
+	for _, f := range got[1:infos[1]] {
+		if au, _ := wire.UnmarshalAU(f.payload); f.kind == wire.KindAU && au.CaptureMonoUS >= 1_000_000 {
+			t.Fatalf("an access unit of %d µs, after the switch, before its info", au.CaptureMonoUS)
+		}
+	}
+	au, err := wire.UnmarshalAU(got[infos[1]+1].payload)
+	if err != nil || got[infos[1]+1].kind != wire.KindAU || !au.Key || !au.HasConfig || au.CaptureMonoUS < 1_000_000 {
+		t.Fatalf("the frame after the second info: kind %#x %+v %v", got[infos[1]+1].kind, au, err)
+	}
+	keys := 0
+	for _, au := range hs.rec.aus(t) {
+		if au.Key {
+			keys++
+		}
+	}
+	if keys != 2 {
+		t.Fatalf("%d key frames, want the first and the one after the switch", keys)
 	}
 }
 

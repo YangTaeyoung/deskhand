@@ -34,7 +34,7 @@
 
 - SSH(Session 0)에서는 출력 열거가 `DXGI_ERROR_NOT_CURRENTLY_AVAILABLE`. 에이전트는 사용자 세션(예약 작업)에서 실행한다.
 - 세션이 RDP에 연결돼 있으면 출력은 RDP 클라이언트 해상도의 가상 디스플레이이고, 클라이언트 창이 보이지 않는 동안 DD와 GDI가 `E_ACCESSDENIED`/실패를 반환한다(클라이언트의 출력 억제로 추정, 확인 필요). 에이전트는 이를 `DISPLAY_UNAVAILABLE`(사유 `rdp_output_suppressed`)로 보고하고, 사람이 승인하면 세션을 콘솔로 옮기는 동작을 제공한다.
-- 같은 프로세스에서 같은 출력을 두 번 `DuplicateOutput`하면 `E_INVALIDARG` — 이전 복제를 먼저 해제한다.
+- 같은 프로세스에서 같은 출력을 두 번 `DuplicateOutput`하면 `E_INVALIDARG` — 이전 복제를 먼저 해제한다. 새 소스는 2초 동안 다시 복제해 보고 GDI로 열며, 그 GDI 소스는 2초마다 다시 복제해 되면 Desktop Duplication으로 바뀐다(protocol.md §4 캡처 방식).
 
 ## vtable 인덱스
 
