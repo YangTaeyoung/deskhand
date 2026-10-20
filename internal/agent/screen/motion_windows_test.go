@@ -1,12 +1,18 @@
 package screen
 
 import (
+	"fmt"
+	"os"
+	"os/exec"
 	"runtime"
 	"sync/atomic"
 	"testing"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/YangTaeyoung/deskhand/internal/agent/display"
 )
 
 var (
@@ -68,12 +74,64 @@ type winMsg struct {
 	private        uint32
 }
 
-// showMotion shows a borderless, click-through, never-activated window of
-// the test process with w×h pixels at (x, y) of the virtual desktop that
-// draws a moving pattern once per composition until the returned stop is
-// called.
+// motionEnv names the window a test binary run by startMotion shows:
+// "x,y,w,h,seconds".
+const motionEnv = "DESKHAND_MOTION_WINDOW"
+
+func TestMain(m *testing.M) {
+	if spec := os.Getenv(motionEnv); spec != "" {
+		os.Exit(runMotion(spec))
+	}
+	os.Exit(m.Run())
+}
+
+// runMotion shows the motion window spec names for its seconds and
+// returns the exit code.
+func runMotion(spec string) int {
+	var x, y, w, h, secs int
+	if _, err := fmt.Sscanf(spec, "%d,%d,%d,%d,%d", &x, &y, &w, &h, &secs); err != nil {
+		return 2
+	}
+	display.EnsureDPIAware()
+	stop, err := motionWindow(x, y, w, h)
+	if err != nil {
+		return 1
+	}
+	time.Sleep(time.Duration(secs) * time.Second)
+	stop()
+	return 0
+}
+
+// startMotion runs the test binary again to show the motion window in a
+// process of its own for secs seconds; it ends with the test.
+func startMotion(t *testing.T, x, y, w, h, secs int) {
+	t.Helper()
+	cmd := exec.Command(os.Args[0], "-test.run=^$")
+	cmd.Env = append(os.Environ(), fmt.Sprintf("%s=%d,%d,%d,%d,%d", motionEnv, x, y, w, h, secs))
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("starting the motion window process: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+}
+
+// showMotion is motionWindow in the test process; the test fails when
+// the window cannot be shown.
 func showMotion(t *testing.T, x, y, w, h int) (stop func()) {
 	t.Helper()
+	stop, err := motionWindow(x, y, w, h)
+	if err != nil {
+		t.Fatalf("showing the motion window: %v", err)
+	}
+	return stop
+}
+
+// motionWindow shows a borderless, click-through, never-activated window
+// with w×h pixels at (x, y) of the virtual desktop that draws a moving
+// pattern once per composition until the returned stop is called.
+func motionWindow(x, y, w, h int) (stop func(), err error) {
 	var quit atomic.Bool
 	ready := make(chan error, 1)
 	done := make(chan struct{})
@@ -115,7 +173,7 @@ func showMotion(t *testing.T, x, y, w, h int) (stop func()) {
 		}
 	}()
 	if err := <-ready; err != nil {
-		t.Fatalf("showing the motion window: %v", err)
+		return nil, err
 	}
 	var once atomic.Bool
 	return func() {
@@ -123,7 +181,7 @@ func showMotion(t *testing.T, x, y, w, h int) (stop func()) {
 			quit.Store(true)
 			<-done
 		}
-	}
+	}, nil
 }
 
 // drawMotion fills the window with cells whose shade moves with frame,

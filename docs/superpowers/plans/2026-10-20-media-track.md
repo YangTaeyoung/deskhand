@@ -16,7 +16,7 @@
 - Windows 전용 코드는 `_windows.go`, 다른 OS에는 같은 API의 스텁이 `CAPABILITY_UNSUPPORTED`를 돌려준다. `GOOS=darwin go test ./...`와 `GOOS=windows go vet ./...`가 모두 통과한다.
 - COM 객체는 만든 고루틴(`runtime.LockOSThread`)에서 해제한다. 모든 `Release`는 소유 범위가 끝날 때 한 번.
 - 캡처는 사용자 세션에서만 동작한다. Session 0에서 호출되면 `DISPLAY_UNAVAILABLE`(사유 `session0`).
-- 캡처 실패 사유 문자열(고정): `session0`, `rdp_output_suppressed`, `secure_desktop`, `session_locked`, `session_disconnected`, `access_lost`, `no_output`.
+- 캡처 실패 사유 문자열(고정): `session0`, `rdp_output_suppressed`, `secure_desktop`, `session_locked`, `session_disconnected`, `access_lost`, `no_output`. 화면 기능(caps `screen`·`video`의 `paused`)에는 인코더를 만들 수 없을 때 `no_encoder`가 더해진다.
 - 기본값: `max_fps` 60, 비트레이트 20 Mbps(원본 4K), 12 Mbps(≤2560 폭), 6 Mbps(≤1920 폭). 저지연 모드, CBR, GOP 0, 요청 키프레임, 정지 화면이면 프레임을 보내지 않고 10초마다 1회 반복 프레임(키프레임 아님)으로 생존을 알린다.
 - 입력 좌표는 디스플레이 원본 픽셀. SendInput 절대 좌표는 가상 데스크톱 기준 0–65535로 환산(`MOUSEEVENTF_VIRTUALDESK`).
 - 사용자 실기기에서 입력을 주입하는 테스트는 `deskhand-fixture` 창에만 한다(포커스 확인 후). 다른 창·바탕화면에 클릭·키 입력 금지.

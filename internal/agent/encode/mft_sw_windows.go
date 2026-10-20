@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -51,6 +52,9 @@ type swEncoder struct {
 	}
 	format format
 	clock  sampleClock
+	// queued counts the frames queued or in the MFT whose access units did
+	// not come out yet.
+	queued atomic.Int64
 
 	in        chan swInput
 	bitrate   chan bitrateRequest
@@ -73,7 +77,7 @@ func newSW(dev *d3d.Device, srcW, srcH, outW, outH, fps, bps int) (*swEncoder, e
 		return nil, err
 	}
 	e := &swEncoder{dev: dev, format: format{w: outW, h: outH, fps: fps, bps: bps, level: h264Level(outW, outH, fps, bps)},
-		in: make(chan swInput, 1), bitrate: make(chan bitrateRequest), out: make(chan wire.AU, 16), ready: make(chan error, 1),
+		in: make(chan swInput, 1), bitrate: make(chan bitrateRequest), out: make(chan wire.AU, outputRoom), ready: make(chan error, 1),
 		closing: make(chan struct{}), done: make(chan struct{})}
 	ok := false
 	defer func() {
@@ -127,6 +131,8 @@ func (e *swEncoder) Info() EncoderInfo {
 }
 
 func (e *swEncoder) Output() <-chan wire.AU { return e.out }
+
+func (e *swEncoder) Pending() int { return int(e.queued.Load()) + len(e.out) }
 
 func (e *swEncoder) failure() error {
 	e.mu.Lock()
@@ -183,10 +189,12 @@ func (e *swEncoder) Encode(f capture.Frame, forceKey bool) error {
 		return err
 	}
 	e.bufs[i].busy.Store(true)
+	e.queued.Add(1)
 	select {
 	case e.in <- swInput{buf: i, t: e.clock.next(f.MonoUS), captureMono: f.MonoUS, forceKey: forceKey}:
 		return nil
 	default:
+		e.queued.Add(-1)
 		e.bufs[i].busy.Store(false)
 		return ErrBusy
 	}
@@ -280,27 +288,41 @@ func (e *swEncoder) loop() {
 	}
 }
 
-// setUp activates the first software encoder MFT and prepares it for
-// streaming.
+// setUp activates the first software encoder MFT that sets up and
+// prepares it for streaming.
 func (e *swEncoder) setUp(st *swThread) error {
 	entries, err := enumEncoders(enumSyncMFT | enumLocalMFT | enumSortAndFilter)
 	if err != nil {
 		return err
 	}
 	st.entries = entries
-	var entry *mftEntry
-	for i := range entries {
-		if !entries[i].hardware {
-			entry = &entries[i]
-			break
+	var tried []string
+	for _, entry := range entries {
+		if entry.hardware {
+			continue
 		}
+		err := e.activate(st, entry)
+		if err == nil {
+			e.mu.Lock()
+			e.info = EncoderInfo{Name: entry.name, Hardware: false, Width: e.format.w, Height: e.format.h}
+			e.mu.Unlock()
+			return nil
+		}
+		tried = append(tried, fmt.Sprintf("%s: %v", entry.name, err))
+		st.tearDown()
 	}
-	if entry == nil {
+	if len(tried) == 0 {
 		return errors.New("no software H.264 encoder MFT is registered")
 	}
+	return fmt.Errorf("no software H.264 encoder accepts %dx%d at %d fps (%s)", e.format.w, e.format.h, e.format.fps, strings.Join(tried, "; "))
+}
+
+// activate activates the MFT of entry: low latency, codec properties,
+// output type, input type, an output sample, streaming.
+func (e *swEncoder) activate(st *swThread, entry mftEntry) error {
 	if hr := com.Call(entry.act, activateActivateObject, uintptr(unsafe.Pointer(&iidIMFTransform)), uintptr(unsafe.Pointer(&st.mft))); hr.Failed() {
 		st.mft = 0
-		return fmt.Errorf("IMFActivate::ActivateObject of %s: %w", entry.name, hr)
+		return fmt.Errorf("IMFActivate::ActivateObject: %w", hr)
 	}
 	st.act = entry.act
 	var attrs uintptr
@@ -308,14 +330,17 @@ func (e *swEncoder) setUp(st *swThread) error {
 		setUINT32(attrs, &mfLowLatency, 1)
 		com.Release(attrs)
 	}
-	st.api = codecAPIOf(st.mft)
+	if st.api = codecAPIOf(st.mft); st.api == 0 {
+		return errors.New("the MFT has no ICodecAPI")
+	}
 	st.api.configure(e.format.bps, swGOP)
 	if err := setTypes(st.mft, e.format); err != nil {
-		return fmt.Errorf("%s: %w", entry.name, err)
+		return err
 	}
 	st.api.configure(e.format.bps, swGOP)
 	var osi outputStreamInfo
 	com.Call(st.mft, transformGetOutputStreamInfo, 0, uintptr(unsafe.Pointer(&osi)))
+	var err error
 	if st.outBuf, err = newMemoryBuffer(max(int(osi.size), e.format.w*e.format.h*3/2)); err != nil {
 		return err
 	}
@@ -328,9 +353,6 @@ func (e *swEncoder) setUp(st *swThread) error {
 	if hr := processMessage(st.mft, msgNotifyStartOfStream, 0); hr.Failed() {
 		return fmt.Errorf("MFT_MESSAGE_NOTIFY_START_OF_STREAM: %w", hr)
 	}
-	e.mu.Lock()
-	e.info = EncoderInfo{Name: entry.name, Hardware: false, Width: e.format.w, Height: e.format.h}
-	e.mu.Unlock()
 	return nil
 }
 
@@ -357,6 +379,10 @@ func (e *swEncoder) encode(st *swThread, in swInput) error {
 	}
 	com.Release(s)
 	if hr.Failed() {
+		if n := len(st.queue); n > 0 && st.queue[n-1].time == in.t {
+			st.queue = st.queue[:n-1]
+			e.queued.Add(-1)
+		}
 		return fmt.Errorf("IMFTransform::ProcessInput: %w", hr)
 	}
 	return e.pull(st)
@@ -393,6 +419,7 @@ func (e *swEncoder) pull(st *swThread) error {
 				mono = st.queue[0].captureMono
 			}
 			st.queue = st.queue[1:]
+			e.queued.Add(-1)
 		}
 		au := accessUnit(data, st.mft, e.format.w, e.format.h, mono, doneMono)
 		select {
@@ -410,7 +437,8 @@ func (e *swEncoder) finish(st *swThread) {
 	processMessage(st.mft, msgNotifyEndStreaming, 0)
 }
 
-func (st *swThread) release() {
+// tearDown releases the MFT activate activated.
+func (st *swThread) tearDown() {
 	com.Release(st.outSample)
 	com.Release(st.outBuf)
 	st.api.release()
@@ -418,6 +446,11 @@ func (st *swThread) release() {
 	if st.act != 0 {
 		com.Call(st.act, activateShutdownObject)
 	}
+	st.outSample, st.outBuf, st.api, st.mft, st.act = 0, 0, 0, 0, 0
+}
+
+func (st *swThread) release() {
+	st.tearDown()
 	releaseEntries(st.entries)
 	*st = swThread{}
 }

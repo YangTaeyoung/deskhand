@@ -88,12 +88,12 @@ type VideoPaused struct {
 	Reason string `json:"reason"`
 }
 
-// Reasons of a VideoPaused.
+// Reasons of a VideoPaused besides the fixed reasons of an unavailable
+// capture (docs/protocol.md §3.1): the daemon paused the stream, or no
+// H.264 encoder could be made.
 const (
-	PausedNoViewer           = "no_viewer"
-	PausedDisplayUnavailable = "display_unavailable"
-	PausedSecureDesktop      = "secure_desktop"
-	PausedSessionLocked      = "session_locked"
+	PausedNoViewer  = "no_viewer"
+	PausedNoEncoder = "no_encoder"
 )
 
 // VideoControl is the body of a KindClientControl frame of the video

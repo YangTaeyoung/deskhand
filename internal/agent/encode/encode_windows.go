@@ -52,38 +52,41 @@ func InitThread() (leave func(), err error) {
 	return leave, nil
 }
 
-// probeRetry is how long Probe keeps a failure.
+// probeRetry is how long Probe keeps an answer that no encoder made.
 const probeRetry = time.Minute
 
 var probeCache struct {
-	mu  sync.Mutex
-	at  time.Time
-	ok  bool
-	err error
+	mu     sync.Mutex
+	at     time.Time
+	proven bool
+	err    error
 }
 
 // Probe reports whether an encoder can be made: nil once one was made and
-// closed again on a device of the first display, or, in a session without
-// displays, once an H.264 encoder MFT is registered; else an error
-// wrapping ErrNoEncoder. It keeps a success for the life of the process
-// and a failure for probeRetry.
+// closed again on a device of the first display, which it keeps for the
+// life of the process. Without an encoder made it answers for probeRetry
+// and then probes again: an error wrapping ErrNoEncoder when no H.264
+// encoder MFT is registered or none could be made, and nil when MFTs are
+// registered but no display device was there to make one on.
 func Probe() error {
 	probeCache.mu.Lock()
 	defer probeCache.mu.Unlock()
-	if probeCache.ok || (!probeCache.at.IsZero() && time.Since(probeCache.at) < probeRetry) {
+	if probeCache.proven || (!probeCache.at.IsZero() && time.Since(probeCache.at) < probeRetry) {
 		return probeCache.err
 	}
-	err := probe()
-	probeCache.at, probeCache.ok, probeCache.err = time.Now(), err == nil, err
+	proven, err := probe()
+	probeCache.at, probeCache.proven, probeCache.err = time.Now(), proven, err
 	return err
 }
 
-func probe() error {
+// probe makes and closes an encoder on a device of the first display; it
+// reports whether one was made.
+func probe() (made bool, err error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	leave, err := InitThread()
 	if err != nil {
-		return fmt.Errorf("%w (%v)", ErrNoEncoder, err)
+		return false, fmt.Errorf("%w (%v)", ErrNoEncoder, err)
 	}
 	defer leave()
 	registered := 0
@@ -95,11 +98,11 @@ func probe() error {
 		}
 	}
 	if registered == 0 {
-		return ErrNoEncoder
+		return false, ErrNoEncoder
 	}
 	outs, err := d3d.Outputs()
 	if err != nil {
-		return nil
+		return false, nil
 	}
 	for _, o := range outs {
 		if !o.Attached {
@@ -107,15 +110,15 @@ func probe() error {
 		}
 		dev, err := d3d.NewDeviceForOutput(o.Name)
 		if err != nil {
-			return nil
+			return false, nil
 		}
 		defer dev.Close()
 		enc, err := New(dev, 640, 360, 640, 360, 30, 2_000_000)
 		if err != nil {
-			return err
+			return false, err
 		}
 		enc.Close()
-		return nil
+		return true, nil
 	}
-	return nil
+	return false, nil
 }

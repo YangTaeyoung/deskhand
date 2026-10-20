@@ -13,7 +13,6 @@ import (
 	"log"
 	"math"
 	"runtime"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -61,9 +60,14 @@ const (
 	// staleSubmission is how long a submission waits for its access unit
 	// in the stats before it is forgotten.
 	staleSubmission = 10 * time.Second
-	// flushWait bounds the wait for the access units of the frames given to
-	// the encoder before a paused frame.
-	flushWait = 200 * time.Millisecond
+	// pollWindow is how long after the last frame given to the encoder the
+	// pipeline still looks at a Desktop Duplication source without waiting.
+	pollWindow = 100 * time.Millisecond
+	// maxInFlight is the number of frames given to the encoder whose access
+	// units are not written yet at which the pipeline skips frames.
+	maxInFlight = 2
+	// queueRoom is the room of the writer's queue in frames.
+	queueRoom = 8
 )
 
 // Clock is the time of a pipeline: monoclock readings and waits.
@@ -234,24 +238,27 @@ func DefaultBitrate(w int) int {
 	return 20_000_000
 }
 
-// pausedReason is the reason of the paused frame for an outage of the
-// capture.
-func pausedReason(u *capture.Unavailable) string {
-	switch u.Reason {
-	case capture.ReasonSecureDesktop:
-		return wire.PausedSecureDesktop
-	case capture.ReasonSessionLocked:
-		return wire.PausedSessionLocked
+// pausedReason is the reason of the paused frame for a failure of the
+// capture: the fixed reason of its *capture.Unavailable, no_output for a
+// display that does not exist and access_lost otherwise.
+func pausedReason(err error) string {
+	var u *capture.Unavailable
+	switch {
+	case errors.As(err, &u):
+		return u.Reason
+	case errors.Is(err, capture.ErrNoDisplay):
+		return capture.ReasonNoOutput
 	}
-	return wire.PausedDisplayUnavailable
+	return capture.ReasonAccessLost
 }
 
 // Start runs the pipeline for the stream with header params until ctx
 // ends, which returns nil, or until out fails, which returns its error.
-// It writes the frames of docs/protocol.md §4 with out, from one
-// goroutine at a time. A header it does not accept, a display that does
-// not exist, or a PC that can neither capture nor encode is a *Refusal,
-// returned before anything is written.
+// It writes the frames of docs/protocol.md §4 with out, which one
+// goroutine calls in order and which has to return once ctx ends. A
+// header it does not accept, a display that does not exist, or a PC that
+// can neither capture nor encode is a *Refusal, returned before anything
+// is written.
 func (p *Pipeline) Start(ctx context.Context, params wire.StreamHeader, out func(kind byte, payload []byte) error) error {
 	set, err := settingsOf(params)
 	if err != nil {
@@ -259,7 +266,9 @@ func (p *Pipeline) Start(ctx context.Context, params wire.StreamHeader, out func
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	r := &run{p: p, ctx: ctx, cancel: cancel, clock: p.opt.Clock, log: p.opt.Logger, out: out, set: set, stats: newWindow()}
+	r := &run{p: p, ctx: ctx, cancel: cancel, clock: p.opt.Clock, log: p.opt.Logger, out: out, set: set, stats: newWindow(),
+		queue: make(chan queued, queueRoom), writerDone: make(chan struct{})}
+	go r.writeLoop()
 	done := make(chan error, 1)
 	go func() {
 		runtime.LockOSThread()
@@ -272,7 +281,19 @@ func (p *Pipeline) Start(ctx context.Context, params wire.StreamHeader, out func
 		defer leave()
 		done <- r.loop()
 	}()
-	return <-done
+	err = <-done
+	close(r.queue)
+	<-r.writerDone
+	return err
+}
+
+// queued is one frame waiting for the writer: an access unit of the
+// encoder session epoch, or a frame of kind with payload.
+type queued struct {
+	kind    byte
+	payload []byte
+	au      *wire.AU
+	epoch   uint64
 }
 
 // run is the state of a running pipeline, owned by its capture thread
@@ -285,11 +306,21 @@ type run struct {
 	log    *log.Logger
 	set    settings
 
-	// outMu orders the writes of out; wrote and writeErr are under it.
-	outMu    sync.Mutex
-	out      func(kind byte, payload []byte) error
-	wrote    bool
-	writeErr error
+	// out is called by the writer goroutine alone with the frames of queue
+	// in order. wrote is set once a frame was queued; failed holds the
+	// error of out.
+	out        func(kind byte, payload []byte) error
+	queue      chan queued
+	writerDone chan struct{}
+	wrote      atomic.Bool
+	failed     atomic.Pointer[error]
+	// epoch numbers the encoder sessions; the writer drops the access units
+	// of an earlier one. unwritten counts the access units taken from the
+	// encoder and not written yet. seq, of the writer, numbers the access
+	// units written.
+	epoch     atomic.Uint64
+	unwritten atomic.Int64
+	seq       uint64
 
 	src       capture.Source
 	openAtUS  uint64
@@ -301,10 +332,6 @@ type run struct {
 	encAtUS                    uint64
 	encRetry                   time.Duration
 	fwdStop, fwdDone           chan struct{}
-	seq                        atomic.Uint64
-	// inflight counts the frames given to the encoder whose access units
-	// were not written yet.
-	inflight atomic.Int64
 
 	// last is the newest image of the source. pending reports that it is
 	// to be encoded, and repeat that it was encoded already and goes again
@@ -380,41 +407,81 @@ func (r *run) loop() error {
 
 func us(n uint64) time.Duration { return time.Duration(n) * time.Microsecond }
 
-// write writes one frame with out; after a failure of out it returns that
-// failure and ends the pipeline.
-func (r *run) write(kind byte, payload []byte) error {
-	r.outMu.Lock()
-	defer r.outMu.Unlock()
-	if r.writeErr != nil {
-		return r.writeErr
+// writeLoop writes the queued frames with out until the queue closes. It
+// drops an access unit of an earlier epoch, and every frame after a
+// failure of out, which ends the pipeline.
+func (r *run) writeLoop() {
+	defer close(r.writerDone)
+	for q := range r.queue {
+		if q.au == nil {
+			if r.failure() == nil {
+				r.send(q.kind, q.payload)
+			}
+			continue
+		}
+		if q.epoch == r.epoch.Load() && r.failure() == nil {
+			r.seq++
+			q.au.Seq = r.seq
+			if r.send(wire.KindAU, q.au.Marshal()) {
+				r.stats.sent(*q.au)
+			}
+		}
+		r.unwritten.Add(-1)
 	}
-	r.wrote = true
-	if err := r.out(kind, payload); err != nil {
-		r.writeErr = err
-		r.cancel()
-		return err
-	}
-	return nil
 }
 
-func (r *run) writeJSON(kind byte, v any) error {
+// send writes one frame with out and reports whether it was written.
+func (r *run) send(kind byte, payload []byte) bool {
+	if err := r.out(kind, payload); err != nil {
+		r.failed.CompareAndSwap(nil, &err)
+		r.cancel()
+		return false
+	}
+	return true
+}
+
+// post queues a frame of the capture thread with v as its JSON body. A
+// stats frame that finds the queue full is dropped; another frame waits
+// for room until ctx ends.
+func (r *run) post(kind byte, v any) error {
+	if err := r.failure(); err != nil {
+		return err
+	}
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
-	return r.write(kind, b)
+	r.wrote.Store(true)
+	q := queued{kind: kind, payload: b}
+	if kind == wire.KindVideoStats {
+		select {
+		case r.queue <- q:
+		default:
+		}
+		return nil
+	}
+	select {
+	case r.queue <- q:
+	case <-r.ctx.Done():
+	}
+	return nil
 }
 
 func (r *run) failure() error {
-	r.outMu.Lock()
-	defer r.outMu.Unlock()
-	return r.writeErr
+	if p := r.failed.Load(); p != nil {
+		return *p
+	}
+	return nil
 }
 
-func (r *run) hasWritten() bool {
-	r.outMu.Lock()
-	defer r.outMu.Unlock()
-	return r.wrote
+// inFlight counts the frames given to the encoder whose access units are
+// not written yet.
+func (r *run) inFlight() int {
+	n := int(r.unwritten.Load())
+	if r.enc != nil {
+		n += r.enc.Pending()
+	}
+	return n
 }
 
 // controls applies the queued controls.
@@ -477,7 +544,6 @@ func (r *run) apply(c wire.VideoControl) error {
 		}
 		r.userPaused = true
 		r.closeSource()
-		r.haveLast, r.pending = false, false
 		return r.pause(wire.PausedNoViewer)
 	case wire.ControlResume:
 		if r.userPaused {
@@ -489,25 +555,17 @@ func (r *run) apply(c wire.VideoControl) error {
 	return nil
 }
 
-// pause writes a paused frame with reason unless the last one had it,
-// after the access units of the frames the encoder has.
+// pause closes the encoder, drops its access units not written yet and
+// writes a paused frame with reason, unless the last paused frame had it.
 func (r *run) pause(reason string) error {
 	if r.paused == reason {
 		return nil
 	}
-	r.flush()
+	r.closeEncoder()
+	r.epoch.Add(1)
 	r.paused = reason
 	r.log.Printf("video: display %d paused: %s", r.set.display, reason)
-	return r.writeJSON(wire.KindVideoPaused, wire.VideoPaused{Reason: reason})
-}
-
-// flush waits up to flushWait until the access units of the frames given
-// to the encoder are written.
-func (r *run) flush() {
-	deadline := time.Now().Add(flushWait)
-	for r.enc != nil && r.inflight.Load() > 0 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
+	return r.post(wire.KindVideoPaused, wire.VideoPaused{Reason: reason})
 }
 
 // backoff returns the next pause after a failure, doubling *d.
@@ -525,7 +583,7 @@ func (r *run) open(now uint64) error {
 		r.src, r.openRetry = src, 0
 		return nil
 	}
-	if !r.hasWritten() {
+	if !r.wrote.Load() {
 		switch {
 		case errors.Is(err, capture.ErrUnsupported):
 			return &Refusal{Code: wire.CodeCapabilityUnsupported, Message: err.Error()}
@@ -533,14 +591,9 @@ func (r *run) open(now uint64) error {
 			return &Refusal{Code: wire.CodeNotFound, Message: err.Error()}
 		}
 	}
-	reason := wire.PausedDisplayUnavailable
-	var u *capture.Unavailable
-	if errors.As(err, &u) {
-		reason = pausedReason(u)
-	}
 	r.log.Printf("video: display %d cannot be opened: %v", r.set.display, err)
 	r.openAtUS = now + uint64(backoff(&r.openRetry)/time.Microsecond)
-	return r.pause(reason)
+	return r.pause(pausedReason(err))
 }
 
 // closeSource closes the encoder and then the source.
@@ -553,7 +606,8 @@ func (r *run) closeSource() {
 	r.haveLast, r.pending, r.dd = false, false, false
 }
 
-// closeEncoder closes the encoder and waits for its forwarder.
+// closeEncoder closes the encoder and waits for its forwarder; the access
+// units it queued stay queued.
 func (r *run) closeEncoder() {
 	if r.enc == nil {
 		return
@@ -562,22 +616,28 @@ func (r *run) closeEncoder() {
 	close(r.fwdStop)
 	<-r.fwdDone
 	r.enc = nil
-	r.inflight.Store(0)
 }
 
-// next waits for a frame of the source up to timeout. While the encoder
-// has frames of a Desktop Duplication source, it looks for a frame without
-// waiting and pauses pollStep between looks.
+// next waits for a frame of the source up to timeout. While polling it
+// looks for a frame without waiting and pauses pollStep after every look
+// that gives none.
 func (r *run) next(now uint64) (capture.Frame, error) {
 	timeout := r.timeout(now)
-	if !r.dd || r.inflight.Load() == 0 || timeout == 0 {
+	if timeout == 0 || !r.polling(now) {
 		return r.src.Next(r.ctx, timeout)
 	}
 	f, err := r.src.Next(r.ctx, 0)
-	if errors.Is(err, capture.ErrNoNewFrame) {
+	if err != nil {
 		_ = r.clock.Sleep(r.ctx, min(timeout, pollStep))
 	}
 	return f, err
+}
+
+// polling reports whether the pipeline looks at its source without
+// waiting: a Desktop Duplication source, not paused, with frames in the
+// encoder of which the last was given within pollWindow.
+func (r *run) polling(now uint64) bool {
+	return r.dd && r.paused == "" && r.enc != nil && now < r.lastEncodeUS+uint64(pollWindow/time.Microsecond) && r.enc.Pending() > 0
 }
 
 // took handles the result of the source's Next.
@@ -597,13 +657,13 @@ func (r *run) took(f capture.Frame, err error) error {
 		r.haveLast, r.pending = false, false
 	case errors.As(err, &u):
 		r.haveLast, r.pending = false, false
-		return r.pause(pausedReason(u))
+		return r.pause(u.Reason)
 	case r.ctx.Err() != nil:
 	default:
 		r.log.Printf("video: capture of display %d failed: %v; opening it again", r.set.display, err)
 		r.closeSource()
 		r.openAtUS = r.clock.NowUS() + uint64(backoff(&r.openRetry)/time.Microsecond)
-		return r.pause(wire.PausedDisplayUnavailable)
+		return r.pause(pausedReason(err))
 	}
 	return nil
 }
@@ -663,7 +723,8 @@ func (r *run) timeout(now uint64) time.Duration {
 }
 
 // encode encodes the pending image, making the encoder first when there
-// is none for the image's size and the settings.
+// is none for the image's size and the settings. With maxInFlight frames
+// in flight the pacing slot passes without a frame, counted as dropped.
 func (r *run) encode(now uint64) error {
 	f := r.last
 	if r.repeat {
@@ -675,17 +736,18 @@ func (r *run) encode(now uint64) error {
 			return err
 		}
 	}
+	if r.inFlight() >= maxInFlight {
+		r.stats.drop()
+		r.tokens--
+		return nil
+	}
 	if r.needInfo {
 		if err := r.writeInfo(f); err != nil {
 			return err
 		}
 	}
 	r.stats.submit(f.MonoUS, now)
-	r.inflight.Add(1)
 	err := r.enc.Encode(f, r.forceKey)
-	if err != nil {
-		r.inflight.Add(-1)
-	}
 	switch {
 	case err == nil:
 		r.pending, r.repeat, r.forceKey = false, false, false
@@ -694,10 +756,13 @@ func (r *run) encode(now uint64) error {
 	case errors.Is(err, encode.ErrBusy):
 		r.stats.forget(f.MonoUS)
 		r.stats.drop()
-		r.encAtUS = now + r.interval()/2
-		if r.busySinceUS == 0 {
+		r.tokens--
+		switch {
+		case r.unwritten.Load() > 0:
+			r.busySinceUS = 0
+		case r.busySinceUS == 0:
 			r.busySinceUS = now
-		} else if now-r.busySinceUS > uint64(busyLimit/time.Microsecond) {
+		case now-r.busySinceUS > uint64(busyLimit/time.Microsecond):
 			r.log.Printf("video: %s took no frame for %v; making it again", r.enc.Info().Name, busyLimit)
 			r.closeEncoder()
 			r.busySinceUS = 0
@@ -713,7 +778,7 @@ func (r *run) encode(now uint64) error {
 
 // makeEncoder replaces the encoder with one for f at outW×outH. A PC
 // without an encoder is a refusal before anything was written; another
-// failure is a paused frame and a later retry.
+// failure is a paused frame, no_encoder, and a later retry.
 func (r *run) makeEncoder(f capture.Frame, outW, outH int, now uint64) error {
 	r.closeEncoder()
 	bps := r.set.bitrate
@@ -722,12 +787,12 @@ func (r *run) makeEncoder(f capture.Frame, outW, outH int, now uint64) error {
 	}
 	enc, err := r.p.opt.NewEncoder(r.src.Device(), f.Width, f.Height, outW, outH, r.set.maxFPS, bps)
 	if err != nil {
-		if !r.hasWritten() && (errors.Is(err, encode.ErrNoEncoder) || errors.Is(err, encode.ErrUnsupported)) {
+		if !r.wrote.Load() && (errors.Is(err, encode.ErrNoEncoder) || errors.Is(err, encode.ErrUnsupported)) {
 			return &Refusal{Code: wire.CodeCapabilityUnsupported, Message: err.Error()}
 		}
 		r.log.Printf("video: no encoder for display %d at %dx%d: %v", r.set.display, outW, outH, err)
 		r.encAtUS = now + uint64(backoff(&r.encRetry)/time.Microsecond)
-		return r.pause(wire.PausedDisplayUnavailable)
+		return r.pause(wire.PausedNoEncoder)
 	}
 	info := enc.Info()
 	r.log.Printf("video: display %d %dx%d to %dx%d at %d fps, %d bps on %s (hardware %v)", r.set.display, f.Width, f.Height,
@@ -735,13 +800,13 @@ func (r *run) makeEncoder(f capture.Frame, outW, outH int, now uint64) error {
 	r.enc, r.encSrcW, r.encSrcH, r.encW, r.encH, r.encFPS, r.encBPS = enc, f.Width, f.Height, outW, outH, r.set.maxFPS, bps
 	r.needInfo, r.forceKey = true, true
 	r.fwdStop, r.fwdDone = make(chan struct{}), make(chan struct{})
-	go r.forward(enc, r.fwdStop, r.fwdDone)
+	go r.forward(enc, r.epoch.Load(), r.fwdStop, r.fwdDone)
 	return nil
 }
 
-// forward writes the access units of enc until its output closes or stop
-// closes.
-func (r *run) forward(enc encode.Encoder, stop, done chan struct{}) {
+// forward queues the access units of enc, of encoder session epoch, until
+// its output closes or stop closes.
+func (r *run) forward(enc encode.Encoder, epoch uint64, stop, done chan struct{}) {
 	defer close(done)
 	for {
 		select {
@@ -751,17 +816,21 @@ func (r *run) forward(enc encode.Encoder, stop, done chan struct{}) {
 			if !ok {
 				return
 			}
-			au.Seq = r.seq.Add(1)
-			r.stats.sent(au)
-			if r.write(wire.KindAU, au.Marshal()) != nil {
+			r.unwritten.Add(1)
+			select {
+			case r.queue <- queued{au: &au, epoch: epoch}:
+			case <-stop:
+				r.unwritten.Add(-1)
+				return
+			case <-r.ctx.Done():
+				r.unwritten.Add(-1)
 				return
 			}
-			r.inflight.Add(-1)
 		}
 	}
 }
 
-// writeInfo writes the info frame of the encoder for frames like f.
+// writeInfo queues the info frame of the encoder for frames like f.
 func (r *run) writeInfo(f capture.Frame) error {
 	method := capture.MethodGDI
 	if f.Texture != 0 {
@@ -769,11 +838,11 @@ func (r *run) writeInfo(f capture.Frame) error {
 	}
 	info := r.enc.Info()
 	r.needInfo, r.paused = false, ""
-	return r.writeJSON(wire.KindVideoInfo, wire.VideoInfo{Codec: "h264", Width: r.encW, Height: r.encH, SrcWidth: f.Width, SrcHeight: f.Height,
+	return r.post(wire.KindVideoInfo, wire.VideoInfo{Codec: "h264", Width: r.encW, Height: r.encH, SrcWidth: f.Width, SrcHeight: f.Height,
 		FPS: r.encFPS, Bitrate: r.encBPS, Encoder: info.Name, Hardware: info.Hardware, Capture: method, Display: r.set.display})
 }
 
-// maybeStats writes the stats frame of the second that ended, while
+// maybeStats queues the stats frame of the second that ended, while
 // access units flow.
 func (r *run) maybeStats(now uint64) error {
 	if now < r.statsAtUS+uint64(statsEvery/time.Microsecond) {
@@ -784,5 +853,5 @@ func (r *run) maybeStats(now uint64) error {
 	if r.enc == nil || r.paused != "" || r.userPaused {
 		return nil
 	}
-	return r.writeJSON(wire.KindVideoStats, s)
+	return r.post(wire.KindVideoStats, s)
 }

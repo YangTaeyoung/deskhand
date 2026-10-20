@@ -33,11 +33,17 @@ type Encoder interface {
 	// monoclock reading when the encoder returned it. Close closes it, and
 	// so does a failure of the encoder.
 	Output() <-chan wire.AU
+	// Pending counts the frames given to Encode whose access units were not
+	// taken from Output yet.
+	Pending() int
 	// SetBitrate changes the mean bitrate from the next frame on.
 	SetBitrate(bps int) error
 	Info() EncoderInfo
 	Close()
 }
+
+// outputRoom is the room of the Output channel of an encoder.
+const outputRoom = 2
 
 // EncoderInfo names the encoder MFT and the size of its access units.
 type EncoderInfo struct {

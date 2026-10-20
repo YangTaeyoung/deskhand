@@ -4,7 +4,11 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net"
+	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -23,10 +27,18 @@ type videoPeer struct {
 
 func startVideo(t *testing.T, h wire.StreamHeader) *videoPeer {
 	t.Helper()
+	return startVideoWith(t, h, func(*videoPeer) {})
+}
+
+// startVideoWith is startVideo with set applied to the peer before the
+// stream starts.
+func startVideoWith(t *testing.T, h wire.StreamHeader, set func(*videoPeer)) *videoPeer {
+	t.Helper()
 	clk := realClock{}
 	daemon, agent := net.Pipe()
 	vp := &videoPeer{conn: daemon, r: bufio.NewReader(daemon), op: &opener{clk: clk, p: periodic(time.Second / 30), w: 1920, h: 1080},
 		encs: &encoders{clk: clk}, done: make(chan struct{})}
+	set(vp)
 	go func() {
 		defer close(vp.done)
 		ServeVideo(context.Background(), agent, h, Options{Open: vp.op.open, NewEncoder: vp.encs.new})
@@ -167,4 +179,88 @@ func TestVideoStreamEndsWhenThePeerCloses(t *testing.T) {
 			t.Fatal("an encoder is still open")
 		}
 	}
+}
+
+// failingStream is a Stream whose writes fail after ok writes and whose
+// reads wait until Close.
+type failingStream struct {
+	mu     sync.Mutex
+	ok     int
+	r      *io.PipeReader
+	w      *io.PipeWriter
+	closed bool
+}
+
+func newFailingStream(ok int) *failingStream {
+	r, w := io.Pipe()
+	return &failingStream{ok: ok, r: r, w: w}
+}
+
+func (s *failingStream) Read(p []byte) (int, error) { return s.r.Read(p) }
+
+func (s *failingStream) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ok == 0 {
+		return 0, errors.New("the peer reset the stream")
+	}
+	s.ok--
+	return len(p), nil
+}
+
+func (s *failingStream) SetWriteDeadline(time.Time) error { return nil }
+
+func (s *failingStream) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.closed {
+		s.closed = true
+		s.w.Close()
+	}
+	return nil
+}
+
+// settles waits up to 2 s for the number of goroutines to fall to n.
+func settles(t *testing.T, n int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for runtime.NumGoroutine() > n {
+		if time.Now().After(deadline) {
+			buf := make([]byte, 1<<16)
+			t.Fatalf("%d goroutines, %d before the stream:\n%s", runtime.NumGoroutine(), n, buf[:runtime.Stack(buf, true)])
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestServeVideoLeavesNoGoroutinesAfterAWriteFailure(t *testing.T) {
+	before := runtime.NumGoroutine()
+	clk := realClock{}
+	op := &opener{clk: clk, p: periodic(time.Second / 30), w: 1920, h: 1080}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ServeVideo(context.Background(), newFailingStream(3), wire.StreamHeader{S: "video"}, Options{Open: op.open, NewEncoder: (&encoders{clk: clk}).new})
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("ServeVideo did not return after a write failed")
+	}
+	settles(t, before)
+}
+
+func TestServeVideoLeavesNoGoroutinesAfterAPauseWithAHeldAccessUnit(t *testing.T) {
+	before := runtime.NumGoroutine()
+	vp := startVideoWith(t, wire.StreamHeader{S: "video"}, func(vp *videoPeer) { vp.encs.hold = make(chan struct{}) })
+	vp.until(t, wire.KindVideoInfo, nil)
+	vp.control(t, wire.VideoControl{Op: wire.ControlPause})
+	vp.until(t, wire.KindVideoPaused, nil)
+	vp.conn.Close()
+	select {
+	case <-vp.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("ServeVideo did not return after the peer closed the stream")
+	}
+	settles(t, before)
 }

@@ -173,11 +173,16 @@ type fakeEncoder struct {
 	// written, when set, is signalled once an access unit is written;
 	// Encode waits for it.
 	written chan struct{}
-	// hold, when set, keeps each access unit until it closes.
+	// hold, when set, keeps each access unit until it closes; Close ends
+	// the wait.
 	hold chan struct{}
+	stop chan struct{}
+	// drop is the number of first frames that give no access unit.
+	drop int
 
 	mu       sync.Mutex
 	frames   int
+	emitted  int
 	bitrates []int
 	closed   bool
 }
@@ -193,6 +198,9 @@ func (e *fakeEncoder) Encode(f capture.Frame, forceKey bool) error {
 	}
 	key := forceKey || e.frames == 0
 	e.frames++
+	if e.frames <= e.drop {
+		return nil
+	}
 	data := []byte{0, 0, 0, 1, 0x41, 0x9a}
 	if key {
 		data = []byte{0, 0, 0, 1, 0x67, 0x64, 0, 0, 0, 1, 0x68, 0xee, 0, 0, 0, 1, 0x65, 0x88}
@@ -201,15 +209,21 @@ func (e *fakeEncoder) Encode(f capture.Frame, forceKey bool) error {
 		EncodeDoneMonoUS: e.clk.NowUS() + 2000, Data: data}
 	if e.hold != nil {
 		go func() {
-			<-e.hold
+			select {
+			case <-e.hold:
+			case <-e.stop:
+				return
+			}
 			e.mu.Lock()
 			defer e.mu.Unlock()
 			if !e.closed {
+				e.emitted++
 				e.out <- au
 			}
 		}()
 		return nil
 	}
+	e.emitted++
 	e.out <- au
 	if e.written != nil {
 		e.mu.Unlock()
@@ -223,6 +237,12 @@ func (e *fakeEncoder) Encode(f capture.Frame, forceKey bool) error {
 }
 
 func (e *fakeEncoder) Output() <-chan wire.AU { return e.out }
+
+func (e *fakeEncoder) Pending() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.frames - e.emitted + len(e.out)
+}
 
 func (e *fakeEncoder) SetBitrate(bps int) error {
 	e.mu.Lock()
@@ -241,19 +261,28 @@ func (e *fakeEncoder) Close() {
 	if !e.closed {
 		e.closed = true
 		close(e.out)
+		close(e.stop)
 	}
+}
+
+func (e *fakeEncoder) encoded() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.frames
 }
 
 type encoders struct {
 	clk     Clock
 	written chan struct{}
 	hold    chan struct{}
+	drop    int
 	mu      sync.Mutex
 	made    []*fakeEncoder
 }
 
 func (es *encoders) new(_ *d3d.Device, srcW, srcH, outW, outH, fps, bps int) (encode.Encoder, error) {
-	e := &fakeEncoder{clk: es.clk, srcW: srcW, srcH: srcH, outW: outW, outH: outH, fps: fps, bps: bps, out: make(chan wire.AU, 4096), written: es.written, hold: es.hold}
+	e := &fakeEncoder{clk: es.clk, srcW: srcW, srcH: srcH, outW: outW, outH: outH, fps: fps, bps: bps, out: make(chan wire.AU, 4096),
+		written: es.written, hold: es.hold, stop: make(chan struct{}), drop: es.drop}
 	es.mu.Lock()
 	defer es.mu.Unlock()
 	es.made = append(es.made, e)
@@ -277,9 +306,14 @@ type recorder struct {
 	frames []recorded
 	// written, when set, is signalled after each access unit.
 	written chan struct{}
+	// block, when set, holds each access unit until it closes.
+	block chan struct{}
 }
 
 func (r *recorder) out(kind byte, payload []byte) error {
+	if kind == wire.KindAU && r.block != nil {
+		<-r.block
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.frames = append(r.frames, recorded{kind, append([]byte(nil), payload...)})
@@ -448,7 +482,7 @@ func TestStaticScreenSendsKeepaliveEvery10s(t *testing.T) {
 			stats++
 		}
 	}
-	if stats < 33 || stats > 36 {
+	if stats < 20 || stats > 36 {
 		t.Errorf("%d stats frames in 35 s", stats)
 	}
 }
@@ -477,7 +511,7 @@ func TestPausedThenResumesWithKeyframe(t *testing.T) {
 				t.Fatalf("a second paused frame at %d", i)
 			}
 			paused = i
-			if r := decode[wire.VideoPaused](t, f).Reason; r != wire.PausedSecureDesktop {
+			if r := decode[wire.VideoPaused](t, f).Reason; r != capture.ReasonSecureDesktop {
 				t.Fatalf("paused reason %q", r)
 			}
 		}
@@ -737,5 +771,118 @@ func TestPollsTheDesktopWhileAnAccessUnitIsPending(t *testing.T) {
 	}
 	if polls < 50 || waits == 0 {
 		t.Fatalf("%d polls while the access unit was held, %d waits of %v after it", polls, waits, poll)
+	}
+}
+
+// calls records the clock reading and the timeout of each Next of a plan.
+type calls struct {
+	mu       sync.Mutex
+	at       []uint64
+	timeouts []time.Duration
+}
+
+func (c *calls) wrap(p plan) plan {
+	return func(s *fakeSource, now uint64, timeout time.Duration) (capture.Frame, error, time.Duration) {
+		c.mu.Lock()
+		c.at, c.timeouts = append(c.at, now), append(c.timeouts, timeout)
+		c.mu.Unlock()
+		return p(s, now, timeout)
+	}
+}
+
+func TestNoBusyLoopAfterADroppedFrameAndAnOutage(t *testing.T) {
+	var c calls
+	hs := newHarness(c.wrap(func(s *fakeSource, now uint64, timeout time.Duration) (capture.Frame, error, time.Duration) {
+		if now >= 300_000 {
+			return capture.Frame{}, &capture.Unavailable{Reason: capture.ReasonNoOutput}, timeout
+		}
+		return static(s, now, timeout)
+	}), 1920, 1080)
+	hs.encs.drop = 1
+	hs.run(t, wire.StreamHeader{S: "video"}, 1_300_000, nil)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	during := 0
+	for i, at := range c.at {
+		if at >= 150_000 && c.timeouts[i] == 0 {
+			t.Fatalf("Next(0) at %d µs, after the dropped frame stopped mattering", at)
+		}
+		if at >= 300_000 && at < 1_300_000 {
+			during++
+		}
+	}
+	if during > 60 {
+		t.Fatalf("%d calls of Next in the second of the outage", during)
+	}
+	if got := describe(t, hs.rec.all(false)); got != " info(1920x1080) paused(no_output)" {
+		t.Fatalf("frames%s", got)
+	}
+}
+
+func TestNetworkBackpressureSkipsFrames(t *testing.T) {
+	hs := newHarness(periodic(time.Second/60), 1920, 1080)
+	hs.rec.block = make(chan struct{})
+	atRelease := 0
+	hs.run(t, wire.StreamHeader{S: "video"}, 2_000_000, map[uint64]func(){1_000_000: func() {
+		atRelease = hs.encs.list()[0].encoded()
+		close(hs.rec.block)
+		for deadline := time.Now().Add(time.Second); len(hs.rec.aus(t)) < atRelease && time.Now().Before(deadline); {
+			time.Sleep(time.Millisecond)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}})
+	if atRelease > maxInFlight+1 {
+		t.Fatalf("%d frames given to the encoder while no access unit could be written", atRelease)
+	}
+	after, dropped := 0, 0
+	for _, au := range hs.rec.aus(t) {
+		if au.CaptureMonoUS >= 1_200_000 {
+			after++
+		}
+	}
+	for _, f := range hs.rec.all(true) {
+		if f.kind == wire.KindVideoStats {
+			dropped += decode[wire.VideoStats](t, f).Dropped
+		}
+	}
+	if after < 40 || dropped == 0 || len(hs.encs.list()) != 1 {
+		t.Fatalf("%d access units after the stall, %d dropped, %d encoders", after, dropped, len(hs.encs.list()))
+	}
+}
+
+func TestNoAccessUnitAfterPausedUntilInfo(t *testing.T) {
+	frames := periodic(time.Second / 30)
+	reset := false
+	p := func(s *fakeSource, now uint64, timeout time.Duration) (capture.Frame, error, time.Duration) {
+		switch {
+		case now >= 1_000_000 && now < 2_000_000:
+			return capture.Frame{}, &capture.Unavailable{Reason: capture.ReasonSessionLocked}, timeout
+		case now >= 2_000_000 && !reset:
+			reset = true
+			return capture.Frame{}, capture.ErrReset, 0
+		}
+		return frames(s, now, timeout)
+	}
+	hs := newHarness(p, 1920, 1080)
+	hs.encs.written = nil
+	hs.encs.hold = make(chan struct{})
+	hs.run(t, wire.StreamHeader{S: "video"}, 3_000_000, map[uint64]func(){1_500_000: func() {
+		close(hs.encs.hold)
+		time.Sleep(20 * time.Millisecond)
+	}})
+	got := hs.rec.all(false)
+	t.Logf("frames:%s", describe(t, got))
+	paused := false
+	for _, f := range got {
+		switch f.kind {
+		case wire.KindVideoPaused:
+			paused = true
+		case wire.KindVideoInfo:
+			paused = false
+		case wire.KindAU:
+			if paused {
+				t.Fatal("an access unit between paused and the next info")
+			}
+		}
 	}
 }

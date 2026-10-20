@@ -60,6 +60,9 @@ type hwEncoder struct {
 	// outSize is the size of an output sample the encoder does not.
 	provides bool
 	outSize  int
+	// outBuf and outSample are the output sample of an encoder that does
+	// not allocate its own, made and released by the event loop.
+	outBuf, outSample uintptr
 
 	needInput chan struct{}
 	out       chan wire.AU
@@ -90,7 +93,7 @@ func newHW(dev *d3d.Device, srcW, srcH, outW, outH, fps, bps int) (*hwEncoder, e
 		return nil, errors.New("no hardware H.264 encoder MFT is registered")
 	}
 	e := &hwEncoder{dev: dev, entries: entries, free: make(chan int, hwSlots), needInput: make(chan struct{}, 64),
-		out: make(chan wire.AU, 16), closing: make(chan struct{}), done: make(chan struct{}),
+		out: make(chan wire.AU, outputRoom), closing: make(chan struct{}), done: make(chan struct{}),
 		format: format{w: outW, h: outH, fps: fps, bps: bps, level: h264Level(outW, outH, fps, bps)}}
 	ok := false
 	defer func() {
@@ -153,7 +156,9 @@ func (e *hwEncoder) setUp(entry mftEntry) error {
 	if hr := processMessage(e.mft, msgSetD3DManager, e.mgr); hr.Failed() {
 		return fmt.Errorf("MFT_MESSAGE_SET_D3D_MANAGER: %w", hr)
 	}
-	e.api = codecAPIOf(e.mft)
+	if e.api = codecAPIOf(e.mft); e.api == 0 {
+		return errors.New("the MFT has no ICodecAPI")
+	}
 	e.api.configure(e.format.bps, hwGOP)
 	if err := setTypes(e.mft, e.format); err != nil {
 		return err
@@ -216,6 +221,12 @@ func (e *hwEncoder) release() {
 func (e *hwEncoder) Info() EncoderInfo { return e.info }
 
 func (e *hwEncoder) Output() <-chan wire.AU { return e.out }
+
+func (e *hwEncoder) Pending() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return len(e.queue) + len(e.out)
+}
 
 // failure is the error that ended the event loop.
 func (e *hwEncoder) failure() error {
@@ -334,6 +345,11 @@ func (e *hwEncoder) loop() {
 		return
 	}
 	defer leave()
+	defer func() {
+		com.Release(e.outSample)
+		com.Release(e.outBuf)
+		e.outSample, e.outBuf = 0, 0
+	}()
 	for {
 		var ev uintptr
 		if hr := com.Call(e.events, eventGeneratorGetEvent, 0, uintptr(unsafe.Pointer(&ev))); hr.Failed() {
@@ -378,24 +394,28 @@ func (e *hwEncoder) fail(err error) {
 func (e *hwEncoder) pull() error {
 	ob := outputDataBuffer{}
 	if !e.provides {
-		buf, err := newMemoryBuffer(e.outSize)
-		if err != nil {
-			return err
+		if e.outSample == 0 {
+			buf, err := newMemoryBuffer(e.outSize)
+			if err != nil {
+				return err
+			}
+			s, err := newSample(buf, 0, 0)
+			if err != nil {
+				com.Release(buf)
+				return err
+			}
+			e.outBuf, e.outSample = buf, s
 		}
-		s, err := newSample(buf, 0, 0)
-		com.Release(buf)
-		if err != nil {
-			return err
-		}
-		ob.sample = s
+		com.Call(e.outBuf, bufferSetCurrentLength, 0)
+		ob.sample = e.outSample
 	}
 	var status uint32
 	hr := com.Call(e.mft, transformProcessOutput, 0, 1, uintptr(unsafe.Pointer(&ob)), uintptr(unsafe.Pointer(&status)))
 	doneMono := monoclock.NowUS()
-	defer func() {
-		com.Release(ob.sample)
-		com.Release(ob.events)
-	}()
+	com.Release(ob.events)
+	if e.provides {
+		defer com.Release(ob.sample)
+	}
 	switch {
 	case hr == com.MF_E_TRANSFORM_STREAM_CHANGE:
 		return renegotiate(e.mft)
