@@ -16,6 +16,7 @@ public final class ScreenPreferences {
         static let swapCommandControl = "keyboardSwapCommandControl"
         static let rightOptionHangul = "keyboardRightOptionHangul"
         static let rightCommandHanja = "keyboardRightCommandHanja"
+        static let forwardsSystemShortcuts = "keyboardForwardsSystemShortcuts"
         static let displays = "screenDisplays"
     }
 
@@ -47,6 +48,11 @@ public final class ScreenPreferences {
         didSet { defaults.set(rightCommandHanja, forKey: Keys.rightCommandHanja) }
     }
 
+    /// ⌘Q, ⌘H and ⌘Tab go to the remote PC while input is captured.
+    public var forwardsSystemShortcuts: Bool {
+        didSet { defaults.set(forwardsSystemShortcuts, forKey: Keys.forwardsSystemShortcuts) }
+    }
+
     /// Display index chosen per host ID.
     private var displays: [String: Int] {
         didSet { defaults.set(displays, forKey: Keys.displays) }
@@ -62,6 +68,7 @@ public final class ScreenPreferences {
         swapCommandControl = defaults.object(forKey: Keys.swapCommandControl) as? Bool ?? true
         rightOptionHangul = defaults.object(forKey: Keys.rightOptionHangul) as? Bool ?? true
         rightCommandHanja = defaults.object(forKey: Keys.rightCommandHanja) as? Bool ?? false
+        forwardsSystemShortcuts = defaults.object(forKey: Keys.forwardsSystemShortcuts) as? Bool ?? false
         displays = defaults.dictionary(forKey: Keys.displays) as? [String: Int] ?? [:]
     }
 

@@ -36,6 +36,16 @@ public enum DS {
         public static let scrim = SwiftUI.Color.black.opacity(0.6)
         /// Background of panels, capsules and toasts drawn over the remote screen.
         public static let overlayPanel = SwiftUI.Color(white: 0.12).opacity(0.92)
+        /// Borders of panels and capsules on the remote screen stage.
+        public static let overlayHairline = SwiftUI.Color.white.opacity(0.14)
+        /// Faint fills on the stage: the loading placeholder, command boxes.
+        public static let overlayWash = SwiftUI.Color.white.opacity(0.06)
+        /// Spinners and marks drawn directly on the stage.
+        public static let overlayForeground = SwiftUI.Color.white.opacity(0.85)
+        /// Shadow under cards on the stage.
+        public static let overlayShadow = SwiftUI.Color.black.opacity(0.4)
+        /// Text and symbols on `humanFill`, `aiFill` and other saturated fills.
+        public static let onFill = SwiftUI.Color.white
     }
 
     /// Spacing scale in points. Layout uses only these values.

@@ -137,6 +137,14 @@ struct ScreenHeader: View {
             Toggle(String.ui("screen.keyboard.swap", "⌘를 Ctrl로, ⌃를 Windows 키로 보내기"), isOn: $preferences.swapCommandControl)
             Toggle(String.ui("screen.keyboard.hangul", "오른쪽 ⌥를 한/영 키로 보내기"), isOn: $preferences.rightOptionHangul)
             Toggle(String.ui("screen.keyboard.hanja", "오른쪽 ⌘를 한자 키로 보내기"), isOn: $preferences.rightCommandHanja)
+            Divider()
+            Toggle(String.ui("screen.keyboard.system", "시스템 단축키도 원격으로 보내기 (⌘Q·⌘H·⌘Tab)"), isOn: $preferences.forwardsSystemShortcuts)
+            if preferences.forwardsSystemShortcuts, !SystemShortcutTap.isPermitted {
+                Text(String.ui("screen.keyboard.system.permission", "⌘Tab은 손쉬운 사용 권한이 있어야 보낼 수 있습니다"))
+                Button(String.ui("screen.keyboard.system.openSettings", "손쉬운 사용 설정 열기…")) {
+                    SystemSettingsLink.openAccessibility()
+                }
+            }
         } label: {
             Label {
                 Text(String.ui("screen.keyboard", "키보드"))

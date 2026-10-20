@@ -10,7 +10,8 @@ public struct PointMapper: Equatable, Sendable {
     /// Device pixels per view point.
     public let backingScale: CGFloat
 
-    /// The rect the video occupies in the view.
+    /// The rect the video occupies in the view, its origin on a device pixel and its size a
+    /// whole number of device pixels.
     public let videoRect: CGRect
 
     public init(remote: CGSize, view: CGSize, backingScale: CGFloat) {
@@ -24,8 +25,13 @@ public struct PointMapper: Equatable, Sendable {
         let size = view.width * remote.height > view.height * remote.width
             ? CGSize(width: remote.width * view.height / remote.height, height: view.height)
             : CGSize(width: view.width, height: remote.height * view.width / remote.width)
-        videoRect = CGRect(x: (view.width - size.width) / 2, y: (view.height - size.height) / 2,
-                           width: size.width, height: size.height)
+        let scale = self.backingScale
+        func pixels(_ value: CGFloat, _ rule: FloatingPointRoundingRule) -> CGFloat {
+            (value * scale + 1e-6).rounded(rule) / scale
+        }
+        videoRect = CGRect(x: pixels((view.width - size.width) / 2, .down), y: pixels((view.height - size.height) / 2, .down),
+                           width: pixels(size.width, .toNearestOrAwayFromZero),
+                           height: pixels(size.height, .toNearestOrAwayFromZero))
     }
 
     /// View points per remote pixel.

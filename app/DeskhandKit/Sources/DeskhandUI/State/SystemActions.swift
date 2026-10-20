@@ -40,3 +40,13 @@ extension String {
         return "~" + dropFirst(home.count)
     }
 }
+
+/// Opens panes of System Settings.
+@MainActor
+enum SystemSettingsLink {
+    /// Privacy & Security › Accessibility.
+    static func openAccessibility() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else { return }
+        NSWorkspace.shared.open(url)
+    }
+}

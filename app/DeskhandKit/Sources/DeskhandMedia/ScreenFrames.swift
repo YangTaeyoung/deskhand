@@ -176,24 +176,38 @@ public struct StreamStats: Codable, Sendable, Equatable {
     }
 }
 
-/// Why the agent stopped sending frames (`0x04` `reason`).
+/// Why the agent stopped sending frames (`0x04` `reason`, protocol.md §4).
 public enum PauseReason: Sendable, Equatable, Hashable {
+    /// Nobody is watching the stream.
     case noViewer
-    case displayUnavailable
+    /// The agent runs in session 0, which has no user desktop.
+    case session0
+    /// The RDP client minimized its window and Windows stopped drawing the session.
+    case rdpOutputSuppressed
     /// UAC, Ctrl+Alt+Del or the lock screen is on the secure desktop.
     case secureDesktop
     case sessionLocked
-    /// The RDP client minimized its window, so Windows stopped drawing the session.
-    case rdpOutputSuppressed
+    /// The user session is disconnected from any display.
+    case sessionDisconnected
+    /// Desktop Duplication lost access for a moment (mode change, desktop switch).
+    case accessLost
+    /// Windows draws nothing on the captured display.
+    case noOutput
+    /// The PC has no usable H.264 encoder.
+    case noEncoder
     case other(String)
 
     public init(rawValue: String) {
         switch rawValue {
         case "no_viewer": self = .noViewer
-        case "display_unavailable": self = .displayUnavailable
+        case "session0": self = .session0
+        case "rdp_output_suppressed": self = .rdpOutputSuppressed
         case "secure_desktop": self = .secureDesktop
         case "session_locked": self = .sessionLocked
-        case "rdp_output_suppressed": self = .rdpOutputSuppressed
+        case "session_disconnected": self = .sessionDisconnected
+        case "access_lost": self = .accessLost
+        case "no_output": self = .noOutput
+        case "no_encoder": self = .noEncoder
         default: self = .other(rawValue)
         }
     }
@@ -201,17 +215,20 @@ public enum PauseReason: Sendable, Equatable, Hashable {
     public var rawValue: String {
         switch self {
         case .noViewer: "no_viewer"
-        case .displayUnavailable: "display_unavailable"
+        case .session0: "session0"
+        case .rdpOutputSuppressed: "rdp_output_suppressed"
         case .secureDesktop: "secure_desktop"
         case .sessionLocked: "session_locked"
-        case .rdpOutputSuppressed: "rdp_output_suppressed"
+        case .sessionDisconnected: "session_disconnected"
+        case .accessLost: "access_lost"
+        case .noOutput: "no_output"
+        case .noEncoder: "no_encoder"
         case .other(let value): value
         }
     }
 }
 
-/// A daemon notice on the screen stream (`0x30`). The notice name is read from `type`, or
-/// `kind` when `type` is absent.
+/// A daemon notice on the screen stream (`0x30`, local-api.md §4), named by `type`.
 public enum StreamNotice: Sendable, Equatable {
     /// Human input was dropped because an AI client holds control.
     case controlDenied(owner: String?, ownerClient: String?)
@@ -224,7 +241,7 @@ public enum StreamNotice: Sendable, Equatable {
 
     public init?(json: Data) {
         guard let object = (try? JSONSerialization.jsonObject(with: json)) as? [String: Any],
-              let name = (object["type"] ?? object["kind"]) as? String else { return nil }
+              let name = object["type"] as? String else { return nil }
         switch name {
         case "control_denied":
             self = .controlDenied(owner: object["owner"] as? String, ownerClient: object["owner_client"] as? String)

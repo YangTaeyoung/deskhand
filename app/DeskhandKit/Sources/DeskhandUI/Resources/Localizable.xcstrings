@@ -2432,7 +2432,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "⌃⌥를 눌렀다 떼면 입력을 돌려받습니다"
+            "value": "⌃와 ⌥(왼쪽·오른쪽 어느 쪽이든)를 함께 눌렀다 떼면 입력을 돌려받습니다"
           }
         }
       }
@@ -3421,6 +3421,42 @@
         }
       }
     },
+    "screen.keyboard.system": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "시스템 단축키도 원격으로 보내기 (⌘Q·⌘H·⌘Tab)"
+          }
+        }
+      }
+    },
+    "screen.keyboard.system.openSettings": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "손쉬운 사용 설정 열기…"
+          }
+        }
+      }
+    },
+    "screen.keyboard.system.permission": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘Tab은 손쉬운 사용 권한이 있어야 보낼 수 있습니다"
+          }
+        }
+      }
+    },
     "screen.locked.message": {
       "comment": "Remote screen UI text",
       "extractionState": "manual",
@@ -3469,18 +3505,6 @@
         }
       }
     },
-    "screen.paused.display.message": {
-      "comment": "Paused screen message: display name",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ 연결이 끊겼거나 모니터가 꺼져 있습니다. 모니터 전원을 확인하거나 다른 디스플레이를 고르세요."
-          }
-        }
-      }
-    },
     "screen.paused.display.show": {
       "comment": "Button that switches to another display: display name",
       "extractionState": "manual",
@@ -3493,90 +3517,6 @@
         }
       }
     },
-    "screen.paused.display.title": {
-      "comment": "Remote screen UI text",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "디스플레이를 찾을 수 없습니다"
-          }
-        }
-      }
-    },
-    "screen.paused.locked.message": {
-      "comment": "Remote screen UI text",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "PC 앞에서 잠금을 풀면 화면이 바로 이어집니다. 잠금 화면은 원격으로 조작할 수 없습니다."
-          }
-        }
-      }
-    },
-    "screen.paused.locked.title": {
-      "comment": "Remote screen UI text",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Windows가 잠겨 있습니다"
-          }
-        }
-      }
-    },
-    "screen.paused.noViewer.message": {
-      "comment": "Remote screen UI text",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "보는 사람이 없다고 판단해 캡처를 멈췄습니다. 다시 연결하면 이어집니다."
-          }
-        }
-      }
-    },
-    "screen.paused.noViewer.title": {
-      "comment": "Remote screen UI text",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "PC가 화면 전송을 멈췄습니다"
-          }
-        }
-      }
-    },
-    "screen.paused.other.message": {
-      "comment": "Paused screen message: raw reason reported by the agent",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "에이전트가 알린 이유: %@"
-          }
-        }
-      }
-    },
-    "screen.paused.other.title": {
-      "comment": "Remote screen UI text",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "화면 전송이 일시 중지되었습니다"
-          }
-        }
-      }
-    },
     "screen.paused.rdp.copyHelp": {
       "comment": "Remote screen UI text",
       "extractionState": "manual",
@@ -3585,66 +3525,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "명령을 복사합니다"
-          }
-        }
-      }
-    },
-    "screen.paused.rdp.message": {
-      "comment": "Remote screen UI text",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "이 PC는 원격 데스크톱(RDP) 세션이라, RDP 창이 최소화되면 Windows가 화면 그리기를 멈춥니다. RDP 창을 다시 열거나, PC의 관리자 명령 프롬프트에서 아래 명령으로 세션을 콘솔로 옮기세요. RDP 연결은 끊깁니다."
-          }
-        }
-      }
-    },
-    "screen.paused.rdp.title": {
-      "comment": "Remote screen UI text",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "원격 데스크톱 창이 최소화되어 화면이 멈췄습니다"
-          }
-        }
-      }
-    },
-    "screen.paused.reconnect": {
-      "comment": "Remote screen UI text",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "다시 연결"
-          }
-        }
-      }
-    },
-    "screen.paused.secure.message": {
-      "comment": "Remote screen UI text",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "사용자 계정 컨트롤 창이나 Ctrl+Alt+Del 화면은 원격으로 보거나 조작할 수 없습니다. PC 앞에서 승인하거나 닫으면 화면이 바로 이어집니다."
-          }
-        }
-      }
-    },
-    "screen.paused.secure.title": {
-      "comment": "Remote screen UI text",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "PC에 보안 화면(UAC/잠금)이 떠 있습니다"
           }
         }
       }
@@ -3753,6 +3633,306 @@
           "stringUnit": {
             "state": "translated",
             "value": "스트림 통계 보기: fps, 지연, 비트레이트, 인코더"
+          }
+        }
+      }
+    },
+    "screen.stop.accessLost.message": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windows가 화면 접근을 잠시 잃었습니다. 해상도 변경이나 전체 화면 전환 뒤에 생기며, 자동으로 다시 시도합니다."
+          }
+        }
+      }
+    },
+    "screen.stop.accessLost.title": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면을 다시 가져오는 중…"
+          }
+        }
+      }
+    },
+    "screen.stop.disconnected.message": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용자 세션은 남아 있지만 원격 데스크톱 연결이 끊겨 그릴 화면이 없습니다. PC 앞에서 로그인하거나, PC의 관리자 명령 프롬프트에서 아래 명령으로 세션을 콘솔로 옮기면 화면이 나타납니다."
+          }
+        }
+      }
+    },
+    "screen.stop.disconnected.title": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windows 세션이 화면에 연결되어 있지 않습니다"
+          }
+        }
+      }
+    },
+    "screen.stop.display.message": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 연결이 끊겼거나 꺼져 있어 화면을 가져올 수 없습니다. 모니터 연결을 확인한 뒤 다시 시도하거나 다른 디스플레이를 고르세요."
+          }
+        }
+      }
+    },
+    "screen.stop.display.title": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "디스플레이를 찾을 수 없습니다"
+          }
+        }
+      }
+    },
+    "screen.stop.locked.message": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PC 앞에서 잠금을 풀면 화면이 바로 이어집니다. 잠금 화면은 원격으로 조작할 수 없습니다."
+          }
+        }
+      }
+    },
+    "screen.stop.locked.title": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windows가 잠겨 있습니다"
+          }
+        }
+      }
+    },
+    "screen.stop.noEncoder.message": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "그래픽 드라이버를 최신 버전으로 업데이트한 뒤 다시 시도하세요. 가상 머신이나 원격 데스크톱 전용 그래픽 어댑터에는 하드웨어 인코더가 없을 수 있습니다."
+          }
+        }
+      }
+    },
+    "screen.stop.noEncoder.title": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PC에서 H.264 인코더를 찾지 못했습니다"
+          }
+        }
+      }
+    },
+    "screen.stop.noOutput.message": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모니터가 꺼져 있거나 연결되지 않아 Windows가 %@에 화면을 그리지 않습니다. 모니터를 켜거나 HDMI 더미 플러그를 연결한 뒤 다시 시도하세요."
+          }
+        }
+      }
+    },
+    "screen.stop.noOutput.title": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 디스플레이에 출력되는 화면이 없습니다"
+          }
+        }
+      }
+    },
+    "screen.stop.noViewer.message": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보는 사람이 없다고 판단해 캡처를 멈췄습니다. 다시 연결하면 이어집니다."
+          }
+        }
+      }
+    },
+    "screen.stop.noViewer.title": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PC가 화면 전송을 멈췄습니다"
+          }
+        }
+      }
+    },
+    "screen.stop.other.message": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트가 화면 전송을 멈췄습니다. 다시 연결해도 계속되면 진단을 실행하세요."
+          }
+        }
+      }
+    },
+    "screen.stop.other.title": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면 전송이 멈췄습니다"
+          }
+        }
+      }
+    },
+    "screen.stop.rdp.message": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 PC는 원격 데스크톱(RDP) 세션이라 RDP 창이 최소화되면 Windows가 화면을 그리지 않습니다. RDP 창을 다시 열거나, PC의 관리자 명령 프롬프트에서 아래 명령으로 세션을 콘솔로 옮기세요. RDP 연결은 끊깁니다."
+          }
+        }
+      }
+    },
+    "screen.stop.rdp.title": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 데스크톱 창이 최소화되어 화면이 멈췄습니다"
+          }
+        }
+      }
+    },
+    "screen.stop.reasonCode": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사유 코드"
+          }
+        }
+      }
+    },
+    "screen.stop.reconnect": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 연결"
+          }
+        }
+      }
+    },
+    "screen.stop.retry": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 시도"
+          }
+        }
+      }
+    },
+    "screen.stop.secure.message": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용자 계정 컨트롤 창이나 Ctrl+Alt+Del 화면은 원격으로 보거나 조작할 수 없습니다. PC 앞에서 승인하거나 닫으면 화면이 바로 이어집니다."
+          }
+        }
+      }
+    },
+    "screen.stop.secure.title": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PC에 보안 화면(UAC/잠금)이 떠 있습니다"
+          }
+        }
+      }
+    },
+    "screen.stop.session0.message": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트가 서비스 세션(세션 0)에서 실행 중이라 보여 줄 화면이 없습니다. PC에 Windows 사용자로 로그인하면 화면이 나타납니다. 계속되면 진단을 실행하세요."
+          }
+        }
+      }
+    },
+    "screen.stop.session0.title": {
+      "comment": "Remote screen UI text",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인한 Windows 사용자가 없습니다"
           }
         }
       }

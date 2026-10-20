@@ -120,11 +120,13 @@ struct WheelAccumulator {
 ///
 /// A click in the view captures input (the view becomes first responder) unless an AI client
 /// holds control; then the click only calls `onTakeoverRequest`. While captured, every key goes
-/// to the remote PC except ⇧⌘., ⌘1–⌘7, ⌥⌘0, ⌘K and ⌘,; pressing and releasing ⌃⌥ alone ends
-/// the capture. Mouse moves are sent at most every `moveInterval`; buttons, keys and wheel flush
-/// the pending move first. Modifier keys are held back until another key or a button needs
-/// them, and a modifier pressed and released alone is sent as a tap. Ending the capture (focus
-/// loss, window deactivation, the escape chord) sends `release_all`.
+/// to the remote PC except the local shortcuts (⇧⌘., ⌘1–⌘7, ⌥⌘0, ⌘K, ⌘, and, unless
+/// `forwardsSystemShortcuts`, ⌘Q, ⌘H and ⌘Tab). Pressing ⌃ and either ⌥ together and releasing
+/// them with nothing else ends the capture. Mouse moves are sent at most every `moveInterval`;
+/// buttons, keys and wheel flush the pending move first. Modifier keys (and 한/영, 한자) are held
+/// back until another key or a button needs them; one pressed and released alone is sent as a
+/// tap, except ⌃ and keys that send the Windows key. Ending the capture (focus loss, window
+/// deactivation, the escape chord) sends `release_all`.
 @MainActor
 public final class InputCapture: NSView, @MainActor NSTextInputClient {
     public static let moveInterval: TimeInterval = 1.0 / 120
@@ -157,6 +159,12 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
     public var keyMap = KeyMap()
     public var keyboardMode: KeyboardMode = .scancode {
         didSet { if keyboardMode != oldValue { clearMarkedText(discardingInput: true) } }
+    }
+
+    /// ⌘Q, ⌘H and ⌘Tab go to the remote PC too. ⌘Tab reaches the view only through
+    /// `SystemShortcutTap`, which needs the Accessibility permission.
+    public var forwardsSystemShortcuts = false {
+        didSet { updateSystemShortcutTap() }
     }
 
     /// True while the remote cursor is drawn locally; the system cursor is then hidden over the
@@ -204,6 +212,9 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
     private var hidesCursor = false
     private var windowObserver: NSObjectProtocol?
     private var resigning = false
+    private lazy var systemShortcutTap = SystemShortcutTap { [weak self] event in
+        self?.handleKeyEvent(event) ?? false
+    }
 
     private static let blankCursor = NSCursor(image: NSImage(size: NSSize(width: 1, height: 1)), hotSpot: .zero)
 
@@ -257,7 +268,14 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
         heldModifiers = [:]
         escapeChordArmed = false
         wheel.reset()
-        clearMarkedText(discardingInput: true)
+        if sendRelease {
+            commitMarkedText()
+        } else {
+            clearMarkedText(discardingInput: true)
+        }
+        lastMove = nil
+        lastMoveTime = -.infinity
+        systemShortcutTap.stop()
         if sendRelease { onEvent(.releaseAll) }
         if !resigning, window?.firstResponder === self { window?.makeFirstResponder(nil) }
         onPointer(nil)
@@ -269,7 +287,10 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
         guard owner != .ai, isInputEnabled, super.becomeFirstResponder() else { return false }
         if !isCaptured {
             isCaptured = true
+            lastMove = nil
+            lastMoveTime = -.infinity
             installKeyMonitor()
+            updateSystemShortcutTap()
             updateCursor()
             onCaptureChange(true)
         }
@@ -310,6 +331,14 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
                 return self.handleKeyEvent(event)
             }
             return consumed ? nil : event
+        }
+    }
+
+    private func updateSystemShortcutTap() {
+        if isCaptured, forwardsSystemShortcuts {
+            systemShortcutTap.start()
+        } else {
+            systemShortcutTap.stop()
         }
     }
 
@@ -377,7 +406,9 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
             guard isInputEnabled else { return }
             if !isCaptured { beginCapture() }
             guard isCaptured, let remote = mapper?.remotePoint(from: point) else { return }
+            commitMarkedText()
             flushPendingMove()
+            holdModifiers(in: event.modifierFlags)
             flushModifiers()
             sendMove(remote)
             pressedButtons.insert(button)
@@ -473,13 +504,16 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
             modifierChanged(event)
             return true
         case .keyDown:
-            if Self.isLocalShortcut(event) { return false }
+            if Self.isLocalShortcut(event, forwardingSystem: forwardsSystemShortcuts) { return false }
             escapeChordArmed = false
-            if keyboardMode == .macInput, !Self.bypassesInputMethod(event) {
-                currentKeyEvent = event
-                interpretKeyEvents([event])
-                currentKeyEvent = nil
-                return true
+            if keyboardMode == .macInput {
+                guard Self.bypassesInputMethod(event) else {
+                    currentKeyEvent = event
+                    interpretKeyEvents([event])
+                    currentKeyEvent = nil
+                    return true
+                }
+                commitMarkedText()
             }
             guard let target = pressedKeys[event.keyCode] ?? keyMap.key(for: event.keyCode) else { return true }
             flushPendingMove()
@@ -492,14 +526,15 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
                 onEvent(.key(target, down: false))
                 return true
             }
-            return !Self.isLocalShortcut(event)
+            return !Self.isLocalShortcut(event, forwardingSystem: forwardsSystemShortcuts)
         default:
             return false
         }
     }
 
-    /// ⇧⌘. (emergency stop), ⌘1–⌘7 (tabs), ⌥⌘0 (inspector), ⌘K (quick switch) and ⌘, (settings).
-    static func isLocalShortcut(_ event: NSEvent) -> Bool {
+    /// ⇧⌘. (emergency stop), ⌘1–⌘7 (tabs), ⌥⌘0 (inspector), ⌘K (quick switch), ⌘, (settings),
+    /// and ⌘Q, ⌘H and ⌘Tab unless `forwardingSystem`.
+    static func isLocalShortcut(_ event: NSEvent, forwardingSystem: Bool = false) -> Bool {
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
         let characters = event.charactersIgnoringModifiers?.lowercased() ?? ""
         func key(_ character: String, _ keyCode: UInt16) -> Bool {
@@ -512,7 +547,8 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
             return key("0", 0x1D)
         case [.command]:
             let digits: [(String, UInt16)] = [("1", 0x12), ("2", 0x13), ("3", 0x14), ("4", 0x15), ("5", 0x17), ("6", 0x16), ("7", 0x1A)]
-            return digits.contains { key($0.0, $0.1) } || key("k", 0x28) || key(",", 0x2B)
+            if digits.contains(where: { key($0.0, $0.1) }) || key("k", 0x28) || key(",", 0x2B) { return true }
+            return !forwardingSystem && (key("q", 0x0C) || key("h", 0x04) || event.keyCode == 0x30)
         default:
             return false
         }
@@ -560,7 +596,6 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
     private func modifierChanged(_ event: NSEvent) {
         let code = event.keyCode
         if code == KeyMap.Mac.capsLock, let target = keyMap.key(for: code) {
-            escapeChordArmed = false
             flushModifiers()
             onEvent(.key(target, down: true))
             onEvent(.key(target, down: false))
@@ -569,13 +604,6 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
         guard Self.deviceMasks[code] != nil else { return }
         if isDown(code, in: event) {
             guard heldModifiers[code] == nil, let target = keyMap.key(for: code) else { return }
-            if case .virtualKey = target {
-                escapeChordArmed = false
-                flushModifiers()
-                heldModifiers[code] = .sent(target)
-                onEvent(.key(target, down: true))
-                return
-            }
             heldModifiers[code] = .deferred(target)
             let held = event.modifierFlags.intersection([.command, .shift, .option, .control])
             let allDeferred = heldModifiers.values.allSatisfy { if case .deferred = $0 { true } else { false } }
@@ -591,10 +619,39 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
             case .sent(let target):
                 onEvent(.key(target, down: false))
             case .deferred(let target):
-                guard keyboardMode == .scancode else { return }
+                guard sendsAloneTap(code, target) else { return }
                 onEvent(.key(target, down: true))
                 onEvent(.key(target, down: false))
             }
+        }
+    }
+
+    /// Whether a key pressed and released alone is sent as a tap: 한/영 and 한자 always; never ⌃
+    /// or a key that sends the Windows key; other modifiers in `scancode` mode only.
+    private func sendsAloneTap(_ keyCode: UInt16, _ target: KeyTarget) -> Bool {
+        switch target {
+        case .virtualKey:
+            return true
+        case .scancode(let sc, let extended):
+            if Self.family(keyCode) == .control { return false }
+            if extended, sc == 0x5B || sc == 0x5C { return false }
+            return keyboardMode == .scancode
+        }
+    }
+
+    /// Records modifiers that `flags` shows down but that were not seen pressed, such as keys
+    /// held before the capturing click.
+    private func holdModifiers(in flags: NSEvent.ModifierFlags) {
+        let raw = flags.rawValue
+        for (code, mask) in Self.deviceMasks.sorted(by: { $0.key < $1.key }) where raw & mask != 0 && heldModifiers[code] == nil {
+            if let target = keyMap.key(for: code) { heldModifiers[code] = .deferred(target) }
+        }
+        let leftKeys: [(NSEvent.ModifierFlags, UInt16)] = [
+            (.control, KeyMap.Mac.control), (.shift, KeyMap.Mac.shift), (.command, KeyMap.Mac.command), (.option, KeyMap.Mac.option),
+        ]
+        for (family, code) in leftKeys where flags.contains(family) {
+            let familyHeld = heldModifiers.keys.contains { Self.family($0) == family }
+            if !familyHeld, let target = keyMap.key(for: code) { heldModifiers[code] = .deferred(target) }
         }
     }
 
@@ -635,6 +692,14 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
 
     public func unmarkText() {
         clearMarkedText(discardingInput: false)
+    }
+
+    /// Sends the composing text as committed text and tells the input method to drop it.
+    private func commitMarkedText() {
+        guard let text = markedText else { return }
+        clearMarkedText(discardingInput: true)
+        flushPendingMove()
+        onEvent(.text(text))
     }
 
     /// Forgets the composing text; `discardingInput` also tells the input method to drop it.
@@ -692,4 +757,64 @@ extension KeyMap {
     static let functionKeyCodes: Set<UInt16> = [
         0x7A, 0x78, 0x63, 0x76, 0x60, 0x61, 0x62, 0x64, 0x65, 0x6D, 0x67, 0x6F, 0x69, 0x6B, 0x71, 0x6A, 0x40, 0x4F, 0x50, 0x5A,
     ]
+}
+
+/// A session event tap that hands ⌘Tab key events to `handler` and swallows the ones it
+/// consumes, while started. It starts only when the app already has the Accessibility
+/// permission (`isPermitted`) and never asks for it.
+@MainActor
+final class SystemShortcutTap {
+    private let handler: (NSEvent) -> Bool
+    private var port: CFMachPort?
+    private var source: CFRunLoopSource?
+
+    init(handler: @escaping (NSEvent) -> Bool) {
+        self.handler = handler
+    }
+
+    static var isPermitted: Bool { AXIsProcessTrusted() }
+
+    var isRunning: Bool { port != nil }
+
+    func start() {
+        guard port == nil, Self.isPermitted else { return }
+        let mask = CGEventMask(1 << CGEventType.keyDown.rawValue) | CGEventMask(1 << CGEventType.keyUp.rawValue)
+        let context = Unmanaged.passUnretained(self).toOpaque()
+        guard let port = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
+                                           eventsOfInterest: mask, callback: { _, type, event, context in
+            guard let context else { return Unmanaged.passUnretained(event) }
+            let tap = Unmanaged<SystemShortcutTap>.fromOpaque(context).takeUnretainedValue()
+            let consumed = MainActor.assumeIsolated { tap.handle(type, event) }
+            return consumed ? nil : Unmanaged.passUnretained(event)
+        }, userInfo: context) else { return }
+        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, port, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: port, enable: true)
+        self.port = port
+        self.source = source
+    }
+
+    func stop() {
+        guard let port else { return }
+        CGEvent.tapEnable(tap: port, enable: false)
+        if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
+        CFMachPortInvalidate(port)
+        self.port = nil
+        source = nil
+    }
+
+    /// Re-enables the tap after the system disabled it, and passes ⌘Tab to the handler.
+    private func handle(_ type: CGEventType, _ event: CGEvent) -> Bool {
+        switch type {
+        case .tapDisabledByTimeout, .tapDisabledByUserInput:
+            if let port { CGEvent.tapEnable(tap: port, enable: true) }
+            return false
+        case .keyDown, .keyUp:
+            guard event.getIntegerValueField(.keyboardEventKeycode) == 0x30, event.flags.contains(.maskCommand),
+                  let nsEvent = NSEvent(cgEvent: event) else { return false }
+            return handler(nsEvent)
+        default:
+            return false
+        }
+    }
 }

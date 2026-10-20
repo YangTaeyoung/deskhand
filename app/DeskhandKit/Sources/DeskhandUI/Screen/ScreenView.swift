@@ -189,7 +189,8 @@ public struct ScreenView: View {
         } else if chrome == .native, showsVideo {
             VideoLayerView(
                 session: session, owner: owner, inputEnabled: isLive, display: display,
-                keyMap: preferences.keyMap, keyboardMode: preferences.keyboardMode, remoteSize: remoteSize,
+                keyMap: preferences.keyMap, keyboardMode: preferences.keyboardMode,
+                forwardsSystemShortcuts: preferences.forwardsSystemShortcuts, remoteSize: remoteSize,
                 accessibilityLabel: String.ui("screen.a11y.label", "\(host.name)의 원격 화면, \(displayTitle)"),
                 accessibilityHelp: owner == .ai
                     ? String.ui("screen.a11y.help.ai", "클릭하면 AI에게서 제어권을 가져올지 묻습니다")
@@ -210,14 +211,18 @@ public struct ScreenView: View {
                 ScreenSkeleton(rect: rect, title: String.ui("screen.connecting", "화면을 불러오는 중…"), detail: loadingDetail)
             case .idle, .connecting, .reconnecting:
                 loading(rect: rect, reconnecting: shown.phase == .reconnecting)
+            case .paused(.accessLost):
+                if shown.hasFrame { Scrim(rect: rect) }
+                StageWaiting(notice: .paused(.accessLost, host: host, display: display))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .paused(let reason):
-                Scrim(rect: rect)
-                ScreenPausedCard(reason: reason, host: host, display: display) { index in
-                    preferences.setDisplay(index, for: host.hostID)
-                } retry: {
-                    session.retry()
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if shown.hasFrame { Scrim(rect: rect) }
+                ScreenStopCard(notice: .paused(reason, host: host, display: display), perform: perform)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .displayUnavailable(let error):
+                if shown.hasFrame { Scrim(rect: rect) }
+                ScreenStopCard(notice: .displayUnavailable(error, host: host, display: display), perform: perform)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .failed(let error):
                 if shown.hasFrame { Scrim(rect: rect) }
                 StageError(error: error) { session.retry() }
@@ -251,6 +256,14 @@ public struct ScreenView: View {
                              ? String.ui("screen.unsupported.title", "이 PC는 화면 스트리밍을 지원하지 않습니다")
                              : String.ui("screen.unavailable.title", "지금은 화면을 가져올 수 없습니다"),
                          message: reason ?? String.ui("screen.unavailable.message", "에이전트가 화면 캡처를 준비하지 못했습니다. 진단을 실행해 원인을 확인하세요."))
+        }
+    }
+
+    private func perform(_ action: ScreenStopNotice.Action) {
+        switch action {
+        case .retry: session.retry()
+        case .diagnose: store.presentDoctor(for: host.hostID)
+        case .showDisplay(let index, _): preferences.setDisplay(index, for: host.hostID)
         }
     }
 
@@ -309,7 +322,8 @@ public struct ScreenView: View {
 
 // MARK: Stage pieces
 
-/// The still frame of a stand-in screen, with an arrow cursor.
+/// The still frame of a stand-in screen, drawn into the video rect like the display layer
+/// (`.resize`), with an arrow cursor.
 private struct StillScreen: View {
     let image: CGImage
     let mapper: PointMapper
@@ -321,9 +335,7 @@ private struct StillScreen: View {
             Image(decorative: image, scale: 1)
                 .resizable()
                 .interpolation(.high)
-                .aspectRatio(contentMode: .fill)
                 .frame(width: rect.width, height: rect.height)
-                .clipped()
                 .offset(x: rect.minX, y: rect.minY)
             if let cursor {
                 let arrow = NSCursor.arrow
@@ -360,12 +372,12 @@ struct ScreenSkeleton: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous)
-                .fill(.white.opacity(0.05))
+                .fill(DS.Color.overlayWash)
                 .overlay {
                     if !reduceMotion {
                         TimelineView(.animation) { context in
                             let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.8) / 1.8
-                            LinearGradient(colors: [.clear, .white.opacity(0.06), .clear],
+                            LinearGradient(colors: [.clear, DS.Color.overlayWash, .clear],
                                            startPoint: UnitPoint(x: phase * 2 - 1, y: 0),
                                            endPoint: UnitPoint(x: phase * 2, y: 1))
                         }
@@ -411,11 +423,41 @@ private struct StageSpinner: View {
             let turn = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1) * 360
             Circle()
                 .trim(from: 0, to: 0.72)
-                .stroke(.white.opacity(0.85), style: StrokeStyle(lineWidth: max(2, size / 9), lineCap: .round))
+                .stroke(DS.Color.overlayForeground, style: StrokeStyle(lineWidth: max(2, size / 9), lineCap: .round))
                 .rotationEffect(.degrees(turn))
         }
         .frame(width: size, height: size)
         .accessibilityHidden(true)
+    }
+}
+
+/// A panel with a spinner and the notice title, its explanation and code, while the screen
+/// recovers by itself.
+private struct StageWaiting: View {
+    let notice: ScreenStopNotice
+
+    var body: some View {
+        VStack(spacing: DS.Space.s) {
+            HStack(spacing: DS.Space.s) {
+                StageSpinner(size: 14)
+                Text(notice.title)
+                    .font(DS.Font.body.weight(.medium))
+            }
+            Text(notice.message)
+                .font(DS.Font.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(verbatim: "\(notice.codeLabel) \(notice.code)")
+                .font(DS.Font.caption.monospaced())
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, DS.Space.l)
+        .padding(.vertical, DS.Space.m)
+        .frame(maxWidth: 400)
+        .background(DS.Color.overlayPanel, in: RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous).strokeBorder(DS.Color.overlayHairline))
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -435,7 +477,7 @@ private struct StageCapsule: View {
         .padding(.horizontal, DS.Space.l)
         .padding(.vertical, DS.Space.s)
         .background(DS.Color.overlayPanel, in: Capsule())
-        .overlay(Capsule().strokeBorder(.white.opacity(0.14)))
+        .overlay(Capsule().strokeBorder(DS.Color.overlayHairline))
         .accessibilityElement(children: .combine)
     }
 }
@@ -479,7 +521,7 @@ private struct AIControlEdge: View {
                 .strokeBorder(DS.Color.ai, lineWidth: 3)
             Label(String.ui("screen.ai.tag", "AI 조작 중"), systemImage: "sparkles")
                 .font(DS.Font.caption.weight(.semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(DS.Color.onFill)
                 .padding(.horizontal, DS.Space.m)
                 .padding(.vertical, DS.Space.xs)
                 .background(DS.Color.aiFill, in: UnevenRoundedRectangle(bottomLeadingRadius: DS.Radius.s, bottomTrailingRadius: DS.Radius.s))
@@ -541,136 +583,6 @@ private struct InputDeniedToast: View {
         .padding(.horizontal, DS.Space.m)
         .padding(.vertical, DS.Space.s)
         .background(DS.Color.overlayPanel, in: Capsule())
-        .overlay(Capsule().strokeBorder(.white.opacity(0.14)))
-    }
-}
-
-/// Why frames stopped, with what to do about it.
-struct ScreenPausedCard: View {
-    let reason: PauseReason
-    let host: Host
-    let display: Int
-    let selectDisplay: (Int) -> Void
-    let retry: () -> Void
-    @State private var copied = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: DS.Space.m) {
-            HStack(alignment: .top, spacing: DS.Space.m) {
-                Image(systemName: symbol)
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(DS.Color.warning)
-                    .frame(width: 28)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: DS.Space.xs) {
-                    Text(title)
-                        .font(DS.Font.headline)
-                    Text(message)
-                        .font(DS.Font.body)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .accessibilityElement(children: .combine)
-            }
-            if let command {
-                HStack(spacing: DS.Space.s) {
-                    Text(command)
-                        .font(DS.Font.mono)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Button {
-                        Pasteboard.copy(command)
-                        copied = true
-                    } label: {
-                        Label(copied ? String.ui("action.copied", "복사됨") : String.ui("action.copy", "복사"),
-                              systemImage: copied ? "checkmark" : "doc.on.doc")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(DS.Color.neutral)
-                    .controlSize(.small)
-                    .help(String.ui("screen.paused.rdp.copyHelp", "명령을 복사합니다"))
-                }
-                .padding(DS.Space.s)
-                .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
-                .padding(.leading, 28 + DS.Space.m)
-            }
-            actions
-                .padding(.leading, 28 + DS.Space.m)
-        }
-        .padding(DS.Space.l)
-        .frame(maxWidth: 480, alignment: .leading)
-        .background(DS.Color.surface, in: RoundedRectangle(cornerRadius: DS.Radius.l, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: DS.Radius.l, style: .continuous).strokeBorder(.white.opacity(0.12)))
-        .shadow(color: .black.opacity(0.4), radius: 20, y: 8)
-        .accessibilityElement(children: .contain)
-    }
-
-    @ViewBuilder
-    private var actions: some View {
-        switch reason {
-        case .displayUnavailable:
-            let others = host.displays.filter { $0.index != display }
-            if !others.isEmpty {
-                HStack(spacing: DS.Space.s) {
-                    ForEach(others, id: \.index) { other in
-                        Button(String.ui("screen.paused.display.show", "\(other.title) 보기")) { selectDisplay(other.index) }
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-            }
-        case .noViewer, .other:
-            Button {
-                retry()
-            } label: {
-                Label(String.ui("screen.paused.reconnect", "다시 연결"), systemImage: "arrow.clockwise")
-            }
-            .buttonStyle(.borderedProminent)
-        case .secureDesktop, .sessionLocked, .rdpOutputSuppressed:
-            EmptyView()
-        }
-    }
-
-    private var symbol: String {
-        switch reason {
-        case .secureDesktop: "lock.shield"
-        case .sessionLocked: "lock.display"
-        case .displayUnavailable: "display.trianglebadge.exclamationmark"
-        case .rdpOutputSuppressed: "rectangle.on.rectangle.slash"
-        case .noViewer, .other: "pause.circle"
-        }
-    }
-
-    private var title: String {
-        switch reason {
-        case .secureDesktop: .ui("screen.paused.secure.title", "PC에 보안 화면(UAC/잠금)이 떠 있습니다")
-        case .sessionLocked: .ui("screen.paused.locked.title", "Windows가 잠겨 있습니다")
-        case .displayUnavailable: .ui("screen.paused.display.title", "디스플레이를 찾을 수 없습니다")
-        case .rdpOutputSuppressed: .ui("screen.paused.rdp.title", "원격 데스크톱 창이 최소화되어 화면이 멈췄습니다")
-        case .noViewer: .ui("screen.paused.noViewer.title", "PC가 화면 전송을 멈췄습니다")
-        case .other: .ui("screen.paused.other.title", "화면 전송이 일시 중지되었습니다")
-        }
-    }
-
-    private var message: String {
-        switch reason {
-        case .secureDesktop:
-            .ui("screen.paused.secure.message", "사용자 계정 컨트롤 창이나 Ctrl+Alt+Del 화면은 원격으로 보거나 조작할 수 없습니다. PC 앞에서 승인하거나 닫으면 화면이 바로 이어집니다.")
-        case .sessionLocked:
-            .ui("screen.paused.locked.message", "PC 앞에서 잠금을 풀면 화면이 바로 이어집니다. 잠금 화면은 원격으로 조작할 수 없습니다.")
-        case .displayUnavailable:
-            .ui("screen.paused.display.message", "\(DisplayInfo.title(index: display)) 연결이 끊겼거나 모니터가 꺼져 있습니다. 모니터 전원을 확인하거나 다른 디스플레이를 고르세요.")
-        case .rdpOutputSuppressed:
-            .ui("screen.paused.rdp.message", "이 PC는 원격 데스크톱(RDP) 세션이라, RDP 창이 최소화되면 Windows가 화면 그리기를 멈춥니다. RDP 창을 다시 열거나, PC의 관리자 명령 프롬프트에서 아래 명령으로 세션을 콘솔로 옮기세요. RDP 연결은 끊깁니다.")
-        case .noViewer:
-            .ui("screen.paused.noViewer.message", "보는 사람이 없다고 판단해 캡처를 멈췄습니다. 다시 연결하면 이어집니다.")
-        case .other(let raw):
-            .ui("screen.paused.other.message", "에이전트가 알린 이유: \(raw)")
-        }
-    }
-
-    /// The `tscon` command that moves the RDP session to the console, for `rdpOutputSuppressed`.
-    private var command: String? {
-        guard reason == .rdpOutputSuppressed else { return nil }
-        return "tscon \(host.session?.sessionID ?? 1) /dest:console"
+        .overlay(Capsule().strokeBorder(DS.Color.overlayHairline))
     }
 }

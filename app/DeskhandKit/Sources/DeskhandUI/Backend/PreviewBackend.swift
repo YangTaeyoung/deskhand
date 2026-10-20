@@ -334,6 +334,12 @@ extension PreviewBackend {
         guard host.connection == .ready || host.connection == .degraded else {
             throw RPCErrorInfo(message: "\(host.name)에 연결되어 있지 않습니다", code: "OFFLINE", retryable: true)
         }
+        guard host.displays.isEmpty || host.displays.contains(where: { $0.index == display }) else {
+            throw RPCErrorInfo(message: "요청한 디스플레이가 이 PC에 없습니다", code: "DISPLAY_UNAVAILABLE")
+        }
+        guard !screenUnits.isEmpty else {
+            throw RPCErrorInfo(message: "미리보기 영상이 앱에 들어 있지 않아 화면을 보낼 수 없습니다", code: "CAPABILITY_UNSUPPORTED")
+        }
         await pause()
         return PreviewScreenStream(host: host, display: display, preset: preset, units: screenUnits) { [weak self] in
             self?.state.withLock { $0.controls[hostID]?.owner } == ControlOwner.ai.rawValue

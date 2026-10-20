@@ -9,7 +9,7 @@ import struct DeskhandClient.Host
 /// Screen stream of `PreviewBackend`. Plays H.264 access units in a loop at 60 fps with the
 /// frames an agent sends around them: stream info, an arrow cursor that circles while an AI
 /// client holds control and follows input otherwise, and statistics and a latency notice once a
-/// second. A locked session or a missing display is reported as paused. Input frames are logged
+/// second. A locked session is reported as paused (`session_locked`). Input frames are logged
 /// (category `preview.input`, and standard error); `keyframe` restarts the loop at its keyframe.
 final class PreviewScreenStream: ScreenStream {
     let frames: AsyncThrowingStream<StreamConnection.Frame, Error>
@@ -88,18 +88,11 @@ final class PreviewScreenStream: ScreenStream {
         }
 
         let displays = host.displays
-        guard displays.isEmpty || displays.contains(where: { $0.index == display }) else {
-            yield(ScreenFrameKind.paused, json(["reason": "display_unavailable"]))
-            return
-        }
         if host.isSessionLocked {
             yield(ScreenFrameKind.paused, json(["reason": "session_locked"]))
             return
         }
-        guard !units.isEmpty else {
-            yield(ScreenFrameKind.paused, json(["reason": "preview_video_missing"]))
-            return
-        }
+        guard !units.isEmpty else { return }
         let target = displays.first { $0.index == display }
         let width = target?.width ?? 1920
         let height = target?.height ?? 1080

@@ -139,6 +139,7 @@ struct VideoLayerView: NSViewRepresentable {
     let display: Int
     let keyMap: KeyMap
     let keyboardMode: KeyboardMode
+    let forwardsSystemShortcuts: Bool
     let remoteSize: CGSize
     let accessibilityLabel: String
     let accessibilityHelp: String
@@ -156,6 +157,7 @@ struct VideoLayerView: NSViewRepresentable {
         capture.display = display
         capture.keyMap = keyMap
         capture.keyboardMode = keyboardMode
+        capture.forwardsSystemShortcuts = forwardsSystemShortcuts
         capture.onTakeoverRequest = onTakeoverRequest
         capture.isInputEnabled = inputEnabled
         capture.owner = owner

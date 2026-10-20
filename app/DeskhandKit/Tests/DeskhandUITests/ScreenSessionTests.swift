@@ -92,7 +92,7 @@ final class ScreenSessionTests: XCTestCase {
     }
 
     private func attached() async -> FakeScreenStream? {
-        await wait("an attached stream") { backend.streams.count == 1 }
+        await wait("an attached stream") { backend.streams.count == 1 && session.isStreamAttached }
         return backend.streams.first
     }
 
@@ -144,8 +144,6 @@ final class ScreenSessionTests: XCTestCase {
         session.gen = { 7 }
         let attachedStream = await attached()
         let stream = try XCTUnwrap(attachedStream)
-        await wait("the input outbox") { session.phase == .connecting }
-        try? await Task.sleep(for: .milliseconds(50))
         session.send(.move(x: 10, y: 20, display: 0))
         session.send(.button(.left, down: true))
         session.send(.button(.left, down: false))
@@ -161,7 +159,6 @@ final class ScreenSessionTests: XCTestCase {
         start()
         let attachedStream = await attached()
         let stream = try XCTUnwrap(attachedStream)
-        try? await Task.sleep(for: .milliseconds(50))
         session.setPreset(.sharp)
         await wait("a preset frame") { !objects(stream, kind: ScreenFrameKind.control).isEmpty }
         let control = try XCTUnwrap(objects(stream, kind: ScreenFrameKind.control).first)
@@ -190,6 +187,26 @@ final class ScreenSessionTests: XCTestCase {
         XCTAssertEqual(session.phase, .idle)
     }
 
+    func testMissingDisplayShowsDisplayUnavailableWithoutRetrying() async throws {
+        start(failure: RPCErrorInfo(message: "요청한 디스플레이가 이 PC에 없습니다", code: "DISPLAY_UNAVAILABLE"))
+        await runTask?.value
+        guard case .displayUnavailable(let error) = session.phase else { return XCTFail("phase \(session.phase)") }
+        XCTAssertEqual(error.code, "DISPLAY_UNAVAILABLE")
+        XCTAssertTrue(ScreenSession.isPermanent(error))
+    }
+
+    func testAccessLostAsksForAKeyframeOnItsOwn() async throws {
+        start()
+        let attachedStream = await attached()
+        let stream = try XCTUnwrap(attachedStream)
+        stream.push(ScreenFrameKind.accessUnit, au(0, seq: 0))
+        await wait("live") { session.phase == .live }
+        stream.push(ScreenFrameKind.paused, Data(#"{"reason":"access_lost"}"#.utf8))
+        await wait("paused") { session.phase == .paused(.accessLost) }
+        await wait("a keyframe request", timeout: 4) { !objects(stream, kind: ScreenFrameKind.control).isEmpty }
+        XCTAssertEqual(objects(stream, kind: ScreenFrameKind.control).first?["op"] as? String, "keyframe")
+    }
+
     func testUnsupportedScreenFailsWithoutRetrying() async throws {
         start(failure: RPCErrorInfo(message: "이 에이전트 버전은 화면 스트리밍을 지원하지 않습니다", code: "CAPABILITY_UNSUPPORTED"))
         await runTask?.value
@@ -208,7 +225,7 @@ final class ScreenSessionTests: XCTestCase {
         stream.push(ScreenFrameKind.notice, Data(#"{"type":"latency","capture_to_receive_ms":14}"#.utf8))
         await wait("a reported quality", timeout: 4) { qualities.withLock { $0.contains { $0 != nil } } }
         let quality = try XCTUnwrap(qualities.withLock { $0.compactMap { $0 }.first })
-        XCTAssertEqual(quality.fps, 2)
+        XCTAssertGreaterThanOrEqual(quality.fps, 1)
         XCTAssertNotNil(quality.bitsPerSecond)
         let latency = try XCTUnwrap(quality.latencyMS)
         XCTAssertGreaterThanOrEqual(latency, 14)

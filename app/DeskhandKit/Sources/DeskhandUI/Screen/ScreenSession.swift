@@ -23,6 +23,8 @@ public final class ScreenSession {
         case paused(PauseReason)
         /// The stream or the daemon's connection to the PC dropped; attaching again.
         case reconnecting
+        /// The chosen display does not exist on the PC (`DISPLAY_UNAVAILABLE`).
+        case displayUnavailable(OperationError)
         /// The daemon refused the stream with an error that retrying does not fix.
         case failed(OperationError)
     }
@@ -76,6 +78,8 @@ public final class ScreenSession {
     @ObservationIgnored private var cursorPosition: CursorPosition?
     @ObservationIgnored private var readyObserver: (any NSObjectProtocol)?
     @ObservationIgnored private var runToken = 0
+    @ObservationIgnored private var stream: (any ScreenStream)?
+    @ObservationIgnored private var recovery: Task<Void, Never>?
     /// Native size of the display from the host's display list, used until the stream reports its source size.
     @ObservationIgnored public var fallbackSize: CGSize = .zero
 
@@ -139,6 +143,11 @@ public final class ScreenSession {
             } catch {
                 if Task.isCancelled { break }
                 let failure = OperationError(error)
+                if failure.code == "DISPLAY_UNAVAILABLE" {
+                    phase = .displayUnavailable(failure)
+                    onQuality(nil)
+                    return
+                }
                 if Self.isPermanent(failure) {
                     phase = .failed(failure)
                     onQuality(nil)
@@ -178,7 +187,7 @@ public final class ScreenSession {
     static func isPermanent(_ error: OperationError) -> Bool {
         switch error.code {
         case "NOT_FOUND", "INVALID_ARGUMENT", "CAPABILITY_UNSUPPORTED", "PERMISSION_DENIED", "AUTH_REQUIRED",
-             "ELEVATION_REQUIRED":
+             "ELEVATION_REQUIRED", "DISPLAY_UNAVAILABLE":
             true
         default:
             false
@@ -220,6 +229,7 @@ public final class ScreenSession {
         let token = streamToken
         let (outFrames, outbox) = AsyncStream.makeStream(of: OutFrame.self)
         self.outbox = outbox
+        self.stream = stream
         let sender = Task.detached {
             for await frame in outFrames {
                 try? await stream.send(kind: frame.kind, payload: frame.payload)
@@ -229,7 +239,7 @@ public final class ScreenSession {
         let metrics = MetricsBox()
         let sink = UpdateSink(session: self, token: token)
         let pump = Task.detached {
-            await ScreenPump.run(stream: stream, renderer: renderer, metrics: metrics, sink: sink)
+            await ScreenPump.run(stream: stream, renderer: renderer, metrics: metrics, sink: sink, outbox: outbox)
         }
         let ticker = Task { [weak self] in
             while !Task.isCancelled {
@@ -247,7 +257,12 @@ public final class ScreenSession {
         ticker.cancel()
         outbox.finish()
         sender.cancel()
-        if self.outbox != nil, token == streamToken { self.outbox = nil }
+        recovery?.cancel()
+        recovery = nil
+        if token == streamToken {
+            self.outbox = nil
+            self.stream = nil
+        }
         return received
     }
 
@@ -270,6 +285,8 @@ public final class ScreenSession {
             phase = .live
             hasFrame = true
             connectError = nil
+            recovery?.cancel()
+            recovery = nil
         case .info(let info):
             self.info = info
             surface?.remoteSize = nativeSize
@@ -278,6 +295,7 @@ public final class ScreenSession {
         case .paused(let reason):
             phase = .paused(reason)
             onQuality(nil)
+            if reason == .accessLost { recoverAccess(token: token) }
         case .cursorShape(let shape):
             guard let image = shape.makeImage() else { return }
             if cursorImages.count >= 64 { cursorImages.removeAll() }
@@ -300,6 +318,24 @@ public final class ScreenSession {
             }
         }
     }
+
+    /// While the agent reports `access_lost`, asks for a keyframe after 2 seconds and attaches
+    /// again after 6 more.
+    private func recoverAccess(token: Int) {
+        recovery?.cancel()
+        recovery = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled, let self, token == streamToken, phase == .paused(.accessLost) else { return }
+            requestKeyframe()
+            try? await Task.sleep(for: .seconds(6))
+            guard !Task.isCancelled, token == streamToken, phase == .paused(.accessLost) else { return }
+            Self.log.info("access_lost persisted; attaching again")
+            stream?.close()
+        }
+    }
+
+    /// True while a stream is attached and accepts input and control frames.
+    var isStreamAttached: Bool { outbox != nil }
 
     private func pushCursor() {
         surface?.setCursor(position: cursorPosition, image: cursorPosition.flatMap { cursorImages[$0.shapeID] })
@@ -397,16 +433,21 @@ final class MetricsBox: Sendable {
 /// display layer's renderer as sample buffers, flushing and asking for a keyframe after a
 /// decode failure or when an access unit needs one.
 enum ScreenPump {
-    static func run(stream: any ScreenStream, renderer: RendererBox, metrics: MetricsBox, sink: UpdateSink) async -> Bool {
+    /// Seconds the renderer may stay not ready for more data before it is flushed.
+    static let backlogLimit: TimeInterval = 1
+
+    static func run(stream: any ScreenStream, renderer: RendererBox, metrics: MetricsBox, sink: UpdateSink,
+                    outbox: AsyncStream<OutFrame>.Continuation) async -> Bool {
         var h264 = H264Stream()
         var live = false
         var received = false
         var lastKeyframeRequest = -TimeInterval.infinity
+        var backlogSince: TimeInterval?
 
-        func requestKeyframe(at now: TimeInterval) async {
+        func requestKeyframe(at now: TimeInterval) {
             guard now - lastKeyframeRequest > 0.5 else { return }
             lastKeyframeRequest = now
-            try? await stream.send(kind: ScreenFrameKind.control, payload: ScreenControl.keyframe.json)
+            outbox.yield(OutFrame(kind: ScreenFrameKind.control, payload: ScreenControl.keyframe.json))
         }
 
         do {
@@ -422,6 +463,20 @@ enum ScreenPump {
                         output.flush()
                         h264.reset()
                     }
+                    if output.isReadyForMoreMediaData {
+                        backlogSince = nil
+                    } else if !au.key {
+                        let since = backlogSince ?? receivedAt
+                        backlogSince = since
+                        if receivedAt - since > backlogLimit {
+                            ScreenSession.log.error("display layer backlog for \(receivedAt - since, privacy: .public) s; flushing")
+                            output.flush()
+                            backlogSince = nil
+                        }
+                        h264.reset()
+                        requestKeyframe(at: receivedAt)
+                        continue
+                    }
                     let result: H264Stream.Output
                     do {
                         result = try h264.feed(au)
@@ -432,7 +487,7 @@ enum ScreenPump {
                     }
                     switch result {
                     case .needsKeyframe:
-                        await requestKeyframe(at: receivedAt)
+                        requestKeyframe(at: receivedAt)
                     case .sample(let buffer, _):
                         output.enqueue(buffer)
                         let enqueuedAt = ProcessInfo.processInfo.systemUptime

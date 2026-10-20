@@ -186,15 +186,34 @@ final class InputCaptureTests: XCTestCase {
         ])
     }
 
-    func testModifierTapIsSentOnRelease() {
+    func testLoneControlTapSendsNothing() {
         captureByClicking()
         let control = NSEvent.ModifierFlags.control.union(Device.leftControl)
         XCTAssertTrue(capture.handleKeyEvent(key(.flagsChanged, 0x3B, modifiers: control)))
-        XCTAssertEqual(events, [])
         XCTAssertTrue(capture.handleKeyEvent(key(.flagsChanged, 0x3B)))
+        capture.keyMap = KeyMap(swapCommandControl: false)
+        XCTAssertTrue(capture.handleKeyEvent(key(.flagsChanged, 0x3B, modifiers: control)))
+        XCTAssertTrue(capture.handleKeyEvent(key(.flagsChanged, 0x3B)))
+        XCTAssertEqual(events, [])
+    }
+
+    func testLoneWindowsKeyTapIsNotSent() {
+        captureByClicking()
+        capture.keyMap = KeyMap(swapCommandControl: false)
+        let command = NSEvent.ModifierFlags.command.union(Device.leftCommand)
+        XCTAssertTrue(capture.handleKeyEvent(key(.flagsChanged, 0x37, modifiers: command)))
+        XCTAssertTrue(capture.handleKeyEvent(key(.flagsChanged, 0x37)))
+        XCTAssertEqual(events, [])
+    }
+
+    func testLoneOptionTapIsSentAsAlt() {
+        captureByClicking()
+        let option = NSEvent.ModifierFlags.option.union(Device.leftOption)
+        XCTAssertTrue(capture.handleKeyEvent(key(.flagsChanged, 0x3A, modifiers: option)))
+        XCTAssertTrue(capture.handleKeyEvent(key(.flagsChanged, 0x3A)))
         XCTAssertEqual(events, [
-            .key(.scancode(0x5B, extended: true), down: true),
-            .key(.scancode(0x5B, extended: true), down: false),
+            .key(.scancode(0x38, extended: false), down: true),
+            .key(.scancode(0x38, extended: false), down: false),
         ])
     }
 
@@ -221,6 +240,17 @@ final class InputCaptureTests: XCTestCase {
         XCTAssertEqual(events, [.releaseAll])
         XCTAssertEqual(captureChanges, [true, false])
         XCTAssertFalse(capture.handleKeyEvent(key(.flagsChanged, 0x3B)))
+        XCTAssertEqual(events, [.releaseAll])
+    }
+
+    func testEscapeChordWorksWithRightOption() {
+        captureByClicking()
+        let control = NSEvent.ModifierFlags.control.union(Device.leftControl)
+        let both = control.union(.option).union(NSEvent.ModifierFlags(rawValue: 0x40))
+        XCTAssertTrue(capture.handleKeyEvent(key(.flagsChanged, 0x3B, modifiers: control)))
+        XCTAssertTrue(capture.handleKeyEvent(key(.flagsChanged, 0x3D, modifiers: both)))
+        XCTAssertTrue(capture.handleKeyEvent(key(.flagsChanged, 0x3D, modifiers: control)))
+        XCTAssertFalse(capture.isCaptured)
         XCTAssertEqual(events, [.releaseAll])
     }
 
@@ -260,8 +290,45 @@ final class InputCaptureTests: XCTestCase {
             XCTAssertFalse(capture.handleKeyEvent(key(.keyDown, code, characters, modifiers: modifiers)), characters)
         }
         XCTAssertEqual(events, [])
+        XCTAssertTrue(capture.handleKeyEvent(key(.keyDown, 0x0E, "e", modifiers: .command)))
+        XCTAssertEqual(events.last, .key(.scancode(0x12, extended: false), down: true))
+    }
+
+    func testSystemShortcutsStayLocalUnlessForwarded() {
+        captureByClicking()
+        XCTAssertFalse(capture.handleKeyEvent(key(.keyDown, 0x0C, "q", modifiers: .command)))
+        XCTAssertFalse(capture.handleKeyEvent(key(.keyDown, 0x04, "h", modifiers: .command)))
+        XCTAssertFalse(capture.handleKeyEvent(key(.keyDown, 0x30, "\t", modifiers: .command)))
+        XCTAssertEqual(events, [])
+        capture.forwardsSystemShortcuts = true
         XCTAssertTrue(capture.handleKeyEvent(key(.keyDown, 0x0C, "q", modifiers: .command)))
-        XCTAssertEqual(events.last, .key(.scancode(0x10, extended: false), down: true))
+        XCTAssertTrue(capture.handleKeyEvent(key(.keyDown, 0x30, "\t", modifiers: .command)))
+        XCTAssertEqual(events, [
+            .key(.scancode(0x10, extended: false), down: true),
+            .key(.scancode(0x0F, extended: false), down: true),
+        ])
+        XCTAssertFalse(capture.handleKeyEvent(key(.keyDown, 0x12, "1", modifiers: .command)))
+    }
+
+    func testModifiersHeldAtTheCapturingClickApplyToIt() {
+        let shift = NSEvent.ModifierFlags.shift.union(NSEvent.ModifierFlags(rawValue: 0x02))
+        capture.mouseDown(with: mouse(.leftMouseDown, at: CGPoint(x: 500, y: 400), modifiers: shift))
+        XCTAssertEqual(events, [
+            .key(.scancode(0x2A, extended: false), down: true),
+            .move(x: 1920, y: 1080, display: 0),
+            .button(.left, down: true),
+        ])
+        events.removeAll()
+        XCTAssertTrue(capture.handleKeyEvent(key(.flagsChanged, 0x38)))
+        XCTAssertEqual(events, [.key(.scancode(0x2A, extended: false), down: false)])
+    }
+
+    func testFirstMoveAfterCaptureStartsAgainIsSent() {
+        captureByClicking()
+        capture.endCapture()
+        events.removeAll()
+        capture.mouseDown(with: mouse(.leftMouseDown, at: CGPoint(x: 500, y: 400)))
+        XCTAssertEqual(events, [.move(x: 1920, y: 1080, display: 0), .button(.left, down: true)])
     }
 
     func testFocusLossReleasesAll() {
@@ -295,6 +362,23 @@ final class InputCaptureTests: XCTestCase {
                               replacementRange: NSRange(location: NSNotFound, length: 0))
         capture.unmarkText()
         XCTAssertEqual(events, [.text("한")])
+    }
+
+    func testMarkedTextIsCommittedBeforeBypassingKeys() {
+        capture.keyboardMode = .macInput
+        captureByClicking()
+        capture.setMarkedText("하", selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertTrue(capture.handleKeyEvent(key(.keyDown, 0x7C, "\u{F703}")))
+        XCTAssertFalse(capture.hasMarkedText())
+        XCTAssertEqual(events, [.text("하"), .key(.scancode(0x4D, extended: true), down: true)])
+    }
+
+    func testMarkedTextIsCommittedBeforeAClick() {
+        capture.keyboardMode = .macInput
+        captureByClicking()
+        capture.setMarkedText("하", selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
+        capture.mouseDown(with: mouse(.leftMouseDown, at: CGPoint(x: 500, y: 400)))
+        XCTAssertEqual(events, [.text("하"), .button(.left, down: true)])
     }
 
     func testMacInputModeSendsNavigationKeysAsScancodes() {

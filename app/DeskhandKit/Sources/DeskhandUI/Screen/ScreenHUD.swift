@@ -28,21 +28,21 @@ struct ScreenHUD: View {
             .font(DS.Font.caption)
             if captured {
                 Divider()
-                Label(String.ui("hud.release", "⌃⌥를 눌렀다 떼면 입력을 돌려받습니다"), systemImage: "keyboard")
+                Label(String.ui("hud.release", "⌃와 ⌥(왼쪽·오른쪽 어느 쪽이든)를 함께 눌렀다 떼면 입력을 돌려받습니다"), systemImage: "keyboard")
                     .font(DS.Font.caption)
                     .foregroundStyle(.secondary)
             }
         }
         .padding(DS.Space.m)
         .background(DS.Color.overlayPanel, in: RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous).strokeBorder(.white.opacity(0.12)))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous).strokeBorder(DS.Color.overlayHairline))
         .environment(\.colorScheme, .dark)
         .allowsHitTesting(false)
         .accessibilityElement(children: .combine)
     }
 
     private func figure(_ value: String?, unit: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 2) {
+        HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
             Text(verbatim: value ?? "—")
                 .font(DS.Font.title.monospacedDigit())
                 .foregroundStyle(.primary)

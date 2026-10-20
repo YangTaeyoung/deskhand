@@ -11,10 +11,17 @@ enum ScreenScenes {
     static let stats = StreamStats(fps: 60, bitrate: 17_400_000, dropped: 0, encodeMsP50: 3.6, encodeMsP95: 7.1, captureMsP50: 8.4)
     static let metrics = FrameClock.Snapshot(fps: 60, bitsPerSecond: 17_400_000, appMS: 0.8, captureToReceiveMS: 17.2)
 
-    /// Stream info of the host's first display, encoded at 1920×1080.
+    /// Stream info of the host's display, encoded at 1920×1080. The source size is the display's
+    /// when it has the still frame's 16:9 shape, otherwise the still frame's own size.
     static func info(for host: Host, display: Int = 0) -> StreamInfo {
         let target = host.displays.first { $0.index == display } ?? host.displays.first
-        return StreamInfo(width: 1920, height: 1080, srcWidth: target?.width ?? 1920, srcHeight: target?.height ?? 1080,
+        var width = 1920
+        var height = 1080
+        if let target, target.width * 9 == target.height * 16 {
+            width = target.width
+            height = target.height
+        }
+        return StreamInfo(width: 1920, height: 1080, srcWidth: width, srcHeight: height,
                           fps: 60, bitrate: 20_000_000, encoder: "NVIDIA H.264 Encoder MFT", hardware: true, capture: "dd",
                           display: display)
     }
@@ -56,7 +63,24 @@ enum ScreenScenes {
                     connectError: OperationError(code: "TIMEOUT", message: "에이전트가 5초 안에 화면 스트림을 열지 않았습니다"))])),
             WorkspaceScenes.scene("screen-display-unavailable", Setup(
                 selected: dev, controls: [dev: human], display: 1,
-                screens: [dev: standIn(host(dev), phase: .paused(.displayUnavailable), display: 1, cursor: nil)])),
+                screens: [dev: standIn(host(dev), phase: .displayUnavailable(OperationError(
+                    code: "DISPLAY_UNAVAILABLE", message: "요청한 디스플레이가 이 PC에 없습니다")),
+                    hasFrame: false, display: 1, cursor: nil)])),
+            WorkspaceScenes.scene("screen-no-output", Setup(
+                selected: dev, controls: [dev: human], display: 1,
+                screens: [dev: standIn(host(dev), phase: .paused(.noOutput), hasFrame: false, display: 1, cursor: nil)])),
+            WorkspaceScenes.scene("screen-session-disconnected", Setup(
+                selected: PreviewFixtures.stagingID, inspector: nil,
+                screens: [PreviewFixtures.stagingID: standIn(host(PreviewFixtures.stagingID), phase: .paused(.sessionDisconnected), cursor: nil)])),
+            WorkspaceScenes.scene("screen-access-lost", Setup(
+                selected: dev, controls: [dev: human],
+                screens: [dev: standIn(host(dev), phase: .paused(.accessLost), cursor: nil)])),
+            WorkspaceScenes.scene("screen-session0", Setup(
+                selected: PreviewFixtures.meetingPCID,
+                screens: [PreviewFixtures.meetingPCID: standIn(host(PreviewFixtures.meetingPCID), phase: .paused(.session0), hasFrame: false)])),
+            WorkspaceScenes.scene("screen-no-encoder", Setup(
+                selected: PreviewFixtures.qaLaptopID,
+                screens: [PreviewFixtures.qaLaptopID: standIn(host(PreviewFixtures.qaLaptopID), phase: .paused(.noEncoder), hasFrame: false)])),
             WorkspaceScenes.scene("screen-secure-desktop", Setup(
                 selected: PreviewFixtures.qaLaptopID,
                 screens: [PreviewFixtures.qaLaptopID: standIn(host(PreviewFixtures.qaLaptopID), phase: .paused(.secureDesktop), cursor: nil)])),
