@@ -26,6 +26,7 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/daemon/paths"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/pty"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/store"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/tunnel"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/xfer"
 	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
@@ -87,7 +88,9 @@ type Deps struct {
 	// Transfers serves the transfer methods; nil leaves them out.
 	Transfers *xfer.Manager
 	// PTYs serves pty.open and the pty streams; nil leaves them out.
-	PTYs    *pty.Hub
+	PTYs *pty.Hub
+	// Tunnels serves the tunnel methods; nil leaves them out.
+	Tunnels *tunnel.Manager
 	Version string
 	Logger  *log.Logger
 }
@@ -136,6 +139,7 @@ func New(d Deps) *Server {
 	s.registerProc()
 	s.registerTransfer()
 	s.registerPTY()
+	s.registerTunnel()
 	s.registerDiag()
 	return s
 }

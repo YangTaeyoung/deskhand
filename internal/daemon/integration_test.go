@@ -100,6 +100,7 @@ func startAgentWith(t *testing.T, port int, id transport.Identity, dataDir strin
 		done = make(chan error, 1)
 		streams := quicserve.TransferStreams(srv)
 		maps.Copy(streams, quicserve.PTYStreams(srv))
+		maps.Copy(streams, quicserve.TunnelStreams(srv))
 		go func() { done <- quicserve.Run(ctx, cfg, id, srv, streams) }()
 		select {
 		case err := <-done:

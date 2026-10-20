@@ -344,6 +344,7 @@ func (s *Server) registerBuiltins() {
 	})
 	s.registerShell()
 	s.registerPTY()
+	s.registerTunnel()
 	s.registerFiles()
 	s.registerUI()
 	s.registerLaunch()

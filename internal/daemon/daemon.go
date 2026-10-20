@@ -23,6 +23,7 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/daemon/paths"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/pty"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/store"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/tunnel"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/xfer"
 	"github.com/YangTaeyoung/deskhand/internal/install"
 	"github.com/YangTaeyoung/deskhand/internal/transport"
@@ -68,6 +69,7 @@ type Daemon struct {
 	jobs  *jobs.Registry
 	xfer  *xfer.Manager
 	ptys  *pty.Hub
+	tuns  *tunnel.Manager
 	ln    net.Listener
 	lg    *log.Logger
 	Hosts *hosts.Registry
@@ -172,10 +174,11 @@ func New(opt Options) (*Daemon, error) {
 	d.xfer = xmgr
 	hub = pty.New(pty.Options{Store: d.st, Conns: d.mgr, Jobs: jreg, Logger: lg})
 	d.ptys = hub
+	d.tuns = tunnel.New(lg)
 	if d.ln, err = localapi.Listen(paths.Socket()); err != nil {
 		return nil, err
 	}
-	d.srv = localapi.New(localapi.Deps{Store: d.st, Bus: bus, Hosts: reg, Jobs: jreg, Transfers: xmgr, PTYs: hub, Version: opt.Version, Logger: lg})
+	d.srv = localapi.New(localapi.Deps{Store: d.st, Bus: bus, Hosts: reg, Jobs: jreg, Transfers: xmgr, PTYs: hub, Tunnels: d.tuns, Version: opt.Version, Logger: lg})
 	if err := reg.Load(); err != nil {
 		return nil, fmt.Errorf("저장된 PC 목록을 읽지 못했습니다. %s를 확인하세요: %w", paths.DB(), err)
 	}
@@ -211,6 +214,10 @@ func (d *Daemon) Close() {
 		d.ln.Close()
 		_ = os.Remove(paths.Socket())
 		d.ln = nil
+	}
+	if d.tuns != nil {
+		d.tuns.Shutdown()
+		d.tuns = nil
 	}
 	if d.xfer != nil {
 		d.xfer.Close()

@@ -27,9 +27,11 @@
 | `cursor` | 데몬 | `display` | 프레임(§5) |
 | `input` | 데몬 | `gen`(writer generation) | 프레임(§6) |
 | `pty` | 데몬 | `job`(재부착) 또는 `new`: {`shell`, `cwd`, `cols`, `rows`, `env`, `rid`} | 수락 줄 `{"ok":true,"job":…,"pid":…}` 뒤 프레임(§7) |
-| `tunnel` | 데몬 | `port`(1–65535, 루프백만) | 원시 바이트 |
+| `tunnel` | 데몬 | `port`(1–65535), `host`(선택: `127.0.0.1` 또는 `::1` 리터럴만, 없으면 `127.0.0.1` 다음 `::1`) | 수락 줄 `{"ok":true}` 뒤 양방향 원시 바이트 |
 | `put` | 데몬 | `transfer_id`, `path`(최종 경로), `offset`(임시 파일 크기), `size`(전체), `mtime`(RFC 3339), `roots` | 수락 줄 `{"ok":true,"part_size":…}` 뒤 데몬이 원시 바이트를 쓰고 FIN, 에이전트가 결과 줄 `{"ok":true,"received":n,"part_size":…}`(실패면 `ok:false`·`code`·`error`·`retryable`에 같은 두 필드)을 쓰고 FIN |
 | `get` | 데몬 | `path`, `offset`, `length`(0=끝까지), `roots` | 수락 줄 `{"ok":true,"size":…,"offset":…,"length":n,"mtime":…}` 뒤 에이전트가 원시 바이트 n개를 쓰고 FIN. 다 쓰기 전에 실패하면 FIN 대신 스트림을 리셋한다 |
+
+`tunnel` 스트림: 에이전트는 이름을 풀지 않고 루프백 리터럴로만 연결한다. `host`가 `127.0.0.1`·`::1`이 아니면(`localhost`, 사설·공인 주소, `0.0.0.0`, 이름 등) 연결하지 않고 `PERMISSION_DENIED`, `port`가 1–65535 밖이면 `INVALID_ARGUMENT`, 그 포트에서 받는 프로그램이 없으면 `NOT_FOUND`(`retryable:true`), 5초 안에 연결되지 않으면 `TIMEOUT`, exec가 꺼진 에이전트는 `CAPABILITY_UNSUPPORTED`로 거절한다. 연결에 성공하면 수락 줄 뒤로 바이트를 그대로 나른다. 한쪽 방향이 끝나면(스트림 FIN 또는 TCP 쓰기 종료) 반대쪽 연결에 같은 반쪽 닫기를 전하고 반대 방향은 계속 흐른다. 한쪽이 오류로 끊기면 양쪽을 리셋한다. 스트림 하나가 TCP 연결 하나다.
 
 에이전트가 헤더를 거절하면 `{"ok":false,"code":"…","error":"…"}` 한 줄(`put`·`get`은 `retryable`도)을 쓰고 스트림을 닫는다. 처리기가 없는 `s`는 `CAPABILITY_UNSUPPORTED`다. 수락하면 `{"ok":true, …}` 한 줄을 먼저 쓴다(`video`는 `info` 프레임으로 대신한다). `rpc` 스트림은 수락 줄 없이 바로 `hello`로 시작한다.
 
@@ -53,7 +55,7 @@ Alcove 에이전트 프로토콜 2층과 같은 NDJSON(`t`로 구분). 한 줄 �
 - 에이전트가 실행 중에 멈췄던 `rid`는 다시 실행하지 않고 `{"ok":false,"code":"EXECUTION_OUTCOME_UNKNOWN"}`를 저장한 응답으로 삼는다.
 - `req.status{rid}` 응답: 기록이 없으면 `{"ok":true,"state":"unknown"}`, 실행 중이면 `{"ok":true,"state":"running"}`, 끝났으면 저장한 응답의 필드(`ok`·`code`·`error` 또는 결과 필드)에 `"state":"done"`을 더한 것.
 - 오류: `ok:false`, `code`(대문자 상수), `error`(다음 행동을 알려 주는 문장), `retryable`. Alcove에서 가져온 op의 오류에는 아직 `code`가 없는 것이 있다.
-- `caps`: 기능별 `{"state":"ready|unavailable|unsupported|needs_user","reason":"…"}`(`ready`면 `reason` 없음). 키: `screen`, `input`, `uia`, `exec`, `files`, `processes`, `pty`, `tunnel`, `diag`, `clipboard`. `pty`에는 `shells`(띄울 수 있는 셸, 첫 항목이 기본 셸)가 있다: Windows는 `powershell`(Windows PowerShell), `pwsh`(PowerShell 7이 설치돼 있을 때 — 기계 PATH·App Paths·`Program Files\PowerShell\7`), `cmd` 순서이고 Windows 밖은 `sh`(`/bin/sh`). 띄울 셸이 없으면 `unsupported`, exec가 꺼진 에이전트는 `unavailable`이다. `diag`는 Windows 에이전트에서 `ready`, Windows 밖에서는 `unsupported`, exec가 꺼진 에이전트는 `unavailable`이다. 바뀌면 에이전트가 `{"t":"ev","name":"caps.changed","caps":{…전체…}}`를 보낸다(welcome 직후 hello와 다를 때 포함).
+- `caps`: 기능별 `{"state":"ready|unavailable|unsupported|needs_user","reason":"…"}`(`ready`면 `reason` 없음). 키: `screen`, `input`, `uia`, `exec`, `files`, `processes`, `pty`, `tunnel`, `diag`, `clipboard`. `pty`에는 `shells`(띄울 수 있는 셸, 첫 항목이 기본 셸)가 있다: Windows는 `powershell`(Windows PowerShell), `pwsh`(PowerShell 7이 설치돼 있을 때 — 기계 PATH·App Paths·`Program Files\PowerShell\7`), `cmd` 순서이고 Windows 밖은 `sh`(`/bin/sh`). 띄울 셸이 없으면 `unsupported`, exec가 꺼진 에이전트는 `unavailable`이다. `tunnel`은 exec가 켜진 에이전트에서 `ready`(Windows·macOS 모두), 꺼진 에이전트에서 `unavailable`이다. `diag`는 Windows 에이전트에서 `ready`, Windows 밖에서는 `unsupported`, exec가 꺼진 에이전트는 `unavailable`이다. 바뀌면 에이전트가 `{"t":"ev","name":"caps.changed","caps":{…전체…}}`를 보낸다(welcome 직후 hello와 다를 때 포함).
 - `exec.run` 결과: `code`, `stdout`, `stderr`(각각 끝 200000바이트), `timed_out`, `truncated`, 그리고 요청이 온 연결이 닫혀 프로세스 트리를 끝냈을 때 `killed:"connection_closed"`(이때와 시간 초과 때 `code`는 -1).
 - `exec.read{job, out_offset, err_offset, max}` 결과: `state`(`running`/`exited`/`lost`), `pid`, `out`, `err`, `out_next`, `err_next`, `dropped`, `code`(`exited`일 때), `eof`(프로세스가 끝났고 이번 읽기로 두 스트림 끝까지 읽었을 때만 true). 한 번에 스트림마다 최대 256 KiB이므로 `eof`가 true가 될 때까지 `*_next`로 이어 읽는다. 모르는 job은 `NOT_FOUND`.
 - exec job: `exec.start` job은 메타와 stdout·stderr 끝 1 MiB를 `DataDir/jobs/<job>/`에 기록한다. 에이전트가 다시 시작하면 그 job이 `exec.list`·`exec.read`에 `state:"exited"`(종료 코드 기록 시 `code` 포함) 또는 `state:"lost"`(실행 중에 에이전트가 멈춤, `code` 없음)로 남는다.
@@ -89,7 +91,7 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 | `xfer.commit` | `transfer_id`, `path`, `sha256`, `on_conflict`, `roots` | `path`(실제 반영 경로), `outcome`(`written`/`skipped`/`renamed`) |
 | `xfer.abort` | `transfer_id`, `path`, `roots` | `removed` — 임시 파일만 지운다 |
 | `pty.list` | — | `ptys`: [{`job`, `pid`, `cols`, `rows`, `state`(`starting`/`running`/`exited`), `shell`, `started?`(RFC 3339), `rid?`(시작 헤더의 `rid`), `code?`(`exited`일 때)}] — 시작 순서. 끝난 pty는 최근 32개만 남는다 |
-| `debug.ports` | `count` | `ports` — 루프백 빈 포트 |
+| `debug.ports` | `count`(1–8) | `ports` — 서로 다른 루프백(`127.0.0.1`) TCP 빈 포트 `count`개. 묶었다 푼 시점에 비어 있던 포트이므로 호출 직후 다른 프로그램이 쓸 수 있다. 범위 밖 `count`는 `INVALID_ARGUMENT` |
 | `diag.system` | — | `os`{`name`, `version`, `build`, `edition`}, `computer_name`, `cpu`{`name`, `cores`, `threads`, `usage_pct`}, `memory`{`total_bytes`, `used_bytes`}, `disks`: [{`root`, `label?`, `fs`, `total_bytes`, `free_bytes`}], `gpus`: [{`name`, `driver_version?`, `memory_bytes?`}], `boot_time`(RFC 3339), `uptime_s` |
 | `diag.services` | `name?`(부분 일치, 대소문자 무시) | `services`: [{`name`, `display_name`, `state`(`running`/`stopped`/`paused`/`start_pending`/`stop_pending`/`unknown`), `start_type`(`auto`/`delayed_auto`/`manual`/`disabled`/`unknown`), `pid?`}] |
 | `diag.events` | `log`(`Application`/`System`, 기본 `System`), `since?`(RFC 3339, 기본 24시간 전), `until?`, `levels?`([`critical`/`error`/`warning`/`information`/`verbose`], 기본 전부), `provider?`(정확히 일치), `max?`(기본 200, 최대 1000) | `events`: [{`record_id`, `time`, `level`, `provider`, `event_id`, `message`}](최신 먼저), `truncated`(`max`에서 잘렸으면 true) |

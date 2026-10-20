@@ -249,6 +249,18 @@ func detail(tool string, params, m map[string]any) string {
 			parts = append(parts, fmt.Sprintf("%v %v %v", tm["transfer_id"], tm["direction"], tm["state"]))
 		}
 		return fmt.Sprintf("%d transfers: %s", len(ts), strings.Join(parts, "; "))
+	case "tunnel_open":
+		return fmt.Sprintf("tunnel %v: connect to %v on this Mac to reach 127.0.0.1:%v on the PC; close it with tunnel_close when done", m["tunnel_id"], m["local_address"], m["remote_port"])
+	case "tunnel_close":
+		return fmt.Sprintf("closed=%v tunnel %v", m["closed"], m["tunnel_id"])
+	case "tunnel_list":
+		ts, _ := m["tunnels"].([]any)
+		var parts []string
+		for _, t := range ts {
+			tm, _ := t.(map[string]any)
+			parts = append(parts, fmt.Sprintf("%v %v -> %v:%v (%v)", tm["tunnel_id"], tm["local_address"], tm["host_id"], tm["remote_port"], tm["owner"]))
+		}
+		return fmt.Sprintf("%d tunnels: %s", len(ts), strings.Join(parts, "; "))
 	case "files_copy":
 		return fmt.Sprintf("outcome=%v copied=%v path=%v", m["outcome"], m["copied"], m["path"])
 	case "files_trash":

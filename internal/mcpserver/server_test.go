@@ -179,7 +179,7 @@ func envelope(extra map[string]any) map[string]any {
 var allTools = []string{"hosts_list", "host_doctor", "session_inspect", "exec_run", "exec_start", "job_get", "job_output", "job_cancel",
 	"files_list", "files_stat", "files_read", "files_write", "files_mkdir", "files_rename", "proc_list", "proc_kill", "app_launch",
 	"files_push", "files_pull", "files_move", "files_copy", "files_trash", "files_hash", "transfer_get", "transfer_list", "transfer_cancel", "transfer_resume", "transfer_pause",
-	"diag_system", "diag_services", "diag_events", "diag_crashes"}
+	"diag_system", "diag_services", "diag_events", "diag_crashes", "tunnel_open", "tunnel_close", "tunnel_list"}
 
 func TestToolsListed(t *testing.T) {
 	cs := connect(t)

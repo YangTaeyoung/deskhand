@@ -31,6 +31,7 @@ type StreamHeader struct {
 	Job        string   `json:"job,omitempty"`
 	New        *PTYNew  `json:"new,omitempty"`
 	Port       int      `json:"port,omitempty"`
+	Host       string   `json:"host,omitempty"`
 	TransferID string   `json:"transfer_id,omitempty"`
 	Path       string   `json:"path,omitempty"`
 	Offset     int64    `json:"offset,omitempty"`

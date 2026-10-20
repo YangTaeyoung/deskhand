@@ -115,6 +115,9 @@ func (s *Server) hostRemove(ctx context.Context, sess *session, raw json.RawMess
 	if err := s.d.Hosts.Remove(actx, row.HostID, p.Uninstall, sess.Caller()); err != nil {
 		return nil, err
 	}
+	if s.d.Tunnels != nil {
+		s.d.Tunnels.CloseHost(row.HostID)
+	}
 	return map[string]any{"host_id": row.HostID, "removed": true, "uninstalled": p.Uninstall}, nil
 }
 

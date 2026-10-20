@@ -79,20 +79,20 @@ func TestHelloCarriesEveryCapabilityKey(t *testing.T) {
 			t.Fatalf("caps.%s %v", k, caps[k])
 		}
 	}
-	for _, k := range []string{"screen", "input", "tunnel"} {
+	for _, k := range []string{"screen", "input"} {
 		if st, _ := caps[k].(map[string]any); st["state"] != "unsupported" || st["reason"] != "not implemented in this agent version" {
 			t.Fatalf("caps.%s %v", k, caps[k])
 		}
 	}
 	set := capSet(hello)
-	if set["exec"] || set["files"] || set["processes"] || set["pty"] || set["diag"] {
+	if set["exec"] || set["files"] || set["processes"] || set["pty"] || set["diag"] || set["tunnel"] {
 		t.Fatalf("caps without exec %v", hello["caps"])
 	}
 
 	_, r, _, _ = startServerS(t, Options{Clipboard: &fakeClipboard{}, HomeDir: t.TempDir(), AllowExec: true})
 	hello = expect(t, r, "hello")
 	set = capSet(hello)
-	for _, c := range []string{"exec", "files", "processes", "pty", "clipboard"} {
+	for _, c := range []string{"exec", "files", "processes", "pty", "tunnel", "clipboard"} {
 		if !set[c] {
 			t.Fatalf("caps with exec lack %s: %v", c, set)
 		}

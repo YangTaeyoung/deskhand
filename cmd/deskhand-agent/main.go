@@ -235,6 +235,7 @@ func cmdRun(args []string, stderr io.Writer) int {
 		len(cfg.ControllerFingerprints), cfg.Name, id.Fingerprint)
 	streams := quicserve.TransferStreams(s)
 	maps.Copy(streams, quicserve.PTYStreams(s))
+	maps.Copy(streams, quicserve.TunnelStreams(s))
 	pause := serveFirstPause
 	for {
 		err := quicserve.Run(ctx, cfg, id, s, streams)
