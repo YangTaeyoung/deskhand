@@ -3,9 +3,11 @@ package localapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/YangTaeyoung/deskhand/internal/daemon/apierr"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/conn"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/jobs"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/store"
 )
@@ -89,6 +91,9 @@ func (s *Server) jobsCancel(ctx context.Context, sess *session, raw json.RawMess
 	if err != nil {
 		return nil, err
 	}
+	if before.Kind == jobs.KindTransfer && s.d.Transfers != nil {
+		return s.cancelTransferJob(ctx, sess, before)
+	}
 	cctx, cancel := s.detached(remoteTimeout)
 	defer cancel()
 	info := conn.CallInfo{}
@@ -105,4 +110,28 @@ func (s *Server) jobsCancel(ctx context.Context, sess *session, raw json.RawMess
 	}
 	_, _ = s.d.Bus.Record(sess.Caller().Entry(before.HostID, model.TimelineExec, "job 취소: "+before.Summary, timelineOutcome(o.status), before.JobID))
 	return s.envelope(before.HostID, before.JobID, info, o, nil).Map(map[string]any{"job": job}), nil
+}
+
+// cancelTransferJob cancels the transfer that the job j mirrors, as
+// transfer.cancel does, and returns the envelope with the job.
+func (s *Server) cancelTransferJob(ctx context.Context, sess *session, j model.Job) (any, error) {
+	var p struct {
+		TransferID string `json:"transfer_id"`
+	}
+	stored, err := s.d.Store.GetJob(j.JobID)
+	if err != nil {
+		return nil, apierr.Internal(fmt.Sprintf("job %s를 읽지 못했습니다(%v). 데몬 로그를 확인하세요", j.JobID, err))
+	}
+	if err := json.Unmarshal(stored.Params, &p); err != nil || p.TransferID == "" {
+		return nil, apierr.Internal(fmt.Sprintf("job %s에 전송 ID가 없습니다. transfer.list로 전송을 찾아 transfer.cancel을 쓰세요", j.JobID))
+	}
+	if _, err := s.d.Transfers.Cancel(p.TransferID, sess.Caller()); err != nil {
+		return nil, err
+	}
+	job, err := s.d.Jobs.Get(ctx, j.JobID)
+	if err != nil {
+		return nil, err
+	}
+	o := outcome{status: job.Status, action: model.Executed()}
+	return s.envelope(job.HostID, job.JobID, conn.CallInfo{}, o, nil).Map(map[string]any{"job": job}), nil
 }

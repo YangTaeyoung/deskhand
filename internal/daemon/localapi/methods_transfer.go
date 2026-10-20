@@ -30,8 +30,9 @@ type transferParams struct {
 }
 
 // transferStart starts a transfer and returns its envelope with
-// transfer_id: running when it started, failed and not started when the
-// source, the destination folder or the host does not let it start.
+// transfer_id and the job that mirrors it: running when it started, failed
+// and not started when the source, the destination folder or the host does
+// not let it start.
 func (s *Server) transferStart(ctx context.Context, sess *session, raw json.RawMessage) (any, error) {
 	var p transferParams
 	if err := decode(raw, &p); err != nil {
@@ -56,7 +57,7 @@ func (s *Server) transferStart(ctx context.Context, sess *session, raw json.RawM
 		return s.envelope(row.HostID, "", res.Info, o, nil).Map(map[string]any{"transfer_id": nil}), nil
 	}
 	o := outcome{status: model.StatusRunning, action: model.Executed()}
-	return s.envelope(row.HostID, "", res.Info, o, nil).Map(map[string]any{"transfer_id": res.Transfer.TransferID}), nil
+	return s.envelope(row.HostID, res.JobID, res.Info, o, nil).Map(map[string]any{"transfer_id": res.Transfer.TransferID}), nil
 }
 
 func (s *Server) transferList(_ context.Context, _ *session, raw json.RawMessage) (any, error) {

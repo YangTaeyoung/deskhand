@@ -83,6 +83,10 @@ type transfer struct {
 	removing bool
 	// unsaved is set while a rev of the transfer could not be stored.
 	unsaved bool
+	// published holds, by rel, what the last transfer.updated reported of
+	// each file; mirrored is the state the job was last set to.
+	published map[string]fileMark
+	mirrored  string
 }
 
 func newTransfer(m *Manager, row store.Transfer, files []store.TransferFile) *transfer {
@@ -117,33 +121,63 @@ func encodeError(e *apierr.Error) json.RawMessage {
 	return b
 }
 
-// snapshot returns the API form of a transfer whose rate is rate while it
-// runs.
-func snapshot(row store.Transfer, files []store.TransferFile, rate int64) model.Transfer {
+// fileView returns the API form of the file f.
+func fileView(f store.TransferFile) model.TransferFile {
+	return model.TransferFile{Rel: f.Rel, Size: f.Size, BytesDone: f.BytesDone, State: f.State, Outcome: f.Outcome, SHA256: f.SHA256,
+		Path: f.Path, Error: decodeError(f.Error)}
+}
+
+// summary returns the API form of a transfer without its files: total
+// holds the counts of its files and rate its rate while it runs.
+func summary(row store.Transfer, total store.TransferTotal, rate int64) model.Transfer {
 	out := model.Transfer{TransferID: row.TransferID, HostID: row.HostID, Direction: row.Direction, Local: row.Local, Remote: row.Remote,
-		OnConflict: row.OnConflict, State: row.State, Outcome: row.Outcome, Error: decodeError(row.Error), Files: []model.TransferFile{},
-		Rev: row.Rev, UpdatedAt: model.Time(row.UpdatedAt)}
-	for _, f := range files {
-		if f.Dir {
-			continue
-		}
-		out.Files = append(out.Files, model.TransferFile{Rel: f.Rel, Size: f.Size, BytesDone: f.BytesDone, State: f.State, Outcome: f.Outcome,
-			SHA256: f.SHA256, Path: f.Path, Error: decodeError(f.Error)})
-		out.FilesTotal++
-		out.BytesTotal += f.Size
-		out.BytesDone += f.BytesDone
-		if f.State == StateDone {
-			out.FilesDone++
-		}
-	}
+		OnConflict: row.OnConflict, State: row.State, Outcome: row.Outcome, Error: decodeError(row.Error), Rev: row.Rev,
+		UpdatedAt: model.Time(row.UpdatedAt), FilesTotal: total.Files, FilesDone: total.Done, FilesFailed: total.Failed,
+		BytesTotal: total.Bytes, BytesDone: total.BytesDone}
 	if row.State == StateRunning || row.State == StateVerifying {
 		out.RateBPS = rate
 	}
 	return out
 }
 
-func (t *transfer) snapshotLocked() model.Transfer {
+// totals counts the files (folders left out) of files.
+func totals(files []store.TransferFile) store.TransferTotal {
+	var t store.TransferTotal
+	for _, f := range files {
+		if f.Dir {
+			continue
+		}
+		t.Files++
+		t.Bytes += f.Size
+		t.BytesDone += f.BytesDone
+		switch f.State {
+		case StateDone:
+			t.Done++
+		case StateFailed:
+			t.Failed++
+		}
+	}
+	return t
+}
+
+// snapshot returns the API form of a transfer with its files, whose rate
+// is rate while it runs.
+func snapshot(row store.Transfer, files []store.TransferFile, rate int64) model.TransferDetail {
+	out := model.TransferDetail{Transfer: summary(row, totals(files), rate), Files: []model.TransferFile{}}
+	for _, f := range files {
+		if !f.Dir {
+			out.Files = append(out.Files, fileView(f))
+		}
+	}
+	return out
+}
+
+func (t *transfer) snapshotLocked() model.TransferDetail {
 	return snapshot(t.row, t.files, t.rate)
+}
+
+func (t *transfer) summaryLocked() model.Transfer {
+	return summary(t.row, totals(t.files), t.rate)
 }
 
 // publishLocked stores the transfer with the next rev and publishes it
@@ -213,13 +247,92 @@ func (t *transfer) flushLocked() {
 	t.sampleLocked(now)
 	t.dirty = map[int]bool{}
 	t.lastFlush = now
-	snap := t.snapshotLocked()
-	t.m.opt.Bus.PublishStoring(t.row.HostID, "", events.TransferUpdated, map[string]any{"transfer": snap}, map[string]any{
+	snap := t.summaryLocked()
+	fields := map[string]any{"transfer": snap}
+	if changed := t.changedFilesLocked(); len(changed) > 0 {
+		fields["changed_files"] = changed
+	}
+	t.m.opt.Bus.PublishStoring(t.row.HostID, "", events.TransferUpdated, fields, map[string]any{
 		"transfer_id": snap.TransferID, "rev": snap.Rev, "state": snap.State, "outcome": snap.Outcome, "bytes_done": snap.BytesDone,
 		"bytes_total": snap.BytesTotal, "files_done": snap.FilesDone, "files_total": snap.FilesTotal})
+	t.mirrorLocked()
 	if snap.RateBPS > 0 {
 		t.armLocked(now.Add(rateRefresh))
 	}
+}
+
+// fileMark is what transfer.updated reports of a file: a change of it puts
+// the file in changed_files.
+type fileMark struct {
+	state, outcome, path, code string
+}
+
+func markOf(f store.TransferFile) fileMark {
+	m := fileMark{state: f.State, outcome: f.Outcome, path: f.Path}
+	if e := decodeError(f.Error); e != nil {
+		m.code = e.Code + e.Message
+	}
+	return m
+}
+
+// changedFilesLocked returns the files whose state, outcome, path or error
+// changed since the last transfer.updated and records them as published.
+func (t *transfer) changedFilesLocked() []model.TransferFile {
+	if t.published == nil {
+		t.published = map[string]fileMark{}
+	}
+	var out []model.TransferFile
+	for _, f := range t.files {
+		if f.Dir {
+			continue
+		}
+		mark := markOf(f)
+		if old, ok := t.published[f.Rel]; ok && old == mark {
+			continue
+		}
+		t.published[f.Rel] = mark
+		out = append(out, fileView(f))
+	}
+	return out
+}
+
+// jobStatus returns the status and result of the job that mirrors a
+// transfer in state: running for a queued, running, verifying or paused
+// transfer (paused:true in the result for a paused one), succeeded for a
+// done one, failed and cancelled for the others.
+func jobStatus(row store.Transfer) (string, map[string]any, bool) {
+	result := map[string]any{"transfer_id": row.TransferID, "state": row.State}
+	if row.Outcome != "" {
+		result["outcome"] = row.Outcome
+	}
+	if e := decodeError(row.Error); e != nil {
+		result["error"] = e
+	}
+	switch row.State {
+	case StateDone:
+		return model.StatusSucceeded, result, true
+	case StateFailed:
+		return model.StatusFailed, result, true
+	case StateCancelled:
+		return model.StatusCancelled, result, true
+	case StatePaused:
+		result["paused"] = true
+	}
+	return model.StatusRunning, result, false
+}
+
+// mirrorLocked sets the job of the transfer to its state when that changed
+// since the job was last set.
+func (t *transfer) mirrorLocked() {
+	if t.m.opt.Jobs == nil || t.row.JobID == "" || t.mirrored == t.row.State {
+		return
+	}
+	status, result, finished := jobStatus(t.row)
+	if _, err := t.m.opt.Jobs.Mirror(t.row.JobID, status, result, finished); err != nil {
+		t.m.lg.Printf("transfer %s: job %s: %v", t.row.TransferID, t.row.JobID, err)
+		return
+	}
+	t.mirrored = t.row.State
 }
 
 // saveLocked stores the row and the changed files of the transfer without

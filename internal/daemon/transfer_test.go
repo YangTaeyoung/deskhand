@@ -38,7 +38,8 @@ func TestTransferMethodsOverTheLocalAPI(t *testing.T) {
 	res := e.call(t, "transfer.start", map[string]any{"direction": "push", "host_id": "pc", "local": src, "remote": dst})
 	checkEnvelope(t, res)
 	id, _ := res["transfer_id"].(string)
-	if res["status"] != "running" || res["error"] != nil || !strings.HasPrefix(id, "t-") || res["host_id"] != "pc" ||
+	jobID, _ := res["job_id"].(string)
+	if res["status"] != "running" || res["error"] != nil || !strings.HasPrefix(id, "t-") || !strings.HasPrefix(jobID, "j-") || res["host_id"] != "pc" ||
 		res["action"].(map[string]any)["executed"] != true {
 		t.Fatalf("transfer.start %v", res)
 	}
@@ -66,21 +67,32 @@ func TestTransferMethodsOverTheLocalAPI(t *testing.T) {
 	if b, err := os.ReadFile(dst); err != nil || string(b) != string(data) {
 		t.Fatalf("pushed file: %d bytes, %v", len(b), err)
 	}
+	job := e.call(t, "jobs.get", map[string]any{"job_id": jobID})
+	if job["kind"] != "transfer" || job["status"] != "succeeded" || job["result"].(map[string]any)["transfer_id"] != id {
+		t.Fatalf("job of the transfer %v", job)
+	}
 	last := 0.0
+	changed := false
 	for last < tr["rev"].(float64) {
 		select {
 		case ev := <-evs:
 			got := ev.Params["transfer"].(map[string]any)
-			if got["transfer_id"] != id || got["rev"].(float64) <= last {
+			if _, ok := got["files"]; got["transfer_id"] != id || got["rev"].(float64) <= last || ok {
 				t.Fatalf("event %v after rev %v", got, last)
 			}
 			last = got["rev"].(float64)
+			_, has := ev.Params["changed_files"]
+			changed = changed || has
 		case <-ctx.Done():
 			t.Fatalf("transfer.updated events reached rev %v of %v", last, tr["rev"])
 		}
 	}
+	if !changed {
+		t.Fatal("no transfer.updated event carried changed_files")
+	}
 	list := e.call(t, "transfer.list", map[string]any{"host_id": "pc"})["transfers"].([]any)
-	if len(list) != 1 || list[0].(map[string]any)["transfer_id"] != id {
+	listed := list[0].(map[string]any)
+	if _, ok := listed["files"]; len(list) != 1 || listed["transfer_id"] != id || ok || listed["files_total"] != float64(1) || listed["files_failed"] != float64(0) {
 		t.Fatalf("transfer.list %v", list)
 	}
 	var cerr *client.Error
@@ -113,6 +125,25 @@ func TestTransferMethodsOverTheLocalAPI(t *testing.T) {
 	}
 	if b, err := os.ReadFile(back); tr["state"] != "done" || err != nil || string(b) != string(data) {
 		t.Fatalf("pull %v, %v", tr, err)
+	}
+	failed := e.call(t, "transfer.start", map[string]any{"direction": "pull", "host_id": "pc", "local": back, "remote": dst})
+	fid, fjob := failed["transfer_id"].(string), failed["job_id"].(string)
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		tr = e.call(t, "transfer.get", map[string]any{"transfer_id": fid})
+		if tr["state"] == "failed" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("pull onto an existing file %v", tr)
+		}
+	}
+	cancelled := e.call(t, "jobs.cancel", map[string]any{"job_id": fjob})
+	checkEnvelope(t, cancelled)
+	if cancelled["status"] != "cancelled" || cancelled["job"].(map[string]any)["status"] != "cancelled" || cancelled["job_id"] != fjob {
+		t.Fatalf("jobs.cancel of a transfer job %v", cancelled)
+	}
+	if tr = e.call(t, "transfer.get", map[string]any{"transfer_id": fid}); tr["state"] != "cancelled" {
+		t.Fatalf("transfer after jobs.cancel %v", tr)
 	}
 	entries := e.call(t, "timeline.list", map[string]any{"host_id": "pc", "limit": 20})["entries"].([]any)
 	var summaries []string

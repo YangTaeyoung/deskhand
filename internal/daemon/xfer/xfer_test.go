@@ -22,7 +22,7 @@ import (
 const mib = 1 << 20
 
 // checkDone fails the test unless tr ended done with outcome.
-func checkDone(t *testing.T, tr model.Transfer, outcome string) {
+func checkDone(t *testing.T, tr model.TransferDetail, outcome string) {
 	t.Helper()
 	if tr.State != "done" || tr.Outcome != outcome || tr.Error != nil || tr.FilesDone != tr.FilesTotal || tr.BytesDone != tr.BytesTotal ||
 		tr.RateBPS != 0 {
@@ -197,7 +197,7 @@ func TestTransferResumesAfterReconnectAndDaemonRestart(t *testing.T) {
 			run = 1
 			mu.Unlock()
 			first.release()
-			h.wait(id, 20*time.Second, "waiting for the PC", func(tr model.Transfer) bool { return tr.State == "queued" })
+			h.wait(id, 20*time.Second, "waiting for the PC", func(tr model.TransferDetail) bool { return tr.State == "queued" })
 			h.agent.start()
 			<-second.reached
 			waitPart(t, receiving, 8*mib)
@@ -260,7 +260,7 @@ func TestPausedTransferStaysPausedAcrossDaemonRestart(t *testing.T) {
 	writeFile(t, src, data)
 	id := h.start("push", src, dst, "").TransferID
 	<-g.reached
-	res := make(chan model.Transfer, 1)
+	res := make(chan model.TransferDetail, 1)
 	go func() {
 		tr, err := h.manager().Pause(id, human)
 		if err != nil {
@@ -497,8 +497,8 @@ func TestCancelKeepsCompletedFiles(t *testing.T) {
 			writeFile(t, filepath.Join(src, "big.bin"), big)
 			id := h.start(direction, local, remote, "").TransferID
 			<-g.reached
-			h.wait(id, 20*time.Second, "done with the small files", func(tr model.Transfer) bool { return tr.FilesDone == 2 })
-			res := make(chan model.Transfer, 1)
+			h.wait(id, 20*time.Second, "done with the small files", func(tr model.TransferDetail) bool { return tr.FilesDone == 2 })
+			res := make(chan model.TransferDetail, 1)
 			go func() {
 				tr, err := h.manager().Cancel(id, human)
 				if err != nil {
@@ -625,7 +625,7 @@ func TestCancelWhileOfflineRemovesThePartAfterADaemonRestart(t *testing.T) {
 	waitPart(t, h.agent.home, 4*mib)
 	h.agent.halt()
 	g.release()
-	h.wait(id, 20*time.Second, "waiting for the PC", func(tr model.Transfer) bool { return tr.State == "queued" })
+	h.wait(id, 20*time.Second, "waiting for the PC", func(tr model.TransferDetail) bool { return tr.State == "queued" })
 	tr, err := h.manager().Cancel(id, human)
 	if err != nil || tr.State != "cancelled" {
 		t.Fatalf("cancel while offline: %s, %v", describe(tr), err)
@@ -726,8 +726,8 @@ func TestAMoveRemovingItsSourceRefusesPauseAndCancel(t *testing.T) {
 			writeFile(t, src, []byte("moving"))
 			id := h.start(direction, local, remote, "").TransferID
 			<-g.reached
-			for name, op := range map[string]func(string, model.Caller) (model.Transfer, error){"pause": h.manager().Pause, "cancel": h.manager().Cancel} {
-				tr, err := within(t, 5*time.Second, name, func() (model.Transfer, error) { return op(id, human) })
+			for name, op := range map[string]func(string, model.Caller) (model.TransferDetail, error){"pause": h.manager().Pause, "cancel": h.manager().Cancel} {
+				tr, err := within(t, 5*time.Second, name, func() (model.TransferDetail, error) { return op(id, human) })
 				var e *apierr.Error
 				if !errors.As(err, &e) || e.Code != wire.CodeInvalidArgument || !strings.Contains(e.Message, "원본 정리 중") {
 					t.Fatalf("%s while the source is removed: %s, %v", name, describe(tr), err)
@@ -759,13 +759,13 @@ func TestPauseOrCancelRacingTheEndLeavesTheTransferDone(t *testing.T) {
 			<-ctx.Done()
 		}
 	}})
-	for i, op := range []func(string, model.Caller) (model.Transfer, error){h.manager().Pause, h.manager().Cancel} {
+	for i, op := range []func(string, model.Caller) (model.TransferDetail, error){h.manager().Pause, h.manager().Cancel} {
 		src, dst := filepath.Join(h.mac, fmt.Sprintf("e%d.txt", i)), filepath.Join(h.agent.home, fmt.Sprintf("e%d.txt", i))
 		writeFile(t, src, []byte("end"))
 		armed.Store(true)
 		id := h.start("push", src, dst, "").TransferID
 		<-reached
-		tr, err := within(t, 10*time.Second, fmt.Sprint("op ", i), func() (model.Transfer, error) { return op(id, human) })
+		tr, err := within(t, 10*time.Second, fmt.Sprint("op ", i), func() (model.TransferDetail, error) { return op(id, human) })
 		var e *apierr.Error
 		if !errors.As(err, &e) || e.Code != wire.CodeInvalidArgument {
 			t.Fatalf("op %d racing the end: %s, %v", i, describe(tr), err)
@@ -779,10 +779,10 @@ func TestPauseOrCancelRacingTheEndLeavesTheTransferDone(t *testing.T) {
 
 // within returns what fn returns, failing the test when it takes longer
 // than limit.
-func within(t *testing.T, limit time.Duration, what string, fn func() (model.Transfer, error)) (model.Transfer, error) {
+func within(t *testing.T, limit time.Duration, what string, fn func() (model.TransferDetail, error)) (model.TransferDetail, error) {
 	t.Helper()
 	type answer struct {
-		tr  model.Transfer
+		tr  model.TransferDetail
 		err error
 	}
 	ch := make(chan answer, 1)
@@ -796,7 +796,7 @@ func within(t *testing.T, limit time.Duration, what string, fn func() (model.Tra
 	case <-time.After(limit):
 		t.Fatalf("%s did not answer within %s", what, limit)
 	}
-	return model.Transfer{}, nil
+	return model.TransferDetail{}, nil
 }
 
 func TestAMovePullWhoseSourceIsGoneCountsItRemoved(t *testing.T) {

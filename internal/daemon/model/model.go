@@ -193,26 +193,33 @@ type TransferFile struct {
 	Error     *apierr.Error `json:"error,omitempty"`
 }
 
-// Transfer is a file or folder transfer between this Mac and a host. Rev
+// Transfer is a file or folder transfer between this Mac and a host, with
+// the counts and bytes of its files; TransferDetail adds the files. Rev
 // grows by one with every change of the transfer.
 type Transfer struct {
-	TransferID string         `json:"transfer_id"`
-	HostID     string         `json:"host_id"`
-	Direction  string         `json:"direction"`
-	Local      string         `json:"local"`
-	Remote     string         `json:"remote"`
-	OnConflict string         `json:"on_conflict"`
-	State      string         `json:"state"`
-	BytesDone  int64          `json:"bytes_done"`
-	BytesTotal int64          `json:"bytes_total"`
-	FilesDone  int            `json:"files_done"`
-	FilesTotal int            `json:"files_total"`
-	RateBPS    int64          `json:"rate_bps"`
-	Outcome    string         `json:"outcome,omitempty"`
-	Error      *apierr.Error  `json:"error,omitempty"`
-	Files      []TransferFile `json:"files"`
-	Rev        int64          `json:"rev"`
-	UpdatedAt  string         `json:"updated_at"`
+	TransferID  string        `json:"transfer_id"`
+	HostID      string        `json:"host_id"`
+	Direction   string        `json:"direction"`
+	Local       string        `json:"local"`
+	Remote      string        `json:"remote"`
+	OnConflict  string        `json:"on_conflict"`
+	State       string        `json:"state"`
+	BytesDone   int64         `json:"bytes_done"`
+	BytesTotal  int64         `json:"bytes_total"`
+	FilesDone   int           `json:"files_done"`
+	FilesFailed int           `json:"files_failed"`
+	FilesTotal  int           `json:"files_total"`
+	RateBPS     int64         `json:"rate_bps"`
+	Outcome     string        `json:"outcome,omitempty"`
+	Error       *apierr.Error `json:"error,omitempty"`
+	Rev         int64         `json:"rev"`
+	UpdatedAt   string        `json:"updated_at"`
+}
+
+// TransferDetail is a Transfer with its files.
+type TransferDetail struct {
+	Transfer
+	Files []TransferFile `json:"files"`
 }
 
 // ProcessInfo is a remote process.

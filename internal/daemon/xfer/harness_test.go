@@ -24,6 +24,7 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/agent/server"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/conn"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/events"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/jobs"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/store"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/xfer"
@@ -125,6 +126,7 @@ type daemonSide struct {
 	st    *store.Store
 	bus   *events.Bus
 	conns *conn.Manager
+	jobs  *jobs.Registry
 	m     *xfer.Manager
 }
 
@@ -221,7 +223,8 @@ func (h *harness) open() {
 				return ctx.Err()
 			}
 		}})
-	d.m = xfer.New(xfer.Options{Store: st, Bus: bus, Conns: d.conns, Logger: quiet, Hooks: h.hooks})
+	d.jobs = jobs.New(st, bus, d.conns)
+	d.m = xfer.New(xfer.Options{Store: st, Bus: bus, Conns: d.conns, Jobs: d.jobs, Logger: quiet, Hooks: h.hooks})
 	go func() {
 		for ev := range sub.C {
 			h.mu.Lock()
@@ -259,6 +262,7 @@ func (h *harness) closeDaemon() {
 		return
 	}
 	d.m.Close()
+	d.jobs.Close()
 	d.conns.Close()
 	d.st.Close()
 }
@@ -291,7 +295,7 @@ func (h *harness) hostState() conn.ConnState {
 var human = model.Caller{Actor: model.ActorHuman, ClientID: "c-test", ClientName: "test"}
 
 // start starts a transfer and fails the test unless it started.
-func (h *harness) start(direction, local, remote, onConflict string) model.Transfer {
+func (h *harness) start(direction, local, remote, onConflict string) model.TransferDetail {
 	h.t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -302,13 +306,13 @@ func (h *harness) start(direction, local, remote, onConflict string) model.Trans
 	if res.Err != nil {
 		h.t.Fatalf("start %s %s %s did not start: %+v", direction, local, remote, res.Err)
 	}
-	if res.Transfer.TransferID == "" || res.Transfer.Rev < 1 {
+	if res.Transfer.TransferID == "" || res.Transfer.Rev < 1 || res.JobID == "" {
 		h.t.Fatalf("started transfer %+v", res.Transfer)
 	}
 	return res.Transfer
 }
 
-func (h *harness) get(id string) model.Transfer {
+func (h *harness) get(id string) model.TransferDetail {
 	h.t.Helper()
 	tr, err := h.manager().Get(id)
 	if err != nil {
@@ -318,7 +322,7 @@ func (h *harness) get(id string) model.Transfer {
 }
 
 // wait polls the transfer until ok accepts it, for at most limit.
-func (h *harness) wait(id string, limit time.Duration, what string, ok func(model.Transfer) bool) model.Transfer {
+func (h *harness) wait(id string, limit time.Duration, what string, ok func(model.TransferDetail) bool) model.TransferDetail {
 	h.t.Helper()
 	deadline := time.Now().Add(limit)
 	for {
@@ -333,17 +337,17 @@ func (h *harness) wait(id string, limit time.Duration, what string, ok func(mode
 	}
 }
 
-func finished(tr model.Transfer) bool {
+func finished(tr model.TransferDetail) bool {
 	return tr.State == "done" || tr.State == "failed" || tr.State == "cancelled"
 }
 
-func (h *harness) waitFinished(id string) model.Transfer {
+func (h *harness) waitFinished(id string) model.TransferDetail {
 	h.t.Helper()
 	return h.wait(id, 3*time.Minute, "finished", finished)
 }
 
 // describe returns the state of tr and of its files for a failure message.
-func describe(tr model.Transfer) string {
+func describe(tr model.TransferDetail) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "state %s outcome %q error %+v bytes %d/%d files %d/%d rev %d", tr.State, tr.Outcome, tr.Error, tr.BytesDone, tr.BytesTotal,
 		tr.FilesDone, tr.FilesTotal, tr.Rev)
@@ -358,7 +362,7 @@ func describe(tr model.Transfer) string {
 }
 
 // fileOf returns the file rel of tr.
-func fileOf(t *testing.T, tr model.Transfer, rel string) model.TransferFile {
+func fileOf(t *testing.T, tr model.TransferDetail, rel string) model.TransferFile {
 	t.Helper()
 	for _, f := range tr.Files {
 		if f.Rel == rel {

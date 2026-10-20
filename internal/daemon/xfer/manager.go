@@ -19,6 +19,7 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/daemon/conn"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/events"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/ids"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/jobs"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/store"
 	"github.com/YangTaeyoung/deskhand/internal/wire"
@@ -58,6 +59,9 @@ type Options struct {
 	Store *store.Store
 	Bus   *events.Bus
 	Conns *conn.Manager
+	// Jobs keeps the job that mirrors each transfer (jobs.KindTransfer);
+	// nil makes none.
+	Jobs *jobs.Registry
 	// Logger receives the manager's log; nil discards it.
 	Logger *log.Logger
 	Hooks  Hooks
@@ -87,10 +91,11 @@ type StartParams struct {
 	OnConflict string
 }
 
-// Started is what Start did: the new transfer and the request that checked
-// the host, or, with Err set, why no transfer started.
+// Started is what Start did: the new transfer, its job and the request
+// that checked the host, or, with Err set, why no transfer started.
 type Started struct {
-	Transfer model.Transfer
+	Transfer model.TransferDetail
+	JobID    string
 	Info     conn.CallInfo
 	Err      *apierr.Error
 }
@@ -132,7 +137,8 @@ func New(opt Options) *Manager {
 // a queued, running or verifying transfer becomes queued and goes on once
 // its host is ready, a paused one stays paused, and a cancelled one whose
 // part files on the host are not removed yet removes them once its host is
-// ready. It returns how many transfers go on.
+// ready. It prunes the finished transfers now and every pruneInterval. It
+// returns how many transfers go on.
 func (m *Manager) Load() int {
 	rows, err := m.opt.Store.ListTransfers(store.TransferFilter{States: []string{StateQueued, StateRunning, StateVerifying}, Limit: -1})
 	if err != nil {
@@ -154,7 +160,46 @@ func (m *Manager) Load() int {
 		n++
 	}
 	m.cleanupCancelled("")
+	m.prune()
+	m.lifeMu.Lock()
+	if !m.closed {
+		m.wg.Add(1)
+		go m.pruneEvery(pruneInterval)
+	}
+	m.lifeMu.Unlock()
 	return n
+}
+
+const (
+	// keepFinished is how long a finished transfer is kept.
+	keepFinished = 30 * 24 * time.Hour
+	// pruneInterval is the time between two prunes of finished transfers.
+	pruneInterval = 24 * time.Hour
+)
+
+// prune removes the transfers that finished keepFinished ago, with their
+// files and jobs (store.Store.PruneTransfers).
+func (m *Manager) prune() {
+	if n, err := m.opt.Store.PruneTransfers(time.Now().Add(-keepFinished)); err != nil {
+		m.lg.Printf("transfers: prune: %v", err)
+	} else if n > 0 {
+		m.lg.Printf("transfers: removed %d transfers that finished %s ago", n, keepFinished)
+	}
+}
+
+// pruneEvery prunes every interval until the manager closes.
+func (m *Manager) pruneEvery(interval time.Duration) {
+	defer m.wg.Done()
+	tick := time.NewTicker(interval)
+	defer tick.Stop()
+	for {
+		select {
+		case <-m.base.Done():
+			return
+		case <-tick.C:
+			m.prune()
+		}
+	}
 }
 
 // Close stops every run, stores what the transfers did and keeps them for
@@ -326,10 +371,20 @@ func (m *Manager) Start(ctx context.Context, p StartParams, c model.Caller) (Sta
 	tr := store.Transfer{TransferID: ids.New(ids.Transfer), HostID: row.HostID, Direction: p.Direction, Local: filepath.Clean(p.Local),
 		Remote: p.Remote, OnConflict: p.OnConflict, Sep: sep, State: StateQueued, Folder: folder,
 		Actor: c.Actor, ClientID: c.ClientID, ClientName: c.ClientName, CreatedAt: now, UpdatedAt: now}
+	mirrored := ""
+	if m.opt.Jobs != nil {
+		job, err := m.opt.Jobs.Create(row.HostID, jobs.KindTransfer, "", verb(p.Direction)+": "+route(p.Direction, tr.Local, row.HostID, p.Remote),
+			map[string]any{"transfer_id": tr.TransferID, "direction": p.Direction, "local": tr.Local, "remote": p.Remote, "on_conflict": p.OnConflict})
+		if err != nil {
+			return Started{}, err
+		}
+		tr.JobID, mirrored = job.JobID, StateQueued
+	}
 	if err := m.opt.Store.CreateTransfer(tr); err != nil {
 		return Started{}, apierr.Internal(fmt.Sprintf("전송을 저장하지 못했습니다(%v). 데몬 로그를 확인하세요", err))
 	}
 	t := newTransfer(m, tr, nil)
+	t.mirrored = mirrored
 	t.refs.Add(1)
 	m.mu.Lock()
 	m.live[tr.TransferID] = t
@@ -340,11 +395,11 @@ func (m *Manager) Start(ctx context.Context, p StartParams, c model.Caller) (Sta
 	t.recordLocked(c, t.verbLocked()+" 시작: "+t.routeLocked(), model.TimelineOK)
 	t.publishLocked()
 	t.launchLocked()
-	return Started{Transfer: t.snapshotLocked(), Info: info}, nil
+	return Started{Transfer: t.snapshotLocked(), JobID: tr.JobID, Info: info}, nil
 }
 
 // Get returns the transfer transferID.
-func (m *Manager) Get(transferID string) (model.Transfer, error) {
+func (m *Manager) Get(transferID string) (model.TransferDetail, error) {
 	m.mu.Lock()
 	t := m.live[transferID]
 	m.mu.Unlock()
@@ -355,28 +410,41 @@ func (m *Manager) Get(transferID string) (model.Transfer, error) {
 	}
 	row, files, err := m.opt.Store.GetTransfer(transferID)
 	if errors.Is(err, store.ErrNotFound) {
-		return model.Transfer{}, notFound(transferID)
+		return model.TransferDetail{}, notFound(transferID)
 	}
 	if err != nil {
-		return model.Transfer{}, apierr.Internal(fmt.Sprintf("전송 기록을 읽지 못했습니다(%v). 데몬 로그를 확인하세요", err))
+		return model.TransferDetail{}, apierr.Internal(fmt.Sprintf("전송 기록을 읽지 못했습니다(%v). 데몬 로그를 확인하세요", err))
 	}
 	return snapshot(row, files, 0), nil
 }
 
 // List returns the transfers of hostID, of every host when "", newest
-// first.
+// first, without their files.
 func (m *Manager) List(hostID string) ([]model.Transfer, error) {
 	rows, err := m.opt.Store.ListTransfers(store.TransferFilter{HostID: hostID})
 	if err != nil {
 		return nil, apierr.Internal(fmt.Sprintf("전송 기록을 읽지 못했습니다(%v). 데몬 로그를 확인하세요", err))
 	}
+	ids := make([]string, len(rows))
+	for i, row := range rows {
+		ids[i] = row.TransferID
+	}
+	total, err := m.opt.Store.TransferTotals(ids)
+	if err != nil {
+		return nil, apierr.Internal(fmt.Sprintf("전송 기록을 읽지 못했습니다(%v). 데몬 로그를 확인하세요", err))
+	}
 	out := make([]model.Transfer, 0, len(rows))
 	for _, row := range rows {
-		tr, err := m.Get(row.TransferID)
-		if err != nil {
+		m.mu.Lock()
+		t := m.live[row.TransferID]
+		m.mu.Unlock()
+		if t != nil {
+			t.mu.Lock()
+			out = append(out, t.summaryLocked())
+			t.mu.Unlock()
 			continue
 		}
-		out = append(out, tr)
+		out = append(out, summary(row, total[row.TransferID], 0))
 	}
 	return out, nil
 }
@@ -385,10 +453,10 @@ func (m *Manager) List(hostID string) ([]model.Transfer, error) {
 // daemon restarts, until Resume. A paused transfer is returned as it is; a
 // finished one, one that finished while its run stopped and a move that
 // removes its source are errors.
-func (m *Manager) Pause(transferID string, c model.Caller) (model.Transfer, error) {
+func (m *Manager) Pause(transferID string, c model.Caller) (model.TransferDetail, error) {
 	t, err := m.acquire(transferID)
 	if err != nil {
-		return model.Transfer{}, err
+		return model.TransferDetail{}, err
 	}
 	defer m.release(t)
 	t.opMu.Lock()
@@ -397,13 +465,13 @@ func (m *Manager) Pause(transferID string, c model.Caller) (model.Transfer, erro
 	switch {
 	case t.removing:
 		defer t.mu.Unlock()
-		return model.Transfer{}, removingRefusal(transferID, "일시정지")
+		return model.TransferDetail{}, removingRefusal(transferID, "일시정지")
 	case t.row.State == StatePaused:
 		defer t.mu.Unlock()
 		return t.snapshotLocked(), nil
 	case finishedState(t.row.State):
 		defer t.mu.Unlock()
-		return model.Transfer{}, pauseRefusal(transferID, t.row.State)
+		return model.TransferDetail{}, pauseRefusal(transferID, t.row.State)
 	}
 	t.mu.Unlock()
 	t.stopRun(errPaused)
@@ -412,9 +480,9 @@ func (m *Manager) Pause(transferID string, c model.Caller) (model.Transfer, erro
 	switch {
 	case t.removing:
 		t.launchLocked()
-		return model.Transfer{}, removingRefusal(transferID, "일시정지")
+		return model.TransferDetail{}, removingRefusal(transferID, "일시정지")
 	case finishedState(t.row.State):
-		return model.Transfer{}, pauseRefusal(transferID, t.row.State)
+		return model.TransferDetail{}, pauseRefusal(transferID, t.row.State)
 	}
 	for i := range t.files {
 		if f := &t.files[i]; f.State == StateRunning || f.State == StateVerifying {
@@ -433,10 +501,10 @@ func (m *Manager) Pause(transferID string, c model.Caller) (model.Transfer, erro
 // source again, and a transfer with a failed folder lists its files again.
 // A queued or running transfer is returned as it is; a done one is an
 // error.
-func (m *Manager) Resume(transferID string, c model.Caller) (model.Transfer, error) {
+func (m *Manager) Resume(transferID string, c model.Caller) (model.TransferDetail, error) {
 	t, err := m.acquire(transferID)
 	if err != nil {
-		return model.Transfer{}, err
+		return model.TransferDetail{}, err
 	}
 	defer m.release(t)
 	t.opMu.Lock()
@@ -448,7 +516,7 @@ func (m *Manager) Resume(transferID string, c model.Caller) (model.Transfer, err
 		return t.snapshotLocked(), nil
 	case StateDone:
 		defer t.mu.Unlock()
-		return model.Transfer{}, apierr.Invalid(fmt.Sprintf("전송 %s는 이미 끝났습니다. 다시 보내려면 transfer.start로 새 전송을 시작하세요", transferID))
+		return model.TransferDetail{}, apierr.Invalid(fmt.Sprintf("전송 %s는 이미 끝났습니다. 다시 보내려면 transfer.start로 새 전송을 시작하세요", transferID))
 	}
 	t.mu.Unlock()
 	t.stopRun(errPaused)
@@ -482,10 +550,10 @@ func (m *Manager) Resume(transferID string, c model.Caller) (model.Transfer, err
 // ready). A cancelled transfer is returned as it is; a done one, one that
 // ended done while its run stopped and a move that removes its source are
 // errors.
-func (m *Manager) Cancel(transferID string, c model.Caller) (model.Transfer, error) {
+func (m *Manager) Cancel(transferID string, c model.Caller) (model.TransferDetail, error) {
 	t, err := m.acquire(transferID)
 	if err != nil {
-		return model.Transfer{}, err
+		return model.TransferDetail{}, err
 	}
 	defer m.release(t)
 	t.opMu.Lock()
@@ -494,13 +562,13 @@ func (m *Manager) Cancel(transferID string, c model.Caller) (model.Transfer, err
 	switch {
 	case t.removing:
 		defer t.mu.Unlock()
-		return model.Transfer{}, removingRefusal(transferID, "취소")
+		return model.TransferDetail{}, removingRefusal(transferID, "취소")
 	case t.row.State == StateCancelled:
 		defer t.mu.Unlock()
 		return t.snapshotLocked(), nil
 	case t.row.State == StateDone:
 		defer t.mu.Unlock()
-		return model.Transfer{}, cancelRefusal(transferID)
+		return model.TransferDetail{}, cancelRefusal(transferID)
 	}
 	t.mu.Unlock()
 	t.stopRun(errCancelled)
@@ -509,10 +577,10 @@ func (m *Manager) Cancel(transferID string, c model.Caller) (model.Transfer, err
 	case t.removing:
 		t.launchLocked()
 		defer t.mu.Unlock()
-		return model.Transfer{}, removingRefusal(transferID, "취소")
+		return model.TransferDetail{}, removingRefusal(transferID, "취소")
 	case t.row.State == StateDone:
 		defer t.mu.Unlock()
-		return model.Transfer{}, cancelRefusal(transferID)
+		return model.TransferDetail{}, cancelRefusal(transferID)
 	}
 	t.mu.Unlock()
 	t.cancelFiles()

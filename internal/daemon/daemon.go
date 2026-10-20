@@ -164,7 +164,7 @@ func New(opt Options) (*Daemon, error) {
 	reg = hosts.New(hosts.Options{Store: d.st, Bus: bus, Manager: d.mgr, Jobs: jreg, Identity: id, SSHExec: opt.SSHExec,
 		AgentFiles: opt.AgentFiles, Version: opt.Version, Logger: lg})
 	d.Hosts = reg
-	xmgr = xfer.New(xfer.Options{Store: d.st, Bus: bus, Conns: d.mgr, Logger: lg})
+	xmgr = xfer.New(xfer.Options{Store: d.st, Bus: bus, Conns: d.mgr, Jobs: jreg, Logger: lg})
 	d.xfer = xmgr
 	if d.ln, err = localapi.Listen(paths.Socket()); err != nil {
 		return nil, err
