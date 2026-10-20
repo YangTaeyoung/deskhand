@@ -28,9 +28,11 @@ enum TerminalAvailability: Equatable {
     }
 }
 
-/// The terminal tab: a strip of shell tabs over the selected terminal, with its opening,
-/// reconnecting, exited and failed states drawn over it; the empty state with the shells to
-/// open and the detached shells to reopen; the close and multi-line paste confirmations.
+/// The terminal tab: a strip of shell tabs over the selected terminal. A dropped stream of a
+/// connected computer shows a bar above the terminal and an exited shell a bar below it; the
+/// opening and failed states are drawn over it. Without tabs it shows the empty state with
+/// the shells to open and the detached shells to reopen. It also presents the close and paste
+/// confirmations.
 public struct TerminalView: View {
     let store: AppStore
     let host: Host
@@ -62,6 +64,7 @@ private struct TerminalContent: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var availability: TerminalAvailability { TerminalAvailability(host: host) }
+    private var hostConnected: Bool { host.connection == .ready || host.connection == .degraded }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -71,16 +74,27 @@ private struct TerminalContent: View {
             } else {
                 TerminalTabStrip(workspace: workspace, host: host, canOpen: availability == .ready)
                     .layoutPriority(1)
+                if let session = workspace.selected, case .reconnecting(let error) = session.phase, hostConnected {
+                    StreamReconnectBar(session: session, error: error, hostConnected: hostConnected)
+                        .layoutPriority(1)
+                }
                 ZStack {
                     DS.Color.terminalBackground
                     TerminalStack(sessions: workspace.sessions, selectedID: workspace.selected?.id,
-                                  focusRequest: workspace.focusRequest, hostName: host.name)
+                                  focusRequest: workspace.focusRequest, hostName: host.name,
+                                  optionAsMeta: workspace.preferences.optionAsMeta)
                     if let session = workspace.selected {
                         TerminalOverlay(session: session, workspace: workspace, host: host)
                     }
                 }
                 .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
                 .clipped()
+                if let session = workspace.selected, case .exited(let code) = session.phase {
+                    ExitedBar(code: code, shell: session.shell,
+                              restart: { session.restart() },
+                              close: { workspace.requestClose(session) })
+                        .layoutPriority(1)
+                }
             }
         }
         .overlay(alignment: .bottom) {
@@ -110,7 +124,8 @@ private struct TerminalContent: View {
             Text(String.ui("terminal.close.message", "원격 프로세스도 끝납니다. 분리만 하면 셸은 \(host.name)에서 계속 실행되고, + 메뉴에서 다시 열 수 있습니다."))
         }
         .sheet(item: $workspace.pendingPaste) { request in
-            PasteConfirmSheet(request: request, shell: workspace.sessions.first { $0.id == request.sessionID }?.title ?? "") { dontAsk in
+            PasteConfirmSheet(request: request, shell: workspace.sessions.first { $0.id == request.sessionID }?.title ?? "",
+                              canSend: workspace.canSendPaste(request)) { dontAsk in
                 workspace.confirmPaste(request, dontAskAgain: dontAsk)
             } cancel: {
                 workspace.cancelPaste()
@@ -177,7 +192,19 @@ private struct TerminalEmptyState: View {
                     .padding(.bottom, -DS.Space.l)
                 shellButtons
             }
-            if !workspace.detachedJobs.isEmpty {
+            if workspace.jobsError != nil {
+                HStack(spacing: DS.Space.s) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(DS.Color.warning)
+                        .accessibilityHidden(true)
+                    Text(String.ui("terminal.detached.failedRow", "분리된 셸을 불러오지 못했습니다"))
+                        .font(DS.Font.body)
+                        .foregroundStyle(.secondary)
+                    Button(String.ui("action.retry", "다시 시도")) { workspace.refreshJobs() }
+                        .controlSize(.small)
+                }
+                .accessibilityElement(children: .combine)
+            } else if !workspace.detachedJobs.isEmpty {
                 DetachedShellList(jobs: workspace.detachedJobs) { workspace.reopen($0) }
                     .frame(maxWidth: 560)
             }
@@ -293,27 +320,43 @@ enum TerminalJobText {
 
 // MARK: Confirmations and notices
 
-/// Confirmation before pasting text that holds line breaks: how many lines, the first lines,
-/// and 다시 묻지 않기.
+/// Confirmation before pasting: the whole text in a scrolling monospaced box with its line and
+/// character counts, how many control characters were removed, 다시 묻지 않기, and 붙여넣기 —
+/// disabled with a notice while the shell cannot receive it.
 public struct PasteConfirmSheet: View {
     let request: PasteRequest
     let shell: String
+    let canSend: Bool
     let confirm: (Bool) -> Void
     let cancel: () -> Void
     @State private var dontAskAgain = false
 
-    static let previewLines = 6
+    /// Lines the preview shows before it scrolls.
+    static let visibleLines = 10
 
-    public init(request: PasteRequest, shell: String, confirm: @escaping (Bool) -> Void, cancel: @escaping () -> Void) {
+    public init(request: PasteRequest, shell: String, canSend: Bool, confirm: @escaping (Bool) -> Void, cancel: @escaping () -> Void) {
         self.request = request
         self.shell = shell
+        self.canSend = canSend
         self.confirm = confirm
         self.cancel = cancel
     }
 
+    private var title: String {
+        let count = request.lineCount
+        if request.removedControls > 0, count <= 1 {
+            return .ui("terminal.paste.titleControls", "제어 문자가 있는 텍스트를 붙여 넣을까요?")
+        }
+        return count > 1
+            ? .ui("terminal.paste.title", "\(count)줄을 붙여 넣을까요?")
+            : .ui("terminal.paste.titleOne", "줄바꿈이 있는 텍스트를 붙여 넣을까요?")
+    }
+
     public var body: some View {
         let lines = request.lines
-        let count = lines.count
+        let lineCount = request.lineCount
+        let characters = request.characterCount
+        let lineHeight = NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize(for: .small) + 1, weight: .regular).boundingRectForFont.height
         VStack(alignment: .leading, spacing: DS.Space.l) {
             HStack(alignment: .top, spacing: DS.Space.m) {
                 Image(systemName: "doc.on.clipboard")
@@ -322,9 +365,7 @@ public struct PasteConfirmSheet: View {
                     .frame(width: 40)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: DS.Space.s) {
-                    Text(count > 1
-                         ? String.ui("terminal.paste.title", "\(count)줄을 붙여 넣을까요?")
-                         : String.ui("terminal.paste.titleOne", "줄바꿈이 있는 텍스트를 붙여 넣을까요?"))
+                    Text(title)
                         .font(DS.Font.title)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityAddTraits(.isHeader)
@@ -334,48 +375,65 @@ public struct PasteConfirmSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(Array(lines.prefix(Self.previewLines).enumerated()), id: \.offset) { index, line in
-                    HStack(alignment: .firstTextBaseline, spacing: DS.Space.s) {
-                        Text("\(index + 1)")
-                            .foregroundStyle(.tertiary)
-                            .frame(width: 20, alignment: .trailing)
-                        Text(line.isEmpty ? " " : line)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                            HStack(alignment: .firstTextBaseline, spacing: DS.Space.s) {
+                                Text("\(index + 1)")
+                                    .foregroundStyle(.tertiary)
+                                    .frame(minWidth: 20, alignment: .trailing)
+                                Text(line.isEmpty ? " " : line)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    }
+                    .font(DS.Font.mono)
+                    .textSelection(.enabled)
+                    .padding(DS.Space.m)
+                }
+                .frame(maxHeight: (lineHeight + 2) * CGFloat(Self.visibleLines) + DS.Space.m * 2)
+                .fixedSize(horizontal: false, vertical: true)
+                .background(DS.Color.terminalBackground, in: RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous)
+                        .strokeBorder(DS.Color.separator, lineWidth: 1)
+                )
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(String.ui("terminal.paste.a11y", "붙여 넣을 텍스트, \(lineCount)줄"))
+                HStack(spacing: DS.Space.s) {
+                    Text(String.ui("terminal.paste.totals", "\(lineCount)줄 · \(characters)자"))
+                        .monospacedDigit()
+                    if request.removedControls > 0 {
+                        let removed = request.removedControls
+                        Label(String.ui("terminal.paste.removed", "제어 문자 \(removed)개를 지웠습니다"), systemImage: "eraser")
+                            .foregroundStyle(DS.Color.warning)
                     }
                 }
-                if count > Self.previewLines {
-                    let more = count - Self.previewLines
-                    Text(String.ui("terminal.paste.more", "외 \(more)줄"))
-                        .foregroundStyle(.secondary)
-                        .padding(.leading, 20 + DS.Space.s)
-                        .padding(.top, DS.Space.xs)
-                }
+                .font(DS.Font.caption)
+                .foregroundStyle(.secondary)
             }
-            .font(DS.Font.mono)
-            .padding(DS.Space.m)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(DS.Color.terminalBackground, in: RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous)
-                    .strokeBorder(DS.Color.separator, lineWidth: 1)
-            )
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(String.ui("terminal.paste.a11y", "붙여 넣을 텍스트, \(count)줄"))
+            if !canSend {
+                Label(String.ui("terminal.paste.disconnected", "연결이 끊겨 보낼 수 없습니다"), systemImage: "bolt.horizontal.circle")
+                    .font(DS.Font.body)
+                    .foregroundStyle(DS.Color.warning)
+            }
             HStack {
                 Toggle(String.ui("terminal.paste.dontAsk", "다시 묻지 않기"), isOn: $dontAskAgain)
                     .toggleStyle(.checkbox)
+                    .disabled(request.removedControls > 0)
                 Spacer()
                 Button(String.ui("action.cancel", "취소"), action: cancel)
                     .keyboardShortcut(.cancelAction)
                 Button(String.ui("terminal.paste.confirm", "붙여넣기")) { confirm(dontAskAgain) }
                     .keyboardShortcut(.defaultAction)
+                    .disabled(!canSend)
             }
             .controlSize(.large)
         }
         .padding(DS.Space.xl)
-        .frame(width: 520)
+        .frame(width: 560)
     }
 }
 

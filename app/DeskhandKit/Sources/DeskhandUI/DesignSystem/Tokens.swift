@@ -102,33 +102,64 @@ public enum DS {
             return palette ?? makePalette(dark: dark)
         }
 
+        /// Contrast each ANSI color keeps against the background: at least 4.5:1 (WCAG AA).
+        static let normalContrast: (light: Double, dark: Double) = (5.6, 4.8)
+        static let brightContrast: (light: Double, dark: Double) = (4.6, 7.0)
+
         private static func makePalette(dark: Bool) -> Palette {
             func srgb(_ color: NSColor) -> NSColor { color.usingColorSpace(.sRGB) ?? color }
-            func darker(_ color: NSColor, _ amount: CGFloat) -> NSColor {
-                srgb(color).blended(withFraction: amount, of: .black) ?? color
+            let background = srgb(.textBackgroundColor)
+            let foreground = srgb(.textColor)
+            /// `color` blended toward black (light) or white (dark) until it reaches `ratio` against the background.
+            func readable(_ color: NSColor, _ ratio: Double) -> NSColor {
+                let base = srgb(color)
+                let target: NSColor = dark ? .white : .black
+                if contrast(base, background) >= ratio { return base }
+                var low: CGFloat = 0
+                var high: CGFloat = 1
+                for _ in 0..<20 {
+                    let mid = (low + high) / 2
+                    let mixed = base.blended(withFraction: mid, of: target) ?? base
+                    if contrast(mixed, background) >= ratio { high = mid } else { low = mid }
+                }
+                return srgb(base.blended(withFraction: high, of: target) ?? base)
             }
-            func lighter(_ color: NSColor, _ amount: CGFloat) -> NSColor {
-                srgb(color).blended(withFraction: amount, of: .white) ?? color
-            }
+            func gray(_ white: CGFloat) -> NSColor { NSColor(white: white, alpha: 1) }
             let hues: [NSColor] = [.systemRed, .systemGreen, .systemYellow, .systemBlue, .systemPurple, .systemCyan]
             let normal: [NSColor]
             let bright: [NSColor]
             if dark {
-                normal = [NSColor(white: 0.1, alpha: 1)] + hues.map(srgb) + [NSColor(white: 0.8, alpha: 1)]
-                bright = [NSColor(white: 0.5, alpha: 1)] + hues.map { lighter($0, 0.3) } + [NSColor(white: 1, alpha: 1)]
+                normal = [readable(gray(0.42), normalContrast.dark)] + hues.map { readable($0, normalContrast.dark) }
+                    + [gray(0.8)]
+                bright = [readable(gray(0.5), 5.6)] + hues.map { readable(srgb($0).blended(withFraction: 0.3, of: .white) ?? $0, brightContrast.dark) }
+                    + [gray(1)]
             } else {
-                let depth: [CGFloat] = [0.12, 0.3, 0.42, 0.1, 0.12, 0.3]
-                normal = [NSColor(white: 0, alpha: 1)] + zip(hues, depth).map { darker($0, $1) } + [NSColor(white: 0.42, alpha: 1)]
-                bright = [NSColor(white: 0.5, alpha: 1)] + zip(hues, depth).map { darker($0, max(0, $1 - 0.12)) }
-                    + [NSColor(white: 0.2, alpha: 1)]
+                normal = [gray(0)] + hues.map { readable($0, normalContrast.light) } + [readable(gray(0.6), brightContrast.light)]
+                bright = [readable(gray(0.6), 5.6)] + hues.map { readable($0, brightContrast.light) } + [foreground]
             }
             return Palette(
-                background: srgb(.textBackgroundColor),
-                foreground: srgb(.textColor),
+                background: background,
+                foreground: foreground,
                 caret: srgb(NSColor(DS.Color.accent)),
                 selection: srgb(.selectedTextBackgroundColor),
                 selectedText: srgb(.selectedTextColor),
                 ansi: (normal + bright).map(srgb))
+        }
+
+        /// WCAG contrast ratio of two colors.
+        static func contrast(_ a: NSColor, _ b: NSColor) -> Double {
+            let (l1, l2) = (luminance(a), luminance(b))
+            return (max(l1, l2) + 0.05) / (min(l1, l2) + 0.05)
+        }
+
+        /// WCAG relative luminance of an sRGB color.
+        static func luminance(_ color: NSColor) -> Double {
+            let c = color.usingColorSpace(.sRGB) ?? color
+            func channel(_ value: CGFloat) -> Double {
+                let v = Double(value)
+                return v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * channel(c.redComponent) + 0.7152 * channel(c.greenComponent) + 0.0722 * channel(c.blueComponent)
         }
     }
 

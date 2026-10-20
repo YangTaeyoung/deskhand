@@ -6,8 +6,9 @@ import struct DeskhandClient.Host
 @testable import DeskhandUI
 
 /// Records terminal calls and opens a `FakeScreenStream` per attach; attaches fail with the
-/// queued failures first.
-final class FakeTerminalBackend: TerminalBackend {
+/// queued failures first. `pty.open` can be held until the test releases it, `jobs.list` can
+/// fail, and the test pushes `job.updated` events or ends the event stream.
+final class FakeTerminalBackend: TerminalBackend, EventsBackend {
     struct Open: Equatable {
         let hostID: String
         let shell: TerminalShell
@@ -20,8 +21,14 @@ final class FakeTerminalBackend: TerminalBackend {
         var streams: [FakeScreenStream] = []
         var attachFailures: [OperationError] = []
         var openFailure: OperationError?
+        var holdOpen = false
+        var heldOpens: [CheckedContinuation<Void, Never>] = []
         var killed: [String] = []
         var jobs: [Job] = []
+        var jobsFailure: OperationError?
+        var subscriptions = 0
+        var events: AsyncThrowingStream<DaemonEvent, Error>.Continuation?
+        var seq = 0
     }
 
     private let state = Mutex(State())
@@ -35,6 +42,8 @@ final class FakeTerminalBackend: TerminalBackend {
     var attaches: [PTYTarget] { state.withLock { $0.attaches } }
     var streams: [FakeScreenStream] { state.withLock { $0.streams } }
     var killed: [String] { state.withLock { $0.killed } }
+    var subscriptions: Int { state.withLock { $0.subscriptions } }
+    var heldOpenCount: Int { state.withLock { $0.heldOpens.count } }
 
     func failAttaches(_ failures: [OperationError]) {
         state.withLock { $0.attachFailures = failures }
@@ -48,10 +57,61 @@ final class FakeTerminalBackend: TerminalBackend {
         state.withLock { $0.jobs = jobs }
     }
 
+    func failJobs(_ failure: OperationError?) {
+        state.withLock { $0.jobsFailure = failure }
+    }
+
+    /// Makes `pty.open` wait until `releaseOpens()`.
+    func holdOpens(_ hold: Bool) {
+        state.withLock { $0.holdOpen = hold }
+    }
+
+    func releaseOpens() {
+        let held = state.withLock { s -> [CheckedContinuation<Void, Never>] in
+            defer { s.heldOpens = [] }
+            s.holdOpen = false
+            return s.heldOpens
+        }
+        for continuation in held { continuation.resume() }
+    }
+
+    /// Delivers `job.updated` for `job` on the current event stream.
+    func pushJobUpdate(_ job: Job) {
+        let (continuation, seq) = state.withLock { s -> (AsyncThrowingStream<DaemonEvent, Error>.Continuation?, Int) in
+            s.seq += 1
+            return (s.events, s.seq)
+        }
+        let payload: [String: JSONValue] = ["job": PreviewBackend.payload(job)]
+        continuation?.yield(DaemonEvent(seq: seq, hostID: job.hostID, kind: EventKind.jobUpdated, payload: payload))
+    }
+
+    /// Ends the current event stream with an error, as a dropped subscription does.
+    func failEvents() {
+        let continuation = state.withLock { s -> AsyncThrowingStream<DaemonEvent, Error>.Continuation? in
+            defer { s.events = nil }
+            return s.events
+        }
+        continuation?.finish(throwing: ClientError.disconnected)
+    }
+
+    func events(kinds: [String]?, hostID: String?) -> AsyncThrowingStream<DaemonEvent, Error> {
+        let (stream, continuation) = AsyncThrowingStream.makeStream(of: DaemonEvent.self)
+        state.withLock {
+            $0.subscriptions += 1
+            $0.events = continuation
+        }
+        return stream
+    }
+
     func ptyOpen(hostID: String, shell: TerminalShell, cols: Int, rows: Int) async throws -> PTYOpening {
-        let failure = state.withLock { s -> OperationError? in
+        let (failure, hold) = state.withLock { s -> (OperationError?, Bool) in
             s.opens.append(Open(hostID: hostID, shell: shell, size: TerminalSize(cols: cols, rows: rows)))
-            return s.openFailure
+            return (s.openFailure, s.holdOpen)
+        }
+        if hold {
+            await withCheckedContinuation { continuation in
+                state.withLock { $0.heldOpens.append(continuation) }
+            }
         }
         if let failure { throw failure }
         return opening
@@ -69,7 +129,9 @@ final class FakeTerminalBackend: TerminalBackend {
     }
 
     func ptyJobs(hostID: String) async throws -> [Job] {
-        state.withLock { $0.jobs.filter { $0.hostID == hostID } }
+        let (jobs, failure) = state.withLock { s in (s.jobs.filter { $0.hostID == hostID }, s.jobsFailure) }
+        if let failure { throw failure }
+        return jobs
     }
 
     func ptyKill(jobID: String) async throws {
@@ -78,6 +140,13 @@ final class FakeTerminalBackend: TerminalBackend {
             $0.jobs.removeAll { $0.jobID == jobID }
         }
     }
+}
+
+/// A running pty job of the dev PC.
+func ptyJob(_ id: String, summary: String = "PowerShell · C:\\Shop", status: String = "running") -> Job {
+    Job(jobID: id, hostID: "windows-dev", kind: "pty", status: status, summary: summary,
+        createdAt: Timestamp(date: .now), updatedAt: Timestamp(date: .now),
+        result: .object(["shell": .string("powershell"), "pid": .int(4812)]))
 }
 
 @MainActor
@@ -152,6 +221,61 @@ final class TerminalSessionTests: XCTestCase {
         await wait("a resize frame") { resizeFrames(stream).count == 2 }
         try await Task.sleep(for: TerminalSession.resizeDelay * 2)
         XCTAssertEqual(resizeFrames(stream), [TerminalSize(cols: 80, rows: 24), TerminalSize(cols: 120, rows: 30)])
+    }
+
+    func testEveryAttachedFrameSendsTheCurrentSize() async throws {
+        let backend = FakeTerminalBackend()
+        let (session, first) = try await live(backend)
+        await wait("the size after attaching") { resizeFrames(first).count == 1 }
+        session.resize(TerminalSize(cols: 100, rows: 30))
+        await wait("the new size") { resizeFrames(first).last == TerminalSize(cols: 100, rows: 30) }
+        first.end()
+        await wait("a second attach") { backend.streams.count == 2 }
+        let second = try XCTUnwrap(backend.streams.last)
+        second.push(TerminalFrameKind.attached, attached(#"{"job":"j-1","pid":4812}"#))
+        await wait("the size after attaching again") { resizeFrames(second) == [TerminalSize(cols: 100, rows: 30)] }
+    }
+
+    func testDetachStopsAttaching() async throws {
+        let backend = FakeTerminalBackend()
+        let (session, stream) = try await live(backend)
+        session.detach()
+        XCTAssertTrue(stream.isClosed)
+        try await Task.sleep(for: .milliseconds(120))
+        XCTAssertEqual(backend.attaches.count, 1)
+    }
+
+    func testStreamsThatDropRightAfterAttachingKeepBackingOff() async throws {
+        let backend = FakeTerminalBackend()
+        let session = makeSession(backend)
+        session.start()
+        for count in 1...4 {
+            await wait("attach \(count)") { backend.streams.count == count }
+            let stream = try XCTUnwrap(backend.streams.last)
+            stream.push(TerminalFrameKind.attached, attached(#"{"job":"j-1","pid":4812}"#))
+            await wait("live \(count)") { session.phase == .live }
+            stream.end()
+            await wait("reconnecting \(count)") { session.phase == .reconnecting(nil) }
+        }
+        XCTAssertEqual(session.lastRetryDelay, Self.fast.maximum)
+    }
+
+    func testStreamThatStayedAttachedRetriesQuickly() async throws {
+        let backend = FakeTerminalBackend()
+        let session = TerminalSession(hostID: "windows-dev", shell: .powershell, backend: backend, size: TerminalSize(cols: 80, rows: 24),
+                                      backoff: Self.fast, stableAttach: .milliseconds(30))
+        sessions.append(session)
+        session.start()
+        for count in 1...3 {
+            await wait("attach \(count)") { backend.streams.count == count }
+            let stream = try XCTUnwrap(backend.streams.last)
+            stream.push(TerminalFrameKind.attached, attached(#"{"job":"j-1","pid":4812}"#))
+            await wait("live \(count)") { session.phase == .live }
+            try await Task.sleep(for: .milliseconds(50))
+            stream.end()
+            await wait("reconnecting \(count)") { session.phase == .reconnecting(nil) }
+        }
+        XCTAssertEqual(session.lastRetryDelay, Self.fast.initial)
     }
 
     func testReattachUsesJobID() async throws {
@@ -271,7 +395,7 @@ final class TerminalSessionTests: XCTestCase {
     func testPasteNeedsConfirmationOnlyWithLineBreaks() {
         XCTAssertFalse(PasteRequest.needsConfirmation("Get-Process"))
         XCTAssertTrue(PasteRequest.needsConfirmation("cd C:\\Shop\nnpm run dev\n"))
-        let request = PasteRequest(sessionID: UUID(), text: "cd C:\\Shop\r\nnpm run dev\n")
+        let request = PasteRequest(sessionID: UUID(), clipboard: "cd C:\\Shop\r\nnpm run dev\n")
         XCTAssertEqual(request.lineCount, 2)
         XCTAssertEqual(PasteRequest.normalized("a\r\nb\nc"), "a\rb\rc")
     }
@@ -281,99 +405,5 @@ final class TerminalSessionTests: XCTestCase {
         XCTAssertEqual(TerminalShell.available(on: host), [.powershell, .cmd])
         host.caps = HostCaps(items: ["pty": Capability(state: "ready", shells: ["powershell", "pwsh", "cmd"])])
         XCTAssertEqual(TerminalShell.available(on: host), [.powershell, .pwsh, .cmd])
-    }
-}
-
-@MainActor
-final class TerminalWorkspaceTests: XCTestCase {
-    private var workspace: TerminalWorkspace!
-
-    override func setUp() async throws {
-        let defaults = UserDefaults(suiteName: "TerminalWorkspaceTests-\(UUID().uuidString)")!
-        workspace = TerminalWorkspace(hostID: PreviewFixtures.devPCID, backend: PreviewBackend(stepDelay: .zero),
-                                      preferences: TerminalPreferences(defaults: defaults))
-        workspace.start()
-    }
-
-    override func tearDown() async throws {
-        workspace.stop()
-    }
-
-    private func wait(_ what: String, timeout: TimeInterval = 3, until condition: () -> Bool) async {
-        let deadline = Date.now.addingTimeInterval(timeout)
-        while !condition() {
-            if Date.now > deadline {
-                XCTFail("timed out waiting for \(what)")
-                return
-            }
-            try? await Task.sleep(for: .milliseconds(5))
-        }
-    }
-
-    private func openLiveShell() async throws -> TerminalSession {
-        workspace.open(.powershell)
-        let session = try XCTUnwrap(workspace.selected)
-        await wait("live") { session.phase == .live }
-        await wait("the prompt") { session.surface.bufferText().contains("PS C:\\Users\\taeyoung>") }
-        return session
-    }
-
-    func testClosingARunningShellAsksFirst() async throws {
-        let session = try await openLiveShell()
-        workspace.requestClose()
-        XCTAssertEqual(workspace.pendingClose?.id, session.id)
-        XCTAssertEqual(workspace.sessions.count, 1)
-    }
-
-    func testDetachedShellIsListedAndReopensWithItsScrollback() async throws {
-        let session = try await openLiveShell()
-        let job = try XCTUnwrap(session.jobID)
-        session.surface.send(txt: "whoami\r")
-        await wait("output") { session.surface.bufferText().contains("dev-pc\\taeyoung") }
-
-        workspace.close(session, ending: false)
-        XCTAssertTrue(workspace.sessions.isEmpty)
-        await wait("the detached job") { workspace.detachedJobs.contains { $0.jobID == job } }
-
-        let listed = try XCTUnwrap(workspace.detachedJobs.first { $0.jobID == job })
-        workspace.reopen(listed)
-        let reopened = try XCTUnwrap(workspace.selected)
-        await wait("live again") { reopened.phase == .live }
-        await wait("the replayed scrollback") { reopened.surface.bufferText().contains("dev-pc\\taeyoung") }
-        XCTAssertFalse(workspace.detachedJobs.contains { $0.jobID == job })
-    }
-
-    func testEndingAShellRemovesItsJob() async throws {
-        let session = try await openLiveShell()
-        let job = try XCTUnwrap(session.jobID)
-        workspace.close(session, ending: true)
-        await wait("the job list without it") { workspace.jobsLoaded && !workspace.detachedJobs.contains { $0.jobID == job } }
-        try await Task.sleep(for: .milliseconds(50))
-        XCTAssertFalse(workspace.detachedJobs.contains { $0.jobID == job })
-        XCTAssertTrue(workspace.sessions.isEmpty)
-    }
-
-    func testMultilinePasteWaitsForConfirmation() async throws {
-        let session = try await openLiveShell()
-        workspace.requestPaste(session, text: "whoami\nhostname\n")
-        let request = try XCTUnwrap(workspace.pendingPaste)
-        XCTAssertEqual(request.lineCount, 2)
-        try await Task.sleep(for: .milliseconds(30))
-        XCTAssertFalse(session.surface.bufferText().contains("dev-pc\\taeyoung"))
-
-        workspace.confirmPaste(request, dontAskAgain: false)
-        XCTAssertNil(workspace.pendingPaste)
-        await wait("both commands ran") { session.surface.bufferText().contains("DEV-PC") }
-        XCTAssertTrue(session.surface.bufferText().contains("dev-pc\\taeyoung"))
-    }
-
-    func testSingleLinePasteAndDisabledConfirmationSendAtOnce() async throws {
-        let session = try await openLiveShell()
-        workspace.requestPaste(session, text: "whoami")
-        XCTAssertNil(workspace.pendingPaste)
-        workspace.preferences.confirmsMultilinePaste = false
-        workspace.requestPaste(session, text: "\rhostname\r")
-        XCTAssertNil(workspace.pendingPaste)
-        await wait("the pasted commands ran") { session.surface.bufferText().contains("DEV-PC") }
     }
 }

@@ -5,7 +5,7 @@ import struct DeskhandClient.Host
 
 /// Simulated shells of `PreviewBackend`: Windows PowerShell, PowerShell 7 and Command Prompt
 /// with a one-line editor (typing, backspace, ↑↓ history, ⌃C, ⌃L; the prompt line is drawn again
-/// after a resize, as the console host does) and canned output for `dir`,
+/// after a resize) and canned output for `dir`,
 /// `cd`, `Get-Process`, `whoami`, `hostname`, `ipconfig`, `Get-Date`, `$PSVersionTable`, `cls`,
 /// `echo`, `help` and `exit [code]`. Folders come from the files tab fixtures. Each shell keeps
 /// its output, at most 1 MiB, and replays it after the attached frame of every attach.

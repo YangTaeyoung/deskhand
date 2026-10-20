@@ -5,7 +5,7 @@ import struct DeskhandClient.Host
 
 /// `Backend` for snapshot scenes. Control and timeline reads return exactly what the scene
 /// seeded; a timeline can stay pending or fail, and control changes can fail. File changes,
-/// transfers and terminals do nothing, since scenes seed those tabs. Everything else goes to a
+/// transfers and terminals do nothing; scenes seed those tabs. Everything else goes to a
 /// `PreviewBackend`.
 final class SnapshotBackend: Backend {
     enum TimelineReply: Sendable {

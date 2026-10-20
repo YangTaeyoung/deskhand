@@ -8,13 +8,16 @@ struct TerminalStack: NSViewRepresentable {
     let selectedID: TerminalSession.ID?
     let focusRequest: Int
     let hostName: String
+    /// ⌥ sends ESC before the key in every surface.
+    let optionAsMeta: Bool
 
     func makeNSView(context: Context) -> TerminalStackView {
         TerminalStackView()
     }
 
     func updateNSView(_ view: TerminalStackView, context: Context) {
-        view.update(sessions: sessions, selectedID: selectedID, focusRequest: focusRequest, hostName: hostName)
+        view.update(sessions: sessions, selectedID: selectedID, focusRequest: focusRequest, hostName: hostName,
+                    optionAsMeta: optionAsMeta)
     }
 
     static func dismantleNSView(_ view: TerminalStackView, coordinator: ()) {
@@ -27,7 +30,7 @@ struct TerminalStack: NSViewRepresentable {
 /// workspace asks for focus.
 final class TerminalStackView: NSView {
     /// Space between the tab content edge and the terminal text.
-    static let margin = NSEdgeInsets(top: 6, left: 10, bottom: 4, right: 2)
+    static let margin = NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 4)
 
     private var surfaces: [TerminalSession.ID: TerminalSurfaceView] = [:]
     private var selectedID: TerminalSession.ID?
@@ -65,7 +68,8 @@ final class TerminalStackView: NSView {
         return rect
     }
 
-    func update(sessions: [TerminalSession], selectedID: TerminalSession.ID?, focusRequest: Int, hostName: String) {
+    func update(sessions: [TerminalSession], selectedID: TerminalSession.ID?, focusRequest: Int, hostName: String,
+                optionAsMeta: Bool) {
         let ids = Set(sessions.map(\.id))
         for (id, surface) in surfaces where !ids.contains(id) {
             if surface.superview === self { surface.removeFromSuperview() }
@@ -82,6 +86,7 @@ final class TerminalStackView: NSView {
             }
             surfaces[session.id] = surface
             surface.isHidden = session.id != selectedID
+            surface.optionAsMetaKey = optionAsMeta
             surface.setAccessibilityLabel(String.ui("terminal.a11y.surface", "\(hostName)의 \(session.title) 터미널"))
         }
         let selectionChanged = selectedID != self.selectedID

@@ -33,8 +33,8 @@ enum TerminalScenes {
             if let paste, let host = store.host(setup.selected) {
                 let workspace = store.terminals(for: host)
                 SheetStandIn(base: SplitStandIn(store: store)) {
-                    PasteConfirmSheet(request: PasteRequest(sessionID: workspace.selected?.id ?? UUID(), text: paste),
-                                      shell: workspace.selected?.title ?? "PowerShell", confirm: { _ in }, cancel: {})
+                    PasteConfirmSheet(request: PasteRequest(sessionID: workspace.selected?.id ?? UUID(), clipboard: paste),
+                                      shell: workspace.selected?.title ?? "PowerShell", canSend: true, confirm: { _ in }, cancel: {})
                 }
             } else {
                 SplitStandIn(store: store)
@@ -59,6 +59,16 @@ enum TerminalScenes {
                    result: .object(["shell": .string("powershell"), "pid": .int(9216), "client_name": .string("Claude Code")]))
     }
 
+    /// A deploy script copied from a terminal with a color escape still in it.
+    static let deployScript = [
+        "cd C:\\Shop", "git fetch origin", "git switch release/1.18", "git pull --ff-only", "npm ci",
+        "npm run lint", "npm run test -- --reporter=dot", "npm run build", "Remove-Item -Recurse -Force .\\dist-old",
+        "Rename-Item .\\dist-current dist-old", "Copy-Item .\\dist .\\dist-current -Recurse",
+        "Copy-Item .\\dist\\* \\\\nas\\deploy\\shop -Recurse -Force",
+        "Write-Host \"\u{1b}[32m배포 준비 완료\u{1b}[0m — 승인 요청은 #release 채널에 남겨 주세요. 확인 전에는 운영 서버에 반영하지 않습니다.\"",
+        "Get-ChildItem \\\\nas\\deploy\\shop | Measure-Object",
+    ].joined(separator: "\n") + "\n"
+
     static var all: [SnapshotScene] {
         let dev = PreviewFixtures.devPCID
         let human = ControlState(owner: "human", gen: 6, aiPaused: false)
@@ -76,13 +86,30 @@ enum TerminalScenes {
             scene("terminal-disconnected", Setup(selected: PreviewFixtures.buildServerID, tab: .terminal, inspector: nil),
                   tabs: [Tab(phase: .reconnecting(OperationError(code: "OFFLINE", message: "빌드 서버에 연결되어 있지 않습니다")),
                              commands: ["dir", "Get-Process"], cwd: "C:\\Shop")]),
+            scene("terminal-reconnecting", Setup(selected: dev, tab: .terminal, inspector: nil, controls: [dev: human]),
+                  tabs: [Tab(phase: .reconnecting(OperationError(code: "TIMEOUT", message: "에이전트가 5초 안에 셸 스트림을 열지 않았습니다")),
+                             commands: ["cd Downloads", "dir"]),
+                         Tab(shell: .cmd, commands: ["ver"])]),
             scene("terminal-exited", Setup(selected: dev, tab: .terminal, inspector: nil, controls: [dev: human]),
                   tabs: [Tab(phase: .exited(0), commands: ["whoami", "hostname", "exit"]),
                          Tab(shell: .cmd, commands: ["dir"])]),
+            scene("terminal-exited-full", Setup(selected: dev, tab: .terminal, inspector: nil, controls: [dev: human]),
+                  tabs: [Tab(phase: .exited(1), commands: ["dir", "cd Downloads", "dir", "Get-Process", "Restart-Shop -Force", "exit 1"])]),
+            scene("terminal-many-tabs", Setup(selected: dev, tab: .terminal, controls: [dev: human]),
+                  tabs: [
+                      Tab(commands: ["cd Downloads", "dir"]),
+                      Tab(commands: ["dir"], cwd: "C:\\Shop"),
+                      Tab(shell: .pwsh, commands: ["cd Documents"]),
+                      Tab(commands: ["cd Desktop"]),
+                      Tab(commands: ["dir"], cwd: "C:\\Shop\\logs"),
+                      Tab(shell: .cmd, commands: ["ver"]),
+                      Tab(shell: .pwsh, commands: ["cd C:\\qa", "Get-Process"]),
+                      Tab(phase: .reconnecting(nil), commands: ["dir"], cwd: "C:\\ProgramData"),
+                  ],
+                  selected: 6),
             scene("terminal-paste-confirm", Setup(selected: dev, tab: .terminal, inspector: nil, controls: [dev: human]),
                   tabs: [Tab(commands: ["dir"], cwd: "C:\\Shop")],
-                  paste: "git fetch origin\ngit switch release/1.18\nnpm ci\nnpm run build\nRemove-Item -Recurse -Force .\\dist-old\n"
-                      + "Copy-Item .\\dist\\* \\\\nas\\deploy\\shop -Recurse\nWrite-Host \"배포 준비 완료\"\n"),
+                  paste: deployScript),
             scene("terminal-empty", Setup(selected: dev, tab: .terminal, controls: [dev: human]),
                   tabs: [], detached: [detachedJob(hostID: dev)]),
             scene("terminal-error", Setup(selected: PreviewFixtures.qaLaptopID, tab: .terminal, inspector: nil),

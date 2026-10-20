@@ -47,6 +47,8 @@ public final class TerminalSession: Identifiable {
     public private(set) var hasOutput = false
     /// When the next automatic attach starts, while reconnecting.
     public private(set) var nextAttempt: Date?
+    /// True once an attached frame arrived; later attaches use the job ID.
+    public private(set) var hasAttached = false
 
     /// Receives clipboard text the person pasted; sends it right away unless replaced.
     @ObservationIgnored public var onPaste: (TerminalSession, String) -> Void = { session, text in session.paste(text) }
@@ -56,6 +58,10 @@ public final class TerminalSession: Identifiable {
     @ObservationIgnored let surface: TerminalSurfaceView
     @ObservationIgnored private let backend: any TerminalBackend
     @ObservationIgnored private let backoff: AppStore.ResubscribeBackoff
+    /// How long a stream stays attached before a drop retries from the initial delay again.
+    @ObservationIgnored private let stableAttach: Duration
+    /// The wait before the latest automatic attach.
+    @ObservationIgnored private(set) var lastRetryDelay: Duration = .zero
     @ObservationIgnored private var runTask: Task<Void, Never>?
     @ObservationIgnored private var runToken = 0
     @ObservationIgnored private var outbox: AsyncStream<OutFrame>.Continuation?
@@ -65,15 +71,15 @@ public final class TerminalSession: Identifiable {
     @ObservationIgnored private var waiter: CheckedContinuation<Void, Never>?
     @ObservationIgnored private var waitTimer: Task<Void, Never>?
     @ObservationIgnored private var terminating = false
-    /// True once an attached frame arrived; later attaches use the job ID.
-    @ObservationIgnored private var attachedOnce = false
 
     nonisolated static let log = Logger(subsystem: "io.github.yangtaeyoung.Deskhand", category: "terminal")
 
     /// A session for `shell` on `hostID`; with `jobID` it attaches to that running pty job
     /// instead of opening a new shell.
     public init(hostID: String, shell: TerminalShell, backend: any TerminalBackend, size: TerminalSize = .standard,
-                fontSize: CGFloat = DS.Terminal.fontSize, jobID: String? = nil, backoff: AppStore.ResubscribeBackoff = .standard) {
+                fontSize: CGFloat = DS.Terminal.fontSize, jobID: String? = nil, backoff: AppStore.ResubscribeBackoff = .standard,
+                stableAttach: Duration = .seconds(5)) {
+        self.stableAttach = stableAttach
         self.hostID = hostID
         self.shell = shell
         self.backend = backend
@@ -89,6 +95,7 @@ public final class TerminalSession: Identifiable {
             guard let self else { return }
             onPaste(self, text)
         }
+        surface.acceptsPaste = { [weak self] in self?.acceptsInput ?? false }
     }
 
     /// A session showing fixed state and output, for snapshot stand-ins.
@@ -96,6 +103,10 @@ public final class TerminalSession: Identifiable {
                                title: String? = nil, directory: String? = nil, jobID: String? = "j-standin") -> TerminalSession {
         let session = TerminalSession(hostID: hostID, shell: shell, backend: UnavailableTerminalBackend(), size: size, jobID: jobID)
         session.phase = phase
+        switch phase {
+        case .live, .reconnecting, .exited: session.hasAttached = true
+        case .idle, .opening, .attaching, .failed: break
+        }
         session.surface.isStandIn = true
         session.surface.feed(Data(output.utf8))
         session.hasOutput = !output.isEmpty
@@ -154,7 +165,7 @@ public final class TerminalSession: Identifiable {
         detach()
         jobID = nil
         ptyID = nil
-        attachedOnce = false
+        hasAttached = false
         pid = nil
         remoteTitle = nil
         directory = nil
@@ -187,10 +198,13 @@ public final class TerminalSession: Identifiable {
         if let job { try await backend.ptyKill(jobID: job) }
     }
 
-    /// Sends clipboard text as typed: line breaks as Return, in bracketed-paste markers when
-    /// the shell asked for them.
-    public func paste(_ text: String) {
+    /// Sends clipboard text as typed while the shell accepts input: line breaks as Return, in
+    /// bracketed-paste markers when the shell asked for them. Returns whether it was sent.
+    @discardableResult
+    public func paste(_ text: String) -> Bool {
+        guard acceptsInput else { return false }
         surface.sendPaste(text)
+        return true
     }
 
     /// Discards the lines above the screen; the remote shell is not told.
@@ -198,8 +212,8 @@ public final class TerminalSession: Identifiable {
         surface.clearScrollback()
     }
 
-    /// Records the terminal size and, while attached, sends it in a resize frame (`0x21`) once
-    /// the size has held for `resizeDelay`; sizes in between are not sent.
+    /// Records the terminal size. While attached, schedules a resize frame (`0x21`) that goes
+    /// out `resizeDelay` later with the size at that moment, unless one is already scheduled.
     public func resize(_ size: TerminalSize) {
         guard size.cols > 0, size.rows > 0 else { return }
         if self.size != size {
@@ -239,7 +253,7 @@ public final class TerminalSession: Identifiable {
         var delay = backoff.initial
         while !Task.isCancelled {
             let target: PTYTarget
-            if let jobID, attachedOnce || ptyID == nil {
+            if let jobID, hasAttached || ptyID == nil {
                 target = .job(jobID)
             } else if let ptyID {
                 target = .pty(ptyID)
@@ -272,6 +286,7 @@ public final class TerminalSession: Identifiable {
                     return
                 }
                 phase = .reconnecting(failure)
+                lastRetryDelay = delay
                 await pause(delay)
                 delay = min(delay * 2, backoff.maximum)
                 continue
@@ -280,11 +295,14 @@ public final class TerminalSession: Identifiable {
                 stream.close()
                 return
             }
+            let clock = ContinuousClock()
+            let attachStart = clock.now
             let end = await withTaskCancellationHandler {
                 await consume(stream)
             } onCancel: {
                 stream.close()
             }
+            let attachedFor = clock.now - attachStart
             stream.close()
             if Task.isCancelled { return }
             switch end {
@@ -293,8 +311,9 @@ public final class TerminalSession: Identifiable {
                 return
             case .dropped(let attached):
                 Self.log.info("pty stream of \(self.jobID ?? "?", privacy: .public) ended; attaching again")
-                if attached { delay = backoff.initial }
+                if attached, attachedFor >= stableAttach { delay = backoff.initial }
                 phase = .reconnecting(nil)
+                lastRetryDelay = delay
                 await pause(delay)
                 delay = min(delay * 2, backoff.maximum)
             }
@@ -329,12 +348,11 @@ public final class TerminalSession: Identifiable {
                         pid = info.pid
                     }
                     attached = true
-                    attachedOnce = true
+                    hasAttached = true
                     surface.resetForReplay()
                     self.outbox = outbox
                     sentSize = nil
                     phase = .live
-                    resize(surface.size)
                     sendSize()
                 case TerminalFrameKind.data:
                     surface.feed(frame.payload)

@@ -67,7 +67,8 @@ struct CloseCommands: View {
 }
 
 /// The 터미널 menu: new tabs by shell, detached shells, tab navigation (⇧⌘] ⇧⌘[), detach and
-/// end, 스크롤백 지우기 (⌘L), text size (⌘= ⌘- ⌘0) and the paste confirmation setting.
+/// end, 스크롤백 지우기 (⌘L), text size (⌘= ⌘- ⌘0), and the paste confirmation, Option as Meta
+/// and remote clipboard settings.
 /// Shortcuts other than the menu-wide ones apply only while the terminal tab is shown.
 struct TerminalMenuCommands: View {
     let store: AppStore
@@ -76,7 +77,7 @@ struct TerminalMenuCommands: View {
         let context = TerminalCommandContext(store: store)
         let workspace = context.workspace
         let selected = context.hasTabs ? workspace?.selected : nil
-        @Bindable var preferences = store.terminalPreferences
+        let preferences = store.terminalPreferences
         Menu(String.ui("menu.terminal.newWith", "새 탭에서 열기")) {
             ForEach(context.host.map(TerminalShell.available(on:)) ?? TerminalShell.allCases.filter { $0 != .pwsh }) { shell in
                 Button(shell.title) { context.open(shell) }
@@ -121,7 +122,7 @@ struct TerminalMenuCommands: View {
             .keyboardShortcut(context.hasTabs ? KeyboardShortcut("0") : nil)
             .disabled(selected == nil)
         Divider()
-        Toggle(String.ui("terminal.paste.confirmSetting", "여러 줄을 붙여 넣기 전에 확인"), isOn: $preferences.confirmsMultilinePaste)
+        TerminalSettingToggles(preferences: preferences)
     }
 }
 

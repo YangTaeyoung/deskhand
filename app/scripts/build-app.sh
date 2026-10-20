@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Builds Deskhand.app (Debug) into app/build/Deskhand.app and prints its path.
 # Fails when the build emits any compiler warning. Copies the Go binaries from build/
-# (deskhand, deskhand-agent-windows-*.exe) into Contents/MacOS when they exist. SwiftTerm's
-# build-information plugin runs without the interactive trust prompt.
+# (deskhand, deskhand-agent-windows-*.exe) into Contents/MacOS when they exist.
 set -euo pipefail
 
 app_dir="$(cd "$(dirname "$0")/.." && pwd)"
@@ -13,6 +12,7 @@ mkdir -p "$build_dir"
 
 xcodegen generate --spec "$app_dir/project.yml" --project "$app_dir" --quiet
 
+# -skipPackagePluginValidation trusts every package plugin in the graph (today SwiftTerm's build-info plugin).
 if ! xcodebuild \
     -project "$app_dir/Deskhand.xcodeproj" \
     -scheme Deskhand \

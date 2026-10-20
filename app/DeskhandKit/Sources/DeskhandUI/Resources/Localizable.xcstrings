@@ -7259,6 +7259,17 @@
         }
       }
     },
+    "terminal.clipboardWrite": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 프로그램의 클립보드 쓰기 허용"
+          }
+        }
+      }
+    },
     "terminal.close.detach": {
       "extractionState": "manual",
       "localizations": {
@@ -7310,6 +7321,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "분리하기"
+          }
+        }
+      }
+    },
+    "terminal.detached.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "분리된 셸을 불러오지 못했습니다 · 다시 시도"
+          }
+        }
+      }
+    },
+    "terminal.detached.failedRow": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "분리된 셸을 불러오지 못했습니다"
           }
         }
       }
@@ -7397,7 +7430,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "종료 코드 %lld"
+            "value": "%1$@ · 코드 %2$lld"
           }
         }
       }
@@ -7408,7 +7441,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@이(가) 종료되었습니다"
+            "value": "셸이 종료되었습니다"
           }
         }
       }
@@ -7419,7 +7452,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@을(를) 열지 못했습니다"
+            "value": "%@ 셸을 열지 못했습니다"
           }
         }
       }
@@ -7694,7 +7727,29 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "새 %@ 탭 (⌘T) · 화살표를 누르면 셸과 분리된 셸을 고릅니다"
+            "value": "새 %@ 탭 (⌘T)"
+          }
+        }
+      }
+    },
+    "terminal.new.menu.a11y": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "셸 고르기"
+          }
+        }
+      }
+    },
+    "terminal.new.menu.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "셸 고르기와 분리된 셸"
           }
         }
       }
@@ -7754,13 +7809,13 @@
         }
       }
     },
-    "terminal.opening.detail": {
+    "terminal.optionAsMeta": {
       "extractionState": "manual",
       "localizations": {
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@ · %2$@"
+            "value": "Option을 Meta 키로 사용"
           }
         }
       }
@@ -7798,6 +7853,17 @@
         }
       }
     },
+    "terminal.paste.disconnected": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결이 끊겨 보낼 수 없습니다"
+          }
+        }
+      }
+    },
     "terminal.paste.dontAsk": {
       "extractionState": "manual",
       "localizations": {
@@ -7820,13 +7886,13 @@
         }
       }
     },
-    "terminal.paste.more": {
+    "terminal.paste.removed": {
       "extractionState": "manual",
       "localizations": {
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "외 %lld줄"
+            "value": "제어 문자 %lld개를 지웠습니다"
           }
         }
       }
@@ -7842,6 +7908,17 @@
         }
       }
     },
+    "terminal.paste.titleControls": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제어 문자가 있는 텍스트를 붙여 넣을까요?"
+          }
+        }
+      }
+    },
     "terminal.paste.titleOne": {
       "extractionState": "manual",
       "localizations": {
@@ -7849,6 +7926,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "줄바꿈이 있는 텍스트를 붙여 넣을까요?"
+          }
+        }
+      }
+    },
+    "terminal.paste.totals": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld줄 · %2$lld자"
           }
         }
       }
@@ -7875,24 +7963,13 @@
         }
       }
     },
-    "terminal.reconnect.hostDown": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ 연결이 끊겼습니다. 다시 연결되면 셸에 자동으로 다시 붙고 놓친 출력을 보여 줍니다."
-          }
-        }
-      }
-    },
     "terminal.reconnect.message": {
       "extractionState": "manual",
       "localizations": {
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "셸은 원격 PC에서 계속 실행 중입니다. 다시 붙으면 놓친 출력이 이어집니다."
+            "value": "셸은 원격 PC에서 계속 실행 중이며, 다시 붙으면 놓친 출력이 이어집니다."
           }
         }
       }
@@ -7903,7 +7980,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld초 후 다시 시도합니다"
+            "value": "%lld초 후 다시 시도"
           }
         }
       }
@@ -7925,7 +8002,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "연결이 끊겨 다시 연결하는 중…"
+            "value": "셸 연결이 끊겼습니다"
           }
         }
       }

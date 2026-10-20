@@ -31,7 +31,7 @@ public enum TerminalShell: String, CaseIterable, Identifiable, Sendable, Codable
         }
     }
 
-    /// The program file, shown beside the title in menus.
+    /// The program file the shell runs; titles that name it read as the shell.
     public var program: String {
         switch self {
         case .powershell: "powershell.exe"

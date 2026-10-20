@@ -5,7 +5,10 @@ import SwiftUI
 /// The SwiftTerm view of one terminal session, drawn in SF Mono with the design system's
 /// terminal palette for its current appearance. Keyboard input, size changes, titles, the
 /// working directory and pastes go to the session through the callbacks; ⌘C copies the
-/// selection, ⌘V hands the clipboard text to `onPaste`, and the context menu adds 스크롤백 지우기.
+/// selection, ⌘V hands the clipboard text to `onPaste` while the shell accepts input, and the
+/// context menu adds 스크롤백 지우기. ⌃C while the input method composes discards the
+/// composition before sending ETX. Remote clipboard writes (OSC 52) apply only when
+/// `allowsClipboardWrite` says so.
 final class TerminalSurfaceView: SwiftTerm.TerminalView {
     /// Bytes the person typed, for a data frame (`0x20`).
     var onInput: (ArraySlice<UInt8>) -> Void = { _ in }
@@ -17,16 +20,22 @@ final class TerminalSurfaceView: SwiftTerm.TerminalView {
     var onDirectory: (String?) -> Void = { _ in }
     /// Clipboard text the person pasted; the session sends it with `sendPaste` after any confirmation.
     var onPaste: (String) -> Void = { _ in }
+    /// Whether pasting is offered: true while the shell accepts input.
+    var acceptsPaste: () -> Bool = { true }
+    /// Whether the remote program may put text on this Mac's clipboard with OSC 52.
+    var allowsClipboardWrite: () -> Bool = { false }
+    /// The clipboard paste reads and OSC 52 writes.
+    var pasteboard = NSPasteboard.general
 
     /// Lines kept above the screen.
     static let scrollbackLines = 10_000
 
     init(size: TerminalSize, fontSize: CGFloat) {
-        super.init(frame: .zero, font: DS.Terminal.font(size: fontSize),
+        super.init(frame: .zero, font: Self.font(size: fontSize),
                    options: TerminalOptions(cols: size.cols, rows: size.rows, cursorStyle: .steadyBlock,
                                             scrollback: Self.scrollbackLines))
         terminalDelegate = self
-        optionAsMetaKey = true
+        optionAsMetaKey = false
         allowMouseReporting = true
         applyTheme()
     }
@@ -46,9 +55,18 @@ final class TerminalSurfaceView: SwiftTerm.TerminalView {
         get { font.pointSize }
         set {
             guard newValue != font.pointSize else { return }
-            font = DS.Terminal.font(size: newValue)
+            font = Self.font(size: newValue)
             onResize(size)
         }
+    }
+
+    /// SF Mono at `size`, falling back to D2Coding or NanumGothicCoding for Hangul when installed.
+    static func font(size: CGFloat) -> NSFont {
+        let base = DS.Terminal.font(size: size)
+        let cascade = ["D2Coding", "NanumGothicCoding"].filter { NSFont(name: $0, size: size) != nil }
+            .map { NSFontDescriptor(name: $0, size: size) }
+        guard !cascade.isEmpty else { return base }
+        return NSFont(descriptor: base.fontDescriptor.addingAttributes([.cascadeList: cascade]), size: size) ?? base
     }
 
     /// Feeds bytes from the shell to the emulator.
@@ -63,10 +81,11 @@ final class TerminalSurfaceView: SwiftTerm.TerminalView {
         clearScrollback()
     }
 
-    /// Sends pasted text: line breaks become carriage returns, wrapped in bracketed-paste
-    /// markers when the shell turned bracketed paste on.
+    /// Sends pasted text without escape sequences and control characters: line breaks become
+    /// carriage returns, wrapped in bracketed-paste markers when the shell turned bracketed
+    /// paste on.
     func sendPaste(_ text: String) {
-        let normalized = PasteRequest.normalized(text)
+        let normalized = PasteRequest.normalized(PasteRequest.sanitize(text).text)
         guard !normalized.isEmpty else { return }
         if getTerminal().bracketedPasteMode {
             send(txt: "\u{1b}[200~" + normalized + "\u{1b}[201~")
@@ -115,10 +134,24 @@ final class TerminalSurfaceView: SwiftTerm.TerminalView {
                                blue: component(rgb.blueComponent))
     }
 
+    // MARK: Keyboard
+
+    /// ⌃C while the input method composes: discards the composition, then sends ETX.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
+        if flags == .control, event.charactersIgnoringModifiers?.lowercased() == "c", hasMarkedText() {
+            inputContext?.discardMarkedText()
+            unmarkText()
+            send([0x03])
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
     // MARK: Clipboard and menu
 
     override func paste(_ sender: Any) {
-        guard let text = NSPasteboard.general.string(forType: .string), !text.isEmpty else { return }
+        guard acceptsPaste(), let text = pasteboard.string(forType: .string), !text.isEmpty else { return }
         onPaste(text)
     }
 
@@ -131,7 +164,7 @@ final class TerminalSurfaceView: SwiftTerm.TerminalView {
         case #selector(clearScrollbackItem(_:)):
             true
         case #selector(paste(_:)):
-            NSPasteboard.general.string(forType: .string)?.isEmpty == false
+            acceptsPaste() && pasteboard.string(forType: .string)?.isEmpty == false
         case #selector(copy(_:)), #selector(selectAll(_:)):
             super.validateUserInterfaceItem(item)
         default:
@@ -173,29 +206,34 @@ extension TerminalSurfaceView: @preconcurrency TerminalViewDelegate {
 
     func rangeChanged(source: SwiftTerm.TerminalView, startY: Int, endY: Int) {}
 
-    /// Opens web links only; file paths name files on the remote computer.
+    /// Opens http and https links.
     func requestOpenLink(source: SwiftTerm.TerminalView, link: String, params: [String: String]) {
         guard let url = URL(string: link), let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return }
         NSWorkspace.shared.open(url)
     }
 
+    /// Puts OSC 52 text on the clipboard when `allowsClipboardWrite` allows it; ignores it otherwise.
     func clipboardCopy(source: SwiftTerm.TerminalView, content: Data) {
-        guard let text = String(data: content, encoding: .utf8) else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        guard allowsClipboardWrite(), let text = String(data: content, encoding: .utf8) else { return }
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
     }
 }
 
-/// Clipboard text waiting for the multi-line paste confirmation.
+/// Clipboard text waiting for the paste confirmation, without escape sequences and control
+/// characters.
 public struct PasteRequest: Identifiable, Equatable, Sendable {
     public let id = UUID()
     /// The terminal session the text goes to.
     public let sessionID: UUID
+    /// The text to send.
     public let text: String
+    /// Escape sequences and control characters removed from the clipboard text.
+    public let removedControls: Int
 
-    public init(sessionID: UUID, text: String) {
+    public init(sessionID: UUID, clipboard: String) {
         self.sessionID = sessionID
-        self.text = text
+        (text, removedControls) = Self.sanitize(clipboard)
     }
 
     /// The text's lines; a trailing line break does not start another line.
@@ -207,6 +245,9 @@ public struct PasteRequest: Identifiable, Equatable, Sendable {
 
     public var lineCount: Int { lines.count }
 
+    /// Characters of the text, line breaks included.
+    public var characterCount: Int { text.count }
+
     /// True when the text holds a line break.
     public static func needsConfirmation(_ text: String) -> Bool {
         text.contains(where: \.isNewline)
@@ -215,5 +256,57 @@ public struct PasteRequest: Identifiable, Equatable, Sendable {
     /// `text` with each line break (CR LF, LF or CR) as one carriage return, as a terminal sends Return.
     public static func normalized(_ text: String) -> String {
         text.replacingOccurrences(of: "\r\n", with: "\r").replacingOccurrences(of: "\n", with: "\r")
+    }
+
+    /// `text` without escape sequences (CSI, OSC, DCS, SOS, PM, APC and two-character escapes,
+    /// in their 7-bit and 8-bit forms), C0 controls other than TAB, CR and LF, DEL and C1
+    /// controls, with the number of sequences and characters removed.
+    public static func sanitize(_ text: String) -> (text: String, removed: Int) {
+        var output = String.UnicodeScalarView()
+        var removed = 0
+        var scalars = text.unicodeScalars[...]
+        /// Drops scalars up to and including a string terminator: BEL, ESC \ or 0x9C.
+        func skipString() {
+            while let scalar = scalars.popFirst() {
+                switch scalar.value {
+                case 0x07, 0x9C: return
+                case 0x1B where scalars.first == "\\":
+                    scalars.removeFirst()
+                    return
+                default: continue
+                }
+            }
+        }
+        /// Drops CSI parameters and intermediates up to and including the final byte.
+        func skipCSI() {
+            while let scalar = scalars.popFirst() {
+                if (0x40...0x7E).contains(scalar.value) { return }
+            }
+        }
+        while let scalar = scalars.popFirst() {
+            switch scalar.value {
+            case 0x09, 0x0A, 0x0D:
+                output.append(scalar)
+            case 0x1B:
+                removed += 1
+                guard let next = scalars.popFirst() else { break }
+                switch next {
+                case "[": skipCSI()
+                case "]", "P", "X", "^", "_": skipString()
+                default: break
+                }
+            case 0x9B:
+                removed += 1
+                skipCSI()
+            case 0x90, 0x98, 0x9D, 0x9E, 0x9F:
+                removed += 1
+                skipString()
+            case 0x00..<0x20, 0x7F, 0x80..<0xA0:
+                removed += 1
+            default:
+                output.append(scalar)
+            }
+        }
+        return (String(output), removed)
     }
 }

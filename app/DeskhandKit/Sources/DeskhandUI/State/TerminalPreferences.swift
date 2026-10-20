@@ -1,9 +1,9 @@
 import Foundation
 import Observation
 
-/// Terminal tab settings the person chose: the shell ⌘T opens, the text size and the
-/// multi-line paste confirmation. Kept in UserDefaults; the terminal menus and the settings
-/// window edit the same values.
+/// Terminal tab settings the person chose: the shell ⌘T opens, the text size, the multi-line
+/// paste confirmation, Option as Meta and remote clipboard writes. Kept in UserDefaults; the
+/// terminal menus and the settings window edit the same values.
 @MainActor
 @Observable
 public final class TerminalPreferences {
@@ -11,6 +11,8 @@ public final class TerminalPreferences {
         static let defaultShell = "terminalDefaultShell"
         static let fontSize = "terminalFontSize"
         static let confirmsMultilinePaste = "terminalConfirmsMultilinePaste"
+        static let optionAsMeta = "terminalOptionAsMeta"
+        static let allowsClipboardWrite = "terminalAllowsClipboardWrite"
     }
 
     /// The shell a new tab opens with ⌘T and the + button.
@@ -28,6 +30,16 @@ public final class TerminalPreferences {
         didSet { defaults.set(confirmsMultilinePaste, forKey: Keys.confirmsMultilinePaste) }
     }
 
+    /// ⌥ sends ESC before the key (Meta) instead of typing the ⌥ character.
+    public var optionAsMeta: Bool {
+        didSet { defaults.set(optionAsMeta, forKey: Keys.optionAsMeta) }
+    }
+
+    /// Remote programs may put text on this Mac's clipboard (OSC 52).
+    public var allowsClipboardWrite: Bool {
+        didSet { defaults.set(allowsClipboardWrite, forKey: Keys.allowsClipboardWrite) }
+    }
+
     @ObservationIgnored private let defaults: UserDefaults
 
     init(defaults: UserDefaults) {
@@ -36,5 +48,7 @@ public final class TerminalPreferences {
         let size = defaults.object(forKey: Keys.fontSize) as? Double ?? Double(DS.Terminal.fontSize)
         fontSize = min(max(size, Double(DS.Terminal.minimumFontSize)), Double(DS.Terminal.maximumFontSize))
         confirmsMultilinePaste = defaults.object(forKey: Keys.confirmsMultilinePaste) as? Bool ?? true
+        optionAsMeta = defaults.object(forKey: Keys.optionAsMeta) as? Bool ?? false
+        allowsClipboardWrite = defaults.object(forKey: Keys.allowsClipboardWrite) as? Bool ?? false
     }
 }
