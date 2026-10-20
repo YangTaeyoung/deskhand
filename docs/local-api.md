@@ -78,7 +78,7 @@
 | `jobs.list{host_id?, kind?, status?}` / `jobs.get{job_id}` / `jobs.cancel{job_id}` | job 목록·상세 |
 | `jobs.output{job_id, cursor}` | `chunks`, `next_cursor`, `state` |
 | `proc.list` / `proc.kill` / `app.launch` | 에이전트 op와 동일 + 봉투 |
-| `pty.open{host_id, shell, cols, rows}` → `pty_id` | 이후 `stream.attach{kind:"pty"}` |
+| `pty.open{host_id, shell, cols, rows}` | 봉투(job, kind `pty`) + `pty_id`. `shell`은 `powershell`/`cmd`/`pwsh`(`caps.pty.shells`에 있는 것). 이후 `stream.attach{kind:"pty", pty_id}`. 셸 목록은 `jobs.list{host_id, kind:"pty", status:"running"}`, 끝내기는 `jobs.cancel{job_id}`(봉투 `cancelled`; 셸이 먼저 끝났으면 `succeeded`). pty job의 `result`는 `{shell, pid, client_name?}` |
 
 ### 파일
 | 메서드 | 결과 |
@@ -131,7 +131,7 @@
 - 사람 입력(`0x41`)의 `gen`은 데몬이 현재 writer generation으로 덮어쓴다. 앱은 0을 보내도 된다.
 - 단축키: 화면 입력을 잡고 있어도 ⌘Q·⌘H·⌘Tab·⌘⇧.·⌘1–⌘7·⌘⌥0·⌘K·⌘,는 Mac에 남는다(설정 "시스템 단축키도 원격으로 보내기"로 ⌘Q·⌘H·⌘Tab만 원격 전달 가능, 기본 끔). 그 밖의 ⌘ 조합은 Cmd↔Ctrl 설정에 따라 원격으로 간다.
 
-`kind:"pty"` (`pty_id`): `0x20`–`0x23` (protocol.md §7과 동일).
+`kind:"pty"` (`pty_id` 또는 `job_id`): `0x20`–`0x23` (protocol.md §7과 동일). `pty_id`는 방금 연 셸, `job_id`는 실행 중인 pty job에 다시 붙는다(분리했거나 연결이 끊긴 셸). 붙으면 데몬이 `0x23`{`job`(데몬 job_id), `pid`}을 보내고 이어서 스크롤백을 `0x20`으로 다시 보낸다. 앱은 `0x23`을 받을 때마다 현재 크기를 `0x21`로 보낸다. 끝난 job에 붙으면 `NOT_FOUND`.
 
 ## 5. 모델
 
@@ -140,7 +140,7 @@
 | 모델 | 필드 |
 |---|---|
 | Host | `host_id`, `name`, `os`, `arch`, `address`, `port`, `ssh_alias`, `state`(연결 상태), `caps`(기능 이름 → Capability), `session?`(SessionInfo), `displays`([DisplayInfo]), `owner`(`none`/`human`/`ai`), `owner_client?`, `agent_version?`, `connection_generation`, `last_seen?` |
-| Capability | `state`(`ready`/`unavailable`/`unsupported`/`needs_user`), `reason?` |
+| Capability | `state`(`ready`/`unavailable`/`unsupported`/`needs_user`), `reason?`, `shells?`(`pty` 기능만: 띄울 수 있는 셸 `powershell`/`cmd`/`pwsh`) |
 | SessionInfo | `session_id`(정수), `user`, `sid?`, `connect_state`(`active`/`connected`/`disconnected`/`other`/`unknown`), `protocol`(`console`/`rdp`/`unknown`), `locked?`(에이전트가 잠금 상태를 보고하지 않으면 없음), `input_desktop`(`Default`/`Winlogon`/`unknown`), `integrity?` |
 | DisplayInfo | `index`, `name`, `adapter`, `x`, `y`, `width`, `height`, `dpi`(정수), `scale`(실수), `primary`, `refresh_hz`(정수) |
 | ControlState | `owner`, `owner_client?`, `gen`(호스트별 제어권 상태가 바뀔 때마다 — owner 또는 ai_paused — 1씩 오르는 값. 클라이언트는 더 큰 gen만 반영한다), `ai_paused` |
