@@ -80,7 +80,11 @@ func (s *session) onPaused(t *targetState, raw json.RawMessage) {
 		state.RequestedBy = &a
 	}
 	for _, f := range p.CallFrames {
-		cf := CallFrame{FrameID: f.CallFrameID, Function: f.FunctionName, ScriptID: f.Location.ScriptID, URL: f.URL,
+		url := f.URL
+		if url == "" {
+			url = t.scriptURL[f.Location.ScriptID]
+		}
+		cf := CallFrame{FrameID: f.CallFrameID, Function: f.FunctionName, ScriptID: f.Location.ScriptID, URL: url,
 			Line: f.Location.LineNumber + 1, Column: f.Location.ColumnNumber + 1, ScopeChain: []Scope{}}
 		for _, sc := range f.ScopeChain {
 			cf.ScopeChain = append(cf.ScopeChain, Scope{Type: cdpScopeType(sc.Type), ObjectID: sc.Object.ObjectID, Name: sc.Name})

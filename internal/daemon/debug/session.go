@@ -39,8 +39,9 @@ type targetState struct {
 	// spurious pause that then arrives is resumed without being surfaced.
 	cancelPause bool
 
-	scripts  []Script
-	scriptID map[string]bool
+	scripts []Script
+	// scriptURL maps the id of each parsed script that has a URL to it.
+	scriptURL map[string]string
 
 	// cdpBreakpoints maps a session breakpoint id to its CDP id on this
 	// target.
@@ -183,8 +184,8 @@ func (s *session) addTargetLocked(t *targetState) {
 		s.order = append(s.order, t.info.ID)
 	}
 	s.targets[t.info.ID] = t
-	if t.scriptID == nil {
-		t.scriptID = map[string]bool{}
+	if t.scriptURL == nil {
+		t.scriptURL = map[string]string{}
 	}
 	if t.cdpBreakpoints == nil {
 		t.cdpBreakpoints = map[string]string{}
@@ -273,8 +274,8 @@ func (s *session) onScriptParsed(t *targetState, raw json.RawMessage) {
 		return
 	}
 	s.mu.Lock()
-	if !t.scriptID[p.ScriptID] {
-		t.scriptID[p.ScriptID] = true
+	if _, ok := t.scriptURL[p.ScriptID]; !ok {
+		t.scriptURL[p.ScriptID] = p.URL
 		t.scripts = append(t.scripts, Script{ScriptID: p.ScriptID, TargetID: t.info.ID, URL: p.URL})
 	}
 	s.mu.Unlock()
@@ -283,7 +284,7 @@ func (s *session) onScriptParsed(t *targetState, raw json.RawMessage) {
 func (s *session) onContextsCleared(t *targetState) {
 	s.mu.Lock()
 	t.scripts = nil
-	t.scriptID = map[string]bool{}
+	t.scriptURL = map[string]string{}
 	t.pauseObjects = map[string]int64{}
 	t.consoleObjects = map[string]bool{}
 	if t.paused {

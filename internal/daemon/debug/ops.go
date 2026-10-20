@@ -355,7 +355,7 @@ func (m *Manager) Source(ctx context.Context, debugID, targetID, scriptID string
 	}
 	s.mu.Lock()
 	url := s.scriptURLLocked(t, scriptID)
-	known := t.scriptID[scriptID]
+	_, known := t.scriptURL[scriptID]
 	s.mu.Unlock()
 	if !known {
 		return Source{}, apierr.NotFound("그런 스크립트가 없습니다. debug.scripts로 script_id를 확인하세요")

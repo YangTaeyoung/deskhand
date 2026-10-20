@@ -120,6 +120,29 @@ func TestBreakpointPauseStackVariablesResume(t *testing.T) {
 	}
 }
 
+func TestCallFrameWithoutURLTakesTheURLOfItsParsedScript(t *testing.T) {
+	node := nodeServer(t)
+	browser := newCDPServer(t, "Chrome/120")
+	e, s := launchBoth(t, node, browser, false)
+	main := mainTarget(t, s)
+	node.emitAll("", "Debugger.scriptParsed", map[string]any{"scriptId": "s1", "url": "file:///app/main.js"})
+	frame := map[string]any{"callFrameId": "f0", "functionName": "calcTotal",
+		"location": map[string]any{"scriptId": "s1", "lineNumber": 9, "columnNumber": 2}, "url": "",
+		"scopeChain": []any{}}
+	other := map[string]any{"callFrameId": "f1", "functionName": "",
+		"location": map[string]any{"scriptId": "s9", "lineNumber": 0, "columnNumber": 0}, "url": "",
+		"scopeChain": []any{}}
+	node.emitAll("", "Debugger.paused", map[string]any{"reason": "other", "callFrames": []any{frame, other}})
+	e.waitEvent(t, evPaused)
+	st, err := e.m.State(s.DebugID, main)
+	if err != nil {
+		t.Fatalf("state: %v", err)
+	}
+	if len(st.CallFrames) != 2 || st.CallFrames[0].URL != "file:///app/main.js" || st.CallFrames[1].URL != "" {
+		t.Fatalf("call frames = %+v, want the URL of script s1 on the first and none on the unknown script", st.CallFrames)
+	}
+}
+
 func TestStepOverIntoOut(t *testing.T) {
 	node := nodeServer(t)
 	browser := newCDPServer(t, "Chrome/120")
