@@ -3,12 +3,15 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -33,9 +36,10 @@ const (
 	fofNoConnectedElements = 0x2000
 )
 
-// shellPathMax is MAX_PATH: the Recycle Bin keeps an entry only when its
-// path and the path of everything in it are shorter, in UTF-16 code units.
-const shellPathMax = 260
+// shellPathLimit bounds the paths fs.trash gives the Recycle Bin: the path
+// of the entry and of everything in it must be shorter, in UTF-16 code
+// units.
+const shellPathLimit = 250
 
 // Registry keys of the Recycle Bin settings, below HKEY_CURRENT_USER and
 // HKEY_LOCAL_MACHINE.
@@ -64,13 +68,45 @@ type shQueryRBInfo struct {
 }
 
 // platformTrash moves the entry at path, whose Lstat is fi, to the current
-// user's Recycle Bin (shellRecycle) once recyclable has found that the
-// Recycle Bin keeps it.
+// user's Recycle Bin: it takes the canonical form of path (canonicalPath),
+// checks that the Recycle Bin keeps the entry there (recyclable) and moves
+// it (shellRecycle).
 func platformTrash(path string, fi fs.FileInfo) error {
-	if err := recyclable(path, fi); err != nil {
+	canonical, err := canonicalPath(path)
+	if err != nil {
 		return err
 	}
-	return shellRecycle(path)
+	if err := recyclable(canonical, fi); err != nil {
+		return err
+	}
+	return shellRecycle(canonical)
+}
+
+// isDrivePath reports whether p starts with a drive letter, a colon and a
+// separator.
+func isDrivePath(p string) bool {
+	return len(p) >= 3 && (p[0]|0x20 >= 'a' && p[0]|0x20 <= 'z') && p[1] == ':' && p[2] == '\\'
+}
+
+// canonicalPath returns path with its folder resolved (resolvedPath: links,
+// junctions, short names and letter case) and its last element as the long
+// name its folder holds (actualName), so that a link is kept as itself. A
+// canonical form that does not start with a drive letter (X:\…), such as a
+// share, is a CAPABILITY_UNSUPPORTED error.
+func canonicalPath(path string) (string, error) {
+	dir, err := resolvedPath(filepath.Dir(path), true)
+	if err != nil {
+		return "", fsFailure(fmt.Sprintf("cannot resolve the folder of '%s'", path), err)
+	}
+	name, err := actualName(path)
+	if err != nil {
+		return "", fsFailure(fmt.Sprintf("cannot read '%s'", path), err)
+	}
+	canonical := filepath.Join(dir, name)
+	if !isDrivePath(canonical) {
+		return "", unsupportedTrash(path, fmt.Sprintf("it lies at '%s', which is not on a drive letter of this PC", canonical), "delete it permanently with fs.delete instead")
+	}
+	return canonical, nil
 }
 
 // unsupportedTrash is the CAPABILITY_UNSUPPORTED error of an entry the
@@ -80,22 +116,22 @@ func unsupportedTrash(path, why, next string) error {
 }
 
 // recyclable returns nil when the Recycle Bin of the current user keeps the
-// entry at path, whose Lstat is fi: path is not in a Recycle Bin, path is
-// shorter than shellPathMax, it lies on a fixed local volume that has a
-// Recycle Bin, neither a policy nor the volume's setting removes deleted
-// files at once, every path in the folder it names is shorter than
-// shellPathMax, and its size, with everything in it, is within the
-// volume's Recycle Bin size. Otherwise it
-// returns a CAPABILITY_UNSUPPORTED error, or the error that kept it from
-// checking.
+// entry at the canonical path path, whose Lstat is fi: path is not in a
+// Recycle Bin, path is shorter than shellPathLimit, it lies on a fixed local
+// volume that has a Recycle Bin, no policy of HKEY_LOCAL_MACHINE or
+// HKEY_CURRENT_USER and no setting of the volume removes deleted files at
+// once, every path in the folder it names is shorter than shellPathLimit,
+// and its size, with everything in it, is within the volume's Recycle Bin
+// size. Otherwise it returns a CAPABILITY_UNSUPPORTED error, or the error
+// that kept it from checking.
 func recyclable(path string, fi fs.FileInfo) error {
 	const permanently = "delete it permanently with fs.delete instead"
 	rest := path[windowsVolumeLen(path):]
 	if first, _, _ := strings.Cut(strings.TrimLeft(rest, `\`), `\`); strings.EqualFold(first, "$Recycle.Bin") {
 		return unsupportedTrash(path, "it is in the Recycle Bin already", "delete it permanently with fs.delete, or leave it there")
 	}
-	if n := utf16Len(path); n >= shellPathMax {
-		return unsupportedTrash(path, fmt.Sprintf("its path is %d characters long and the Recycle Bin takes paths shorter than %d characters", n, shellPathMax),
+	if n := utf16Len(path); n >= shellPathLimit {
+		return unsupportedTrash(path, fmt.Sprintf("its path is %d characters long and fs.trash takes paths shorter than %d characters", n, shellPathLimit),
 			"move it to a shorter path with fs.rename and trash it there, or "+permanently)
 	}
 	root, err := volumeRoot(path)
@@ -117,7 +153,7 @@ func recyclable(path string, fi fs.FileInfo) error {
 	if hr, _, _ := procSHQueryRecycleBinW.Call(uintptr(unsafe.Pointer(rootPtr)), uintptr(unsafe.Pointer(&info))); uint32(hr) != 0 {
 		return unsupportedTrash(path, fmt.Sprintf("the volume %s has no Recycle Bin for this user (SHQueryRecycleBin 0x%08X)", root, uint32(hr)), permanently)
 	}
-	if v, ok := policyValue("NoRecycleFiles"); ok && v != 0 {
+	if slices.ContainsFunc(policyValues("NoRecycleFiles"), func(v uint64) bool { return v != 0 }) {
 		return unsupportedTrash(path, "the policy \"Do not move deleted files to the Recycle Bin\" is on", permanently)
 	}
 	volume := strings.TrimSuffix(strings.TrimPrefix(windows.UTF16ToString(guid), `\\?\Volume`), `\`)
@@ -138,7 +174,7 @@ func recyclable(path string, fi fs.FileInfo) error {
 
 // treeSize returns the size of the entry at path, whose Lstat is fi, with
 // the sizes of the files in the folder it names, without following links;
-// a path in that folder as long as shellPathMax or longer is a
+// a path in that folder as long as shellPathLimit or longer is a
 // CAPABILITY_UNSUPPORTED error.
 func treeSize(path string, fi fs.FileInfo) (int64, error) {
 	if !fi.IsDir() {
@@ -149,8 +185,8 @@ func treeSize(path string, fi fs.FileInfo) (int64, error) {
 		if err != nil {
 			return fsFailure(fmt.Sprintf("cannot read '%s'", p), err)
 		}
-		if n := utf16Len(p); n >= shellPathMax {
-			return unsupportedTrash(path, fmt.Sprintf("it holds '%s', whose path is %d characters long, and the Recycle Bin takes paths shorter than %d characters", p, n, shellPathMax),
+		if n := utf16Len(p); n >= shellPathLimit {
+			return unsupportedTrash(path, fmt.Sprintf("it holds '%s', whose path is %d characters long, and fs.trash takes paths shorter than %d characters", p, n, shellPathLimit),
 				"move what it holds to shorter paths, or delete it permanently with fs.delete instead")
 		}
 		if d.Type().IsRegular() {
@@ -190,15 +226,16 @@ func driveKind(t uint32) string {
 	return "not a fixed local drive"
 }
 
-// policyValue returns the DWORD name of the Explorer policies, read from
-// HKEY_LOCAL_MACHINE first and then from HKEY_CURRENT_USER.
-func policyValue(name string) (uint64, bool) {
+// policyValues returns the DWORD name of the Explorer policies of
+// HKEY_LOCAL_MACHINE and of HKEY_CURRENT_USER, each that is set.
+func policyValues(name string) []uint64 {
+	var out []uint64
 	for _, hive := range []registry.Key{registry.LOCAL_MACHINE, registry.CURRENT_USER} {
 		if v, ok := dwordValue(hive, explorerPolicies, name); ok {
-			return v, true
+			out = append(out, v)
 		}
 	}
-	return 0, false
+	return out
 }
 
 // dwordValue returns the integer value name of the key path below hive.
@@ -213,11 +250,12 @@ func dwordValue(hive registry.Key, path, name string) (uint64, bool) {
 }
 
 // recycleBinLimit returns the most bytes the Recycle Bin of the volume with
-// the root root and the GUID volume ({…}) holds: the MaxCapacity (MiB) of
-// the volume's Recycle Bin settings, or the share of the volume's size in
-// percent the RecycleBinSize policy sets when that is smaller. A setting
-// that removes deleted files at once (NukeOnDelete) and a limit that
-// cannot be read are errors whose text says so.
+// the root root and the GUID volume ({…}) holds: the smallest of the
+// MaxCapacity (MiB) of the volume's Recycle Bin settings and the shares of
+// the volume's size in percent that the RecycleBinSize policies of
+// HKEY_LOCAL_MACHINE and HKEY_CURRENT_USER set. A setting that removes
+// deleted files at once (NukeOnDelete), a size policy while the volume's
+// size cannot be read, and no limit at all are errors whose text says so.
 func recycleBinLimit(root, volume string) (int64, error) {
 	key := bitBucketVolumes + volume
 	if v, ok := dwordValue(registry.CURRENT_USER, key, "NukeOnDelete"); ok && v != 0 {
@@ -227,12 +265,17 @@ func recycleBinLimit(root, volume string) (int64, error) {
 	if mb, ok := dwordValue(registry.CURRENT_USER, key, "MaxCapacity"); ok {
 		limit = int64(mb) << 20
 	}
-	if pct, ok := policyValue("RecycleBinSize"); ok {
+	if pcts := policyValues("RecycleBinSize"); len(pcts) > 0 {
 		var total uint64
-		if p, err := windows.UTF16PtrFromString(root); err == nil && windows.GetDiskFreeSpaceEx(p, nil, &total, nil) == nil {
-			if byPolicy := int64(total / 100 * pct); limit < 0 || byPolicy < limit {
-				limit = byPolicy
-			}
+		p, err := windows.UTF16PtrFromString(root)
+		if err == nil {
+			err = windows.GetDiskFreeSpaceEx(p, nil, &total, nil)
+		}
+		if err != nil {
+			return 0, fmt.Errorf("the size of %s, which the RecycleBinSize policy needs, could not be read (%v)", root, err)
+		}
+		if byPolicy := int64(total / 100 * slices.Min(pcts)); limit < 0 || byPolicy < limit {
+			limit = byPolicy
 		}
 	}
 	if limit < 0 {
@@ -244,8 +287,9 @@ func recycleBinLimit(root, volume string) (int64, error) {
 // shellRecycle deletes path with SHFileOperationW and FOF_ALLOWUNDO, which
 // moves it to the Recycle Bin, without any confirmation, progress or error
 // window and without the entries the shell connects to path, such as the
-// folder of a saved web page. It runs on its thread in a single-threaded
-// COM apartment.
+// folder of a saved web page, and then checks that the Recycle Bin holds it
+// (verifyRecycled). It runs on its thread in a single-threaded COM
+// apartment.
 func shellRecycle(path string) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -258,6 +302,7 @@ func shellRecycle(path string) error {
 	}
 	from = append(from, 0)
 	op := shFileOpStruct{wFunc: foDelete, pFrom: &from[0], fFlags: fofAllowUndo | fofNoConfirmation | fofSilent | fofNoErrorUI | fofNoConnectedElements}
+	start := time.Now()
 	r, _, _ := procSHFileOperationW.Call(uintptr(unsafe.Pointer(&op)))
 	runtime.KeepAlive(from)
 	if code := uint32(r); code != 0 {
@@ -268,6 +313,28 @@ func shellRecycle(path string) error {
 	}
 	if _, err := os.Lstat(path); err == nil {
 		return coded(wire.CodeInternal, fmt.Sprintf("'%s' is still there after the move to the Recycle Bin; check it with fs.stat and retry", path), true)
+	}
+	return verifyRecycled(path, start)
+}
+
+// verifyRecycled returns nil when the current user's Recycle Bin on the
+// volume of path holds an item deleted from path at since or later
+// (findRecycleRecord), and an INTERNAL error otherwise.
+func verifyRecycled(path string, since time.Time) error {
+	root, err := volumeRoot(path)
+	sid := processUserSID()
+	if err == nil && sid == "" {
+		err = errors.New("the account of the agent could not be read")
+	}
+	if err != nil {
+		return coded(wire.CodeInternal, fmt.Sprintf("'%s' is gone, and the Recycle Bin could not be found to confirm that it holds it (%v); look for it in the Recycle Bin", path, err), false)
+	}
+	_, found, err := findRecycleRecord(filepath.Join(root, "$Recycle.Bin", sid), path, since)
+	if err != nil {
+		return coded(wire.CodeInternal, fmt.Sprintf("'%s' is gone, and the Recycle Bin could not be read to confirm that it holds it (%v); look for it in the Recycle Bin", path, err), false)
+	}
+	if !found {
+		return coded(wire.CodeInternal, fmt.Sprintf("'%s' was deleted permanently instead of being moved to the Recycle Bin; restore it from a backup if it is needed", path), false)
 	}
 	return nil
 }

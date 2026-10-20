@@ -25,19 +25,55 @@ func isWindowsSeparator(c byte) bool { return c == '\\' || c == '/' }
 // stripLongPrefix returns the Windows path p without a \\?\ prefix before a
 // drive letter, and with a \\?\UNC\ prefix turned into \\.
 func stripLongPrefix(p string) string {
-	if len(p) >= 8 && strings.EqualFold(p[:8], `\\?\UNC\`) {
+	if hasPrefixFold(p, `\\?\UNC\`) {
 		return `\\` + p[8:]
 	}
 	return withoutLongPrefix(p)
 }
 
+// hasPrefixFold reports whether s starts with prefix in any letter case.
+func hasPrefixFold(s, prefix string) bool {
+	return len(s) >= len(prefix) && strings.EqualFold(s[:len(prefix)], prefix)
+}
+
+// isVolumeGUIDPath reports whether the Windows path p starts with
+// \\?\Volume{.
+func isVolumeGUIDPath(p string) bool { return hasPrefixFold(p, `\\?\Volume{`) }
+
 // isDevicePath reports whether the Windows path p names a device: it starts
-// with \\.\ or with \\?\GLOBALROOT.
+// with \\.\, or with \\?\ followed by anything other than a drive letter
+// and a colon, UNC\ or Volume{.
 func isDevicePath(p string) bool {
 	if len(p) >= 4 && isWindowsSeparator(p[0]) && isWindowsSeparator(p[1]) && p[2] == '.' && isWindowsSeparator(p[3]) {
 		return true
 	}
-	return len(p) >= 14 && strings.EqualFold(p[:14], `\\?\GLOBALROOT`)
+	if !strings.HasPrefix(p, `\\?\`) {
+		return false
+	}
+	rest := p[4:]
+	drive := len(rest) >= 2 && rest[1] == ':' && (rest[0]|0x20 >= 'a' && rest[0]|0x20 <= 'z') && (len(rest) == 2 || rest[2] == '\\')
+	return !drive && !hasPrefixFold(rest, `UNC\`) && !hasPrefixFold(rest, "Volume{")
+}
+
+// normalizeWindowsPath returns the Windows path p cleaned and without a \\?\
+// prefix: \\?\C:\… becomes C:\…, \\?\UNC\server\share\… becomes
+// \\server\share\…, and \\?\Volume{…}\… becomes the same path below the
+// first drive or folder the volume is mounted at (volumeDOSPath). A device
+// path (isDevicePath) and a volume that is mounted nowhere are
+// INVALID_ARGUMENT errors.
+func normalizeWindowsPath(p string) (string, error) {
+	p = filepath.Clean(p)
+	if isDevicePath(p) {
+		return "", invalidArgument(fmt.Sprintf("'%s' is a Windows device path; pass a path on a drive or a share, such as C:\\Users\\name\\file.txt", p))
+	}
+	if isVolumeGUIDPath(p) {
+		dos, err := volumeDOSPath(p)
+		if err != nil {
+			return "", invalidArgument(fmt.Sprintf("'%s' names a volume that has no drive letter or folder to reach it by (%v); mount the volume at a drive letter and pass that path", p, err))
+		}
+		return filepath.Clean(dos), nil
+	}
+	return stripLongPrefix(p), nil
 }
 
 // windowsVolumeLen returns the length of the volume that starts the Windows
@@ -121,20 +157,20 @@ func windowsPathError(p string) error {
 }
 
 // checkPath returns the absolute path p cleaned, and on Windows without a
-// \\?\ prefix before a drive or a share, when the file operations may act on
-// it: on Windows p passes windowsPathError, and with roots p passes
-// checkRoots. A relative p is an INVALID_ARGUMENT error.
+// \\?\ prefix (normalizeWindowsPath), when the file operations may act on it:
+// on Windows p passes windowsPathError, and with roots p passes checkRoots.
+// A relative p is an INVALID_ARGUMENT error.
 func checkPath(p string, roots []string) (string, error) {
+	p = filepath.Clean(p)
 	if runtime.GOOS == "windows" {
-		if isDevicePath(p) {
-			return "", windowsPathError(p)
+		var err error
+		if p, err = normalizeWindowsPath(p); err != nil {
+			return "", err
 		}
-		p = stripLongPrefix(p)
 	}
 	if !filepath.IsAbs(p) {
 		return "", invalidArgument(fmt.Sprintf("'%s' is not an absolute path; pass a full path", p))
 	}
-	p = filepath.Clean(p)
 	if runtime.GOOS == "windows" {
 		if err := windowsPathError(p); err != nil {
 			return "", err
@@ -163,13 +199,17 @@ func rootsArg(req proto.Message) ([]string, error) {
 		if !ok || r == "" {
 			return nil, invalidArgument("roots must be an array of absolute folder paths")
 		}
+		r = filepath.Clean(r)
 		if runtime.GOOS == "windows" {
-			r = stripLongPrefix(r)
+			var err error
+			if r, err = normalizeWindowsPath(r); err != nil {
+				return nil, err
+			}
 		}
 		if !filepath.IsAbs(r) {
 			return nil, invalidArgument(fmt.Sprintf("the root '%s' in roots is not an absolute path; pass absolute folder paths", r))
 		}
-		roots = append(roots, filepath.Clean(r))
+		roots = append(roots, r)
 	}
 	return roots, nil
 }

@@ -68,6 +68,25 @@ func TestFsMkdirBelowAMissingDeployRootLocksTheRootFirst(t *testing.T) {
 	}
 }
 
+func TestFsCopyIntoAMissingDeployRootLocksTheRootFirst(t *testing.T) {
+	c, f := deployClient(t)
+	src := filepath.Join(t.TempDir(), "app.exe")
+	if err := os.WriteFile(src, []byte("app"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c.ok("fs.copy", proto.Message{"from": src, "to": filepath.Join(f.path, "app.exe")})
+	if f.lockCount() != 1 {
+		t.Fatalf("Lock ran %d times", f.lockCount())
+	}
+	if b, err := os.ReadFile(filepath.Join(f.path, "app.exe")); err != nil || string(b) != "app" {
+		t.Fatalf("the copy %q %v", b, err)
+	}
+	c.ok("fs.copy", proto.Message{"from": src, "to": filepath.Join(f.path, "other.exe")})
+	if f.lockCount() != 1 {
+		t.Fatalf("Lock ran %d times for an existing root", f.lockCount())
+	}
+}
+
 func TestFsMkdirOfTheMissingDeployRootLocksIt(t *testing.T) {
 	c, f := deployClient(t)
 	c.ok("fs.mkdir", proto.Message{"path": f.path})

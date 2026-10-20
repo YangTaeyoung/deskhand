@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"golang.org/x/sys/windows"
@@ -71,6 +72,38 @@ func finalPathOf(h windows.Handle, flags uint32) (string, error) {
 		}
 		buf = make([]uint16, n+1)
 	}
+}
+
+// volumeDOSPath returns the path p, which starts with \\?\Volume{…}, below
+// the first drive or folder that volume is mounted at
+// (GetVolumePathNamesForVolumeNameW).
+func volumeDOSPath(p string) (string, error) {
+	end := strings.IndexByte(p, '}')
+	if end < 0 {
+		return "", errors.New("the volume name has no closing brace")
+	}
+	name, err := windows.UTF16PtrFromString(p[:end+1] + `\`)
+	if err != nil {
+		return "", err
+	}
+	buf := make([]uint16, windows.MAX_PATH)
+	for {
+		var n uint32
+		err := windows.GetVolumePathNamesForVolumeName(name, &buf[0], uint32(len(buf)), &n)
+		if errors.Is(err, windows.ERROR_MORE_DATA) {
+			buf = make([]uint16, n)
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		break
+	}
+	first := windows.UTF16ToString(buf)
+	if first == "" {
+		return "", errors.New("it is mounted nowhere")
+	}
+	return filepath.Join(first, strings.TrimLeft(p[end+1:], `\`)), nil
 }
 
 // actualName returns the name of the existing entry p as its folder holds

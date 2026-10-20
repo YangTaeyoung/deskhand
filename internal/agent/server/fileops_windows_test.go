@@ -4,7 +4,6 @@ package server
 
 import (
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -14,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf16"
 
 	"golang.org/x/sys/windows"
@@ -31,48 +31,24 @@ func realPC(t *testing.T) {
 	}
 }
 
-// recycled is one item of the Recycle Bin: its $I record and its $R entry.
-type recycled struct{ info, data string }
-
 // findRecycled returns the item of the current user's Recycle Bin on the
-// volume of original whose $I record names original.
-func findRecycled(t *testing.T, original string) (recycled, bool) {
+// volume of original that was deleted from original at since or later.
+func findRecycled(t *testing.T, original string, since time.Time) (recycleRecord, bool) {
 	t.Helper()
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {
 		t.Fatal(err)
 	}
 	bin := filepath.Join(filepath.VolumeName(original)+`\`, "$Recycle.Bin", user.User.Sid.String())
-	ents, err := os.ReadDir(bin)
+	r, ok, err := findRecycleRecord(bin, original, since)
 	if err != nil {
 		t.Fatalf("read the Recycle Bin %s: %v", bin, err)
 	}
-	for _, e := range ents {
-		name := e.Name()
-		if !strings.HasPrefix(name, "$I") {
-			continue
-		}
-		b, err := os.ReadFile(filepath.Join(bin, name))
-		if err != nil || len(b) < 28 || binary.LittleEndian.Uint64(b) != 2 {
-			continue
-		}
-		n := int(binary.LittleEndian.Uint32(b[24:]))
-		if 28+2*n > len(b) {
-			continue
-		}
-		units := make([]uint16, n)
-		for i := range units {
-			units[i] = binary.LittleEndian.Uint16(b[28+2*i:])
-		}
-		if strings.EqualFold(windows.UTF16ToString(units), original) {
-			return recycled{info: filepath.Join(bin, name), data: filepath.Join(bin, "$R"+name[2:])}, true
-		}
-	}
-	return recycled{}, false
+	return r, ok
 }
 
 // removeRecycled removes the item r from the Recycle Bin, and only it.
-func removeRecycled(t *testing.T, r recycled) {
+func removeRecycled(t *testing.T, r recycleRecord) {
 	t.Helper()
 	if err := os.RemoveAll(r.data); err != nil {
 		t.Errorf("remove %s: %v", r.data, err)
@@ -82,19 +58,50 @@ func removeRecycled(t *testing.T, r recycled) {
 	}
 }
 
-// expectRecycled checks that original is gone and is in the Recycle Bin,
-// and removes it from there when the test ends.
-func expectRecycled(t *testing.T, original string) recycled {
+// expectRecycled checks that original is gone and that the Recycle Bin holds
+// an item deleted from it at since or later whose $R entry passes check;
+// only then it removes that item, and only it, when the test ends.
+func expectRecycled(t *testing.T, original string, since time.Time, check func(data string) error) {
 	t.Helper()
 	if _, err := os.Lstat(original); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("%s is still there: %v", original, err)
 	}
-	r, ok := findRecycled(t, original)
+	r, ok := findRecycled(t, original, since)
 	if !ok {
 		t.Fatalf("%s is not in the Recycle Bin", original)
 	}
+	if err := check(r.data); err != nil {
+		t.Fatalf("the item %s recycled from %s differs: %v", r.data, original, err)
+	}
 	t.Cleanup(func() { removeRecycled(t, r) })
-	return r
+}
+
+// holds returns a check that the file rel below the recycled entry (rel ""
+// for the entry itself) has the content want.
+func holds(rel, want string) func(string) error {
+	return func(data string) error {
+		b, err := os.ReadFile(filepath.Join(data, rel))
+		if err != nil {
+			return err
+		}
+		if string(b) != want {
+			return fmt.Errorf("content %q", b)
+		}
+		return nil
+	}
+}
+
+// exactPath returns prefix extended with ASCII names to exactly n
+// characters.
+func exactPath(prefix string, n int, letter byte) string {
+	p := prefix
+	for n-len(p) > 60 {
+		p += `\` + strings.Repeat(string(letter), 50)
+	}
+	if k := n - len(p) - 1; k > 0 {
+		p += `\` + strings.Repeat(string(letter+1), k)
+	}
+	return p
 }
 
 // longPath returns a path below dir that is at least n characters long.
@@ -117,24 +124,21 @@ func junction(t *testing.T, link, target string) {
 func TestTrashDoesNotPermanentlyDelete(t *testing.T) {
 	realPC(t)
 	c, home := opsHome(t)
+	start := time.Now()
 
 	file := filepath.Join(home, "휴지통 😀.txt")
 	writeFile(t, file, "into the bin")
 	if res := c.ok("fs.trash", proto.Message{"path": file}); res["trashed"] != true {
 		t.Fatalf("trash a file %v", res)
 	}
-	if r := expectRecycled(t, file); readFile(t, r.data) != "into the bin" {
-		t.Fatal("the recycled file differs")
-	}
+	expectRecycled(t, file, start, holds("", "into the bin"))
 
 	folder := filepath.Join(home, "folder")
 	writeFile(t, filepath.Join(folder, "sub", "x.txt"), "x")
 	if res := c.ok("fs.trash", proto.Message{"path": folder}); res["trashed"] != true {
 		t.Fatalf("trash a folder %v", res)
 	}
-	if r := expectRecycled(t, folder); readFile(t, filepath.Join(r.data, "sub", "x.txt")) != "x" {
-		t.Fatal("the recycled folder differs")
-	}
+	expectRecycled(t, folder, start, holds(filepath.Join("sub", "x.txt"), "x"))
 
 	for _, attr := range []uint32{windows.FILE_ATTRIBUTE_READONLY, windows.FILE_ATTRIBUTE_HIDDEN} {
 		p := filepath.Join(home, fmt.Sprintf("attribute %#x.txt", attr))
@@ -143,17 +147,39 @@ func TestTrashDoesNotPermanentlyDelete(t *testing.T) {
 		if res := c.ok("fs.trash", proto.Message{"path": p}); res["trashed"] != true {
 			t.Fatalf("trash a file with the attribute %#x %v", attr, res)
 		}
-		expectRecycled(t, p)
+		expectRecycled(t, p, start, holds("", "attr"))
 	}
 
 	if res := c.ok("fs.trash", proto.Message{"path": filepath.Join(home, "gone.txt")}); res["trashed"] != false {
 		t.Fatalf("trash a missing path %v", res)
 	}
 
+	for i, n := range []int{shellPathLimit - 1, shellPathLimit} {
+		f := exactPath(filepath.Join(home, fmt.Sprintf("edge%d", i)), n, 'a')
+		writeFile(t, f, "edge")
+		holder := filepath.Join(home, fmt.Sprintf("holder%d", i))
+		inner := exactPath(holder, n, 'c')
+		writeFile(t, inner, "inner")
+		for _, tc := range []struct{ item, rel, content string }{{f, "", "edge"}, {holder, inner[len(holder)+1:], "inner"}} {
+			res := c.call("fs.trash", proto.Message{"path": tc.item})
+			if n < shellPathLimit {
+				if res["trashed"] != true {
+					t.Fatalf("trash of %s with a %d-character path %v", tc.item, n, res)
+				}
+				expectRecycled(t, tc.item, start, holds(tc.rel, tc.content))
+				continue
+			}
+			failsWith(t, res, wire.CodeCapabilityUnsupported, fmt.Sprintf("shorter than %d characters", shellPathLimit))
+			if readFile(t, filepath.Join(tc.item, tc.rel)) != tc.content {
+				t.Fatalf("%s changed", tc.item)
+			}
+		}
+	}
+
 	deep := filepath.Join(longPath(filepath.Join(home, "deep"), 270), "f.txt")
 	writeFile(t, deep, "deep")
 	for _, p := range []string{deep, filepath.Join(home, "deep")} {
-		failsWith(t, c.call("fs.trash", proto.Message{"path": p}), wire.CodeCapabilityUnsupported, "260")
+		failsWith(t, c.call("fs.trash", proto.Message{"path": p}), wire.CodeCapabilityUnsupported, "250")
 	}
 	if readFile(t, deep) != "deep" {
 		t.Fatal("the deep file changed")
@@ -169,10 +195,112 @@ func TestTrashDoesNotPermanentlyDelete(t *testing.T) {
 		if readFile(t, kept) != "kept" {
 			t.Fatal("the file trashed through the network volume changed")
 		}
-		if _, ok := findRecycled(t, share); ok {
-			t.Fatal("the network path is in the Recycle Bin")
+		if _, ok := findRecycled(t, kept, start); ok {
+			t.Fatal("the file is in the Recycle Bin")
 		}
 	}
+}
+
+// shortPath returns the 8.3 form of the existing path p.
+func shortPath(t *testing.T, p string) string {
+	t.Helper()
+	name, err := windows.UTF16PtrFromString(extendedPath(p))
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]uint16, 1024)
+	n, err := windows.GetShortPathName(name, &buf[0], uint32(len(buf)))
+	if err != nil {
+		t.Fatalf("GetShortPathName %s: %v", p, err)
+	}
+	return stripLongPrefix(windows.UTF16ToString(buf[:n]))
+}
+
+func TestTrashTakesTheCanonicalPath(t *testing.T) {
+	realPC(t)
+	c, home := opsHome(t)
+	start := time.Now()
+
+	t.Run("short names", func(t *testing.T) {
+		parent := home
+		for i := 0; len(parent) < 270; i++ {
+			parent = filepath.Join(parent, fmt.Sprintf("a long folder name number %d with spaces in it", i))
+		}
+		file := filepath.Join(parent, "f.txt")
+		writeFile(t, file, "short")
+		short := shortPath(t, parent)
+		if short == parent || utf16Len(filepath.Join(short, "f.txt")) >= shellPathLimit {
+			t.Skipf("the volume gives no short names that fit (%s)", short)
+		}
+		failsWith(t, c.call("fs.trash", proto.Message{"path": filepath.Join(short, "f.txt")}), wire.CodeCapabilityUnsupported, "characters long")
+		if readFile(t, file) != "short" {
+			t.Fatal("the file changed")
+		}
+	})
+
+	t.Run("volume GUID", func(t *testing.T) {
+		root, err := windows.UTF16PtrFromString(filepath.VolumeName(home) + `\`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		guid := make([]uint16, 64)
+		if err := windows.GetVolumeNameForVolumeMountPoint(root, &guid[0], uint32(len(guid))); err != nil {
+			t.Fatal(err)
+		}
+		volume := strings.TrimSuffix(windows.UTF16ToString(guid), `\`)
+		file := filepath.Join(home, "volume.txt")
+		writeFile(t, file, "volume")
+		if res := c.ok("fs.trash", proto.Message{"path": volume + file[2:]}); res["trashed"] != true {
+			t.Fatalf("trash through the volume GUID %v", res)
+		}
+		expectRecycled(t, file, start, holds("", "volume"))
+		deep := filepath.Join(longPath(filepath.Join(home, "deep volume"), 270), "f.txt")
+		writeFile(t, deep, "deep")
+		failsWith(t, c.call("fs.trash", proto.Message{"path": volume + deep[2:]}), wire.CodeCapabilityUnsupported, "characters long")
+		if readFile(t, deep) != "deep" {
+			t.Fatal("the deep file changed")
+		}
+	})
+
+	t.Run("folder link to the administrative share", func(t *testing.T) {
+		target := filepath.Join(home, "target")
+		writeFile(t, filepath.Join(target, "file.txt"), "target")
+		share := adminShare("localhost", target)
+		if _, err := os.Stat(share); err != nil {
+			t.Skipf("the administrative share is not reachable: %v", err)
+		}
+		link := filepath.Join(home, "share-link")
+		if out, err := exec.Command(systemProgram("cmd.exe"), "/c", "mklink", "/D", link, share).CombinedOutput(); err != nil {
+			t.Skipf("mklink /D: %v %s", err, out)
+		}
+		failsWith(t, c.call("fs.trash", proto.Message{"path": filepath.Join(link, "file.txt")}), wire.CodeCapabilityUnsupported, "not on a drive letter")
+		if readFile(t, filepath.Join(target, "file.txt")) != "target" {
+			t.Fatal("the file behind the link changed")
+		}
+		if res := c.ok("fs.trash", proto.Message{"path": link}); res["trashed"] != true {
+			t.Fatalf("trash the link itself %v", res)
+		}
+		expectRecycled(t, link, start, func(data string) error {
+			fi, err := os.Lstat(data)
+			if err == nil && fi.Mode()&fs.ModeSymlink == 0 {
+				err = fmt.Errorf("mode %v", fi.Mode())
+			}
+			return err
+		})
+		if readFile(t, filepath.Join(target, "file.txt")) != "target" {
+			t.Fatal("the folder the link led to changed")
+		}
+	})
+}
+
+func TestVerifyRecycledReportsAnItemNotInTheRecycleBin(t *testing.T) {
+	realPC(t)
+	path := filepath.Join(opsDir(t), "never trashed.txt")
+	err := verifyRecycled(path, time.Now())
+	if err == nil {
+		t.Fatal("an item that was never trashed counts as recycled")
+	}
+	failsWith(t, failure(1, err), wire.CodeInternal, "was deleted permanently instead of being moved to the Recycle Bin")
 }
 
 // setAttributes sets the file attributes attr on path.
@@ -227,7 +355,7 @@ func TestFileOpsOnAFileInUse(t *testing.T) {
 	if got := names(t, home); strings.Join(got, "|") != "folder|held.txt" {
 		t.Fatalf("entries %q", got)
 	}
-	if _, ok := findRecycled(t, held); ok {
+	if _, ok := findRecycled(t, held, time.Time{}); ok {
 		t.Fatal("the file in use is in the Recycle Bin")
 	}
 }
@@ -270,7 +398,7 @@ func TestPathEdgeCases(t *testing.T) {
 		if res.Int("copied") != 2 || readFile(t, filepath.Join(home, "long copy", dir[len(filepath.Join(home, "long")):], "복사.txt")) != "long" {
 			t.Fatalf("copy of the folder %v", res)
 		}
-		failsWith(t, c.call("fs.trash", proto.Message{"path": src}), wire.CodeCapabilityUnsupported, "260")
+		failsWith(t, c.call("fs.trash", proto.Message{"path": src}), wire.CodeCapabilityUnsupported, "250")
 		if readFile(t, src) != "long" {
 			t.Fatal("the long file changed")
 		}

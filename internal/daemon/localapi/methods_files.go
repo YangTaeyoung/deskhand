@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"path"
-	"slices"
 	"strings"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/daemon/conn"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
 	"github.com/YangTaeyoung/deskhand/internal/proto"
+	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
 func (s *Server) registerFiles() {
@@ -304,9 +304,6 @@ func (s *Server) filesDelete(ctx context.Context, sess *session, raw json.RawMes
 	return s.fileChange(ctx, sess, p.HostID, "fs.delete", params, "영구 삭제: "+p.Path, "deleted")
 }
 
-// conflictPolicies are the values of on_conflict.
-var conflictPolicies = []string{"fail", "replace", "skip", "rename"}
-
 func (s *Server) filesCopy(ctx context.Context, sess *session, raw json.RawMessage) (any, error) {
 	var p fileParams
 	if err := decode(raw, &p); err != nil {
@@ -320,7 +317,7 @@ func (s *Server) filesCopy(ctx context.Context, sess *session, raw json.RawMessa
 	}
 	params := proto.Message{"from": p.From, "to": p.To}
 	if p.OnConflict != "" {
-		if !slices.Contains(conflictPolicies, p.OnConflict) {
+		if !wire.IsConflictPolicy(p.OnConflict) {
 			return nil, apierr.Invalid("on_conflict는 fail, replace, skip, rename 중 하나여야 합니다. 그중 하나를 주세요")
 		}
 		params["on_conflict"] = p.OnConflict

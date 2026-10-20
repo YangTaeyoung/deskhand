@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf16"
 
 	"github.com/YangTaeyoung/deskhand/internal/proto"
 	"github.com/YangTaeyoung/deskhand/internal/wire"
@@ -318,7 +320,7 @@ func TestWindowsPathRules(t *testing.T) {
 	for _, p := range []string{
 		`C:\x\CON`, `C:\x\con.txt`, `C:\x\Nul.tar.gz`, `C:\x\COM1`, `C:\x\lpt9.log`, `C:\x\COM¹`, `C:\x\CONIN$`, `C:\x\AUX .txt`,
 		`C:\CON\x.txt`, `C:\x\name.`, `C:\x\name `, `C:\x\a<b`, `C:\x\a:stream`, `C:\x\a?b`, "C:\\x\\a\x01b", `\\srv\share\PRN`,
-		`\\.\PhysicalDrive0`, `//./C:/x`, `\\?\GLOBALROOT\Device\HarddiskVolume1\x`,
+		`\\.\PhysicalDrive0`, `//./C:/x`, `\\?\GLOBALROOT\Device\HarddiskVolume1\x`, `\\?\pipe\x`, `\\?\CON`, `\\?\C`,
 	} {
 		if err := windowsPathError(p); err == nil || !strings.Contains(err.Error(), "Windows") {
 			t.Errorf("%q: %v", p, err)
@@ -332,11 +334,130 @@ func TestWindowsPathRules(t *testing.T) {
 			t.Errorf("%q: %v", p, err)
 		}
 	}
+	for p, device := range map[string]bool{
+		`\\?\C:\x`: false, `\\?\c:`: false, `\\?\UNC\srv\share`: false, `\\?\unc\srv\share`: false, `\\?\Volume{0f1e2d3c}\x`: false,
+		`\\?\volume{0f1e2d3c}\x`: false, `C:\x`: false, `\\srv\share`: false,
+		`\\?\C:x`: true, `\\?\1:\x`: true, `\\?\UNCX\srv`: true, `\\?\Vol\x`: true, `\\.\C:\x`: true,
+	} {
+		if got := isDevicePath(p); got != device {
+			t.Errorf("isDevicePath(%q) = %v", p, got)
+		}
+	}
 	for in, want := range map[string]string{`\\?\C:\x`: `C:\x`, `\\?\UNC\srv\share\x`: `\\srv\share\x`, `\\?\unc\srv\share`: `\\srv\share`, `C:\x`: `C:\x`} {
 		if got := stripLongPrefix(in); got != want {
 			t.Errorf("stripLongPrefix(%q) = %q, expected %q", in, got, want)
 		}
 	}
+}
+
+// recycleInfo returns a $I record of version 1 or 2 for original, deleted
+// at deleted.
+func recycleInfo(version int, original string, deleted time.Time) []byte {
+	units := utf16.Encode([]rune(original))
+	var b []byte
+	b = binary.LittleEndian.AppendUint64(b, uint64(version))
+	b = binary.LittleEndian.AppendUint64(b, 42)
+	b = binary.LittleEndian.AppendUint64(b, uint64(deleted.UnixNano()/100+fileTimeEpoch))
+	if version == 1 {
+		fixed := make([]uint16, 260)
+		copy(fixed, units)
+		units = fixed
+	} else {
+		units = append(units, 0)
+		b = binary.LittleEndian.AppendUint32(b, uint32(len(units)))
+	}
+	for _, u := range units {
+		b = binary.LittleEndian.AppendUint16(b, u)
+	}
+	return b
+}
+
+func TestFindRecycleRecordMatchesThePathAndTheDeletionTime(t *testing.T) {
+	bin := t.TempDir()
+	at := time.Date(2026, 10, 20, 12, 0, 0, 441_000_000, time.UTC)
+	for name, b := range map[string][]byte{
+		"$IOLD.txt":   recycleInfo(2, `C:\x\f.txt`, at.Add(-time.Second)),
+		"$INEW.txt":   recycleInfo(2, `C:\X\F.TXT`, at),
+		"$IOTHER":     recycleInfo(2, `C:\x\other`, at),
+		"$IV1.txt":    recycleInfo(1, `C:\x\한글 😀.txt`, at),
+		"$IBAD.txt":   {1, 2, 3},
+		"$RNEW.txt":   []byte("data"),
+		"desktop.ini": []byte("ini"),
+	} {
+		if err := os.WriteFile(filepath.Join(bin, name), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r, ok, err := findRecycleRecord(bin, `C:\x\f.txt`, at.Add(400*time.Microsecond))
+	if err != nil || !ok || r.info != filepath.Join(bin, "$INEW.txt") || r.data != filepath.Join(bin, "$RNEW.txt") || !r.deleted.Equal(at) {
+		t.Fatalf("record %+v %v %v", r, ok, err)
+	}
+	if _, ok, _ := findRecycleRecord(bin, `C:\x\f.txt`, at.Add(time.Millisecond)); ok {
+		t.Fatal("a record deleted before since matched")
+	}
+	if r, ok, _ := findRecycleRecord(bin, `C:\x\한글 😀.txt`, at); !ok || r.info != filepath.Join(bin, "$IV1.txt") {
+		t.Fatalf("version 1 record %+v %v", r, ok)
+	}
+	if _, ok, _ := findRecycleRecord(bin, `C:\x\gone`, time.Time{}); ok {
+		t.Fatal("a path never deleted matched")
+	}
+	if _, _, err := findRecycleRecord(filepath.Join(bin, "missing"), `C:\x`, at); err == nil {
+		t.Fatal("a missing Recycle Bin folder is no error")
+	}
+}
+
+func TestTrashAndDeleteRefuseTheHomeWithPermissionDenied(t *testing.T) {
+	c, home := opsHome(t)
+	for _, tc := range []struct {
+		op   string
+		path string
+	}{{"fs.trash", home}, {"fs.trash", filepath.Dir(home)}, {"fs.delete", home}, {"fs.delete", filepath.Dir(home)}} {
+		failsWith(t, c.call(tc.op, proto.Message{"path": tc.path, "recursive": true}), wire.CodePermissionDenied, "home directory")
+	}
+	if _, err := os.Stat(home); err != nil {
+		t.Fatalf("the home is gone: %v", err)
+	}
+}
+
+func TestCopyRefusesAFolderIntoItselfUnderAnotherName(t *testing.T) {
+	c, home := opsHome(t)
+	src := filepath.Join(home, "Src")
+	writeFile(t, filepath.Join(src, "a.txt"), "a")
+	if err := os.Mkdir(filepath.Join(src, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	upper := filepath.Join(home, "SRC")
+	if a, err := os.Stat(src); err == nil {
+		if b, err := os.Stat(upper); err == nil && os.SameFile(a, b) {
+			failsWith(t, c.call("fs.copy", proto.Message{"from": src, "to": filepath.Join(upper, "SUB", "inner"), "recursive": true}),
+				wire.CodeInvalidArgument, "into itself")
+		}
+	}
+	symlink(t, src, filepath.Join(home, "alias"))
+	failsWith(t, c.call("fs.copy", proto.Message{"from": src, "to": filepath.Join(home, "alias", "sub", "inner"), "recursive": true}),
+		wire.CodeInvalidArgument, "into itself")
+	if got := names(t, src); strings.Join(got, "|") != "a.txt|sub" {
+		t.Fatalf("the source folder holds %q", got)
+	}
+}
+
+func TestCopyRefusesAFolderWhenTheDestinationCannotBeRead(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs a folder the agent cannot search")
+	}
+	c, home := opsHome(t)
+	src := filepath.Join(home, "src")
+	writeFile(t, filepath.Join(src, "a.txt"), "a")
+	locked := filepath.Join(home, "locked")
+	if err := os.MkdirAll(filepath.Join(locked, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(locked, 0o755) })
+	failsWith(t, c.call("fs.copy", proto.Message{"from": src, "to": filepath.Join(locked, "sub", "x"), "recursive": true}),
+		wire.CodeInvalidArgument, "cannot be shown to lie outside")
 }
 
 func TestNumberedName(t *testing.T) {

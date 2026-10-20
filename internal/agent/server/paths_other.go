@@ -21,6 +21,11 @@ func extendedPath(p string) string { return p }
 // finalPath returns the path of what p leads to with its links resolved.
 func finalPath(p string) (string, error) { return filepath.EvalSymlinks(p) }
 
+// volumeDOSPath refuses: volume GUID paths are Windows paths.
+func volumeDOSPath(string) (string, error) {
+	return "", errors.New("volume GUID paths are Windows paths")
+}
+
 // actualName returns the name of the existing entry p as its folder holds
 // it: the last element of p when the folder has an entry of exactly that
 // name, else the entry whose name differs from it only in letter case, else
