@@ -70,7 +70,7 @@ enum TerminalScenes {
     ].joined(separator: "\n") + "\n"
 
     /// The 16 ANSI colors as text and as backgrounds, then status lines drawn with black text on
-    /// colored backgrounds.
+    /// colored backgrounds and white text on black.
     static var ansiChart: String {
         let esc = "\u{1b}["
         let names = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
@@ -86,6 +86,7 @@ enum TerminalScenes {
         lines.append("")
         lines.append("\(esc)30;43m NORMAL \(esc)0m\(esc)30;47m  checkout\\Payment.tsx [+]  \(esc)0m\(esc)30;46m  utf-8 │ Ln 128, Col 17  \(esc)0m")
         lines.append("\(esc)30;42m [0] powershell* \(esc)0m\(esc)30;43m 1:npm run dev \(esc)0m\(esc)30;47m  DEV-PC  21:42 \(esc)0m")
+        lines.append("\(esc)97;40m  97/40  흰 글자 · 검정 배경 — git (main) ✔  \(esc)0m \(esc)37;40m  37/40  흰 글자 · 검정 배경 — 21:42  \(esc)0m")
         lines.append("\(esc)30;46m  PID USER      PRI  NI  VIRT   RES  CPU% MEM%  Command \(esc)0m")
         lines.append(" 7412 taeyoung   20   0 1.2G  402M  12.4  4.9  \(esc)32mShop.exe\(esc)0m")
         lines.append(" 9312 taeyoung   20   0  612M 118M   3.1  1.4  \(esc)36mnode\(esc)0m vite --host")

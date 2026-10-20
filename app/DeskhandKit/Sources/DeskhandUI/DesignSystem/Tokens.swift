@@ -103,8 +103,9 @@ public enum DS {
         }
 
         /// Contrast each ANSI color keeps against the background: at least 4.5:1 (WCAG AA), except
-        /// black in the dark palette and white in the light one, which stay true black and white.
-        static let normalContrast: (light: Double, dark: Double) = (5.6, 4.8)
+        /// black in the dark palette and white and bright white in the light one, which stay black,
+        /// light gray and white.
+        static let normalContrast: (light: Double, dark: Double) = (6.5, 4.8)
         static let brightContrast: (light: Double, dark: Double) = (4.6, 7.0)
 
         private static func makePalette(dark: Bool) -> Palette {
@@ -134,8 +135,8 @@ public enum DS {
                 bright = [readable(gray(0.5), 5.6)] + hues.map { readable(srgb($0).blended(withFraction: 0.3, of: .white) ?? $0, brightContrast.dark) }
                     + [gray(1)]
             } else {
-                normal = [gray(0)] + hues.map { readable($0, normalContrast.light) } + [gray(1)]
-                bright = [readable(gray(0.6), 5.6)] + hues.map { readable($0, brightContrast.light) } + [foreground]
+                normal = [gray(0)] + hues.map { readable($0, normalContrast.light) } + [gray(0.78)]
+                bright = [readable(gray(0.6), 5.6)] + hues.map { readable($0, brightContrast.light) } + [gray(1)]
             }
             return Palette(
                 background: background,

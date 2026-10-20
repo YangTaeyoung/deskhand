@@ -71,19 +71,22 @@ final class TerminalSurfaceTests: XCTestCase {
         return (max(l1, l2) + 0.05) / (min(l1, l2) + 0.05)
     }
 
-    func testANSIColorsReadAgainstTheBackgroundExceptTheBackgroundLikeSlot() throws {
-        for (name, exempt) in [(NSAppearance.Name.aqua, 7), (.darkAqua, 0)] {
+    func testANSIColorsReadAgainstTheBackgroundExceptTheBackgroundLikeSlots() throws {
+        for (name, exempt) in [(NSAppearance.Name.aqua, Set([7, 15])), (.darkAqua, Set([0]))] {
             let palette = DS.Terminal.palette(for: try XCTUnwrap(NSAppearance(named: name)))
             XCTAssertEqual(palette.ansi.count, 16)
             let ratios = palette.ansi.map { contrast($0, palette.background) }
             print("contrast \(name.rawValue): " + ratios.enumerated().map { String(format: "%d=%.2f", $0.offset, $0.element) }.joined(separator: " ")
-                  + String(format: " fg=%.2f 0/8=%.2f 7/15=%.2f", contrast(palette.foreground, palette.background),
-                           contrast(palette.ansi[0], palette.ansi[8]), contrast(palette.ansi[7], palette.ansi[15])))
-            for (index, ratio) in ratios.enumerated() where index != exempt {
+                  + String(format: " fg=%.2f 0/8=%.2f 7/15=%.2f 7on0=%.2f 15on0=%.2f", contrast(palette.foreground, palette.background),
+                           contrast(palette.ansi[0], palette.ansi[8]), contrast(palette.ansi[7], palette.ansi[15]),
+                           contrast(palette.ansi[7], palette.ansi[0]), contrast(palette.ansi[15], palette.ansi[0])))
+            for (index, ratio) in ratios.enumerated() where !exempt.contains(index) {
                 XCTAssertGreaterThanOrEqual(ratio, 4.5, "ANSI \(index) in \(name.rawValue)")
             }
             XCTAssertGreaterThanOrEqual(contrast(palette.ansi[0], palette.ansi[8]), 1.5, "black and bright black in \(name.rawValue)")
             XCTAssertGreaterThanOrEqual(contrast(palette.ansi[7], palette.ansi[15]), 1.5, "white and bright white in \(name.rawValue)")
+            XCTAssertGreaterThanOrEqual(contrast(palette.ansi[7], palette.ansi[0]), 4.5, "white on black in \(name.rawValue)")
+            XCTAssertGreaterThanOrEqual(contrast(palette.ansi[15], palette.ansi[0]), 4.5, "bright white on black in \(name.rawValue)")
         }
     }
 
@@ -92,7 +95,16 @@ final class TerminalSurfaceTests: XCTestCase {
         let light = DS.Terminal.palette(for: try XCTUnwrap(NSAppearance(named: .aqua)))
         XCTAssertEqual(luminance(dark.ansi[0]), 0, accuracy: 0.001)
         XCTAssertEqual(luminance(light.ansi[0]), 0, accuracy: 0.001)
-        XCTAssertEqual(luminance(light.ansi[7]), 1, accuracy: 0.001)
+        XCTAssertEqual(luminance(light.ansi[15]), 1, accuracy: 0.001)
+        XCTAssertEqual(luminance(dark.ansi[15]), 1, accuracy: 0.001)
+        XCTAssertLessThan(luminance(light.ansi[7]), 1)
+    }
+
+    func testBrightHuesDifferFromNormalHuesInTheLightPalette() throws {
+        let light = DS.Terminal.palette(for: try XCTUnwrap(NSAppearance(named: .aqua)))
+        for index in 1...6 {
+            XCTAssertGreaterThanOrEqual(contrast(light.ansi[index], light.ansi[index + 8]), 1.3, "ANSI \(index) and \(index + 8)")
+        }
     }
 
     // MARK: Keyboard
