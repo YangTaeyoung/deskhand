@@ -368,18 +368,6 @@ final class ClientTests: XCTestCase {
         XCTAssertEqual(failed.files.first?.error?.code, "PERMISSION_DENIED")
         XCTAssertEqual(failed.files.last?.error, EnvelopeError(message: "옛 형식"))
 
-        let launch = try Wire.decode(DebugLaunch.self, from: Data(#"""
-        {"debug_id":"d-1","pid":42,"targets":[{"id":"t1","role":"main","type":"page","url":"file:///a","title":"A"}]}
-        """#.utf8))
-        XCTAssertEqual(launch.targets.first?.type, "page")
-
-        let state = try Wire.decode(DebugState.self, from: Data(#"""
-        {"paused":true,"reason":"breakpoint","call_frames":[{"id":"f1","function":"f","url":"u","line":3,"column":7,
-          "scopes":[{"type":"local","object_id":"o1"}]}]}
-        """#.utf8))
-        XCTAssertEqual(state.callFrames.first?.function, "f")
-        XCTAssertEqual(state.callFrames.first?.scopes.first?.objectID, "o1")
-
         let run = try Wire.decode(QARun.self, from: Data(#"""
         {"run_id":"q","host_id":"h","name":"n","status":"passed","started_at":"2026-10-20T10:00:00.000Z",
          "steps_total":1,"steps_passed":1,"steps_failed":0,"steps_blocked":0,

@@ -53,6 +53,8 @@ public final class PreviewBackend: Backend, LocalOverlayProviding {
     let terminals: PreviewTerminals
     /// Processes the preview ended.
     let processes = PreviewProcessStore()
+    /// Debugging sessions of the simulated Electron app.
+    let debugger = PreviewDebugStore()
 
     /// `screenVideo` is an Annex-B H.264 file whose first access unit is a keyframe; screen
     /// streams play it in a loop. Without one they report the stream as paused.
@@ -110,6 +112,9 @@ public final class PreviewBackend: Backend, LocalOverlayProviding {
         guard stepDelay > .zero else { return }
         try? await Task.sleep(for: stepDelay * fraction)
     }
+
+    /// Whether simulated work takes time; with no delay the debugger runs flows only when asked.
+    var simulatesTime: Bool { stepDelay > .zero }
 
     /// The step delay as a multiple of 700 ms, the delay of the app's preview launches.
     var delayScale: Double {

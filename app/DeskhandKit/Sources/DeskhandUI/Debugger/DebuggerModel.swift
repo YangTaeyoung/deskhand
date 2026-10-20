@@ -1,0 +1,287 @@
+import DeskhandClient
+import Foundation
+import Observation
+
+/// An app launched for debugging on a computer, offered again in the launch sheet.
+public struct RecentLaunch: Codable, Equatable, Sendable, Identifiable {
+    public var path: String
+    public var args: [String]
+    public var cwd: String?
+
+    public var id: String { path + "\u{1F}" + args.joined(separator: "\u{1F}") }
+
+    public init(path: String, args: [String] = [], cwd: String? = nil) {
+        self.path = path
+        self.args = args
+        self.cwd = cwd
+    }
+}
+
+/// The debugger tab of one computer: its sessions from `debug.list`, kept current by `debug.*`
+/// events and read again after the event stream is subscribed again; the selected session; and
+/// launching or attaching a new one.
+@MainActor
+@Observable
+public final class DebuggerModel {
+    /// A launch or attach in flight.
+    public struct Starting: Equatable, Sendable {
+        public var name: String
+        public var kind: DebugSessionKind
+
+        public init(name: String, kind: DebugSessionKind) {
+            self.name = name
+            self.kind = kind
+        }
+    }
+
+    /// A sheet of the tab.
+    public enum Sheet: String, Identifiable, Sendable {
+        case launch
+        case attach
+        case breakpoint
+
+        public var id: String { rawValue }
+    }
+
+    public static let recentLimit = 5
+
+    public let hostID: String
+    public private(set) var listPhase: LoadPhase = .idle
+    /// In creation order.
+    public private(set) var sessions: [DebugSessionModel] = []
+    public var selectedSessionID: String?
+    public private(set) var starting: Starting?
+    public private(set) var recentLaunches: [RecentLaunch] = []
+    public var sheet: Sheet?
+    /// The session waiting for the close confirmation.
+    public var pendingClose: String?
+    /// Fractions of the split panes: sessions over breakpoints, source over console, call stack over variables.
+    public var navigatorSplit = 0.46
+    public var centerSplit = 0.56
+    public var inspectorSplit = 0.4
+
+    @ObservationIgnored let backend: any DebuggerBackend & EventsBackend
+    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let backoff: AppStore.ResubscribeBackoff
+    @ObservationIgnored private var eventsTask: Task<Void, Never>?
+    @ObservationIgnored private var seeded = false
+
+    public init(hostID: String, backend: any DebuggerBackend & EventsBackend, defaults: UserDefaults,
+                backoff: AppStore.ResubscribeBackoff = .standard) {
+        self.hostID = hostID
+        self.backend = backend
+        self.defaults = defaults
+        self.backoff = backoff
+        recentLaunches = Self.readRecent(defaults, hostID: hostID)
+    }
+
+    private var recentKey: String { "debugger.recentLaunches.\(hostID)" }
+
+    private static func readRecent(_ defaults: UserDefaults, hostID: String) -> [RecentLaunch] {
+        guard let data = defaults.data(forKey: "debugger.recentLaunches.\(hostID)"),
+              let list = try? JSONDecoder().decode([RecentLaunch].self, from: data) else { return [] }
+        return list
+    }
+
+    // MARK: Queries
+
+    public var selected: DebugSessionModel? {
+        sessions.first { $0.id == selectedSessionID } ?? sessions.last { !$0.isClosed } ?? sessions.last
+    }
+
+    public func session(_ debugID: String) -> DebugSessionModel? { sessions.first { $0.id == debugID } }
+
+    public var phase: DebuggerPhase {
+        if let starting { return .starting(starting.name) }
+        return selected?.phase ?? .idle
+    }
+
+    /// Sessions that are not closed.
+    public var openSessions: [DebugSessionModel] { sessions.filter { !$0.isClosed } }
+
+    // MARK: Lifecycle
+
+    /// Follows `debug.*` events of the computer and loads its sessions. When the event stream ends
+    /// it subscribes again with backoff and then reads the sessions and missed console entries.
+    public func start() {
+        guard eventsTask == nil else { return }
+        let backend = backend
+        let hostID = hostID
+        let backoff = backoff
+        let skipFirstLoad = seeded
+        eventsTask = Task { [weak self] in
+            var delay = backoff.initial
+            var first = true
+            while !Task.isCancelled {
+                let stream = backend.events(kinds: EventKind.debuggerKinds, hostID: hostID)
+                if !(first && skipFirstLoad) { await self?.reload() }
+                first = false
+                var received = false
+                do {
+                    for try await event in stream {
+                        received = true
+                        self?.handle(event)
+                    }
+                } catch {}
+                guard !Task.isCancelled else { return }
+                if received { delay = backoff.initial }
+                try? await Task.sleep(for: delay)
+                delay = min(delay * 2, backoff.maximum)
+            }
+        }
+    }
+
+    public func stop() {
+        eventsTask?.cancel()
+        eventsTask = nil
+    }
+
+    /// Reads the sessions; known ones are updated and read their missed console entries.
+    public func reload() async {
+        if listPhase != .loaded { listPhase = .loading }
+        do {
+            let list = try await backend.debugList(hostID: hostID)
+            apply(list: list)
+            listPhase = .loaded
+        } catch is CancellationError {
+            if listPhase == .loading { listPhase = .idle }
+        } catch {
+            if listPhase != .loaded { listPhase = .failed(OperationError(error)) }
+        }
+    }
+
+    private func apply(list: [DebugSession]) {
+        let listed = Set(list.map(\.debugID))
+        for info in list {
+            if let existing = session(info.debugID) {
+                existing.apply(info: info)
+                Task { await existing.loadConsole() }
+            } else {
+                insert(info)
+            }
+        }
+        for session in sessions where !listed.contains(session.id) && !session.isClosed {
+            session.applyClosed(reason: nil, exitCode: nil)
+        }
+    }
+
+    @discardableResult
+    private func insert(_ info: DebugSession) -> DebugSessionModel {
+        if let existing = session(info.debugID) {
+            existing.apply(info: info)
+            return existing
+        }
+        let model = DebugSessionModel(info: info, backend: backend)
+        sessions.append(model)
+        Task { await model.begin() }
+        return model
+    }
+
+    // MARK: Starting sessions
+
+    /// Launches an app for debugging and selects its session; returns why it failed.
+    public func launch(_ request: DebugLaunchRequest) async -> OperationError? {
+        let name = FilePath.lastComponent(request.path, style: .windows)
+        let display = name.lowercased().hasSuffix(".exe") ? String(name.dropLast(4)) : name
+        return await begin(Starting(name: display.isEmpty ? request.path : display, kind: .launch)) {
+            try await self.backend.debugLaunch(request)
+        } onSuccess: {
+            self.remember(RecentLaunch(path: request.path, args: request.args, cwd: request.cwd))
+        }
+    }
+
+    /// Attaches to a running app and selects its session; returns why it failed.
+    public func attach(_ request: DebugAttachRequest, name: String) async -> OperationError? {
+        await begin(Starting(name: name, kind: .attach)) {
+            try await self.backend.debugAttach(request)
+        } onSuccess: {}
+    }
+
+    private func begin(_ next: Starting, _ call: @escaping @MainActor () async throws -> DebugSession,
+                       onSuccess: @MainActor () -> Void) async -> OperationError? {
+        guard starting == nil else {
+            return OperationError(code: "IN_PROGRESS", message: .ui("debugger.startInProgress", "다른 앱을 시작하는 중입니다"))
+        }
+        starting = next
+        defer { starting = nil }
+        do {
+            let info = try await call()
+            let model = insert(info)
+            selectedSessionID = model.id
+            onSuccess()
+            return nil
+        } catch {
+            return OperationError(error)
+        }
+    }
+
+    private func remember(_ launch: RecentLaunch) {
+        recentLaunches.removeAll { $0.path.caseInsensitiveCompare(launch.path) == .orderedSame }
+        recentLaunches.insert(launch, at: 0)
+        if recentLaunches.count > Self.recentLimit { recentLaunches.removeLast(recentLaunches.count - Self.recentLimit) }
+        if let data = try? JSONEncoder().encode(recentLaunches) { defaults.set(data, forKey: recentKey) }
+    }
+
+    /// Removes a closed session from the list.
+    public func dismiss(_ debugID: String) {
+        guard let session = session(debugID), session.isClosed else { return }
+        sessions.removeAll { $0.id == debugID }
+        if selectedSessionID == debugID { selectedSessionID = nil }
+    }
+
+    // MARK: Events
+
+    func handle(_ event: DaemonEvent) {
+        let p = event.payload
+        guard let debugID = p["debug_id"]?.stringValue else { return }
+        switch event.kind {
+        case EventKind.debugSessionChanged:
+            guard let value = p["session"], let info = try? LiveBackend.decode(DebugSession.self, from: value), info.hostID == hostID else { return }
+            insert(info)
+        case EventKind.debugTargetChanged:
+            guard let session = session(debugID), let value = p["target"],
+                  let target = try? LiveBackend.decode(DebugTarget.self, from: value) else { return }
+            session.apply(target: target, removed: p["removed"]?.boolValue ?? false)
+        case EventKind.debugBreakpointChanged:
+            guard let session = session(debugID), let value = p["breakpoint"],
+                  let breakpoint = try? LiveBackend.decode(DebugBreakpoint.self, from: value) else { return }
+            session.apply(breakpoint: breakpoint, removed: p["removed"]?.boolValue ?? false)
+        case EventKind.debugPaused:
+            guard let session = session(debugID), let value = p["state"],
+                  let state = try? LiveBackend.decode(DebugPauseState.self, from: value) else { return }
+            session.apply(paused: state)
+            if session.isPaused(state.targetID), selected?.pauseState == nil { selectedSessionID = session.id }
+        case EventKind.debugResumed:
+            guard let session = session(debugID), let targetID = p["target_id"]?.stringValue, let gen = p["gen"]?.intValue else { return }
+            session.apply(resumedTarget: targetID, gen: gen)
+        case EventKind.debugConsole:
+            guard let session = session(debugID), let value = p["entry"],
+                  let entry = try? LiveBackend.decode(ConsoleEntry.self, from: value) else { return }
+            session.apply(entry: entry)
+        case EventKind.debugClosed:
+            guard let session = session(debugID) else { return }
+            session.applyClosed(reason: p["reason"]?.stringValue.flatMap(DebugCloseReason.init(rawValue:)), exitCode: p["exit_code"]?.intValue)
+        default:
+            break
+        }
+    }
+
+    // MARK: Seeding
+
+    /// A session model for `info` that reads nothing until it is seeded or begun.
+    public func makeSession(_ info: DebugSession) -> DebugSessionModel {
+        DebugSessionModel(info: info, backend: backend)
+    }
+
+    /// Puts sessions in place without asking the backend; `start()` then only follows events.
+    /// Snapshot scenes use it.
+    public func seed(_ sessions: [DebugSessionModel], selected: String? = nil, listPhase: LoadPhase = .loaded, starting: Starting? = nil,
+                     recent: [RecentLaunch] = []) {
+        self.sessions = sessions
+        selectedSessionID = selected ?? sessions.last?.id
+        self.listPhase = listPhase
+        self.starting = starting
+        recentLaunches = recent
+        seeded = true
+    }
+}

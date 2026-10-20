@@ -1524,6 +1524,3141 @@
         }
       }
     },
+    "debugger.anonymous": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(익명 함수)"
+          }
+        }
+      }
+    },
+    "debugger.attach.all": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모든 프로세스"
+          }
+        }
+      }
+    },
+    "debugger.attach.button": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 중인 앱에 연결…"
+          }
+        }
+      }
+    },
+    "debugger.attach.byPort": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "포트"
+          }
+        }
+      }
+    },
+    "debugger.attach.byProcess": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "프로세스"
+          }
+        }
+      }
+    },
+    "debugger.attach.connect": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결"
+          }
+        }
+      }
+    },
+    "debugger.attach.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결하지 못했습니다"
+          }
+        }
+      }
+    },
+    "debugger.attach.inspectorOpen": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "검사기 열림"
+          }
+        }
+      }
+    },
+    "debugger.attach.menu": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 중인 앱에 연결…"
+          }
+        }
+      }
+    },
+    "debugger.attach.mode": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결 방법"
+          }
+        }
+      }
+    },
+    "debugger.attach.none": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Electron이나 Node 앱이 실행 중이 아닙니다"
+          }
+        }
+      }
+    },
+    "debugger.attach.none.hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘모든 프로세스’를 켜면 다른 프로세스도 보입니다."
+          }
+        }
+      }
+    },
+    "debugger.attach.pidNote": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "프로세스로 연결하면 메인 프로세스의 Node 검사기를 켭니다. 렌더러는 앱을 --remote-debugging-port로 시작했을 때만 함께 보입니다."
+          }
+        }
+      }
+    },
+    "debugger.attach.port": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "포트"
+          }
+        }
+      }
+    },
+    "debugger.attach.portName": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "포트 %@"
+          }
+        }
+      }
+    },
+    "debugger.attach.portNote": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 PC의 127.0.0.1 포트입니다. Deskhand가 이 포트로 터널을 열고, 연결을 끊으면 터널만 닫습니다."
+          }
+        }
+      }
+    },
+    "debugger.attach.role": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "종류"
+          }
+        }
+      }
+    },
+    "debugger.attach.role.auto": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "자동으로 알아내기"
+          }
+        }
+      }
+    },
+    "debugger.attach.role.main": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메인 (Node 검사기, --inspect)"
+          }
+        }
+      }
+    },
+    "debugger.attach.role.renderer": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "렌더러 (DevTools, --remote-debugging-port)"
+          }
+        }
+      }
+    },
+    "debugger.attach.running": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결하는 중…"
+          }
+        }
+      }
+    },
+    "debugger.attach.running.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "검사기를 켜고 대상 목록을 읽습니다."
+          }
+        }
+      }
+    },
+    "debugger.attach.search": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이름, PID, 명령줄 검색"
+          }
+        }
+      }
+    },
+    "debugger.attach.searchNone": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일치하는 프로세스가 없습니다"
+          }
+        }
+      }
+    },
+    "debugger.attach.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에서 이미 실행 중인 Electron·Node 앱에 디버거를 붙입니다. 앱은 다시 시작하지 않습니다."
+          }
+        }
+      }
+    },
+    "debugger.attach.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 중인 앱에 연결"
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.add": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중단점 추가"
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.add.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스크립트와 줄로 중단점을 추가합니다"
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.add.menu": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중단점 추가…"
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.disable": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중단점 끄기"
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.enable": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중단점 켜기"
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.enable.a11y": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 켜기"
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.locations": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "위치 %@곳"
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.match.fileName": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 이름"
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.match.regex": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "정규식"
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.match.url": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "정확한 URL"
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.pending": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일치하는 스크립트가 아직 없습니다. 로드되면 연결됩니다."
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.prompt.fileName": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예: checkout.js"
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.prompt.regex": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예: renderer/.*\\.js$"
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.prompt.url": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예: app://shop-admin/renderer/checkout.js"
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.remove": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중단점 지우기"
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.sheet.add": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "추가"
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.sheet.condition": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "조건"
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.sheet.condition.hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "참이 되는 JavaScript 식을 쓰면 그때만 멈춥니다."
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.sheet.condition.prompt": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택 사항 · 예: order.total > 40000"
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.sheet.line": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "줄"
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.sheet.match": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일치 방식"
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.sheet.matches": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로드된 스크립트 %@개와 일치합니다"
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.sheet.noMatch": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지금 로드된 스크립트 중 일치하는 것이 없습니다. 로드되면 연결됩니다."
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.sheet.pickSuggestion": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이름이 정확히 같은 스크립트가 없습니다. 아래 목록에서 고르세요."
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.sheet.script": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스크립트"
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.sheet.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@의 모든 대상에 겁니다. 아직 로드되지 않은 스크립트는 로드될 때 연결됩니다."
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.sheet.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중단점 추가"
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.when": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "조건"
+          }
+        }
+      }
+    },
+    "debugger.breakpoints": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중단점"
+          }
+        }
+      }
+    },
+    "debugger.breakpoints.activate": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중단점 켜기"
+          }
+        }
+      }
+    },
+    "debugger.breakpoints.activate.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중단점을 다시 켭니다 (⌘Y)"
+          }
+        }
+      }
+    },
+    "debugger.breakpoints.deactivate": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모든 중단점 끄기"
+          }
+        }
+      }
+    },
+    "debugger.breakpoints.deactivate.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모든 중단점을 잠시 끕니다 (⌘Y)"
+          }
+        }
+      }
+    },
+    "debugger.breakpoints.empty": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중단점이 없습니다"
+          }
+        }
+      }
+    },
+    "debugger.breakpoints.empty.hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "소스의 줄 번호를 누르거나 +로 스크립트와 줄을 지정하세요."
+          }
+        }
+      }
+    },
+    "debugger.breakpoints.inactive": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중단점이 모두 꺼져 있어 멈추지 않습니다"
+          }
+        }
+      }
+    },
+    "debugger.breakpoints.off": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 모두 꺼짐"
+          }
+        }
+      }
+    },
+    "debugger.callStack": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "호출 스택"
+          }
+        }
+      }
+    },
+    "debugger.callStack.closed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션이 닫혔습니다"
+          }
+        }
+      }
+    },
+    "debugger.callStack.hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "멈추면 호출 스택이 여기에 나타납니다."
+          }
+        }
+      }
+    },
+    "debugger.callStack.running": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 중"
+          }
+        }
+      }
+    },
+    "debugger.close.attachMessage": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 앱은 계속 실행되고 Deskhand가 연 연결과 터널만 닫힙니다."
+          }
+        }
+      }
+    },
+    "debugger.close.detach": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결 끊기"
+          }
+        }
+      }
+    },
+    "debugger.close.keep": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱은 두고 세션만 닫기"
+          }
+        }
+      }
+    },
+    "debugger.close.kill": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션 닫고 앱 종료"
+          }
+        }
+      }
+    },
+    "debugger.close.launchMessage": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deskhand가 실행한 %1$@(PID %2$@)도 함께 종료합니다. 앱을 두려면 ‘앱은 두고 세션만 닫기’를 고르세요."
+          }
+        }
+      }
+    },
+    "debugger.close.launchMessageNoPID": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deskhand가 실행한 %@도 함께 종료합니다. 앱을 두려면 ‘앱은 두고 세션만 닫기’를 고르세요."
+          }
+        }
+      }
+    },
+    "debugger.close.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’ 세션을 닫을까요?"
+          }
+        }
+      }
+    },
+    "debugger.closeSession": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션 닫기"
+          }
+        }
+      }
+    },
+    "debugger.closeSession.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션을 닫습니다. Deskhand가 실행한 앱도 종료할지 묻습니다"
+          }
+        }
+      }
+    },
+    "debugger.closeSession.menu": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션 닫기…"
+          }
+        }
+      }
+    },
+    "debugger.closed.connection": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 PC와 연결이 끊겨 세션이 닫혔습니다"
+          }
+        }
+      }
+    },
+    "debugger.closed.exited": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱이 종료되었습니다"
+          }
+        }
+      }
+    },
+    "debugger.closed.exitedCode": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱이 종료되었습니다 (종료 코드 %@)"
+          }
+        }
+      }
+    },
+    "debugger.closed.requested": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션을 닫았습니다"
+          }
+        }
+      }
+    },
+    "debugger.closed.unknown": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "데몬이 더 이상 이 세션을 알지 못합니다"
+          }
+        }
+      }
+    },
+    "debugger.console": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "콘솔"
+          }
+        }
+      }
+    },
+    "debugger.console.allTargets": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모든 대상"
+          }
+        }
+      }
+    },
+    "debugger.console.at": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "위치"
+          }
+        }
+      }
+    },
+    "debugger.console.clear": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "콘솔 지우기"
+          }
+        }
+      }
+    },
+    "debugger.console.clear.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지금까지의 콘솔 내용을 지웁니다 (⌘L)"
+          }
+        }
+      }
+    },
+    "debugger.console.dropped": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오래된 메시지 %@개는 데몬 보관 한도를 넘어 지워졌습니다"
+          }
+        }
+      }
+    },
+    "debugger.console.earlier": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이전 기록 불러오기"
+          }
+        }
+      }
+    },
+    "debugger.console.empty": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "표시할 메시지가 없습니다"
+          }
+        }
+      }
+    },
+    "debugger.console.evaluating": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "평가하는 중…"
+          }
+        }
+      }
+    },
+    "debugger.console.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "콘솔 기록을 불러오지 못했습니다"
+          }
+        }
+      }
+    },
+    "debugger.console.hideStack": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스택 접기"
+          }
+        }
+      }
+    },
+    "debugger.console.inFrame": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에서"
+          }
+        }
+      }
+    },
+    "debugger.console.input.a11y": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "평가할 식"
+          }
+        }
+      }
+    },
+    "debugger.console.keys": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "↩ 평가 · ⇧↩ 줄바꿈 · ↑↓ 기록"
+          }
+        }
+      }
+    },
+    "debugger.console.level.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 메시지 보기"
+          }
+        }
+      }
+    },
+    "debugger.console.loading": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "콘솔 기록을 불러오는 중…"
+          }
+        }
+      }
+    },
+    "debugger.console.none": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션이 없습니다"
+          }
+        }
+      }
+    },
+    "debugger.console.placeholder.closed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션이 닫혀 평가할 수 없습니다"
+          }
+        }
+      }
+    },
+    "debugger.console.placeholder.frame": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 프레임에서 식 평가"
+          }
+        }
+      }
+    },
+    "debugger.console.placeholder.global": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 전역에서 식 평가"
+          }
+        }
+      }
+    },
+    "debugger.console.scope.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "어느 대상의 메시지를 볼지 고릅니다"
+          }
+        }
+      }
+    },
+    "debugger.console.search": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "콘솔 검색"
+          }
+        }
+      }
+    },
+    "debugger.console.searchNone": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일치하는 메시지가 없습니다"
+          }
+        }
+      }
+    },
+    "debugger.console.showStack": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스택 보기"
+          }
+        }
+      }
+    },
+    "debugger.detach": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결 끊기"
+          }
+        }
+      }
+    },
+    "debugger.detach.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱은 두고 디버거 연결만 끊습니다"
+          }
+        }
+      }
+    },
+    "debugger.detach.menu": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결 끊기…"
+          }
+        }
+      }
+    },
+    "debugger.exception.promise": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "처리되지 않은 Promise 거부로 멈췄습니다"
+          }
+        }
+      }
+    },
+    "debugger.exception.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "잡히지 않은 예외로 멈췄습니다"
+          }
+        }
+      }
+    },
+    "debugger.exception.unknown": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "던져진 값을 읽지 못했습니다"
+          }
+        }
+      }
+    },
+    "debugger.exceptions": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예외에서 멈춤"
+          }
+        }
+      }
+    },
+    "debugger.exceptions.all": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모든 예외"
+          }
+        }
+      }
+    },
+    "debugger.exceptions.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예외가 던져질 때 멈출지 고릅니다"
+          }
+        }
+      }
+    },
+    "debugger.exceptions.label": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예외: %@"
+          }
+        }
+      }
+    },
+    "debugger.exceptions.none": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "멈추지 않음"
+          }
+        }
+      }
+    },
+    "debugger.exceptions.uncaught": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "잡히지 않은 예외"
+          }
+        }
+      }
+    },
+    "debugger.failed.breakpoint": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중단점을 바꾸지 못했습니다"
+          }
+        }
+      }
+    },
+    "debugger.failed.breakpointRemove": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중단점을 지우지 못했습니다"
+          }
+        }
+      }
+    },
+    "debugger.failed.breakpointSet": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중단점을 걸지 못했습니다"
+          }
+        }
+      }
+    },
+    "debugger.failed.close": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션을 닫지 못했습니다"
+          }
+        }
+      }
+    },
+    "debugger.failed.console": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이전 콘솔 기록을 불러오지 못했습니다"
+          }
+        }
+      }
+    },
+    "debugger.failed.exceptions": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예외에서 멈춤 설정을 바꾸지 못했습니다"
+          }
+        }
+      }
+    },
+    "debugger.failed.pause": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일시정지하지 못했습니다"
+          }
+        }
+      }
+    },
+    "debugger.failed.resume": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "재개하지 못했습니다"
+          }
+        }
+      }
+    },
+    "debugger.failed.step": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "한 단계 실행하지 못했습니다"
+          }
+        }
+      }
+    },
+    "debugger.failed.targetAttach": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 대상에 붙지 못했습니다"
+          }
+        }
+      }
+    },
+    "debugger.fix.notFound": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "경로를 확인하거나 ‘찾아보기…’로 실행 파일을 고르세요."
+          }
+        }
+      }
+    },
+    "debugger.fix.notNode": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Node나 Electron 앱의 메인 프로세스를 고르세요. 브라우저와 일반 Windows 앱은 연결할 수 없습니다."
+          }
+        }
+      }
+    },
+    "debugger.fix.port": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱을 --inspect=포트 또는 --remote-debugging-port=포트로 실행했는지, 번호가 맞는지 확인하세요."
+          }
+        }
+      }
+    },
+    "debugger.fix.timeout": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Electron이나 Node로 만든 앱인지, 실행 직후 종료되지 않는지 확인하세요. WebView2 앱은 이 방법으로 디버그할 수 없습니다."
+          }
+        }
+      }
+    },
+    "debugger.frame.a11y": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@, %2$@"
+          }
+        }
+      }
+    },
+    "debugger.gutter.add": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 줄에 중단점 걸기"
+          }
+        }
+      }
+    },
+    "debugger.gutter.add.a11y": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@번 줄에 중단점 걸기"
+          }
+        }
+      }
+    },
+    "debugger.gutter.remove": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 줄의 중단점 지우기"
+          }
+        }
+      }
+    },
+    "debugger.gutter.remove.a11y": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@번 줄 중단점 지우기"
+          }
+        }
+      }
+    },
+    "debugger.how.cleanup": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "정리"
+          }
+        }
+      }
+    },
+    "debugger.how.cleanup.text": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션을 닫으면 Deskhand가 연 터널·포트와 실행한 앱만 정리합니다."
+          }
+        }
+      }
+    },
+    "debugger.how.main": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메인 프로세스"
+          }
+        }
+      }
+    },
+    "debugger.how.main.text": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "--inspect로 Node 검사기를 열어 main.js와 IPC 처리기를 멈춥니다."
+          }
+        }
+      }
+    },
+    "debugger.how.renderer": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "렌더러"
+          }
+        }
+      }
+    },
+    "debugger.how.renderer.text": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "--remote-debugging-port로 창마다 DevTools 대상을 엽니다."
+          }
+        }
+      }
+    },
+    "debugger.idle.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에서 Electron 앱을 디버그 포트를 연 채로 실행하거나 실행 중인 앱에 붙습니다. 메인과 렌더러에 중단점을 걸고, 멈추면 호출 스택과 변수를 보고 식을 평가합니다."
+          }
+        }
+      }
+    },
+    "debugger.idle.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Electron 앱 디버그"
+          }
+        }
+      }
+    },
+    "debugger.launch.args": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "인수"
+          }
+        }
+      }
+    },
+    "debugger.launch.args.prompt": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예: --env=staging --lang=ko"
+          }
+        }
+      }
+    },
+    "debugger.launch.browse": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "찾아보기…"
+          }
+        }
+      }
+    },
+    "debugger.launch.button": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱 실행…"
+          }
+        }
+      }
+    },
+    "debugger.launch.cwd": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 폴더"
+          }
+        }
+      }
+    },
+    "debugger.launch.cwd.default": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "비워 두면 %@"
+          }
+        }
+      }
+    },
+    "debugger.launch.cwd.prompt": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 파일이 있는 폴더"
+          }
+        }
+      }
+    },
+    "debugger.launch.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱을 디버그 모드로 실행하지 못했습니다"
+          }
+        }
+      }
+    },
+    "debugger.launch.menu": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱 실행…"
+          }
+        }
+      }
+    },
+    "debugger.launch.notExe": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windows 실행 파일(.exe) 경로가 아닙니다."
+          }
+        }
+      }
+    },
+    "debugger.launch.note": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "빈 포트 두 개를 골라 --inspect와 --remote-debugging-port를 붙여 실행합니다. 세션을 닫으면 Deskhand가 실행한 이 앱도 종료됩니다."
+          }
+        }
+      }
+    },
+    "debugger.launch.path": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 파일"
+          }
+        }
+      }
+    },
+    "debugger.launch.path.prompt": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "C:\\Program Files\\앱\\앱.exe"
+          }
+        }
+      }
+    },
+    "debugger.launch.pauseOnStart": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메인 프로세스 첫 줄에서 멈춤"
+          }
+        }
+      }
+    },
+    "debugger.launch.pauseOnStart.hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "--inspect-brk로 실행해 main.js가 시작하기 전에 멈춥니다. 앱 시작 코드를 디버그할 때 켜세요."
+          }
+        }
+      }
+    },
+    "debugger.launch.recent.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최근에 실행한 앱으로 채웁니다"
+          }
+        }
+      }
+    },
+    "debugger.launch.run": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행"
+          }
+        }
+      }
+    },
+    "debugger.launch.running": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 실행하는 중…"
+          }
+        }
+      }
+    },
+    "debugger.launch.running.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "디버그 포트가 열리고 메인·렌더러 대상이 나타나기를 기다립니다. 최대 20초 걸립니다."
+          }
+        }
+      }
+    },
+    "debugger.launch.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에서 앱을 디버그 포트를 연 채로 실행하고 메인과 렌더러에 붙습니다."
+          }
+        }
+      }
+    },
+    "debugger.launch.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Electron 앱 디버그 실행"
+          }
+        }
+      }
+    },
+    "debugger.level.debug": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "디버그"
+          }
+        }
+      }
+    },
+    "debugger.level.error": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오류"
+          }
+        }
+      }
+    },
+    "debugger.level.info": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "정보"
+          }
+        }
+      }
+    },
+    "debugger.level.log": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그"
+          }
+        }
+      }
+    },
+    "debugger.level.warning": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "경고"
+          }
+        }
+      }
+    },
+    "debugger.listFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "디버그 세션 목록을 불러오지 못했습니다"
+          }
+        }
+      }
+    },
+    "debugger.loading": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "디버그 세션을 불러오는 중…"
+          }
+        }
+      }
+    },
+    "debugger.new": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 디버그 세션"
+          }
+        }
+      }
+    },
+    "debugger.new.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Electron 앱을 실행하거나 실행 중인 앱에 연결합니다"
+          }
+        }
+      }
+    },
+    "debugger.offline": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "위 배너의 ‘연결’로 %@에 연결하면 Electron 앱을 실행해 디버그하거나 실행 중인 앱에 연결할 수 있습니다."
+          }
+        }
+      }
+    },
+    "debugger.offline.reconnecting": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에 다시 연결하는 중입니다. 연결이 돌아오면 세션 상태를 다시 읽습니다."
+          }
+        }
+      }
+    },
+    "debugger.offline.strip": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에 연결되어 있지 않아 실행 제어와 평가를 쓸 수 없습니다. 이전 세션 기록만 볼 수 있습니다."
+          }
+        }
+      }
+    },
+    "debugger.pattern.empty": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스크립트 이름이나 URL을 입력하세요."
+          }
+        }
+      }
+    },
+    "debugger.pattern.invalid": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "정규식이 올바르지 않습니다: %@"
+          }
+        }
+      }
+    },
+    "debugger.pause": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일시정지"
+          }
+        }
+      }
+    },
+    "debugger.picker.back": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "돌아가기"
+          }
+        }
+      }
+    },
+    "debugger.picker.choose": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택"
+          }
+        }
+      }
+    },
+    "debugger.picker.empty": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "빈 폴더입니다"
+          }
+        }
+      }
+    },
+    "debugger.picker.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "폴더를 읽지 못했습니다"
+          }
+        }
+      }
+    },
+    "debugger.picker.loading": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "폴더를 읽는 중…"
+          }
+        }
+      }
+    },
+    "debugger.picker.none": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ".exe 파일을 고르세요"
+          }
+        }
+      }
+    },
+    "debugger.picker.places": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "위치"
+          }
+        }
+      }
+    },
+    "debugger.picker.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@의 폴더에서 Electron 앱의 .exe 파일을 고르세요."
+          }
+        }
+      }
+    },
+    "debugger.picker.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 파일 고르기"
+          }
+        }
+      }
+    },
+    "debugger.picker.up": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "상위 폴더"
+          }
+        }
+      }
+    },
+    "debugger.picker.userPrograms": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용자 프로그램"
+          }
+        }
+      }
+    },
+    "debugger.reason.breakpoint": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중단점"
+          }
+        }
+      }
+    },
+    "debugger.reason.exception": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예외"
+          }
+        }
+      }
+    },
+    "debugger.reason.other": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "debugger 문 또는 기타"
+          }
+        }
+      }
+    },
+    "debugger.reason.pause": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일시정지 요청"
+          }
+        }
+      }
+    },
+    "debugger.reason.promise": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "처리되지 않은 Promise 거부"
+          }
+        }
+      }
+    },
+    "debugger.reason.step": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "한 단계 실행"
+          }
+        }
+      }
+    },
+    "debugger.recent": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최근 실행"
+          }
+        }
+      }
+    },
+    "debugger.recent.run": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 실행"
+          }
+        }
+      }
+    },
+    "debugger.recent.run.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "같은 인수로 디버그 실행합니다"
+          }
+        }
+      }
+    },
+    "debugger.relaunch": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 실행"
+          }
+        }
+      }
+    },
+    "debugger.relaunch.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "같은 실행 파일과 인수로 새 디버그 세션을 시작합니다"
+          }
+        }
+      }
+    },
+    "debugger.resume": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "재개"
+          }
+        }
+      }
+    },
+    "debugger.resume.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "재개 (F8)"
+          }
+        }
+      }
+    },
+    "debugger.role.frame": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "프레임"
+          }
+        }
+      }
+    },
+    "debugger.role.main": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메인"
+          }
+        }
+      }
+    },
+    "debugger.role.renderer": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "렌더러"
+          }
+        }
+      }
+    },
+    "debugger.role.worker": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "워커"
+          }
+        }
+      }
+    },
+    "debugger.scope.block": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "블록"
+          }
+        }
+      }
+    },
+    "debugger.scope.catch": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "catch 블록"
+          }
+        }
+      }
+    },
+    "debugger.scope.closure": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "클로저"
+          }
+        }
+      }
+    },
+    "debugger.scope.closureNamed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "클로저 %@"
+          }
+        }
+      }
+    },
+    "debugger.scope.eval": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "eval"
+          }
+        }
+      }
+    },
+    "debugger.scope.global": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전역"
+          }
+        }
+      }
+    },
+    "debugger.scope.local": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지역"
+          }
+        }
+      }
+    },
+    "debugger.scope.module": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모듈"
+          }
+        }
+      }
+    },
+    "debugger.scope.moduleNamed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모듈 %@"
+          }
+        }
+      }
+    },
+    "debugger.scope.script": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스크립트"
+          }
+        }
+      }
+    },
+    "debugger.scope.wasm": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "WebAssembly 스택"
+          }
+        }
+      }
+    },
+    "debugger.scope.with": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "with 블록"
+          }
+        }
+      }
+    },
+    "debugger.script.anonymous": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(이름 없는 스크립트)"
+          }
+        }
+      }
+    },
+    "debugger.session.a11y": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@, %2$@"
+          }
+        }
+      }
+    },
+    "debugger.session.attached": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결함"
+          }
+        }
+      }
+    },
+    "debugger.session.attachedPort": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "포트 %@ 연결"
+          }
+        }
+      }
+    },
+    "debugger.session.dismiss": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "목록에서 지우기"
+          }
+        }
+      }
+    },
+    "debugger.session.launched": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행함"
+          }
+        }
+      }
+    },
+    "debugger.session.pid": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PID %@"
+          }
+        }
+      }
+    },
+    "debugger.sessions": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션"
+          }
+        }
+      }
+    },
+    "debugger.sessions.a11y": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "디버그 세션과 대상"
+          }
+        }
+      }
+    },
+    "debugger.sessions.count": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@개 열림"
+          }
+        }
+      }
+    },
+    "debugger.source": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "소스"
+          }
+        }
+      }
+    },
+    "debugger.source.backToPause": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "멈춘 위치로"
+          }
+        }
+      }
+    },
+    "debugger.source.backToPause.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택한 호출 프레임의 위치를 다시 봅니다"
+          }
+        }
+      }
+    },
+    "debugger.source.closed.hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "콘솔 기록은 남아 있습니다. 다시 디버그하려면 새 세션을 시작하세요."
+          }
+        }
+      }
+    },
+    "debugger.source.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "소스를 불러오지 못했습니다"
+          }
+        }
+      }
+    },
+    "debugger.source.loading": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "소스를 불러오는 중…"
+          }
+        }
+      }
+    },
+    "debugger.source.running": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 중입니다"
+          }
+        }
+      }
+    },
+    "debugger.source.running.hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중단점에 닿거나 일시정지(F8)하면 멈춘 위치가 여기에 나타납니다. ‘스크립트’에서 파일을 열어 줄 번호를 누르면 중단점이 걸립니다."
+          }
+        }
+      }
+    },
+    "debugger.source.scripts": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스크립트"
+          }
+        }
+      }
+    },
+    "debugger.source.scripts.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로드된 스크립트를 열어 중단점을 겁니다"
+          }
+        }
+      }
+    },
+    "debugger.source.truncated": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "소스가 2 MiB를 넘어 앞부분만 보입니다"
+          }
+        }
+      }
+    },
+    "debugger.startInProgress": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다른 앱을 시작하는 중입니다"
+          }
+        }
+      }
+    },
+    "debugger.starting.attach": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "검사기에 연결하는 중…"
+          }
+        }
+      }
+    },
+    "debugger.starting.launch": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "디버그 포트를 열고 실행하는 중…"
+          }
+        }
+      }
+    },
+    "debugger.state.closed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "종료됨"
+          }
+        }
+      }
+    },
+    "debugger.state.paused": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일시정지됨"
+          }
+        }
+      }
+    },
+    "debugger.state.running": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 중"
+          }
+        }
+      }
+    },
+    "debugger.status.attaching": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에 연결하는 중…"
+          }
+        }
+      }
+    },
+    "debugger.status.closing": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션을 닫는 중…"
+          }
+        }
+      }
+    },
+    "debugger.status.launching": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 실행하는 중…"
+          }
+        }
+      }
+    },
+    "debugger.status.none": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션 없음"
+          }
+        }
+      }
+    },
+    "debugger.status.otherPaused": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 실행 중 · %2$@ 일시정지됨"
+          }
+        }
+      }
+    },
+    "debugger.status.paused": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일시정지됨 · %@"
+          }
+        }
+      }
+    },
+    "debugger.status.pausedAt": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일시정지됨 · %1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "debugger.status.pausing": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일시정지하는 중…"
+          }
+        }
+      }
+    },
+    "debugger.status.resuming": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "재개하는 중…"
+          }
+        }
+      }
+    },
+    "debugger.status.running": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 중 · %@"
+          }
+        }
+      }
+    },
+    "debugger.status.stepping": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "한 단계 실행하는 중…"
+          }
+        }
+      }
+    },
+    "debugger.stepInto": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "들어가기"
+          }
+        }
+      }
+    },
+    "debugger.stepOut": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "나오기"
+          }
+        }
+      }
+    },
+    "debugger.stepOver": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "건너뛰기"
+          }
+        }
+      }
+    },
+    "debugger.target.a11y": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ %2$@, %3$@"
+          }
+        }
+      }
+    },
+    "debugger.target.attach": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 대상에 붙기"
+          }
+        }
+      }
+    },
+    "debugger.target.attachShort": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "붙기"
+          }
+        }
+      }
+    },
+    "debugger.target.detached": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결 안 됨"
+          }
+        }
+      }
+    },
+    "debugger.target.detached.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 대상에는 아직 붙지 않았습니다. 누르면 붙어 중단점과 콘솔을 받습니다."
+          }
+        }
+      }
+    },
+    "debugger.target.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "debugger.toolbar": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "디버거 제어"
+          }
+        }
+      }
+    },
+    "debugger.unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지금은 디버거를 쓸 수 없습니다"
+          }
+        }
+      }
+    },
+    "debugger.unsupported": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 PC는 디버거를 지원하지 않습니다"
+          }
+        }
+      }
+    },
+    "debugger.variable.a11y": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@: %2$@"
+          }
+        }
+      }
+    },
+    "debugger.variables": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "변수"
+          }
+        }
+      }
+    },
+    "debugger.variables.collapse": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "접기"
+          }
+        }
+      }
+    },
+    "debugger.variables.copyName": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이름 복사"
+          }
+        }
+      }
+    },
+    "debugger.variables.copyValue": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "값 복사"
+          }
+        }
+      }
+    },
+    "debugger.variables.exception": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예외"
+          }
+        }
+      }
+    },
+    "debugger.variables.expand": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "펼치기"
+          }
+        }
+      }
+    },
+    "debugger.variables.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "속성을 읽지 못했습니다"
+          }
+        }
+      }
+    },
+    "debugger.variables.hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "멈추면 선택한 프레임의 변수가 여기에 나타납니다."
+          }
+        }
+      }
+    },
+    "debugger.variables.loading": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "불러오는 중…"
+          }
+        }
+      }
+    },
+    "debugger.variables.more": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@개 더 보기"
+          }
+        }
+      }
+    },
+    "debugger.variables.running": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 중"
+          }
+        }
+      }
+    },
+    "debugger.variables.stale": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대상이 다시 실행되어 읽을 수 없습니다"
+          }
+        }
+      }
+    },
+    "debugger.waiting": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결되면 이 PC의 디버그 세션을 불러옵니다."
+          }
+        }
+      }
+    },
     "detail.select.message": {
       "comment": "Detail column: select message",
       "extractionState": "manual",
@@ -1964,6 +5099,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "컴퓨터를 추가했지만 목록에서 찾지 못했습니다"
+          }
+        }
+      }
+    },
+    "error.codeInline": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오류 코드 %@"
           }
         }
       }
@@ -6359,6 +9505,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "컴퓨터"
+          }
+        }
+      }
+    },
+    "menu.debug": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "디버그"
           }
         }
       }

@@ -50,6 +50,33 @@ public enum DS {
         public static let terminalBackground = SwiftUI.Color(nsColor: .textBackgroundColor)
     }
 
+    /// Script source and value colors of the debugger. System colors outside the semantic set, so
+    /// code never reads as a state.
+    public enum Code {
+        /// JavaScript keywords and the literals `true`, `false`, `null`, `undefined`.
+        public static let keyword = SwiftUI.Color(nsColor: .systemPink)
+        /// String and template literals and string values.
+        public static let string = SwiftUI.Color(nsColor: .systemBrown)
+        /// Numbers and bigints.
+        public static let number = SwiftUI.Color(nsColor: .systemTeal)
+        /// Comments, `undefined` values and internal properties.
+        public static let comment = SwiftUI.Color.secondary
+        /// The line the paused frame is on.
+        public static let currentLine = SwiftUI.Color(nsColor: .systemGreen).opacity(0.16)
+        /// The line of a caller frame the person selected.
+        public static let callerLine = SwiftUI.Color.gray.opacity(0.16)
+        /// The line a paused exception was thrown on.
+        public static let exceptionLine = SwiftUI.Color(nsColor: .systemRed).opacity(0.14)
+        /// A location opened from the breakpoints or the console.
+        public static let focusLine = SwiftUI.Color.indigo.opacity(0.12)
+        /// Breakpoint markers in the gutter and the breakpoints list.
+        public static let breakpoint = SwiftUI.Color(nsColor: .systemBlue)
+        /// Background of the source and console panes.
+        public static let background = SwiftUI.Color(nsColor: .textBackgroundColor)
+        /// The gutter beside the source lines.
+        public static let gutter = SwiftUI.Color(nsColor: .underPageBackgroundColor).opacity(0.5)
+    }
+
     /// Spacing scale in points. Layout uses only these values.
     public enum Space {
         public static let xs: CGFloat = 4

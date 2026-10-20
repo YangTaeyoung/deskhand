@@ -113,7 +113,17 @@ extension PreviewFixtures {
             let name = String(format: "capture-%04d.png", n)
             return file(largeFolder, name, 180_000 + (n * 7_919) % 1_400_000, 0.5 + Double(3000 - n) / 120)
         }
-        folders[shop] = [dir(shop, "bin", 3), dir(shop, "config", 26), dir(shop, "logs", 0.1)]
+        folders[shop] = [dir(shop, "bin", 3), dir(shop, "config", 26), dir(shop, "desktop", 5), dir(shop, "logs", 0.1)]
+        let desktopApp = shop + "\\desktop"
+        folders[desktopApp] = [
+            dir(desktopApp, "locales", 5), dir(desktopApp, "resources", 5),
+            file(desktopApp, "chrome_100_percent.pak", 151_552, 5), file(desktopApp, "d3dcompiler_47.dll", 4_916_728, 5),
+            file(desktopApp, "ffmpeg.dll", 2_851_840, 5), file(desktopApp, "icudtl.dat", 10_717_392, 5),
+            file(desktopApp, "LICENSES.chromium.html", 9_416_018, 5), file(desktopApp, "resources.pak", 5_652_480, 5),
+            file(desktopApp, "Shop Admin.exe", 184_729_088, 5), file(desktopApp, "Uninstall Shop Admin.exe", 1_310_720, 5),
+            file(desktopApp, "v8_context_snapshot.bin", 694_816, 5),
+        ]
+        folders[desktopApp + "\\resources"] = [dir(desktopApp + "\\resources", "app", 5), file(desktopApp + "\\resources", "app-update.yml", 120, 5)]
         folders[shop + "\\bin"] = [
             file(shop + "\\bin", "Shop.exe", 48_234_496, 3), file(shop + "\\bin", "Shop.dll", 6_291_456, 3),
             file(shop + "\\bin", "appsettings.json", 2_210, 26), file(shop + "\\bin", "restart-shop.ps1", 940, 50),

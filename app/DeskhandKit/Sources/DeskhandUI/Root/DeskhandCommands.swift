@@ -5,7 +5,8 @@ import SwiftUI
 /// Menu bar commands: add a computer (⌘N) and a new terminal tab (⌘T), closing (⌘W closes the
 /// terminal tab while the terminal tab shows shells, ⇧⌘W the window), the workspace tabs
 /// (⌘1–⌘7) and inspector (⌥⌘0) in the View menu, the 컴퓨터 menu with the control actions
-/// (emergency stop ⇧⌘.) and host actions for the selected computer, and the 터미널 menu. In the
+/// (emergency stop ⇧⌘.) and host actions for the selected computer, the 터미널 menu and the 디버그
+/// menu (F8, F10, F11, ⇧F11 while the debugger tab is shown). In the
 /// files and processes tabs 제거… has no shortcut; ⌘⌫ there moves remote files to the recycle
 /// bin or ends the selected process.
 public struct DeskhandCommands: Commands {
@@ -58,6 +59,9 @@ public struct DeskhandCommands: Commands {
         }
         CommandMenu(String.ui("menu.terminal", "터미널")) {
             TerminalMenuCommands(store: store)
+        }
+        CommandMenu(String.ui("menu.debug", "디버그")) {
+            DebuggerMenuCommands(store: store)
         }
     }
 }

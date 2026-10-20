@@ -102,6 +102,7 @@ public final class AppStore {
     @ObservationIgnored private var terminalWorkspaces: [String: TerminalWorkspace] = [:]
     @ObservationIgnored private var processModels: [String: ProcessesModel] = [:]
     @ObservationIgnored private var logModels: [String: LogsModel] = [:]
+    @ObservationIgnored private var debuggerModels: [String: DebuggerModel] = [:]
     @ObservationIgnored private var eventsTask: Task<Void, Never>?
     @ObservationIgnored private var reloadTask: Task<Void, Never>?
     @ObservationIgnored private var reloadToken = 0
@@ -194,13 +195,21 @@ public final class AppStore {
         return model
     }
 
+    /// The debugger tab state of a host, created on first use and kept while the host is listed.
+    public func debugger(for host: Host) -> DebuggerModel {
+        if let model = debuggerModels[host.hostID] { return model }
+        let model = DebuggerModel(hostID: host.hostID, backend: backend, defaults: defaults)
+        debuggerModels[host.hostID] = model
+        return model
+    }
+
     /// Shows the logs tab with a remote file selected.
     public func openLog(hostID: String, path: String) {
         logSelection = LogSelection(hostID: hostID, path: path)
         layout.tab = .logs
     }
 
-    /// Stops and drops the files, terminal, processes and logs tab state of a host that left the list.
+    /// Stops and drops the files, terminal, processes, logs and debugger tab state of a host that left the list.
     private func forgetTabState(_ hostID: String) {
         processModels[hostID]?.setVisible(false)
         logModels[hostID]?.setVisible(false)
@@ -211,6 +220,8 @@ public final class AppStore {
         terminalWorkspaces[hostID] = nil
         processModels[hostID] = nil
         logModels[hostID] = nil
+        debuggerModels[hostID]?.stop()
+        debuggerModels[hostID] = nil
     }
 
     /// Records the quality of the host's screen stream; `nil` when the stream closes.

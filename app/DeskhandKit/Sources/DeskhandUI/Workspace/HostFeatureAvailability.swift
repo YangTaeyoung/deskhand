@@ -35,6 +35,7 @@ struct HostFeatureUnavailableView: View {
     enum Feature {
         case processes
         case diagnostics
+        case debugger
     }
 
     let host: Host
@@ -50,9 +51,7 @@ struct HostFeatureUnavailableView: View {
                      ? String.ui("feature.connecting", "\(host.name)에 연결하는 중…")
                      : String.ui("feature.reconnecting", "\(host.name)에 다시 연결하는 중…"))
                     .font(DS.Font.headline)
-                Text(feature == .processes
-                     ? String.ui("processes.waiting", "연결되면 프로세스 목록을 불러와 2초마다 새로 고칩니다.")
-                     : String.ui("logs.waiting", "연결되면 시스템 요약, 이벤트 로그, 크래시 덤프를 불러옵니다."))
+                Text(waitingText)
                     .font(DS.Font.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -64,21 +63,44 @@ struct HostFeatureUnavailableView: View {
             .accessibilityElement(children: .combine)
         case .offline:
             EmptyStateView(symbol: "bolt.horizontal.circle", title: String.ui("feature.offline", "연결되어 있지 않습니다"),
-                           message: feature == .processes
-                               ? String.ui("processes.offline", "위 배너의 ‘연결’로 \(host.name)에 연결하면 실행 중인 프로세스를 보고 종료할 수 있습니다.")
-                               : String.ui("logs.offline", "위 배너의 ‘연결’로 \(host.name)에 연결하면 시스템 요약, 이벤트 로그, 크래시 덤프를 볼 수 있습니다."))
+                           message: offlineText)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .blocked:
             EmptyStateView(symbol: "lock.trianglebadge.exclamationmark", title: String.ui("feature.blocked", "다시 페어링해야 합니다"),
                            message: String.ui("feature.blockedMessage", "에이전트 인증서가 페어링 때와 달라 연결을 막았습니다. 위 배너에서 다시 페어링하면 이 탭을 쓸 수 있습니다."))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .unavailable(let state, let reason):
-            EmptyStateView(symbol: feature == .processes ? "cpu" : "doc.text.magnifyingglass",
+            EmptyStateView(symbol: symbol,
                            title: title(state),
                            message: reason ?? String.ui("feature.unavailableMessage", "에이전트가 이 기능이 준비되지 않았다고 알렸습니다. 진단을 실행해 원인을 확인하세요."))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .ready:
             EmptyView()
+        }
+    }
+
+    private var symbol: String {
+        switch feature {
+        case .processes: "cpu"
+        case .diagnostics: "doc.text.magnifyingglass"
+        case .debugger: "ladybug"
+        }
+    }
+
+    private var waitingText: String {
+        switch feature {
+        case .processes: .ui("processes.waiting", "연결되면 프로세스 목록을 불러와 2초마다 새로 고칩니다.")
+        case .diagnostics: .ui("logs.waiting", "연결되면 시스템 요약, 이벤트 로그, 크래시 덤프를 불러옵니다.")
+        case .debugger: .ui("debugger.waiting", "연결되면 이 PC의 디버그 세션을 불러옵니다.")
+        }
+    }
+
+    private var offlineText: String {
+        let name = host.name
+        switch feature {
+        case .processes: return .ui("processes.offline", "위 배너의 ‘연결’로 \(host.name)에 연결하면 실행 중인 프로세스를 보고 종료할 수 있습니다.")
+        case .diagnostics: return .ui("logs.offline", "위 배너의 ‘연결’로 \(host.name)에 연결하면 시스템 요약, 이벤트 로그, 크래시 덤프를 볼 수 있습니다.")
+        case .debugger: return .ui("debugger.offline", "위 배너의 ‘연결’로 \(name)에 연결하면 Electron 앱을 실행해 디버그하거나 실행 중인 앱에 연결할 수 있습니다.")
         }
     }
 
@@ -88,6 +110,8 @@ struct HostFeatureUnavailableView: View {
         case (.processes, false): .ui("processes.unavailable", "지금은 프로세스를 볼 수 없습니다")
         case (.diagnostics, true): .ui("logs.unsupported", "이 PC는 진단 정보를 지원하지 않습니다")
         case (.diagnostics, false): .ui("logs.unavailable", "지금은 진단 정보를 볼 수 없습니다")
+        case (.debugger, true): .ui("debugger.unsupported", "이 PC는 디버거를 지원하지 않습니다")
+        case (.debugger, false): .ui("debugger.unavailable", "지금은 디버거를 쓸 수 없습니다")
         }
     }
 }

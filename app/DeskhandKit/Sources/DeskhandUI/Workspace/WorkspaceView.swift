@@ -99,7 +99,10 @@ public struct WorkspaceView: View {
         case .logs:
             LogsView(store: store, host: host, chrome: chrome)
                 .id(host.hostID)
-        case .debugger, .qa:
+        case .debugger:
+            DebuggerView(store: store, host: host, chrome: chrome)
+                .id(host.hostID)
+        case .qa:
             TabPlaceholderView(tab: store.layout.tab)
         }
     }

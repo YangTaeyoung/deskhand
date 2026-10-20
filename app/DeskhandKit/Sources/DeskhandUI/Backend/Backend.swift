@@ -7,7 +7,7 @@ import struct DeskhandClient.ProcessInfo
 /// protocol below and joins it to this list; `LiveBackend` and `PreviewBackend` implement each
 /// feature protocol in their own extension.
 public protocol Backend: BackendLifecycle, HostsBackend, ControlBackend, TimelineBackend, EventsBackend, ScreenBackend, FilesBackend,
-    TerminalBackend, ProcessesBackend, DiagnosticsBackend {}
+    TerminalBackend, ProcessesBackend, DiagnosticsBackend, DebuggerBackend {}
 
 /// A process of the remote computer (`ProcessInfo` of DeskhandClient).
 public typealias RemoteProcess = ProcessInfo
@@ -117,6 +117,115 @@ public protocol DiagnosticsBackend: Sendable {
     func diagEvents(_ query: EventLogQuery) async throws -> EventLogPage
     /// Crash dumps and error reports since `since` (the agent's default, 30 days, when nil), newest first.
     func diagCrashes(hostID: String, since: Date?) async throws -> [CrashDump]
+}
+
+/// `debug.*` (local-api.md §3 디버깅, §9). Calls that change a session throw `OperationError`
+/// when their envelope reports a failure or an unknown outcome; reads throw the JSON-RPC error.
+public protocol DebuggerBackend: Sendable {
+    /// Sessions of `hostID` in creation order, closed ones included while the daemon keeps them.
+    func debugList(hostID: String) async throws -> [DebugSession]
+    func debugGet(debugID: String) async throws -> DebugSession
+    /// Starts an Electron app with its inspector and DevTools ports open and attaches to it.
+    func debugLaunch(_ request: DebugLaunchRequest) async throws -> DebugSession
+    /// Attaches to a running app by its inspector or DevTools port, or by its process ID.
+    func debugAttach(_ request: DebugAttachRequest) async throws -> DebugSession
+    /// Attaches to a listed target the daemon did not attach to on its own.
+    func debugTargetAttach(debugID: String, targetID: String) async throws -> DebugTarget
+    func debugBreakpointSet(_ request: BreakpointRequest) async throws -> DebugBreakpoint
+    func debugBreakpointEnable(debugID: String, breakpointID: String, enabled: Bool) async throws -> DebugBreakpoint
+    func debugBreakpointRemove(debugID: String, breakpointID: String) async throws
+    /// Turns every breakpoint of the session on or off without changing them.
+    func debugBreakpointsActivate(debugID: String, active: Bool) async throws
+    func debugExceptions(debugID: String, mode: ExceptionPauseMode) async throws
+    /// Returns the target as the daemon knew it when it replied, when the result carries it.
+    func debugPause(debugID: String, targetID: String) async throws -> DebugTarget?
+    func debugResume(debugID: String, targetID: String) async throws -> DebugTarget?
+    func debugStep(debugID: String, targetID: String, kind: DebugStepKind) async throws -> DebugTarget?
+    func debugState(debugID: String, targetID: String) async throws -> DebugPauseState
+    /// Properties `offset..<offset+limit` of an object or scope.
+    func debugVariables(debugID: String, targetID: String, objectID: String, offset: Int, limit: Int) async throws -> DebugPropertyPage
+    /// Evaluates `expression` in `frameID` of a paused target, or globally without one.
+    func debugEvaluate(debugID: String, targetID: String, expression: String, frameID: String?) async throws -> DebugEvaluation
+    /// Loaded scripts with a URL, of one target or of all when `targetID` is nil.
+    func debugScripts(debugID: String, targetID: String?) async throws -> [DebugScript]
+    func debugSource(debugID: String, targetID: String, scriptID: String) async throws -> DebugSource
+    func debugConsole(_ query: ConsoleQuery) async throws -> ConsolePage
+    /// Ends the session; a launched app ends with it unless `keepProcess`.
+    func debugClose(debugID: String, keepProcess: Bool) async throws
+}
+
+/// Parameters of `debug.electron.launch`.
+public struct DebugLaunchRequest: Sendable, Equatable {
+    public var hostID: String
+    public var path: String
+    public var args: [String]
+    public var cwd: String?
+    /// Stops on the first line of the main process (`--inspect-brk`).
+    public var pauseOnStart: Bool
+
+    public init(hostID: String, path: String, args: [String] = [], cwd: String? = nil, pauseOnStart: Bool = false) {
+        self.hostID = hostID
+        self.path = path
+        self.args = args
+        self.cwd = cwd
+        self.pauseOnStart = pauseOnStart
+    }
+}
+
+/// Parameters of `debug.attach`.
+public struct DebugAttachRequest: Sendable, Equatable {
+    public enum Target: Sendable, Equatable {
+        /// A remote loopback port; `role` nil lets the daemon tell Node inspector from DevTools.
+        case port(Int, role: DebugTargetRole?)
+        case pid(Int)
+    }
+
+    public var hostID: String
+    public var target: Target
+
+    public init(hostID: String, target: Target) {
+        self.hostID = hostID
+        self.target = target
+    }
+}
+
+/// Parameters of `debug.breakpoint.set`: an exact `url` or a `url_regex`, and a line from 1.
+public struct BreakpointRequest: Sendable, Equatable {
+    public enum Match: Sendable, Equatable {
+        case url(String)
+        case regex(String)
+    }
+
+    public var debugID: String
+    public var match: Match
+    public var line: Int
+    public var column: Int?
+    public var condition: String?
+
+    public init(debugID: String, match: Match, line: Int, column: Int? = nil, condition: String? = nil) {
+        self.debugID = debugID
+        self.match = match
+        self.line = line
+        self.column = column
+        self.condition = condition
+    }
+}
+
+/// Parameters of `debug.console`: entries after `cursor`, before `before`, or the latest.
+public struct ConsoleQuery: Sendable, Equatable {
+    public static let maximumLimit = 1000
+
+    public var debugID: String
+    public var cursor: Int?
+    public var before: Int?
+    public var limit: Int
+
+    public init(debugID: String, cursor: Int? = nil, before: Int? = nil, limit: Int = 200) {
+        self.debugID = debugID
+        self.cursor = cursor
+        self.before = before
+        self.limit = limit
+    }
 }
 
 /// The envelope of `proc.kill`: its status, how many processes ended, and the error and next
@@ -254,6 +363,25 @@ public enum EventKind {
     public static let transferUpdated = "transfer.updated"
     /// `job` (Job).
     public static let jobUpdated = "job.updated"
+    /// `debug_id`, `session` (DebugSession).
+    public static let debugSessionChanged = "debug.session_changed"
+    /// `debug_id`, `target` (DebugTarget), `removed`.
+    public static let debugTargetChanged = "debug.target_changed"
+    /// `debug_id`, `breakpoint` (Breakpoint), `removed`.
+    public static let debugBreakpointChanged = "debug.breakpoint_changed"
+    /// `debug_id`, `state` (PauseState).
+    public static let debugPaused = "debug.paused"
+    /// `debug_id`, `target_id`, `gen`.
+    public static let debugResumed = "debug.resumed"
+    /// `debug_id`, `entry` (ConsoleEntry).
+    public static let debugConsole = "debug.console"
+    /// `debug_id`, `reason`, `exit_code?`.
+    public static let debugClosed = "debug.closed"
+
+    /// Every kind the debugger tab follows.
+    public static let debuggerKinds = [
+        debugSessionChanged, debugTargetChanged, debugBreakpointChanged, debugPaused, debugResumed, debugConsole, debugClosed,
+    ]
 
     /// Every kind `AppStore` subscribes to.
     public static let storeKinds = [

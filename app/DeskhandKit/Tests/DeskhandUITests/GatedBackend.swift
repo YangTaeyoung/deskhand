@@ -387,3 +387,45 @@ func waitUntil(timeout: Duration = .seconds(3), _ condition: @MainActor () -> Bo
         try await Task.sleep(for: .milliseconds(5))
     }
 }
+
+/// Debugger calls go to the preview daemon.
+extension GatedBackend {
+    func debugList(hostID: String) async throws -> [DebugSession] { try await base.debugList(hostID: hostID) }
+    func debugGet(debugID: String) async throws -> DebugSession { try await base.debugGet(debugID: debugID) }
+    func debugLaunch(_ request: DebugLaunchRequest) async throws -> DebugSession { try await base.debugLaunch(request) }
+    func debugAttach(_ request: DebugAttachRequest) async throws -> DebugSession { try await base.debugAttach(request) }
+    func debugTargetAttach(debugID: String, targetID: String) async throws -> DebugTarget {
+        try await base.debugTargetAttach(debugID: debugID, targetID: targetID)
+    }
+    func debugBreakpointSet(_ request: BreakpointRequest) async throws -> DebugBreakpoint { try await base.debugBreakpointSet(request) }
+    func debugBreakpointEnable(debugID: String, breakpointID: String, enabled: Bool) async throws -> DebugBreakpoint {
+        try await base.debugBreakpointEnable(debugID: debugID, breakpointID: breakpointID, enabled: enabled)
+    }
+    func debugBreakpointRemove(debugID: String, breakpointID: String) async throws {
+        try await base.debugBreakpointRemove(debugID: debugID, breakpointID: breakpointID)
+    }
+    func debugBreakpointsActivate(debugID: String, active: Bool) async throws {
+        try await base.debugBreakpointsActivate(debugID: debugID, active: active)
+    }
+    func debugExceptions(debugID: String, mode: ExceptionPauseMode) async throws { try await base.debugExceptions(debugID: debugID, mode: mode) }
+    func debugPause(debugID: String, targetID: String) async throws -> DebugTarget? { try await base.debugPause(debugID: debugID, targetID: targetID) }
+    func debugResume(debugID: String, targetID: String) async throws -> DebugTarget? { try await base.debugResume(debugID: debugID, targetID: targetID) }
+    func debugStep(debugID: String, targetID: String, kind: DebugStepKind) async throws -> DebugTarget? {
+        try await base.debugStep(debugID: debugID, targetID: targetID, kind: kind)
+    }
+    func debugState(debugID: String, targetID: String) async throws -> DebugPauseState { try await base.debugState(debugID: debugID, targetID: targetID) }
+    func debugVariables(debugID: String, targetID: String, objectID: String, offset: Int, limit: Int) async throws -> DebugPropertyPage {
+        try await base.debugVariables(debugID: debugID, targetID: targetID, objectID: objectID, offset: offset, limit: limit)
+    }
+    func debugEvaluate(debugID: String, targetID: String, expression: String, frameID: String?) async throws -> DebugEvaluation {
+        try await base.debugEvaluate(debugID: debugID, targetID: targetID, expression: expression, frameID: frameID)
+    }
+    func debugScripts(debugID: String, targetID: String?) async throws -> [DebugScript] {
+        try await base.debugScripts(debugID: debugID, targetID: targetID)
+    }
+    func debugSource(debugID: String, targetID: String, scriptID: String) async throws -> DebugSource {
+        try await base.debugSource(debugID: debugID, targetID: targetID, scriptID: scriptID)
+    }
+    func debugConsole(_ query: ConsoleQuery) async throws -> ConsolePage { try await base.debugConsole(query) }
+    func debugClose(debugID: String, keepProcess: Bool) async throws { try await base.debugClose(debugID: debugID, keepProcess: keepProcess) }
+}
