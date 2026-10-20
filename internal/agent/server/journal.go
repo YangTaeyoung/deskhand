@@ -16,13 +16,6 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
-// journaledOps are the ops whose requests with a rid the journal records.
-var journaledOps = map[string]bool{
-	"exec.run": true, "exec.start": true, "exec.write": true, "exec.kill": true, "proc.kill": true,
-	"fs.write": true, "fs.rename": true, "fs.mkdir": true, "fs.delete": true, "app.launch": true,
-	"clipboard.set": true, "win.action": true, "ui.act": true,
-}
-
 const (
 	// journalKeep is how long a finished request stays in the journal.
 	journalKeep = 24 * time.Hour

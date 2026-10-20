@@ -68,17 +68,9 @@ type RequestLog interface {
 	SetRequestState(rid, state string, result json.RawMessage) error
 }
 
-// journaledOps are the agent ops that change state; requests of them carry
-// a rid.
-var journaledOps = map[string]bool{
-	"exec.run": true, "exec.start": true, "exec.write": true, "exec.kill": true, "proc.kill": true,
-	"fs.write": true, "fs.rename": true, "fs.mkdir": true, "fs.delete": true, "app.launch": true,
-	"clipboard.set": true, "win.action": true, "ui.act": true,
-}
-
-// Journaled reports whether op changes state on the PC; requests of such
-// an op carry a rid and are never sent twice.
-func Journaled(op string) bool { return journaledOps[op] }
+// Journaled reports whether op changes state on the PC (wire.Journaled);
+// requests of such an op carry a rid and are never sent twice.
+func Journaled(op string) bool { return wire.Journaled(op) }
 
 // NewRID returns a new request id: "r-" and a ULID.
 func NewRID() string { return ids.New(ids.Request) }

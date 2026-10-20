@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/proto"
+	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
 const errExecDisabled = "exec, file and process operations are off in this agent; start it with deskhand-agent run, which serves them"
@@ -275,7 +276,7 @@ func (s *Server) dispatch(ctx context.Context, req proto.Message, send func(m pr
 		send(s.reqStatus(req, rid), nil)
 		return
 	}
-	if hasRID && journaledOps[op] {
+	if hasRID && wire.Journaled(op) {
 		s.dispatchJournaled(ctx, req, rid, send)
 		return
 	}

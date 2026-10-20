@@ -71,15 +71,9 @@ func TestCallAssignsRidForMutatingOps(t *testing.T) {
 	if runs := f.requests("exec.run"); runs[1].String("rid") != "r-given" {
 		t.Fatalf("explicit rid replaced: %v", runs[1])
 	}
-	for _, op := range []string{"exec.run", "exec.start", "exec.write", "exec.kill", "proc.kill", "fs.write", "fs.rename",
-		"fs.mkdir", "fs.delete", "app.launch", "clipboard.set", "win.action", "ui.act"} {
-		if !Journaled(op) {
-			t.Errorf("%s is not journaled", op)
-		}
-	}
-	for _, op := range []string{"fs.list", "fs.read", "proc.list", "exec.read", "ping", "req.status"} {
-		if Journaled(op) {
-			t.Errorf("%s is journaled", op)
+	for _, op := range append(wire.JournaledOps(), "fs.list", "fs.read", "proc.list", "exec.read", "ping", "req.status") {
+		if Journaled(op) != wire.Journaled(op) {
+			t.Errorf("Journaled(%s) is %v, the wire list says %v", op, Journaled(op), wire.Journaled(op))
 		}
 	}
 }

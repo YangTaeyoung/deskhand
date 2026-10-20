@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/proto"
+	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
 // restartableAgent is a server on DataDir dir whose listener and connection
@@ -305,6 +306,21 @@ func TestARequestWithoutRidIsNotJournaled(t *testing.T) {
 	entries, _ := os.ReadDir(filepath.Join(dir, "journal"))
 	if len(entries) != 0 {
 		t.Fatalf("the journal holds %d records", len(entries))
+	}
+}
+
+func TestTheAgentJournalsExactlyTheWireJournaledOps(t *testing.T) {
+	a := startAgentOn(t, t.TempDir())
+	for i, op := range append(wire.JournaledOps(), "exec.list", "exec.read", "fs.list", "fs.stat", "proc.list", "ping") {
+		rid := fmt.Sprintf("r-op-%d", i)
+		a.c.call(op, proto.Message{"rid": rid})
+		want := "unknown"
+		if wire.Journaled(op) {
+			want = "done"
+		}
+		if st := a.c.call("req.status", proto.Message{"rid": rid}).String("state"); st != want {
+			t.Errorf("req.status after %s is %s, want %s", op, st, want)
+		}
 	}
 }
 
