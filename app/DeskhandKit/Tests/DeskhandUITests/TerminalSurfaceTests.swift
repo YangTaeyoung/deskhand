@@ -32,6 +32,21 @@ final class TerminalSurfaceTests: XCTestCase {
         XCTAssertEqual(PasteRequest.sanitize("Get-Process").removed, 0)
     }
 
+    func testCharsetDesignationsAreRemovedWhole() {
+        let (text, removed) = PasteRequest.sanitize("a\u{1b}(Bb\u{1b})0c\u{1b}$(Dd\u{1b}7e\u{1b}=f")
+        XCTAssertEqual(text, "abcdef")
+        XCTAssertEqual(removed, 5)
+    }
+
+    func testEmptyPasteSaysThereIsNothingToSend() {
+        let empty = PasteRequest(sessionID: UUID(), clipboard: "\u{1b}[31m\u{1b}[0m")
+        XCTAssertEqual(empty.text, "")
+        XCTAssertEqual(PasteConfirmSheet.blocker(for: empty, canSend: false), .nothingToSend)
+        let text = PasteRequest(sessionID: UUID(), clipboard: "dir\n")
+        XCTAssertEqual(PasteConfirmSheet.blocker(for: text, canSend: false), .disconnected)
+        XCTAssertNil(PasteConfirmSheet.blocker(for: text, canSend: true))
+    }
+
     func testRequestKeepsTheSanitizedTextAndItsTotals() {
         let request = PasteRequest(sessionID: UUID(), clipboard: "echo 가\u{1b}[1m나\u{1b}[0m\nexit\n")
         XCTAssertEqual(request.text, "echo 가나\nexit\n")
@@ -56,17 +71,28 @@ final class TerminalSurfaceTests: XCTestCase {
         return (max(l1, l2) + 0.05) / (min(l1, l2) + 0.05)
     }
 
-    func testEveryANSIColorReadsAgainstTheBackgroundInBothAppearances() throws {
-        for name in [NSAppearance.Name.aqua, .darkAqua] {
+    func testANSIColorsReadAgainstTheBackgroundExceptTheBackgroundLikeSlot() throws {
+        for (name, exempt) in [(NSAppearance.Name.aqua, 7), (.darkAqua, 0)] {
             let palette = DS.Terminal.palette(for: try XCTUnwrap(NSAppearance(named: name)))
             XCTAssertEqual(palette.ansi.count, 16)
             let ratios = palette.ansi.map { contrast($0, palette.background) }
             print("contrast \(name.rawValue): " + ratios.enumerated().map { String(format: "%d=%.2f", $0.offset, $0.element) }.joined(separator: " ")
-                  + String(format: " fg=%.2f", contrast(palette.foreground, palette.background)))
-            for (index, ratio) in ratios.enumerated() {
+                  + String(format: " fg=%.2f 0/8=%.2f 7/15=%.2f", contrast(palette.foreground, palette.background),
+                           contrast(palette.ansi[0], palette.ansi[8]), contrast(palette.ansi[7], palette.ansi[15])))
+            for (index, ratio) in ratios.enumerated() where index != exempt {
                 XCTAssertGreaterThanOrEqual(ratio, 4.5, "ANSI \(index) in \(name.rawValue)")
             }
+            XCTAssertGreaterThanOrEqual(contrast(palette.ansi[0], palette.ansi[8]), 1.5, "black and bright black in \(name.rawValue)")
+            XCTAssertGreaterThanOrEqual(contrast(palette.ansi[7], palette.ansi[15]), 1.5, "white and bright white in \(name.rawValue)")
         }
+    }
+
+    func testBlackAndWhiteStayTrueBlackAndWhite() throws {
+        let dark = DS.Terminal.palette(for: try XCTUnwrap(NSAppearance(named: .darkAqua)))
+        let light = DS.Terminal.palette(for: try XCTUnwrap(NSAppearance(named: .aqua)))
+        XCTAssertEqual(luminance(dark.ansi[0]), 0, accuracy: 0.001)
+        XCTAssertEqual(luminance(light.ansi[0]), 0, accuracy: 0.001)
+        XCTAssertEqual(luminance(light.ansi[7]), 1, accuracy: 0.001)
     }
 
     // MARK: Keyboard

@@ -7886,13 +7886,24 @@
         }
       }
     },
+    "terminal.paste.nothing": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "붙여 넣을 글자가 없습니다 (제어 문자만 있었습니다)"
+          }
+        }
+      }
+    },
     "terminal.paste.removed": {
       "extractionState": "manual",
       "localizations": {
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "제어 문자 %lld개를 지웠습니다"
+            "value": "제어 문자열 %lld개를 지웠습니다"
           }
         }
       }

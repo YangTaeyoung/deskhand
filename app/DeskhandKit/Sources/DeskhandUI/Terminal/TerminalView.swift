@@ -321,8 +321,8 @@ enum TerminalJobText {
 // MARK: Confirmations and notices
 
 /// Confirmation before pasting: the whole text in a scrolling monospaced box with its line and
-/// character counts, how many control characters were removed, 다시 묻지 않기, and 붙여넣기 —
-/// disabled with a notice while the shell cannot receive it.
+/// character counts, how many control strings were removed, 다시 묻지 않기, and 붙여넣기 —
+/// disabled with a notice when nothing is left to send or the shell cannot receive it.
 public struct PasteConfirmSheet: View {
     let request: PasteRequest
     let shell: String
@@ -333,6 +333,19 @@ public struct PasteConfirmSheet: View {
 
     /// Lines the preview shows before it scrolls.
     static let visibleLines = 10
+
+    /// Why 붙여넣기 is disabled.
+    enum Blocker: Equatable {
+        /// The text held only escape sequences and control characters.
+        case nothingToSend
+        /// The shell does not accept input.
+        case disconnected
+    }
+
+    static func blocker(for request: PasteRequest, canSend: Bool) -> Blocker? {
+        if request.text.isEmpty { return .nothingToSend }
+        return canSend ? nil : .disconnected
+    }
 
     public init(request: PasteRequest, shell: String, canSend: Bool, confirm: @escaping (Bool) -> Void, cancel: @escaping () -> Void) {
         self.request = request
@@ -407,17 +420,24 @@ public struct PasteConfirmSheet: View {
                         .monospacedDigit()
                     if request.removedControls > 0 {
                         let removed = request.removedControls
-                        Label(String.ui("terminal.paste.removed", "제어 문자 \(removed)개를 지웠습니다"), systemImage: "eraser")
+                        Label(String.ui("terminal.paste.removed", "제어 문자열 \(removed)개를 지웠습니다"), systemImage: "eraser")
                             .foregroundStyle(DS.Color.warning)
                     }
                 }
                 .font(DS.Font.caption)
                 .foregroundStyle(.secondary)
             }
-            if !canSend {
+            switch Self.blocker(for: request, canSend: canSend) {
+            case .nothingToSend:
+                Label(String.ui("terminal.paste.nothing", "붙여 넣을 글자가 없습니다 (제어 문자만 있었습니다)"), systemImage: "text.badge.xmark")
+                    .font(DS.Font.body)
+                    .foregroundStyle(DS.Color.warning)
+            case .disconnected:
                 Label(String.ui("terminal.paste.disconnected", "연결이 끊겨 보낼 수 없습니다"), systemImage: "bolt.horizontal.circle")
                     .font(DS.Font.body)
                     .foregroundStyle(DS.Color.warning)
+            case nil:
+                EmptyView()
             }
             HStack {
                 Toggle(String.ui("terminal.paste.dontAsk", "다시 묻지 않기"), isOn: $dontAskAgain)
@@ -428,7 +448,7 @@ public struct PasteConfirmSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Button(String.ui("terminal.paste.confirm", "붙여넣기")) { confirm(dontAskAgain) }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(!canSend)
+                    .disabled(Self.blocker(for: request, canSend: canSend) != nil)
             }
             .controlSize(.large)
         }

@@ -228,7 +228,7 @@ public struct PasteRequest: Identifiable, Equatable, Sendable {
     public let sessionID: UUID
     /// The text to send.
     public let text: String
-    /// Escape sequences and control characters removed from the clipboard text.
+    /// Escape sequences and lone control characters removed from the clipboard text.
     public let removedControls: Int
 
     public init(sessionID: UUID, clipboard: String) {
@@ -258,9 +258,10 @@ public struct PasteRequest: Identifiable, Equatable, Sendable {
         text.replacingOccurrences(of: "\r\n", with: "\r").replacingOccurrences(of: "\n", with: "\r")
     }
 
-    /// `text` without escape sequences (CSI, OSC, DCS, SOS, PM, APC and two-character escapes,
-    /// in their 7-bit and 8-bit forms), C0 controls other than TAB, CR and LF, DEL and C1
-    /// controls, with the number of sequences and characters removed.
+    /// `text` without escape sequences (CSI, OSC, DCS, SOS, PM, APC, escapes with intermediate
+    /// bytes such as charset designations, and two-character escapes, in their 7-bit and 8-bit
+    /// forms), C0 controls other than TAB, CR and LF, DEL and C1 controls, with the number of
+    /// sequences and lone control characters removed.
     public static func sanitize(_ text: String) -> (text: String, removed: Int) {
         var output = String.UnicodeScalarView()
         var removed = 0
@@ -290,9 +291,11 @@ public struct PasteRequest: Identifiable, Equatable, Sendable {
             case 0x1B:
                 removed += 1
                 guard let next = scalars.popFirst() else { break }
-                switch next {
-                case "[": skipCSI()
-                case "]", "P", "X", "^", "_": skipString()
+                switch next.value {
+                case 0x5B: skipCSI()
+                case 0x5D, 0x50, 0x58, 0x5E, 0x5F: skipString()
+                case 0x20...0x2F:
+                    while let scalar = scalars.popFirst(), (0x20...0x2F).contains(scalar.value) {}
                 default: break
                 }
             case 0x9B:

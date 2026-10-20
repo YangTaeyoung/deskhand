@@ -225,3 +225,27 @@ final class TerminalWorkspaceEventTests: XCTestCase {
         XCTAssertTrue(dataFrames(stream).isEmpty)
     }
 }
+
+final class TerminalTabScrollTests: XCTestCase {
+    func testFadesShowOnTheSidesWithHiddenTabs() {
+        XCTAssertEqual(TabStripScroll.overflow(contentWidth: 500, visibleWidth: 600, offset: 0), TabStripScroll.Overflow())
+        XCTAssertEqual(TabStripScroll.overflow(contentWidth: 1000, visibleWidth: 600, offset: 0),
+                       TabStripScroll.Overflow(leading: false, trailing: true))
+        XCTAssertEqual(TabStripScroll.overflow(contentWidth: 1000, visibleWidth: 600, offset: 200),
+                       TabStripScroll.Overflow(leading: true, trailing: true))
+        XCTAssertEqual(TabStripScroll.overflow(contentWidth: 1000, visibleWidth: 600, offset: 400),
+                       TabStripScroll.Overflow(leading: true, trailing: false))
+    }
+
+    func testSelectedTabIsCenteredWithinTheScrollRange() {
+        let width: CGFloat = 112
+        let spacing: CGFloat = 4
+        XCTAssertEqual(TabStripScroll.targetOffset(selected: 0, count: 8, tabWidth: width, spacing: spacing, visibleWidth: 500), 0)
+        XCTAssertEqual(TabStripScroll.targetOffset(selected: 3, count: 8, tabWidth: width, spacing: spacing, visibleWidth: 500),
+                       3 * 116 + 56 - 250)
+        let content = 8 * width + 7 * spacing
+        XCTAssertEqual(TabStripScroll.targetOffset(selected: 7, count: 8, tabWidth: width, spacing: spacing, visibleWidth: 500),
+                       content - 500)
+        XCTAssertEqual(TabStripScroll.targetOffset(selected: 2, count: 3, tabWidth: width, spacing: spacing, visibleWidth: 500), 0)
+    }
+}

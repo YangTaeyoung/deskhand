@@ -69,6 +69,31 @@ enum TerminalScenes {
         "Get-ChildItem \\\\nas\\deploy\\shop | Measure-Object",
     ].joined(separator: "\n") + "\n"
 
+    /// The 16 ANSI colors as text and as backgrounds, then status lines drawn with black text on
+    /// colored backgrounds.
+    static var ansiChart: String {
+        let esc = "\u{1b}["
+        let names = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
+        func cell(_ text: String, _ width: Int) -> String { text + String(repeating: " ", count: max(0, width - text.count)) }
+        var lines = ["\u{1b}]7;file://DEV-PC/C:/Users/taeyoung\u{7}PS C:\\Users\\taeyoung> .\\colors.ps1", ""]
+        lines.append("글자색 0–7  " + names.enumerated().map { "\(esc)3\($0.offset)m\(cell("\($0.offset) \($0.element)", 11))\(esc)0m" }.joined())
+        lines.append("글자색 8–15 " + names.enumerated().map { "\(esc)9\($0.offset)m\(cell("\($0.offset + 8) \($0.element)", 11))\(esc)0m" }.joined())
+        lines.append("")
+        lines.append("배경색 0–7  " + names.indices.map { "\(esc)4\($0)m\(cell("  \($0)", 11))\(esc)0m" }.joined())
+        lines.append("배경색 8–15 " + names.indices.map { "\(esc)10\($0)m\(cell("  \($0 + 8)", 11))\(esc)0m" }.joined())
+        lines.append("검정 글자   " + names.indices.map { "\(esc)30;4\($0)m\(cell("  30/4\($0)", 11))\(esc)0m" }.joined())
+        lines.append("흰 글자     " + names.indices.map { "\(esc)97;4\($0)m\(cell("  97/4\($0)", 11))\(esc)0m" }.joined())
+        lines.append("")
+        lines.append("\(esc)30;43m NORMAL \(esc)0m\(esc)30;47m  checkout\\Payment.tsx [+]  \(esc)0m\(esc)30;46m  utf-8 │ Ln 128, Col 17  \(esc)0m")
+        lines.append("\(esc)30;42m [0] powershell* \(esc)0m\(esc)30;43m 1:npm run dev \(esc)0m\(esc)30;47m  DEV-PC  21:42 \(esc)0m")
+        lines.append("\(esc)30;46m  PID USER      PRI  NI  VIRT   RES  CPU% MEM%  Command \(esc)0m")
+        lines.append(" 7412 taeyoung   20   0 1.2G  402M  12.4  4.9  \(esc)32mShop.exe\(esc)0m")
+        lines.append(" 9312 taeyoung   20   0  612M 118M   3.1  1.4  \(esc)36mnode\(esc)0m vite --host")
+        lines.append("")
+        lines.append("\u{1b}]7;file://DEV-PC/C:/Users/taeyoung\u{7}PS C:\\Users\\taeyoung> ")
+        return lines.joined(separator: "\r\n")
+    }
+
     static var all: [SnapshotScene] {
         let dev = PreviewFixtures.devPCID
         let human = ControlState(owner: "human", gen: 6, aiPaused: false)
@@ -95,6 +120,8 @@ enum TerminalScenes {
                          Tab(shell: .cmd, commands: ["dir"])]),
             scene("terminal-exited-full", Setup(selected: dev, tab: .terminal, inspector: nil, controls: [dev: human]),
                   tabs: [Tab(phase: .exited(1), commands: ["dir", "cd Downloads", "dir", "Get-Process", "Restart-Shop -Force", "exit 1"])]),
+            scene("terminal-ansi", Setup(selected: dev, tab: .terminal, inspector: nil, controls: [dev: human]),
+                  tabs: [Tab(output: ansiChart)]),
             scene("terminal-many-tabs", Setup(selected: dev, tab: .terminal, controls: [dev: human]),
                   tabs: [
                       Tab(commands: ["cd Downloads", "dir"]),
@@ -106,7 +133,7 @@ enum TerminalScenes {
                       Tab(shell: .pwsh, commands: ["cd C:\\qa", "Get-Process"]),
                       Tab(phase: .reconnecting(nil), commands: ["dir"], cwd: "C:\\ProgramData"),
                   ],
-                  selected: 6),
+                  selected: 3),
             scene("terminal-paste-confirm", Setup(selected: dev, tab: .terminal, inspector: nil, controls: [dev: human]),
                   tabs: [Tab(commands: ["dir"], cwd: "C:\\Shop")],
                   paste: deployScript),

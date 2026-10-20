@@ -51,54 +51,55 @@ struct TerminalTabStrip: View {
     }
 }
 
-/// The tabs in a horizontal scroll view that keeps the selected tab visible, with faded edges
-/// on the sides that have more tabs.
+/// The tabs in a horizontal scroll view that scrolls the selected tab to the center of the
+/// row (within the scroll range), with faded edges on the sides that have hidden tabs.
 private struct TerminalTabRow: View {
     let workspace: TerminalWorkspace
-    @State private var overflow = EdgeOverflow()
+    @State private var position = ScrollPosition(edge: .leading)
+    @State private var overflow = TabStripScroll.Overflow()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    struct EdgeOverflow: Equatable {
-        var leading = false
-        var trailing = false
-    }
 
     static let fadeWidth: CGFloat = 24
 
     var body: some View {
         GeometryReader { proxy in
             let width = TerminalTabStrip.tabWidth(available: proxy.size.width, count: workspace.sessions.count)
-            ScrollViewReader { reader in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: DS.Space.xs) {
-                        ForEach(workspace.sessions) { session in
-                            TerminalTab(session: session, isSelected: session.id == workspace.selected?.id,
-                                        select: { workspace.select(session) },
-                                        close: { workspace.requestClose(session) },
-                                        detach: { workspace.close(session, ending: false) },
-                                        clear: { session.clearScrollback() })
-                                .frame(width: width)
-                                .id(session.id)
-                        }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: TabStripScroll.spacing) {
+                    ForEach(workspace.sessions) { session in
+                        TerminalTab(session: session, isSelected: session.id == workspace.selected?.id,
+                                    select: { workspace.select(session) },
+                                    close: { workspace.requestClose(session) },
+                                    detach: { workspace.close(session, ending: false) },
+                                    clear: { session.clearScrollback() })
+                            .frame(width: width)
                     }
-                    .frame(height: proxy.size.height)
                 }
-                .onScrollGeometryChange(for: EdgeOverflow.self) { geometry in
-                    EdgeOverflow(leading: geometry.contentOffset.x > 1,
-                                 trailing: geometry.contentOffset.x + geometry.containerSize.width < geometry.contentSize.width - 1)
-                } action: { _, new in
-                    overflow = new
-                }
-                .mask(fade)
-                .onAppear {
-                    if let id = workspace.selected?.id { reader.scrollTo(id, anchor: .center) }
-                }
-                .onChange(of: workspace.selected?.id) { _, id in
-                    guard let id else { return }
-                    withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) { reader.scrollTo(id, anchor: .center) }
+                .frame(height: proxy.size.height)
+            }
+            .scrollPosition($position)
+            .onScrollGeometryChange(for: TabStripScroll.Overflow.self) { geometry in
+                TabStripScroll.overflow(contentWidth: geometry.contentSize.width, visibleWidth: geometry.containerSize.width,
+                                        offset: geometry.contentOffset.x)
+            } action: { _, new in
+                overflow = new
+            }
+            .mask(fade)
+            .onAppear {
+                position.scrollTo(x: target(tabWidth: width, visibleWidth: proxy.size.width))
+            }
+            .onChange(of: workspace.selected?.id) {
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) {
+                    position.scrollTo(x: target(tabWidth: width, visibleWidth: proxy.size.width))
                 }
             }
         }
+    }
+
+    private func target(tabWidth: CGFloat, visibleWidth: CGFloat) -> CGFloat {
+        let index = workspace.sessions.firstIndex { $0.id == workspace.selected?.id } ?? 0
+        return TabStripScroll.targetOffset(selected: index, count: workspace.sessions.count, tabWidth: tabWidth,
+                                           spacing: TabStripScroll.spacing, visibleWidth: visibleWidth)
     }
 
     private var fade: some View {
@@ -109,6 +110,33 @@ private struct TerminalTabRow: View {
             LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
                 .frame(width: overflow.trailing ? Self.fadeWidth : 0)
         }
+    }
+}
+
+/// Scroll geometry of the tab row: which edges have hidden tabs, and the offset that centers
+/// the selected tab within the scroll range.
+enum TabStripScroll {
+    /// Space between tabs.
+    static let spacing: CGFloat = DS.Space.xs
+
+    struct Overflow: Equatable {
+        var leading = false
+        var trailing = false
+    }
+
+    /// Hidden tabs before and after the visible part of a row `contentWidth` wide, shown
+    /// `visibleWidth` wide from `offset`.
+    static func overflow(contentWidth: CGFloat, visibleWidth: CGFloat, offset: CGFloat) -> Overflow {
+        Overflow(leading: offset > 1, trailing: offset + visibleWidth < contentWidth - 1)
+    }
+
+    /// The offset that puts tab `selected` of `count` in the middle of the visible width,
+    /// clamped to the scroll range.
+    static func targetOffset(selected: Int, count: Int, tabWidth: CGFloat, spacing: CGFloat, visibleWidth: CGFloat) -> CGFloat {
+        guard count > 0 else { return 0 }
+        let content = CGFloat(count) * tabWidth + CGFloat(count - 1) * spacing
+        let center = CGFloat(selected) * (tabWidth + spacing) + tabWidth / 2
+        return min(max(0, center - visibleWidth / 2), max(0, content - visibleWidth))
     }
 }
 
@@ -148,9 +176,12 @@ private struct TerminalTab: View {
                             }
                         }
                         .fixedSize()
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         primaryText
                             .truncationMode(.tail)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -617,3 +648,4 @@ private struct FailureCard: View {
         .shadow(color: .black.opacity(0.1), radius: 12, y: 4)
     }
 }
+

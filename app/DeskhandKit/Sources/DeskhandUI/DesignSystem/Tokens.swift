@@ -102,7 +102,8 @@ public enum DS {
             return palette ?? makePalette(dark: dark)
         }
 
-        /// Contrast each ANSI color keeps against the background: at least 4.5:1 (WCAG AA).
+        /// Contrast each ANSI color keeps against the background: at least 4.5:1 (WCAG AA), except
+        /// black in the dark palette and white in the light one, which stay true black and white.
         static let normalContrast: (light: Double, dark: Double) = (5.6, 4.8)
         static let brightContrast: (light: Double, dark: Double) = (4.6, 7.0)
 
@@ -129,12 +130,11 @@ public enum DS {
             let normal: [NSColor]
             let bright: [NSColor]
             if dark {
-                normal = [readable(gray(0.42), normalContrast.dark)] + hues.map { readable($0, normalContrast.dark) }
-                    + [gray(0.8)]
+                normal = [gray(0)] + hues.map { readable($0, normalContrast.dark) } + [gray(0.8)]
                 bright = [readable(gray(0.5), 5.6)] + hues.map { readable(srgb($0).blended(withFraction: 0.3, of: .white) ?? $0, brightContrast.dark) }
                     + [gray(1)]
             } else {
-                normal = [gray(0)] + hues.map { readable($0, normalContrast.light) } + [readable(gray(0.6), brightContrast.light)]
+                normal = [gray(0)] + hues.map { readable($0, normalContrast.light) } + [gray(1)]
                 bright = [readable(gray(0.6), 5.6)] + hues.map { readable($0, brightContrast.light) } + [foreground]
             }
             return Palette(
