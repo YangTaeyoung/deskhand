@@ -3,7 +3,9 @@
 #
 # Cross-builds the test binary of a Go package for windows/amd64 and runs it
 # on the SSH host DESKHAND_WINTEST_HOST (default "windows") in a folder of
-# its own, C:\deskhand-test\<name>-<run id>\, with the package's testdata/:
+# its own, <base>\<name>-<run id>\, with the package's testdata/; <base> is
+# DESKHAND_WINTEST_DIR (default C:\Users\apxkf\dev\deskhand-test, an
+# absolute Windows path without spaces or quotes):
 #   - default: in the signed-in user's session, through an interactive
 #     scheduled task DeskhandTest-<run id> (highest run level), with
 #     DESKHAND_WINTEST=1;
@@ -21,6 +23,7 @@ cd "$(dirname "$0")/.."
 
 host="${DESKHAND_WINTEST_HOST:-windows}"
 wait_secs="${DESKHAND_WINTEST_WAIT:-480}"
+base_dir="${DESKHAND_WINTEST_DIR:-C:\Users\apxkf\dev\deskhand-test}"
 ssh_opts=(-o BatchMode=yes -o ClearAllForwardings=yes -o ServerAliveInterval=15)
 if ssh -G -o WarnWeakCrypto=no localhost >/dev/null 2>&1; then
   ssh_opts+=(-o WarnWeakCrypto=no)
@@ -41,6 +44,10 @@ if ! [[ "$wait_secs" =~ ^[0-9]+$ ]] || [ "$wait_secs" -lt 1 ]; then
   echo "wintest: DESKHAND_WINTEST_WAIT는 1 이상의 초 단위 정수여야 합니다." >&2
   exit 2
 fi
+if ! [[ "$base_dir" =~ ^[A-Za-z]:(\\[A-Za-z0-9._-]+)+$ ]]; then
+  echo "wintest: DESKHAND_WINTEST_DIR는 공백·따옴표 없는 Windows 절대 경로(예: C:\Users\me\dev\deskhand-test)여야 합니다." >&2
+  exit 2
+fi
 if [ "$mode" = ssh ] && [ "$wait_secs" -gt 510 ]; then
   echo "wintest: --ssh에서는 DESKHAND_WINTEST_WAIT를 510초 이하로 지정하세요." >&2
   exit 2
@@ -52,8 +59,8 @@ name="$(basename "$pkg_dir")"
 name="${name//[^A-Za-z0-9_-]/_}"
 run_id="$$-${RANDOM}${RANDOM}"
 task="DeskhandTest-${run_id}"
-remote_dir="C:\\deskhand-test\\${name}-${run_id}"
-remote_scp="C:/deskhand-test/${name}-${run_id}"
+remote_dir="${base_dir}\\${name}-${run_id}"
+remote_scp="${remote_dir//\\//}"
 exe="${name}.test.exe"
 launcher="wintestlaunch.exe"
 
@@ -75,7 +82,7 @@ cleanup() {
     if [ "$finished" != 1 ]; then
       remote_ssh "powershell -NoProfile -NonInteractive -Command \"${kill_run}\"" || true
     fi
-    left="$(remote_ssh "if exist \"${remote_dir}\" rmdir /s /q \"${remote_dir}\" 2>nul & rmdir C:\\deskhand-test >nul 2>&1 & if exist \"${remote_dir}\" echo left" | tr -d '\r\n ')" || left=unknown
+    left="$(remote_ssh "if exist \"${remote_dir}\" rmdir /s /q \"${remote_dir}\" 2>nul & rmdir \"${base_dir}\" >nul 2>&1 & if exist \"${remote_dir}\" echo left" | tr -d '\r\n ')" || left=unknown
     if [ "$left" != "" ]; then
       echo "wintest: 경고: ${host}의 ${remote_dir}가 남아 있을 수 있습니다. 실행 중인 테스트가 없는지 확인한 뒤 지우세요." >&2
     fi

@@ -3,10 +3,13 @@ package capture
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"runtime"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/windows"
 
 	"github.com/YangTaeyoung/deskhand/internal/agent/session"
 )
@@ -148,6 +151,85 @@ func TestCaptureInSessionZeroIsSession0(t *testing.T) {
 		var u *Unavailable
 		if !errors.As(err, &u) || u.Reason != ReasonSession0 {
 			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
+func TestProbeFailureHasAFixedReason(t *testing.T) {
+	console := session.Info{SessionID: 1, ConnectState: session.ConnectActive, Protocol: session.ProtocolConsole, InputDesktop: session.DesktopDefault}
+	rdp, locked := console, console
+	rdp.Protocol, locked.Locked = session.ProtocolRDP, true
+	denied := fmt.Errorf("BitBlt of the pixel (0,0): %w", windows.ERROR_ACCESS_DENIED)
+	other := fmt.Errorf("BitBlt of the pixel (0,0): %w", windows.ERROR_INVALID_HANDLE)
+	noOutput := &Unavailable{Reason: ReasonNoOutput, Detail: "no display is attached to the desktop"}
+	for _, c := range []struct {
+		err  error
+		s    session.Info
+		want string
+	}{
+		{denied, rdp, ReasonRDPOutputSuppressed},
+		{other, rdp, ReasonRDPOutputSuppressed},
+		{errors.New("GetDC of the screen failed"), rdp, ReasonRDPOutputSuppressed},
+		{denied, console, ReasonAccessLost},
+		{other, console, ReasonAccessLost},
+		{errors.New("GetDC of the screen failed"), console, ReasonAccessLost},
+		{other, locked, ReasonSessionLocked},
+		{noOutput, console, ReasonNoOutput},
+	} {
+		u := probeFailure(c.err, c.s)
+		if u == nil || u.Reason != c.want || u.Detail == "" {
+			t.Errorf("%v in %s: %+v, want %s", c.err, c.s.Protocol, u, c.want)
+		}
+	}
+}
+
+func TestStillsReuseTheirStagingTexture(t *testing.T) {
+	d := displaysOrSkip(t)[0]
+	stage := func() uintptr {
+		var tex uintptr
+		if err := onStillWorker(func(c *devCache) error {
+			if k := c.devs[d]; k != nil {
+				tex = k.stage
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return tex
+	}
+	if stillOrSkip(t, 0, FormatPNG, 320, 0).Method != MethodDD {
+		t.Skip("the still was not taken with Desktop Duplication")
+	}
+	first := stage()
+	stillOrSkip(t, 0, FormatPNG, 320, 0)
+	if first == 0 || stage() != first {
+		t.Fatalf("staging texture %#x, then %#x", first, stage())
+	}
+}
+
+func TestGDIStillSourceHasOneSection(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	d := displaysOrSkip(t)[0]
+	g, err := openGDI(nil, d, 1)
+	var u *Unavailable
+	if errors.As(classifyErr(err), &u) {
+		t.Skipf("the session cannot be captured now: %v", u)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	if g.bufs[0].bmp == 0 || g.bufs[1].bmp != 0 {
+		t.Fatalf("sections %#x %#x", g.bufs[0].bmp, g.bufs[1].bmp)
+	}
+	st, err := g.still(DefaultStillMaxWidth)
+	if err != nil || st.method != MethodGDI || st.img.Bounds().Dx() != DefaultStillMaxWidth {
+		t.Fatalf("still %v: %+v", err, st.img.Bounds())
+	}
+	for range 2 {
+		if f, err := g.Next(context.Background(), 50*time.Millisecond); err != nil || !f.Dirty || len(f.CPU) != d.Width*d.Height*4 {
+			t.Fatalf("Next of a one-section source: %v, dirty %v, %d bytes", err, f.Dirty, len(f.CPU))
 		}
 	}
 }

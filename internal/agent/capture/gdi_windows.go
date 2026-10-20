@@ -5,8 +5,8 @@ package capture
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
+	"runtime"
 	"time"
 	"unsafe"
 
@@ -75,7 +75,8 @@ type dib struct {
 
 // gdiSource captures one display with BitBlt from the screen into two DIB
 // sections in turn: the next capture goes into the section the frame
-// returned last does not use and is compared with it.
+// returned last does not use and is compared with it. A source with one
+// section captures into it each time and returns every capture.
 type gdiSource struct {
 	dev *d3d.Device
 	// ownsDev reports that Close closes dev.
@@ -86,6 +87,8 @@ type gdiSource struct {
 	// oldBmp is the bitmap of mem before the first DIB was selected.
 	oldBmp uintptr
 	bufs   [2]dib
+	// n is the number of DIB sections, 1 or 2.
+	n int
 	// cur is the buffer of the frame returned last, -1 before the first.
 	cur int
 	// pending reports that bufs[0] holds the capture of openGDI, taken at
@@ -99,10 +102,11 @@ type gdiSource struct {
 	reg  *entry
 }
 
-// openGDI makes a GDI source of display d and captures it once. dev, which
-// may be nil, becomes the source's device; the source does not own it.
-func openGDI(dev *d3d.Device, d display.Info) (*gdiSource, error) {
-	s := &gdiSource{dev: dev, disp: d, cur: -1}
+// openGDI makes a GDI source of display d with n (1 or 2) DIB sections
+// and captures it once. dev, which may be nil, becomes the source's
+// device; the source does not own it.
+func openGDI(dev *d3d.Device, d display.Info, n int) (*gdiSource, error) {
+	s := &gdiSource{dev: dev, disp: d, cur: -1, n: min(max(n, 1), len(gdiSource{}.bufs))}
 	screen, _, err := procGetDC.Call(0)
 	if screen == 0 {
 		return nil, fmt.Errorf("GetDC of the screen: %w", err)
@@ -126,11 +130,11 @@ func openGDI(dev *d3d.Device, d display.Info) (*gdiSource, error) {
 	return s, nil
 }
 
-// alloc makes the two DIB sections of the display's size and records the
+// alloc makes the DIB sections of the display's size and records the
 // virtual screen.
 func (s *gdiSource) alloc() error {
 	w, h := s.disp.Width, s.disp.Height
-	for i := range s.bufs {
+	for i := range s.n {
 		bi := bitmapInfo{Size: 40, Width: int32(w), Height: -int32(h), Planes: 1, BitCount: 32}
 		var bits unsafe.Pointer
 		bmp, _, err := procCreateDIBSection.Call(s.mem, uintptr(unsafe.Pointer(&bi)), 0, uintptr(unsafe.Pointer(&bits)), 0, 0)
@@ -218,6 +222,7 @@ func (s *gdiSource) Next(ctx context.Context, timeout time.Duration) (Frame, err
 		}
 		if virtualScreen() != s.virt {
 			if err := s.resize(); err != nil {
+				s.reg.set(asUnavailable(err))
 				_ = sleepUntil(ctx, deadline)
 				return Frame{}, err
 			}
@@ -231,19 +236,20 @@ func (s *gdiSource) Next(ctx context.Context, timeout time.Duration) (Frame, err
 		wake := now.Add(gdiPoll)
 		if !s.out.active() || !now.Before(s.out.nextTry) {
 			into := 0
-			if s.cur == 0 {
+			if s.cur == 0 && s.n > 1 {
 				into = 1
 			}
 			if err := s.grab(into); err != nil {
 				hr := hresultOf(err)
-				s.out.begin(now)
-				s.out.failed(now, hr, classifyNow(hr))
+				u := classifyNow(hr)
+				s.out.begin(now, hr, u)
+				s.out.failed(now, hr, u)
 			} else {
 				if s.out.active() {
 					s.out = outage{}
 					s.reg.set(nil)
 				}
-				if s.cur < 0 || !bytes.Equal(s.bufs[into].pix, s.bufs[s.cur].pix) {
+				if s.cur < 0 || s.n == 1 || !bytes.Equal(s.bufs[into].pix, s.bufs[s.cur].pix) {
 					s.cur = into
 					return s.frame(into, monoclock.NowUS()), nil
 				}
@@ -252,9 +258,8 @@ func (s *gdiSource) Next(ctx context.Context, timeout time.Duration) (Frame, err
 		var err error
 		if s.out.active() {
 			err = s.out.err(now, "BitBlt of "+s.disp.Name)
-			var u *Unavailable
-			if errors.As(err, &u) {
-				s.reg.set(u)
+			if err != nil {
+				s.reg.set(asUnavailable(err))
 			}
 			wake = s.out.nextTry
 		}
@@ -305,8 +310,11 @@ func (s *gdiSource) pointer() PointerInfo {
 }
 
 // copyPixel copies the screen pixel at (x, y) of the virtual desktop into
-// a bitmap of its own and returns the error when it cannot.
+// a bitmap of its own and returns the error when it cannot. It holds the
+// calling goroutine's thread from GetDC to ReleaseDC.
 func copyPixel(x, y int) error {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	screen, _, err := procGetDC.Call(0)
 	if screen == 0 {
 		return fmt.Errorf("GetDC of the screen: %w", err)

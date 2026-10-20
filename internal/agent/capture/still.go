@@ -17,15 +17,12 @@ var pngEncoder = png.Encoder{CompressionLevel: png.BestSpeed}
 // (1–100) applies to JPEG.
 func encodeStill(img *image.RGBA, format string, quality int) ([]byte, error) {
 	var buf bytes.Buffer
-	b := img.Bounds()
 	switch format {
 	case FormatPNG:
-		buf.Grow(b.Dx() * b.Dy())
 		if err := pngEncoder.Encode(&buf, img); err != nil {
 			return nil, fmt.Errorf("encoding the PNG: %w", err)
 		}
 	case FormatJPEG:
-		buf.Grow(b.Dx() * b.Dy() / 4)
 		if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality}); err != nil {
 			return nil, fmt.Errorf("encoding the JPEG: %w", err)
 		}

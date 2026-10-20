@@ -44,7 +44,7 @@ func Open(displayIndex int) (Source, error) {
 	if err != nil {
 		return nil, classifyErr(err)
 	}
-	src, err := openOn(dev, d, true)
+	src, err := openOn(dev, d, true, nil)
 	if err != nil {
 		dev.Close()
 	}
@@ -52,9 +52,12 @@ func Open(displayIndex int) (Source, error) {
 }
 
 // openOn opens a source of display d on dev, which the source closes with
-// itself when owned is set; on an error dev stays open.
-func openOn(dev *d3d.Device, d display.Info, owned bool) (Source, error) {
-	dd := &ddSource{dev: dev, disp: d, ownsDev: owned}
+// itself when owned is set; on an error dev stays open. With stage the
+// source serves one still: Desktop Duplication copies the desktop image
+// into the staging texture stage gives for its size, and GDI keeps one
+// DIB section.
+func openOn(dev *d3d.Device, d display.Info, owned bool, stage func(w, h int) (uintptr, error)) (Source, error) {
+	dd := &ddSource{dev: dev, disp: d, ownsDev: owned, stage: stage}
 	hr, err := dd.duplicate()
 	switch {
 	case err == nil && hr.Succeeded():
@@ -68,7 +71,11 @@ func openOn(dev *d3d.Device, d display.Info, owned bool) (Source, error) {
 		}
 		return nil, fmt.Errorf("IDXGIOutput1::DuplicateOutput of %s: %w", d.Name, hr)
 	}
-	g, gerr := openGDI(dev, d)
+	buffers := 2
+	if stage != nil {
+		buffers = 1
+	}
+	g, gerr := openGDI(dev, d, buffers)
 	if gerr == nil {
 		g.ownsDev = owned
 		g.reg = register()
@@ -219,10 +226,9 @@ var probeCache struct {
 }
 
 // Probe reports whether the screen can be captured now: nil when one
-// pixel of the primary display can be copied, else an *Unavailable when
-// the session or the failure names a reason, or the failure. While a
-// source is open it answers that source's state. It keeps its answer for
-// probeTTL.
+// pixel of the primary display can be copied, else an *Unavailable with
+// one of the fixed reasons (probeFailure). While a source is open it
+// answers that source's state. It keeps its answer for probeTTL.
 func Probe() error {
 	probeCache.mu.Lock()
 	defer probeCache.mu.Unlock()
@@ -242,7 +248,11 @@ func forgetProbe() {
 }
 
 func probe() error {
-	if info, err := session.Current(); err == nil && (info.SessionID == 0 || info.InputDesktop == session.DesktopWinlogon) {
+	info, ierr := session.Current()
+	if ierr != nil {
+		info = session.Info{SessionID: 1}
+	}
+	if info.SessionID == 0 || info.InputDesktop == session.DesktopWinlogon {
 		if u := Classify(com.S_OK, info); u != nil {
 			return u
 		}
@@ -254,13 +264,36 @@ func probe() error {
 		return nil
 	}
 	d, err := findDisplay(0)
-	if err != nil {
-		return err
+	if err == nil {
+		err = copyPixel(d.X, d.Y)
 	}
-	if err := copyPixel(d.X, d.Y); err != nil {
-		return classifyErr(err)
+	if err != nil {
+		return probeFailure(err, info)
 	}
 	return nil
+}
+
+// probeFailure names the failure err of a probe in session s with a fixed
+// reason: the *Unavailable in err, else the reason Classify finds, else
+// rdp_output_suppressed in a Remote Desktop session and access_lost on the
+// console. The detail is err.
+func probeFailure(err error, s session.Info) *Unavailable {
+	var u *Unavailable
+	if errors.As(err, &u) {
+		return u
+	}
+	var hr com.HRESULT
+	if !errors.As(err, &hr) {
+		hr = hresultOf(err)
+	}
+	if u := Classify(hr, s); u != nil {
+		u.Detail = err.Error()
+		return u
+	}
+	if s.Protocol == session.ProtocolRDP {
+		return &Unavailable{Reason: ReasonRDPOutputSuppressed, Detail: err.Error()}
+	}
+	return &Unavailable{Reason: ReasonAccessLost, Detail: err.Error()}
 }
 
 var (

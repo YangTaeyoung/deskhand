@@ -72,9 +72,11 @@ type ddSource struct {
 	disp    display.Info
 	// dup is the IDXGIOutputDuplication, 0 during an outage.
 	dup uintptr
-	// tex is the source's texture of w×h pixels; haveImage reports that it
-	// holds an image of the desktop.
+	// tex is the texture of w×h pixels the desktop image is copied to;
+	// haveImage reports that it holds one. It is the source's own unless
+	// stage, which then gives it, is set.
 	tex       uintptr
+	stage     func(w, h int) (uintptr, error)
 	w, h      int
 	haveImage bool
 	// fresh reports that no frame was acquired since the duplication was
@@ -104,12 +106,20 @@ func (s *ddSource) duplicate() (com.HRESULT, error) {
 	}
 	w, h := int(desc.Width), int(desc.Height)
 	if s.tex == 0 || w != s.w || h != s.h {
-		tex, err := s.dev.NewTexture(w, h, d3d.FormatBGRA, d3d.UsageDefault, d3d.BindRenderTarget|d3d.BindShaderResource, 0)
+		var tex uintptr
+		var err error
+		if s.stage != nil {
+			tex, err = s.stage(w, h)
+		} else {
+			tex, err = s.dev.NewTexture(w, h, d3d.FormatBGRA, d3d.UsageDefault, d3d.BindRenderTarget|d3d.BindShaderResource, 0)
+		}
 		if err != nil {
 			com.Release(dup)
 			return hr, err
 		}
-		com.Release(s.tex)
+		if s.stage == nil {
+			com.Release(s.tex)
+		}
 		s.tex, s.w, s.h, s.haveImage = tex, w, h, false
 	}
 	s.dup, s.fresh = dup, true
@@ -122,7 +132,9 @@ func (s *ddSource) Size() (int, int) { return s.w, s.h }
 
 func (s *ddSource) Close() {
 	com.Release(s.dup)
-	com.Release(s.tex)
+	if s.stage == nil {
+		com.Release(s.tex)
+	}
 	s.dup, s.tex = 0, 0
 	if s.ownsDev {
 		s.dev.Close()
@@ -153,7 +165,7 @@ func (s *ddSource) Next(ctx context.Context, timeout time.Duration) (Frame, erro
 		switch {
 		case hr == com.DXGI_ERROR_WAIT_TIMEOUT:
 		case accessDenied(hr):
-			s.lose()
+			s.lose(hr)
 			continue
 		case hr.Failed():
 			return Frame{}, fmt.Errorf("IDXGIOutputDuplication::AcquireNextFrame of %s: %w", s.disp.Name, hr)
@@ -161,7 +173,7 @@ func (s *ddSource) Next(ctx context.Context, timeout time.Duration) (Frame, erro
 			f, ok, err := s.take(&fi, res)
 			switch {
 			case errors.Is(err, errModeChanged):
-				s.lose()
+				s.lose(com.DXGI_ERROR_ACCESS_LOST)
 				continue
 			case err != nil:
 				return Frame{}, err
@@ -175,38 +187,42 @@ func (s *ddSource) Next(ctx context.Context, timeout time.Duration) (Frame, erro
 	}
 }
 
-// lose releases the duplication and starts an outage.
-func (s *ddSource) lose() {
+// lose releases the duplication and starts the outage, or goes on with
+// the one whose duplication was made again without an image, as
+// access_lost with hr as its detail.
+func (s *ddSource) lose(hr com.HRESULT) {
 	com.Release(s.dup)
 	s.dup = 0
-	s.out.begin(time.Now())
+	s.out.begin(time.Now(), hr, &Unavailable{Reason: ReasonAccessLost, Detail: hr.Error()})
 }
 
 // recover duplicates the output again whenever a retry is due until the
 // deadline. It returns ErrReset once the duplication is back, the error
 // of the outage at the deadline once it reports one, and ErrNoNewFrame
 // before; a display that cannot be duplicated any more, rotated for
-// example, is an error at the deadline.
+// example, is an error at the deadline. The outage goes on until take
+// copies an image, so a duplication lost again before one waits for the
+// next retry. The registry entry records each error reported.
 func (s *ddSource) recover(ctx context.Context, deadline time.Time) (Frame, error) {
 	for {
 		now := time.Now()
-		if !now.Before(s.out.nextTry) {
+		if s.out.due(now) {
 			hr, err := s.duplicate()
 			if err != nil {
+				err = fmt.Errorf("display %s cannot be duplicated again (%w); open the capture again", s.disp.Name, err)
+				s.reg.set(asUnavailable(err))
 				_ = sleepUntil(ctx, deadline)
-				return Frame{}, fmt.Errorf("display %s cannot be duplicated again (%w); open the capture again", s.disp.Name, err)
+				return Frame{}, err
 			}
 			if hr.Succeeded() {
-				s.out = outage{}
-				s.reg.set(nil)
+				s.out.retried(now)
 				return Frame{}, ErrReset
 			}
-			s.out.failed(now, hr, classifyNow(hr))
+			s.out.failed(now, hr, redupReason(hr))
 		}
 		err := s.out.err(now, "IDXGIOutput1::DuplicateOutput of "+s.disp.Name)
-		var u *Unavailable
-		if errors.As(err, &u) {
-			s.reg.set(u)
+		if err != nil {
+			s.reg.set(asUnavailable(err))
 		}
 		if !now.Before(deadline) {
 			if err != nil {
@@ -256,6 +272,10 @@ func (s *ddSource) take(fi *frameInfo, res uintptr) (Frame, bool, error) {
 		s.dev.CopyResource(s.tex, tex)
 		com.Release(tex)
 		s.fresh, s.haveImage = false, true
+		if s.out.active() {
+			s.out = outage{}
+			s.reg.set(nil)
+		}
 	}
 	if !s.haveImage || (!image && !moved && !ptr.ShapeChanged) {
 		return Frame{}, false, nil
@@ -280,4 +300,15 @@ func (s *ddSource) pointerShape(size uint32) *wire.CursorShape {
 		return nil
 	}
 	return pointerShape(si.Type, int(si.Width), int(si.Height), int(si.Pitch), int(si.HotX), int(si.HotY), s.shapeBuf[:need])
+}
+
+// redupReason is the reason of a failed duplication of the output again:
+// Classify's with the session now, and access_lost for
+// DXGI_ERROR_NOT_CURRENTLY_AVAILABLE unless the session names another.
+func redupReason(hr com.HRESULT) *Unavailable {
+	u := classifyNow(hr)
+	if hr == com.DXGI_ERROR_NOT_CURRENTLY_AVAILABLE && (u == nil || u.Reason == ReasonNoOutput) {
+		return &Unavailable{Reason: ReasonAccessLost, Detail: hr.Error()}
+	}
+	return u
 }

@@ -19,8 +19,8 @@ import (
 type Frame struct {
 	// Texture is the source's own BGRA ID3D11Texture2D holding the image
 	// on the Desktop Duplication path, 0 on the GDI path. The source keeps
-	// it; it stays valid until Close and holds the newest image after each
-	// Next.
+	// it; it stays valid until Close or until Next returns ErrReset, and
+	// holds the newest image after each Next.
 	Texture uintptr
 	// CPU is the image as Width×Height BGRA pixels, rows of Width*4 bytes
 	// with the alpha byte unset, on the GDI path, nil on the Desktop

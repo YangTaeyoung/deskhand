@@ -96,7 +96,7 @@ var stillJobs = sync.OnceValue(func() chan<- func(*devCache) {
 	jobs := make(chan func(*devCache))
 	go func() {
 		runtime.LockOSThread()
-		c := &devCache{devs: map[display.Info]*d3d.Device{}}
+		c := &devCache{devs: map[display.Info]*keptDevice{}}
 		idle := time.NewTimer(deviceIdle)
 		for {
 			select {
@@ -127,42 +127,72 @@ func onStillWorker(fn func(*devCache) error) error {
 	return <-done
 }
 
-// devCache holds the still worker's devices, one per display state.
+// devCache holds the still worker's devices, one per display state, each
+// with the staging texture its stills copy the desktop image into.
 type devCache struct {
-	devs map[display.Info]*d3d.Device
+	devs map[display.Info]*keptDevice
+}
+
+// keptDevice is a kept device with its staging texture of w×h pixels, 0
+// before the first still.
+type keptDevice struct {
+	dev   *d3d.Device
+	stage uintptr
+	w, h  int
+}
+
+// staging returns the staging texture of w×h pixels, making it when the
+// kept one has another size.
+func (k *keptDevice) staging(w, h int) (uintptr, error) {
+	if k.stage != 0 && k.w == w && k.h == h {
+		return k.stage, nil
+	}
+	tex, err := k.dev.NewTexture(w, h, d3d.FormatBGRA, d3d.UsageStaging, 0, d3d.CPUAccessRead)
+	if err != nil {
+		return 0, err
+	}
+	com.Release(k.stage)
+	k.stage, k.w, k.h = tex, w, h
+	return tex, nil
+}
+
+func (k *keptDevice) close() {
+	com.Release(k.stage)
+	k.stage = 0
+	k.dev.Close()
 }
 
 // device returns the kept device of d, or a new one, which it keeps; fresh
 // reports a new one. A kept device of an earlier state of the display is
 // closed.
-func (c *devCache) device(d display.Info) (dev *d3d.Device, fresh bool, err error) {
-	if dev := c.devs[d]; dev != nil {
-		return dev, false, nil
+func (c *devCache) device(d display.Info) (k *keptDevice, fresh bool, err error) {
+	if k := c.devs[d]; k != nil {
+		return k, false, nil
 	}
-	for k, dev := range c.devs {
-		if k.Name == d.Name {
-			dev.Close()
-			delete(c.devs, k)
+	for state := range c.devs {
+		if state.Name == d.Name {
+			c.drop(state)
 		}
 	}
-	dev, err = d3d.NewDeviceForOutput(d.Name)
+	dev, err := d3d.NewDeviceForOutput(d.Name)
 	if err != nil {
 		return nil, false, err
 	}
-	c.devs[d] = dev
-	return dev, true, nil
+	k = &keptDevice{dev: dev}
+	c.devs[d] = k
+	return k, true, nil
 }
 
 func (c *devCache) drop(d display.Info) {
-	if dev := c.devs[d]; dev != nil {
-		dev.Close()
+	if k := c.devs[d]; k != nil {
+		k.close()
 		delete(c.devs, d)
 	}
 }
 
 func (c *devCache) closeAll() {
-	for k := range c.devs {
-		c.drop(k)
+	for d := range c.devs {
+		c.drop(d)
 	}
 }
 
@@ -175,11 +205,11 @@ func (c *devCache) grab(index, maxWidth int) (still, error) {
 		return still{}, err
 	}
 	for retried := false; ; retried = true {
-		dev, fresh, err := c.device(d)
+		k, fresh, err := c.device(d)
 		if err != nil {
 			return still{}, classifyErr(err)
 		}
-		st, err := grabOn(dev, d, maxWidth)
+		st, err := grabOn(k, d, maxWidth)
 		var u *Unavailable
 		if err == nil || fresh || retried || errors.As(err, &u) {
 			return st, err
@@ -188,36 +218,35 @@ func (c *devCache) grab(index, maxWidth int) (still, error) {
 	}
 }
 
-// grabOn takes the first image of display d with a source on dev, and
-// with GDI when the duplication gives none in time.
-func grabOn(dev *d3d.Device, d display.Info, maxWidth int) (still, error) {
-	src, err := openOn(dev, d, false)
+// grabOn takes the first image of display d with a still source on the
+// kept device k, and with GDI when the duplication gives none in time.
+func grabOn(k *keptDevice, d display.Info, maxWidth int) (still, error) {
+	src, err := openOn(k.dev, d, false, k.staging)
 	if err != nil {
 		return still{}, err
 	}
+	defer src.Close()
 	switch s := src.(type) {
 	case *ddSource:
 		st, err := s.still(maxWidth)
-		s.Close()
 		if !errors.Is(err, ErrNoNewFrame) {
 			return st, err
 		}
-		g, err := openGDI(nil, d)
+		g, err := openGDI(nil, d, 1)
 		if err != nil {
 			return still{}, classifyErr(fmt.Errorf("%w (no duplicated image within %v either)", err, firstImageWait))
 		}
 		defer g.Close()
 		return g.still(maxWidth)
 	case *gdiSource:
-		defer s.Close()
 		return s.still(maxWidth)
 	}
-	src.Close()
 	return still{}, fmt.Errorf("source %T has no still image", src)
 }
 
-// still waits up to firstImageWait for the first image and reads it back
-// from the GPU, fitted to maxWidth. ErrNoNewFrame means no image came.
+// still waits up to firstImageWait for the first image and reads it from
+// the staging texture, fitted to maxWidth. ErrNoNewFrame means no image
+// came.
 func (s *ddSource) still(maxWidth int) (still, error) {
 	deadline := time.Now().Add(firstImageWait)
 	for {
@@ -238,20 +267,14 @@ func (s *ddSource) still(maxWidth int) (still, error) {
 	}
 }
 
-// readback copies the texture to a staging texture and scales the mapped
-// pixels.
+// readback maps the staging texture the desktop image was copied into and
+// scales its pixels.
 func (s *ddSource) readback(maxWidth int) (*image.RGBA, error) {
-	stage, err := s.dev.NewTexture(s.w, s.h, d3d.FormatBGRA, d3d.UsageStaging, 0, d3d.CPUAccessRead)
+	m, err := s.dev.Map(s.tex, d3d.MapRead)
 	if err != nil {
 		return nil, err
 	}
-	defer com.Release(stage)
-	s.dev.CopyResource(stage, s.tex)
-	m, err := s.dev.Map(stage, d3d.MapRead)
-	if err != nil {
-		return nil, err
-	}
-	defer s.dev.Unmap(stage)
+	defer s.dev.Unmap(s.tex)
 	pitch := int(m.RowPitch)
 	src := unsafe.Slice((*byte)(m.Data), pitch*(s.h-1)+s.w*4)
 	ow, oh := scaleSize(s.w, s.h, maxWidth)

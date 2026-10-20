@@ -2,6 +2,7 @@ package capture
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -19,8 +20,9 @@ const (
 	maxRetry   = time.Second
 )
 
-// outage is a failure to capture from its first occurrence on, with the
-// schedule of the retries.
+// outage is a failure to capture from its first occurrence until the
+// next image, with the schedule of the retries. A retry that makes the
+// capture again without an image yet keeps the outage going.
 type outage struct {
 	since, nextTry time.Time
 	backoff        time.Duration
@@ -30,20 +32,31 @@ type outage struct {
 
 func (o *outage) active() bool { return !o.since.IsZero() }
 
-// begin starts the outage at now with a retry due at once, unless it has
-// started already.
-func (o *outage) begin(now time.Time) {
+// begin records the failure hr with its reason u. An outage that has not
+// started starts at now with a retry due at once; a started one keeps its
+// start and schedule.
+func (o *outage) begin(now time.Time, hr com.HRESULT, u *Unavailable) {
 	if !o.active() {
 		*o = outage{since: now, nextTry: now}
 	}
+	o.hr, o.u = hr, u
+}
+
+// due reports whether a retry is due at now.
+func (o *outage) due(now time.Time) bool { return !now.Before(o.nextTry) }
+
+// retried schedules the next retry after a retry that made the capture
+// again, which ends the outage only once an image arrives.
+func (o *outage) retried(now time.Time) {
+	o.backoff = min(max(2*o.backoff, firstRetry), maxRetry)
+	o.nextTry = now.Add(o.backoff)
 }
 
 // failed records a failed retry with its result and reason and schedules
 // the next one.
 func (o *outage) failed(now time.Time, hr com.HRESULT, u *Unavailable) {
 	o.hr, o.u = hr, u
-	o.backoff = min(max(2*o.backoff, firstRetry), maxRetry)
-	o.nextTry = now.Add(o.backoff)
+	o.retried(now)
 }
 
 // err is the error the outage reports at now: its *Unavailable at once for
@@ -60,6 +73,22 @@ func (o *outage) err(now time.Time, what string) error {
 		return o.u
 	}
 	return fmt.Errorf("%s fails for %v (%v); open the capture again", what, now.Sub(o.since).Round(time.Millisecond), o.hr)
+}
+
+// asUnavailable is the *Unavailable a source records for the error it
+// reports: the one in err, no_output for ErrNoDisplay, access_lost with err
+// as its detail otherwise, and nil for nil.
+func asUnavailable(err error) *Unavailable {
+	var u *Unavailable
+	switch {
+	case err == nil:
+		return nil
+	case errors.As(err, &u):
+		return u
+	case errors.Is(err, ErrNoDisplay):
+		return &Unavailable{Reason: ReasonNoOutput, Detail: err.Error()}
+	}
+	return &Unavailable{Reason: ReasonAccessLost, Detail: err.Error()}
 }
 
 // sleepUntil waits until t or until ctx ends.

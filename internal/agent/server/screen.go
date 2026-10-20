@@ -27,7 +27,8 @@ func (s *Server) registerScreen() {
 // screenCap is the screen capability for the result of
 // Options.ScreenState: ready without an error, needs_user for an outage a
 // person at the PC clears, unsupported off Windows and unavailable
-// otherwise, with the outage's reason.
+// otherwise, with the outage's reason, access_lost for an error without
+// one.
 func screenCap(err error) capState {
 	var u *capture.Unavailable
 	switch {
@@ -40,7 +41,7 @@ func screenCap(err error) capState {
 	case errors.As(err, &u):
 		return capState{State: capUnavailable, Reason: u.Reason}
 	}
-	return capState{State: capUnavailable, Reason: err.Error()}
+	return capState{State: capUnavailable, Reason: capture.ReasonAccessLost}
 }
 
 // stillParams are the parameters of a screen.capture.

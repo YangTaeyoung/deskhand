@@ -143,7 +143,7 @@ func TestScreenCapFollowsTheScreenState(t *testing.T) {
 		{&capture.Unavailable{Reason: capture.ReasonAccessLost}, capState{State: capUnavailable, Reason: "access_lost"}},
 		{&capture.Unavailable{Reason: capture.ReasonNoOutput}, capState{State: capUnavailable, Reason: "no_output"}},
 		{capture.ErrUnsupported, capState{State: capUnsupported, Reason: capture.ErrUnsupported.Error()}},
-		{errors.New("BitBlt failed"), capState{State: capUnavailable, Reason: "BitBlt failed"}},
+		{errors.New("BitBlt failed"), capState{State: capUnavailable, Reason: "access_lost"}},
 	} {
 		if got := screenCap(c.state); got != c.want {
 			t.Errorf("%v: %+v, want %+v", c.state, got, c.want)
