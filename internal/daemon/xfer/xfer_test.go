@@ -272,14 +272,21 @@ func TestPausedTransferStaysPausedAcrossDaemonRestart(t *testing.T) {
 	if tr := <-res; tr.State != "paused" || tr.RateBPS != 0 {
 		t.Fatalf("paused transfer: %s", describe(tr))
 	}
+	paused := h.get(id)
+	partBefore := parts(t, h.agent.home)
 	h.closeDaemon()
 	h.open()
-	time.Sleep(time.Second)
-	if tr := h.get(id); tr.State != "paused" {
-		t.Fatalf("after the daemon restart: %s", describe(tr))
+	barrier := filepath.Join(h.mac, "barrier.txt")
+	writeFile(t, barrier, []byte("after the restart"))
+	checkDone(t, h.waitFinished(h.start("push", barrier, filepath.Join(h.agent.home, "barrier.txt"), "").TransferID), "written")
+	if tr := h.get(id); tr.State != "paused" || tr.Rev != paused.Rev || tr.BytesDone != paused.BytesDone {
+		t.Fatalf("after the daemon restart: %s, before it: %s", describe(tr), describe(paused))
 	}
 	if _, err := os.Stat(dst); err == nil {
 		t.Fatal("the paused transfer wrote its destination")
+	}
+	if got := parts(t, h.agent.home); len(got) != 1 || len(partBefore) != 1 || got[0] != partBefore[0] {
+		t.Fatalf("part files %v, before the restart %v", got, partBefore)
 	}
 	if tr, err := h.manager().Resume(id, human); err != nil || (tr.State != "queued" && tr.State != "running") {
 		t.Fatalf("resume: %s, %v", describe(tr), err)
