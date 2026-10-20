@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/YangTaeyoung/deskhand/internal/install"
 )
 
 // AgentDirs returns the folders searched for agent binaries, in order: the
@@ -24,15 +26,22 @@ func AgentDirs() []string {
 	return dirs
 }
 
-// FindAgentBinary returns the Windows agent for arch:
-// deskhand-agent-windows-<arch>.exe in the first of AgentDirs that has it.
-func FindAgentBinary(arch string) (string, error) {
+// FindAgentFiles returns the Windows agent builds for arch:
+// deskhand-agent-windows-<arch>.exe in the first of AgentDirs that has it
+// and deskhand-agentw-windows-<arch>.exe in the same folder.
+func FindAgentFiles(arch string) (install.AgentFiles, error) {
 	name := "deskhand-agent-windows-" + arch + ".exe"
+	wname := "deskhand-agentw-windows-" + arch + ".exe"
 	for _, dir := range AgentDirs() {
 		p := filepath.Join(dir, name)
-		if fi, err := os.Stat(p); err == nil && fi.Mode().IsRegular() {
-			return p, nil
+		if !isFile(p) {
+			continue
 		}
+		w := filepath.Join(dir, wname)
+		if !isFile(w) {
+			return install.AgentFiles{}, fmt.Errorf("%s 옆에 %s가 없습니다. 같은 릴리스의 %s를 %s에 두거나 deskhand를 다시 설치하세요", p, wname, wname, dir)
+		}
+		return install.AgentFiles{Console: p, Window: w}, nil
 	}
 	exeDir, bundle := "(실행 파일 위치를 알 수 없음)", "(실행 파일 위치를 알 수 없음)"
 	if exe, err := os.Executable(); err == nil {
@@ -43,5 +52,11 @@ func FindAgentBinary(arch string) (string, error) {
 	if env == "" {
 		env = "(설정 안 됨)"
 	}
-	return "", fmt.Errorf("%s을 찾지 못했습니다. 실행 파일 옆 %s, 앱 번들의 %s, DESKHAND_AGENT_DIR %s 중 한 곳에 두세요", name, exeDir, bundle, env)
+	return install.AgentFiles{}, fmt.Errorf("%s을 찾지 못했습니다. %s와 함께 실행 파일 옆 %s, 앱 번들의 %s, DESKHAND_AGENT_DIR %s 중 한 곳에 두세요", name, wname, exeDir, bundle, env)
+}
+
+// isFile reports whether p names a regular file.
+func isFile(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && fi.Mode().IsRegular()
 }

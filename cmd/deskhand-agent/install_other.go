@@ -26,6 +26,3 @@ func newUI(string, *log.Logger, func() *server.Server) server.UI { return nil }
 func install(config.Agent, string, io.Writer) error { return errWindowsOnly }
 
 func uninstall(string, bool, io.Writer) error { return errWindowsOnly }
-
-// attachConsole does nothing outside Windows.
-func attachConsole() {}

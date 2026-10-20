@@ -16,11 +16,18 @@ const (
 	firewallRule = "Deskhand Agent"
 	// installDir holds the installed agent.
 	installDir = `C:\Program Files\Deskhand`
-	// installedExe is the installed agent.
+	// installedExe is the installed console build of the agent, run by
+	// people, SSH and scripts.
 	installedExe = installDir + `\deskhand-agent.exe`
-	// agentImage is the image name of agent processes.
-	agentImage = "deskhand-agent.exe"
+	// windowExeName is the file name of the windowsgui build of the agent,
+	// the program of the scheduled task.
+	windowExeName = "deskhand-agentw.exe"
+	// installedWindowExe is the installed windowsgui build.
+	installedWindowExe = installDir + `\` + windowExeName
 )
+
+// agentImages are the image names of agent processes.
+var agentImages = []string{"deskhand-agent.exe", windowExeName}
 
 // xmlText escapes s for XML element content.
 func xmlText(s string) string {
@@ -95,7 +102,7 @@ func taskConfigPath(path, defaultPath string) (string, error) {
 }
 
 // taskXML returns the Task Scheduler definition of the agent's task: it
-// starts the quoted installedExe with taskArguments(configPath) at the logon
+// starts the quoted installedWindowExe with taskArguments(configPath) at the logon
 // of user (DOMAIN\name), runs as the account with the SID sid only while it
 // is logged on, at the highest run level, without a time limit, and starts
 // again a minute after a failure.
@@ -143,7 +150,7 @@ func taskXML(user, sid, configPath string) string {
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>` + xmlText(quoteArg(installedExe)) + `</Command>
+      <Command>` + xmlText(quoteArg(installedWindowExe)) + `</Command>
       <Arguments>` + xmlText(taskArguments(configPath)) + `</Arguments>
     </Exec>
   </Actions>
@@ -197,8 +204,8 @@ func taskRunArgs() []string    { return []string{"/Run", "/TN", taskName} }
 func taskEndArgs() []string    { return []string{"/End", "/TN", taskName} }
 func taskDeleteArgs() []string { return []string{"/Delete", "/TN", taskName, "/F"} }
 
-// killOthersArgs are the taskkill arguments that end every agent process but
-// the one with pid self.
-func killOthersArgs(self int) []string {
-	return []string{"/F", "/FI", "IMAGENAME eq " + agentImage, "/FI", fmt.Sprintf("PID ne %d", self)}
+// killOthersArgs are the taskkill arguments that end every process of image
+// but the one with pid self.
+func killOthersArgs(image string, self int) []string {
+	return []string{"/F", "/FI", "IMAGENAME eq " + image, "/FI", fmt.Sprintf("PID ne %d", self)}
 }

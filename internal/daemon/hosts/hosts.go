@@ -40,9 +40,9 @@ type Options struct {
 	Identity transport.Identity
 	// SSHExec runs ssh and scp; nil runs the real commands.
 	SSHExec install.Runner
-	// AgentBinary returns the agent binary for an architecture; nil means
-	// FindAgentBinary.
-	AgentBinary func(arch string) (string, error)
+	// AgentFiles returns the agent builds for an architecture; nil means
+	// FindAgentFiles.
+	AgentFiles func(arch string) (install.AgentFiles, error)
 	// Version is the daemon version that host.doctor compares the agent's with.
 	Version string
 	// ConnectWait bounds the wait for a connection after add, repair and
@@ -64,8 +64,8 @@ type Registry struct {
 
 // New returns a Registry.
 func New(opt Options) *Registry {
-	if opt.AgentBinary == nil {
-		opt.AgentBinary = FindAgentBinary
+	if opt.AgentFiles == nil {
+		opt.AgentFiles = FindAgentFiles
 	}
 	if opt.ConnectWait <= 0 {
 		opt.ConnectWait = connectWait
@@ -323,7 +323,7 @@ func (r *Registry) pair(ctx context.Context, hostID, name, alias, summary string
 		return install.PairResult{}, model.Job{}, err
 	}
 	p := &progress{bus: r.opt.Bus, hostID: hostID, jobID: job.JobID, name: name}
-	res, err := install.Pair(ctx, r.ssh(alias), name, r.opt.Identity, r.opt.AgentBinary, p.step, install.PairOptions{Force: force})
+	res, err := install.Pair(ctx, r.ssh(alias), name, r.opt.Identity, r.opt.AgentFiles, p.step, install.PairOptions{Force: force})
 	if err != nil {
 		e := pairError(err, p.current != "", name, alias)
 		p.fail(e)

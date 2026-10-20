@@ -16,7 +16,7 @@ Mac 컨트롤러에서 Windows 에이전트를 원격으로 제어하고 AI 작�
 scripts/build.sh
 ```
 
-`build/` 아래에 `deskhand`(darwin/arm64), `deskhand-agent-windows-{amd64,arm64}.exe`, `deskhand-fixture-windows-amd64.exe`를 만든다. 에이전트는 `CGO_ENABLED=0`으로 Mac에서 교차 빌드한다.
+`build/` 아래에 `deskhand`(darwin/arm64), `deskhand-agent-windows-{amd64,arm64}.exe`(콘솔 빌드), `deskhand-agentw-windows-{amd64,arm64}.exe`(windowsgui 빌드), `deskhand-fixture-windows-amd64.exe`를 만든다. 에이전트는 `CGO_ENABLED=0`으로 Mac에서 교차 빌드한다.
 
 ## 테스트
 

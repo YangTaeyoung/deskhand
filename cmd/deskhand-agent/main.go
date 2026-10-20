@@ -1,5 +1,7 @@
 // deskhand-agent runs on the Windows PC and serves docs/protocol.md over QUIC
-// to the paired Mac.
+// to the paired Mac. The source builds deskhand-agent.exe (console
+// subsystem) for people, SSH and scripts, and deskhand-agentw.exe
+// (windowsgui) that the scheduled task starts with run.
 //
 //	deskhand-agent init --name N --controller-fp FP [--listen :47600] [--config PATH] [--force]
 //	deskhand-agent install [--config PATH]
@@ -44,10 +46,10 @@ const usage = `사용법:
   deskhand-agent uninstall [--purge]
   deskhand-agent run [--config 경로]
   deskhand-agent version
+예약 작업은 같은 폴더의 deskhand-agentw.exe run을 실행합니다.
 `
 
 func main() {
-	attachConsole()
 	os.Exit(runMain(os.Args[1:], os.Stdout, os.Stderr))
 }
 

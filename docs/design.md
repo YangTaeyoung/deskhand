@@ -92,7 +92,7 @@ deskhand/
 
 ## 4. 에이전트 (Windows)
 
-- 실행: `C:\Program Files\Deskhand\deskhand-agent.exe`, 예약 작업 `Deskhand Agent`(ONLOGON, 최고 권한, 대화형). 설정 `C:\ProgramData\Deskhand\agent.json`(ACL: Administrators·SYSTEM만 접근 — 에이전트는 최고 권한으로 실행된다), 로그 `C:\ProgramData\Deskhand\logs\`, job 저널 `C:\ProgramData\Deskhand\jobs\`.
+- 실행: `C:\Program Files\Deskhand\deskhand-agent.exe`(콘솔 빌드: 사람·SSH·설치 스크립트용)와 `deskhand-agentw.exe`(같은 소스의 windowsgui 빌드, 콘솔 창 없음), 예약 작업 `Deskhand Agent`(ONLOGON, 최고 권한, 대화형)는 `deskhand-agentw.exe run`을 실행한다. 설정 `C:\ProgramData\Deskhand\agent.json`(ACL: Administrators·SYSTEM만 접근 — 에이전트는 최고 권한으로 실행된다), 로그 `C:\ProgramData\Deskhand\logs\`, job 저널 `C:\ProgramData\Deskhand\jobs\`.
 - 듣기: UDP 47600(기본), 방화벽 규칙 `Deskhand Agent` remoteip=LocalSubnet.
 - 에이전트가 시작하는 프로세스는 사용자의 환경·PATH·AutoRun을 건드리지 않는다(Alcove 교훈). 사용자 세션의 일반 권한 프로세스로 실행할지, 상속 권한으로 실행할지는 요청에 명시하며 기본은 **비승격(사용자 표준 토큰)**이다.
 - 하위 시스템

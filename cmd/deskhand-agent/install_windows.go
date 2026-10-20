@@ -96,50 +96,68 @@ func commandError(what string, err error, out []byte, next string) error {
 	return fmt.Errorf("%s (%v: %s); %s", what, err, strings.TrimSpace(string(out)), next)
 }
 
-// stopAgents ends the scheduled task and every other agent process.
+// stopAgents ends the scheduled task and every other agent process of both
+// builds.
 func stopAgents() {
 	_, _ = tool("schtasks.exe", taskEndArgs()...)
-	_, _ = tool("taskkill.exe", killOthersArgs(os.Getpid())...)
+	for _, image := range agentImages {
+		_, _ = tool("taskkill.exe", killOthersArgs(image, os.Getpid())...)
+	}
 }
 
-// copySelf copies the running program to installedExe unless it runs from
-// there, retrying while a stopping agent still holds the file.
-func copySelf() error {
+// copyAgents copies the running program to installedExe and the
+// deskhand-agentw.exe next to it to installedWindowExe, each unless it is
+// already there.
+func copyAgents() error {
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("the path of this deskhand-agent.exe could not be read (%v); run it from the folder that holds it", err)
 	}
-	if strings.EqualFold(filepath.Clean(exe), installedExe) {
-		return nil
-	}
-	data, err := os.ReadFile(exe)
-	if err != nil {
-		return fmt.Errorf("%s could not be read (%v); copy deskhand-agent.exe to a local folder and run install from there", exe, err)
+	window := filepath.Join(filepath.Dir(exe), windowExeName)
+	if _, err := os.Stat(window); err != nil {
+		return fmt.Errorf("%s is missing (%v); put the %s of the same Deskhand release next to %s, then run install again", window, err, windowExeName, filepath.Base(exe))
 	}
 	if err := os.MkdirAll(installDir, 0o755); err != nil {
 		return fmt.Errorf("could not create %s (%v); %s", installDir, err, elevatedRerun)
 	}
+	if err := copyFile(exe, installedExe); err != nil {
+		return err
+	}
+	return copyFile(window, installedWindowExe)
+}
+
+// copyFile copies src to dst unless they name the same file, retrying while
+// a stopping agent still holds dst, and checks the size of the copy.
+func copyFile(src, dst string) error {
+	if strings.EqualFold(filepath.Clean(src), filepath.Clean(dst)) {
+		return nil
+	}
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return fmt.Errorf("%s could not be read (%v); copy the Deskhand agent files to a local folder and run install from there", src, err)
+	}
 	var werr error
 	for i := 0; i < 20; i++ {
-		if werr = os.WriteFile(installedExe, data, 0o755); werr == nil {
+		if werr = os.WriteFile(dst, data, 0o755); werr == nil {
 			break
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
 	if werr != nil {
-		return fmt.Errorf("could not write %s (%v); delete it, then %s", installedExe, werr, elevatedRerun)
+		return fmt.Errorf("could not write %s (%v); delete it, then %s", dst, werr, elevatedRerun)
 	}
-	st, err := os.Stat(installedExe)
+	st, err := os.Stat(dst)
 	if err != nil || st.Size() != int64(len(data)) {
-		return fmt.Errorf("the copy at %s could not be checked or has the wrong size; delete it, then %s", installedExe, elevatedRerun)
+		return fmt.Errorf("the copy at %s could not be checked or has the wrong size; delete it, then %s", dst, elevatedRerun)
 	}
 	return nil
 }
 
-// install locks the data folder, copies the agent to installedExe, registers
-// the scheduled task for the user who runs it, with --config configPath when
-// configPath is not empty, opens the agent's UDP port to the local subnet and
-// starts the task. Running it again updates every part in place.
+// install locks the data folder, copies both agent builds to installDir
+// (copyAgents), registers the scheduled task of installedWindowExe for the
+// user who runs it, with --config configPath when configPath is not empty,
+// opens the agent's UDP port to the local subnet and starts the task.
+// Running it again updates every part in place.
 func install(cfg config.Agent, configPath string, stdout io.Writer) error {
 	port, err := listenPort(cfg.Listen)
 	if err != nil {
@@ -153,7 +171,7 @@ func install(cfg config.Agent, configPath string, stdout io.Writer) error {
 		return fmt.Errorf("the account running install could not be read (%v); %s", err, elevatedRerun)
 	}
 	stopAgents()
-	if err := copySelf(); err != nil {
+	if err := copyAgents(); err != nil {
 		return err
 	}
 	xmlPath := filepath.Join(cfg.DataDir, "task.xml")
@@ -173,8 +191,8 @@ func install(cfg config.Agent, configPath string, stdout io.Writer) error {
 		return commandError("the scheduled task "+taskName+" was created but did not start", err, out,
 			"start it with schtasks /Run /TN \""+taskName+"\", or sign out and in again")
 	}
-	fmt.Fprintf(stdout, "설치했습니다: %s, 예약 작업 %q(%s 로그온 시 시작), 방화벽 규칙 %q(UDP %d, 로컬 서브넷)\n",
-		installedExe, taskName, u.Username, firewallRule, port)
+	fmt.Fprintf(stdout, "설치했습니다: %s, %s, 예약 작업 %q(%s 로그온 시 %s 시작), 방화벽 규칙 %q(UDP %d, 로컬 서브넷)\n",
+		installedExe, installedWindowExe, taskName, u.Username, windowExeName, firewallRule, port)
 	return nil
 }
 

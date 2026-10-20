@@ -34,13 +34,13 @@ func parseTask(t *testing.T, doc string) taskDoc {
 	return task
 }
 
-func TestTaskXMLStartsTheInstalledAgentAtTheUsersLogon(t *testing.T) {
+func TestTaskXMLStartsTheWindowlessAgentAtTheUsersLogon(t *testing.T) {
 	task := parseTask(t, taskXML(`OFFICE-PC\kim & co`, "S-1-5-21-1-2-3-1001", ""))
 	if task.Trigger != `OFFICE-PC\kim & co` || task.Principal.UserID != "S-1-5-21-1-2-3-1001" ||
 		task.Principal.LogonType != "InteractiveToken" || task.Principal.RunLevel != "HighestAvailable" {
 		t.Fatalf("task %+v", task)
 	}
-	if task.Command != `"C:\Program Files\Deskhand\deskhand-agent.exe"` || task.Args != "run" || task.Limit != "PT0S" || task.Battery != "false" {
+	if task.Command != `"C:\Program Files\Deskhand\deskhand-agentw.exe"` || task.Args != "run" || task.Limit != "PT0S" || task.Battery != "false" {
 		t.Fatalf("task %+v", task)
 	}
 }
@@ -122,7 +122,10 @@ func TestTaskCommands(t *testing.T) {
 		[]string{"/Create", "/TN", "Deskhand Agent", "/XML", `C:\ProgramData\Deskhand\task.xml`, "/F"}) {
 		t.Fatalf("create %q", got)
 	}
-	if got := killOthersArgs(42); !reflect.DeepEqual(got, []string{"/F", "/FI", "IMAGENAME eq deskhand-agent.exe", "/FI", "PID ne 42"}) {
+	if got := killOthersArgs("deskhand-agentw.exe", 42); !reflect.DeepEqual(got, []string{"/F", "/FI", "IMAGENAME eq deskhand-agentw.exe", "/FI", "PID ne 42"}) {
 		t.Fatalf("taskkill %q", got)
+	}
+	if !reflect.DeepEqual(agentImages, []string{"deskhand-agent.exe", "deskhand-agentw.exe"}) {
+		t.Fatalf("agent images %q", agentImages)
 	}
 }

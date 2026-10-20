@@ -18,6 +18,7 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/daemon/jobs"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/store"
+	"github.com/YangTaeyoung/deskhand/internal/install"
 	"github.com/YangTaeyoung/deskhand/internal/transport"
 	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
@@ -59,22 +60,22 @@ func (f *fakeSSH) run(_ context.Context, name string, args []string, stdin strin
 		return "deskhand-probe os=windows arch=X64\n", "", nil
 	case strings.Contains(stdin, "deskhand-short="):
 		return "deskhand-short=C:\\Temp\\deskhand-install\n", "", nil
-	case strings.Contains(stdin, "-ArgumentList ('init "):
+	case strings.Contains(stdin, "& $exe init "):
 		if f.paired && !strings.Contains(stdin, "--force") {
 			return "", "key exists\n", exitCode(4)
 		}
 		f.forcedInit = strings.Contains(stdin, "--force")
 		f.paired = true
 		return `{"fingerprint":"` + agentFP + `"}` + "\n", "", nil
-	case strings.Contains(stdin, "-ArgumentList 'install'"):
+	case strings.Contains(stdin, "& $exe install"):
 		return "", "", nil
-	case strings.Contains(stdin, "-ArgumentList 'uninstall"):
+	case strings.Contains(stdin, "' uninstall"):
 		f.uninstalls = append(f.uninstalls, stdin)
 		if strings.Contains(stdin, "--purge") {
 			f.paired = false
 		}
 		return "", "", nil
-	case strings.Contains(stdin, "-ArgumentList 'version'"):
+	case strings.Contains(stdin, "' version"):
 		return `{"version":"v1","os":"windows","arch":"amd64"}` + "\n", "", nil
 	case strings.Contains(stdin, "deskhand-ok"):
 		return "deskhand-ok\n", "", nil
@@ -112,9 +113,11 @@ func newFixture(t *testing.T, dial conn.Dialer) fixture {
 	t.Cleanup(mgr.Close)
 	f := &fakeSSH{firewall: "deskhand-fw enabled=True"}
 	id := transport.Identity{Fingerprint: strings.Repeat("a", 64)}
-	agent := func(arch string) (string, error) { return "/agents/deskhand-agent-windows-" + arch + ".exe", nil }
+	agent := func(arch string) (install.AgentFiles, error) {
+		return install.AgentFiles{Console: "/agents/deskhand-agent-windows-" + arch + ".exe", Window: "/agents/deskhand-agentw-windows-" + arch + ".exe"}, nil
+	}
 	r = New(Options{Store: st, Bus: bus, Manager: mgr, Jobs: jobs.New(st, bus, mgr), Identity: id, SSHExec: f.run,
-		AgentBinary: agent, Version: "v1", ConnectWait: 50 * time.Millisecond})
+		AgentFiles: agent, Version: "v1", ConnectWait: 50 * time.Millisecond})
 	return fixture{r: r, st: st, sub: sub, ssh: f}
 }
 
@@ -243,7 +246,7 @@ func TestRemoveUninstallPurgesTheAgent(t *testing.T) {
 	if err := fx.r.Remove(context.Background(), "pc", true, model.System); err != nil {
 		t.Fatal(err)
 	}
-	if len(fx.ssh.uninstalls) != 1 || !strings.Contains(fx.ssh.uninstalls[0], "-ArgumentList 'uninstall --purge'") {
+	if len(fx.ssh.uninstalls) != 1 || !strings.Contains(fx.ssh.uninstalls[0], "' uninstall --purge") {
 		t.Fatalf("uninstall scripts %q", fx.ssh.uninstalls)
 	}
 	if _, _, err := fx.r.Add(context.Background(), AddParams{Name: "pc", SSH: "windows"}, model.System); err != nil {
@@ -346,19 +349,27 @@ func TestDoctorReportsFingerprintMismatch(t *testing.T) {
 	}
 }
 
-func TestFindAgentBinarySearchesAgentDir(t *testing.T) {
+func TestFindAgentFilesNeedsBothBuildsInOneFolder(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("DESKHAND_AGENT_DIR", dir)
-	if _, err := FindAgentBinary("arm64"); err == nil || !strings.Contains(err.Error(), "DESKHAND_AGENT_DIR "+dir) ||
+	if _, err := FindAgentFiles("arm64"); err == nil || !strings.Contains(err.Error(), "DESKHAND_AGENT_DIR "+dir) ||
 		!strings.Contains(err.Error(), "Resources/agents") {
 		t.Fatalf("missing binary error %v", err)
 	}
-	p := filepath.Join(dir, "deskhand-agent-windows-arm64.exe")
-	if err := os.WriteFile(p, []byte("MZ"), 0o644); err != nil {
+	console := filepath.Join(dir, "deskhand-agent-windows-arm64.exe")
+	if err := os.WriteFile(console, []byte("MZ"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := FindAgentBinary("arm64"); err != nil || got != p {
-		t.Fatalf("found %q, %v", got, err)
+	if _, err := FindAgentFiles("arm64"); err == nil || !strings.Contains(err.Error(), "deskhand-agentw-windows-arm64.exe") ||
+		!strings.Contains(err.Error(), dir) {
+		t.Fatalf("missing window build error %v", err)
+	}
+	window := filepath.Join(dir, "deskhand-agentw-windows-arm64.exe")
+	if err := os.WriteFile(window, []byte("MZ"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := FindAgentFiles("arm64"); err != nil || got != (install.AgentFiles{Console: console, Window: window}) {
+		t.Fatalf("found %+v, %v", got, err)
 	}
 }
 

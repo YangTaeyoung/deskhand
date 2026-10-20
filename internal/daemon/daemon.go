@@ -45,9 +45,9 @@ type Options struct {
 	Version string
 	// SSHExec runs ssh and scp; nil runs the real commands.
 	SSHExec install.Runner
-	// AgentBinary returns the agent binary for an architecture; nil means
-	// hosts.FindAgentBinary.
-	AgentBinary func(arch string) (string, error)
+	// AgentFiles returns the agent builds for an architecture; nil means
+	// hosts.FindAgentFiles.
+	AgentFiles func(arch string) (install.AgentFiles, error)
 	// Dial connects to agents; nil means QUIC.
 	Dial conn.Dialer
 	// DropAfterSend overrides DESKHAND_TEST_DROP_AFTER_SEND when set.
@@ -146,7 +146,7 @@ func New(opt Options) (*Daemon, error) {
 		OnEvent: func(ev conn.Event) { reg.HandleConnEvent(ev) }, DropAfterSend: drop, Logger: lg})
 	jreg := jobs.New(d.st, bus, d.mgr)
 	reg = hosts.New(hosts.Options{Store: d.st, Bus: bus, Manager: d.mgr, Jobs: jreg, Identity: id, SSHExec: opt.SSHExec,
-		AgentBinary: opt.AgentBinary, Version: opt.Version, Logger: lg})
+		AgentFiles: opt.AgentFiles, Version: opt.Version, Logger: lg})
 	d.Hosts = reg
 	if d.ln, err = localapi.Listen(paths.Socket()); err != nil {
 		return nil, err

@@ -50,7 +50,7 @@ func (f *fakeRemote) run(_ context.Context, name string, args []string, stdin st
 		return "deskhand-probe os=" + f.osName + " arch=" + f.arch + "\n", "", nil
 	case strings.Contains(stdin, "deskhand-short="):
 		return "deskhand-short=C:\\Users\\bob\\AppData\\Local\\Temp\\deskhand-install\n", "", nil
-	case strings.Contains(stdin, "-ArgumentList ('init "):
+	case strings.Contains(stdin, "& $exe init "):
 		if f.initFail {
 			return "", f.initErr, exitErr(f.initCode)
 		}
@@ -59,9 +59,9 @@ func (f *fakeRemote) run(_ context.Context, name string, args []string, stdin st
 			out = `{"fingerprint":"` + testAgentFP + `","name":"x"}`
 		}
 		return "banner\n" + out + "\n", "", nil
-	case strings.Contains(stdin, "-ArgumentList 'install'"):
+	case strings.Contains(stdin, "& $exe install"):
 		return "", "", nil
-	case strings.Contains(stdin, "-ArgumentList 'version'"):
+	case strings.Contains(stdin, "' version"):
 		return `{"version":"dev","os":"` + f.versionOS + `","arch":"amd64"}` + "\n", "", nil
 	}
 	return "", "", nil
@@ -77,7 +77,10 @@ func pair(t *testing.T, f *fakeRemote, opts ...PairOptions) (PairResult, []strin
 	t.Helper()
 	var steps, archs []string
 	res, err := Pair(context.Background(), f.ssh(), "사무실 PC", testIdentity(),
-		func(arch string) (string, error) { archs = append(archs, arch); return "/bin/agent-" + arch, nil },
+		func(arch string) (AgentFiles, error) {
+			archs = append(archs, arch)
+			return AgentFiles{Console: "/bin/agent-" + arch, Window: "/bin/agentw-" + arch}, nil
+		},
 		func(s string) { steps = append(steps, s) }, opts...)
 	return res, steps, archs, err
 }
@@ -169,7 +172,7 @@ func TestPairNonWindowsShellMissingPowerShell(t *testing.T) {
 		return "", "bash: powershell: command not found\n", errors.New("exit status 127")
 	}}
 	_, err := Pair(context.Background(), s, "n", testIdentity(),
-		func(string) (string, error) { return "", nil }, func(string) {})
+		func(string) (AgentFiles, error) { return AgentFiles{}, nil }, func(string) {})
 	if err == nil || !strings.Contains(err.Error(), "Windows") {
 		t.Fatalf("err = %v", err)
 	}
@@ -197,7 +200,7 @@ func TestPairForcePassesForceToInit(t *testing.T) {
 	}
 	found := false
 	for _, c := range f.calls {
-		if strings.Contains(c.stdin, "-ArgumentList ('init ") && strings.Contains(c.stdin, "--force") {
+		if strings.Contains(c.stdin, "& $exe init ") && strings.Contains(c.stdin, "--force") {
 			found = true
 		}
 	}
@@ -238,7 +241,7 @@ func TestPairBadControllerFingerprint(t *testing.T) {
 	id := testIdentity()
 	id.Fingerprint = "xyz"
 	f := newFake()
-	_, err := Pair(context.Background(), f.ssh(), "n", id, func(string) (string, error) { return "", nil }, func(string) {})
+	_, err := Pair(context.Background(), f.ssh(), "n", id, func(string) (AgentFiles, error) { return AgentFiles{}, nil }, func(string) {})
 	if err == nil || len(f.calls) != 0 {
 		t.Fatalf("err = %v, calls = %d", err, len(f.calls))
 	}
@@ -299,7 +302,7 @@ func TestUnpairPurge(t *testing.T) {
 	if err := Unpair(context.Background(), f.ssh(), true); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(f.calls[0].stdin, `Program Files\Deskhand\deskhand-agent.exe' -ArgumentList 'uninstall --purge'`) {
+	if !strings.Contains(f.calls[0].stdin, `& 'C:\Program Files\Deskhand\deskhand-agent.exe' uninstall --purge`+"\nexit $LASTEXITCODE") {
 		t.Fatalf("%q", f.calls[0].stdin)
 	}
 	f = newFake()
@@ -336,13 +339,13 @@ func TestPairOtherInitFailureIsNotAlreadyPaired(t *testing.T) {
 func TestPairRejectsUnsafeNames(t *testing.T) {
 	for _, n := range []string{`a" --controller-fp "x`, `pc\`, "pc\x01", "", " pc", "pc ", strings.Repeat("가", 65), "a;b", "$(x)", "a'b"} {
 		f := newFake()
-		_, err := Pair(context.Background(), f.ssh(), n, testIdentity(), func(string) (string, error) { return "", nil }, func(string) {})
+		_, err := Pair(context.Background(), f.ssh(), n, testIdentity(), func(string) (AgentFiles, error) { return AgentFiles{}, nil }, func(string) {})
 		if err == nil || len(f.calls) != 0 {
 			t.Fatalf("name %q: err = %v, calls = %d", n, err, len(f.calls))
 		}
 	}
 	f := newFake()
-	if _, err := Pair(context.Background(), f.ssh(), "사무실 PC-1_a.b", testIdentity(), func(a string) (string, error) { return "/x", nil }, func(string) {}); err != nil {
+	if _, err := Pair(context.Background(), f.ssh(), "사무실 PC-1_a.b", testIdentity(), func(a string) (AgentFiles, error) { return AgentFiles{Console: "/x", Window: "/xw"}, nil }, func(string) {}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -360,7 +363,7 @@ func TestRejectsUnsafeAliases(t *testing.T) {
 	}
 }
 
-func TestAgentScriptsWaitThroughStartProcess(t *testing.T) {
+func TestAgentScriptsCallTheConsoleAgentAndExitWithItsCode(t *testing.T) {
 	f := newFake()
 	if _, _, _, err := pair(t, f); err != nil {
 		t.Fatal(err)
@@ -370,7 +373,7 @@ func TestAgentScriptsWaitThroughStartProcess(t *testing.T) {
 	}
 	scripts := []string{AgentVersionScript}
 	for _, c := range f.calls {
-		if c.name == "ssh" && strings.Contains(c.stdin, "-ArgumentList") {
+		if c.name == "ssh" && strings.Contains(c.stdin, "deskhand-agent.exe") && !strings.Contains(c.stdin, "deskhand-short=") {
 			scripts = append(scripts, c.stdin)
 		}
 	}
@@ -378,19 +381,39 @@ func TestAgentScriptsWaitThroughStartProcess(t *testing.T) {
 		t.Fatalf("%d agent scripts: %q", len(scripts), scripts)
 	}
 	for _, s := range scripts {
-		if !strings.Contains(s, "$p = Start-Process -FilePath ") || !strings.Contains(s, " -NoNewWindow -Wait -PassThru\n") ||
-			!strings.Contains(s, "$p.ExitCode") || strings.Contains(s, "$LASTEXITCODE") || strings.Contains(s, "& $exe") {
+		if !strings.Contains(s, "& ") || !strings.Contains(s, "$LASTEXITCODE") || strings.Contains(s, "Start-Process") ||
+			strings.Contains(s, "deskhand-agentw") {
 			t.Fatalf("script %q", s)
 		}
 	}
 }
 
-func TestInitQuotesNameOnTheCommandLine(t *testing.T) {
+func TestPairCopiesBothAgentBuilds(t *testing.T) {
 	f := newFake()
 	if _, _, _, err := pair(t, f); err != nil {
 		t.Fatal(err)
 	}
-	want := `-ArgumentList ('init --name "' + $name + '" --controller-fp ` + testFP + `')`
+	var copies [][]string
+	for _, c := range f.calls {
+		if c.name == "scp" {
+			copies = append(copies, c.args[len(c.args)-2:])
+		}
+	}
+	want := [][]string{
+		{"/bin/agent-amd64", "windows:C:/Users/bob/AppData/Local/Temp/deskhand-install/deskhand-agent.exe"},
+		{"/bin/agentw-amd64", "windows:C:/Users/bob/AppData/Local/Temp/deskhand-install/deskhand-agentw.exe"},
+	}
+	if !reflect.DeepEqual(copies, want) {
+		t.Fatalf("copies %q, want %q", copies, want)
+	}
+}
+
+func TestInitPassesTheNameAsOneArgument(t *testing.T) {
+	f := newFake()
+	if _, _, _, err := pair(t, f); err != nil {
+		t.Fatal(err)
+	}
+	want := "& $exe init --name $name --controller-fp '" + testFP + "'\nexit $LASTEXITCODE"
 	for _, c := range f.calls {
 		if strings.Contains(c.stdin, want) {
 			return
