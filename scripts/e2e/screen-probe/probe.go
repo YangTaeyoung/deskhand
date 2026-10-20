@@ -115,9 +115,10 @@ type auRecord struct {
 
 // keySample is one key frame of the keyframe scenario and the still image
 // taken right after it arrived. Case is start (the first access unit of a
-// new stream), keyframe (after a keyframe control) or recreate (after a
-// config control, which makes the encoder again); SentUS is when the stream
-// was opened or the control written.
+// new stream), keyframe (after a keyframe control), recreate (after a config
+// control with the same settings, which makes the encoder again) or resize
+// (after a config control with another max_width); SentUS is when the
+// stream was opened or the control written.
 type keySample struct {
 	Case        string `json:"case"`
 	N           int    `json:"n"`
@@ -709,13 +710,18 @@ func (v *videoRun) stop() {
 	}
 }
 
+// resizeWidth is the max_width the resize case of the keyframe scenario
+// switches to and back from.
+const resizeWidth = 1920
+
 // runKeys takes o.repeats key frames in each case of the keyframe scenario
 // and a still image with screen.capture right after each: the first access
 // unit of a new stream, then on one stream the key frame of a keyframe
-// control and the one after a config control with the stream's settings,
-// which makes the encoder again. It returns that stream, whose access units
-// go to NAME.h264; each key frame goes to NAME_<case>_<n>.h264 and its still
-// to NAME_<case>_<n>.png.
+// control, the one after a config control with the stream's settings, which
+// makes the encoder again, and the one after a config control that switches
+// max_width between resizeWidth and the stream's. It returns that stream,
+// whose access units go to NAME.h264; each key frame goes to
+// NAME_<case>_<n>.h264 and its still to NAME_<case>_<n>.png.
 func runKeys(ctx context.Context, conn *quic.Conn, rpc *rpcClient, rec *record, o options, header wire.StreamHeader) (*videoRun, error) {
 	keep := func(s *keySample, k keyAU) error {
 		s.Seq, s.CaptureUS, s.RecvUS, s.Size = k.rec.Seq, k.rec.CaptureUS, k.rec.RecvUS, k.rec.Size
@@ -770,19 +776,30 @@ func runKeys(ctx context.Context, conn *quic.Conn, rpc *rpcClient, rec *record, 
 	}
 	last := first.rec.Seq
 	time.Sleep(1500 * time.Millisecond)
+	resized := header.MaxWidth
 	for _, c := range []struct {
 		name string
-		ctl  wire.VideoControl
+		ctl  func() wire.VideoControl
 	}{
-		{"keyframe", wire.VideoControl{Op: wire.ControlKeyframe}},
-		{"recreate", wire.VideoControl{Op: wire.ControlConfig, MaxFPS: header.MaxFPS, MaxWidth: header.MaxWidth}},
+		{"keyframe", func() wire.VideoControl { return wire.VideoControl{Op: wire.ControlKeyframe} }},
+		{"recreate", func() wire.VideoControl {
+			return wire.VideoControl{Op: wire.ControlConfig, MaxFPS: header.MaxFPS, MaxWidth: header.MaxWidth}
+		}},
+		{"resize", func() wire.VideoControl {
+			if resized == header.MaxWidth {
+				resized = resizeWidth
+			} else {
+				resized = header.MaxWidth
+			}
+			return wire.VideoControl{Op: wire.ControlConfig, MaxFPS: header.MaxFPS, MaxWidth: resized}
+		}},
 	} {
 		for i := range o.repeats {
 			if ctx.Err() != nil {
 				return v, ctx.Err()
 			}
 			s := keySample{Case: c.name, N: i, SentUS: nowUS()}
-			if err := v.control(c.ctl); err != nil {
+			if err := v.control(c.ctl()); err != nil {
 				return v, err
 			}
 			k, err := v.nextKey(last, 10*time.Second)

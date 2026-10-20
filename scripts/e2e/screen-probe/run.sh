@@ -14,8 +14,8 @@
 #     (60 s), motion (60 s, fixture --animate), motion1920 (30 s, max_width
 #     1920), input (20 clicks and 20 Space presses on the fixture's Same
 #     button), keyframe (10 key frames each of a new stream, a keyframe
-#     control and a config control, each with a screen.capture still); the
-#     default is all five;
+#     control, a config control with the same settings and one that changes
+#     max_width, each with a screen.capture still); the default is all five;
 #   - copies the results and the agent log into the local folder, ends the
 #     launcher's process tree, deletes the task and the folder and runs
 #     screen-probe report on the local folder.

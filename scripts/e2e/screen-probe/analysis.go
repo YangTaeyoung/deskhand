@@ -188,25 +188,27 @@ func (f *changeFinder) result(i int) (index, pixels, below int) {
 	return f.found[i], f.pixels[i], f.below[i]
 }
 
-// repeatFinder marks the frames whose image equals the frame before it: no
-// pixel differs from it by delta or more. Frames are given in order
-// through frame.
-type repeatFinder struct {
-	prev    []byte
-	delta   int
-	repeats map[int]bool
-}
+// keepalive is the time without an access unit after which the agent
+// encodes the last image again (docs/protocol.md §4), and keepaliveSlack
+// how much later than that the repeat may be stamped.
+const (
+	keepaliveUS      = 10_000_000
+	keepaliveSlackUS = 50_000
+)
 
-func newRepeatFinder(delta int) *repeatFinder {
-	return &repeatFinder{delta: delta, repeats: map[int]bool{}}
-}
-
-// frame takes the image of frame k.
-func (r *repeatFinder) frame(k int, img []byte) {
-	if r.prev != nil && len(r.prev) == len(img) && changedPixels(r.prev, img, r.delta) == 0 {
-		r.repeats[k] = true
+// keepaliveRepeats returns the indexes of the access units that encode the
+// image of the one before again because none came for keepaliveUS: those
+// that are not key frames and whose capture time is keepaliveUS to
+// keepaliveUS+keepaliveSlackUS after the one before.
+func keepaliveRepeats(aus []auRecord) map[int]bool {
+	out := map[int]bool{}
+	for i := 1; i < len(aus); i++ {
+		gap := int64(aus[i].CaptureUS) - int64(aus[i-1].CaptureUS)
+		if !aus[i].Key && gap >= keepaliveUS && gap <= keepaliveUS+keepaliveSlackUS {
+			out[i] = true
+		}
 	}
-	r.prev = append(r.prev[:0], img...)
+	return out
 }
 
 // measuredEvents returns the inputs of kinds with, for each, the index of

@@ -91,10 +91,9 @@ func TestVideoSummaryMapsTheAgentClockByTheOffset(t *testing.T) {
 		c2rMin, c2rMax float64
 		c2eMin, e2rMax float64
 		repeated       int
-		checked        bool
 	}{
-		{"repeats left out", map[int]bool{2: true}, 2, 2.5, 5.0, 2.0, 1.0, 1, true},
-		{"repeats not looked for", nil, 3, 1.0, 5.0, 0.5, 1.0, 0, false},
+		{"repeats left out", map[int]bool{2: true}, 2, 2.5, 5.0, 2.0, 1.0, 1},
+		{"no repeats", nil, 3, 1.0, 5.0, 0.5, 1.0, 0},
 	} {
 		r := videoSummary(v, offset, c.repeats)
 		if r.CaptureToRecv.N != c.n || r.CaptureToRecv.Min != c.c2rMin || r.CaptureToRecv.Max != c.c2rMax {
@@ -103,8 +102,8 @@ func TestVideoSummaryMapsTheAgentClockByTheOffset(t *testing.T) {
 		if r.CaptureToEncoded.Min != c.c2eMin || r.EncodedToRecv.Max != c.e2rMax {
 			t.Errorf("%s: capture→encoded min %v, encoded→recv max %v, expected %v and %v ms", c.name, r.CaptureToEncoded.Min, r.EncodedToRecv.Max, c.c2eMin, c.e2rMax)
 		}
-		if r.Repeats != c.repeated || r.RepeatsChecked != c.checked {
-			t.Errorf("%s: repeats %d checked %v", c.name, r.Repeats, r.RepeatsChecked)
+		if r.Repeats != c.repeated {
+			t.Errorf("%s: repeats %d", c.name, r.Repeats)
 		}
 		if r.FirstAUMS != 1.0 || r.FirstAUBytes != 100 || r.AUs != 4 || r.Keyframes != 1 || r.FPS != 4 || r.BitrateBPS != 8000 {
 			t.Errorf("%s: first AU %v ms %d B, %d AUs, %d keys, %v fps, %v bps", c.name, r.FirstAUMS, r.FirstAUBytes, r.AUs, r.Keyframes, r.FPS, r.BitrateBPS)
@@ -159,17 +158,19 @@ func TestInputTimingsMapTheAgentClockByTheOffset(t *testing.T) {
 	}
 }
 
-func TestRepeatFinderMarksFramesEqualToTheOneBefore(t *testing.T) {
-	a := []byte{10, 10, 10, 10}
-	b := []byte{10, 200, 10, 10}
-	nearB := []byte{12, 190, 10, 10}
-	c := []byte{10, 200, 10, 60}
-	f := newRepeatFinder(24)
-	for k, img := range [][]byte{a, a, b, nearB, c, c[:2]} {
-		f.frame(k, img)
+func TestKeepaliveRepeatsAreTheAUsTenSecondsAfterTheOneBefore(t *testing.T) {
+	aus := []auRecord{
+		{Key: true, CaptureUS: 1_000_000},
+		{CaptureUS: 1_500_000},
+		{CaptureUS: 11_500_000},
+		{CaptureUS: 21_550_001},
+		{CaptureUS: 31_560_000},
+		{CaptureUS: 41_570_000},
+		{Key: true, CaptureUS: 51_570_000},
+		{CaptureUS: 51_600_000},
 	}
-	if want := map[int]bool{1: true, 3: true}; !maps.Equal(f.repeats, want) {
-		t.Fatalf("repeats %v, expected %v", f.repeats, want)
+	if got, want := keepaliveRepeats(aus), map[int]bool{2: true, 4: true, 5: true}; !maps.Equal(got, want) {
+		t.Fatalf("repeats %v, expected %v", got, want)
 	}
 }
 

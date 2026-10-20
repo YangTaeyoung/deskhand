@@ -14,8 +14,9 @@
 // stream of the display that shows the fixture and records it for -seconds
 // (static, motion) or while it clicks and presses keys in the fixture
 // (input), or takes -repeats key frames of a new stream, of a keyframe
-// control and of a config control, each with a screen.capture still right
-// after it (keyframe), measures the clock again, ends the fixture and
+// control, of a config control with the same settings and of one that
+// changes max_width, each with a screen.capture still right after it
+// (keyframe), measures the clock again, ends the fixture and
 // writes NAME.json and NAME.h264 to -out (keyframe adds one .h264 and one
 // .png per key frame). Input goes only to the fixture: before every event
 // the fixture's window has to be in the foreground, before every button

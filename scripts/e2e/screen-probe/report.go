@@ -109,7 +109,6 @@ type videoReport struct {
 	FPS              float64  `json:"fps"`
 	BitrateBPS       float64  `json:"bitrate_bps"`
 	Repeats          int      `json:"repeats"`
-	RepeatsChecked   bool     `json:"repeats_checked"`
 	FirstAUMS        float64  `json:"first_au_ms"`
 	FirstAUBytes     int      `json:"first_au_bytes"`
 	AUBytes          summary  `json:"au_bytes"`
@@ -182,15 +181,7 @@ func analyze(rec *record, o reportOptions) (recordReport, error) {
 		return rep, nil
 	}
 	offset := before.OffsetUS
-	var repeats map[int]bool
-	if rec.Scenario != "motion" && len(rec.Video.AUs) > 0 {
-		r, err := findRepeats(o.dir, rec.Video, o.delta)
-		if err != nil {
-			return rep, err
-		}
-		repeats = r
-	}
-	rep.Video = videoSummary(rec.Video, offset, repeats)
+	rep.Video = videoSummary(rec.Video, offset, keepaliveRepeats(rec.Video.AUs))
 	if len(rec.Video.AUs) > 0 {
 		d, err := decodeCheck(filepath.Join(o.dir, rec.Video.File))
 		if err != nil {
@@ -220,10 +211,9 @@ func ms(us float64) float64 { return us / 1000 }
 // videoSummary describes v with the agent clock mapped to the probe clock
 // by offset (probe = agent − offset). The latency distributions leave out
 // the first access unit and the access units in repeats, which encode the
-// image of the one before again; repeats nil means they were not looked
-// for.
+// image of the one before again and carry the time that encoding started.
 func videoSummary(v *videoRecord, offset float64, repeats map[int]bool) *videoReport {
-	r := &videoReport{Refusal: v.Refusal, Error: v.Error, Display: v.Header.Display, Repeats: len(repeats), RepeatsChecked: repeats != nil}
+	r := &videoReport{Refusal: v.Refusal, Error: v.Error, Display: v.Header.Display, Repeats: len(repeats)}
 	if len(v.Infos) > 0 {
 		i := v.Infos[0].Info
 		r.Encoder, r.Hardware, r.Capture, r.Width, r.Height, r.SrcWidth, r.SrcHeight, r.TargetBitrate =
@@ -389,45 +379,6 @@ func inputSummary(rec *record, offset float64, o reportOptions) (*inputReport, e
 	return rep, nil
 }
 
-// findRepeats decodes the video of v, scaled to 960 pixels wide in
-// grayscale, and returns the indexes of the access units whose image equals
-// the one before by repeatFinder with delta.
-func findRepeats(dir string, v *videoRecord, delta int) (map[int]bool, error) {
-	w, h := int(v.AUs[0].Width), int(v.AUs[0].Height)
-	sw := min(960, w)
-	sh := (h*sw/w + 1) &^ 1
-	cmd := exec.Command("ffmpeg", "-nostdin", "-v", "error", "-i", v.File, "-vf",
-		fmt.Sprintf("scale=%d:%d:flags=area,format=gray", sw, sh), "-fps_mode", "passthrough", "-f", "rawvideo", "pipe:1")
-	cmd.Dir = dir
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Start(); err != nil {
-		return nil, err
-	}
-	br := bufio.NewReaderSize(stdout, 4<<20)
-	frame := make([]byte, sw*sh)
-	finder := newRepeatFinder(delta)
-	n := 0
-	for {
-		if _, err := io.ReadFull(br, frame); err != nil {
-			break
-		}
-		finder.frame(n, frame)
-		n++
-	}
-	if err := cmd.Wait(); err != nil {
-		return nil, fmt.Errorf("ffmpeg decode of %s: %v: %s", v.File, err, stderr.String())
-	}
-	if n != len(v.AUs) {
-		return nil, fmt.Errorf("%s decoded to %d frames for %d access units; repeats cannot be matched to the AUs", v.File, n, len(v.AUs))
-	}
-	return finder.repeats, nil
-}
-
 func clamp(v, lo, hi int) int { return min(max(v, lo), hi) }
 
 // f formats a value with digits decimals, or "—" for NaN.
@@ -474,9 +425,7 @@ func printReport(w io.Writer, rep recordReport) {
 			v.Encoder, v.Hardware, v.Capture, v.Display, v.Width, v.Height, v.SrcWidth, v.SrcHeight, f(float64(v.TargetBitrate)/1e6, 1))
 		fmt.Fprintf(w, "- %s초 동안 AU %d개(키프레임 %d), 평균 %s fps, %s Mbps\n", f(v.SpanS, 1), v.AUs, v.Keyframes, f(v.FPS, 1), f(v.BitrateBPS/1e6, 2))
 		fmt.Fprintf(w, "- 첫 AU: 스트림 연 뒤 %s ms, %d바이트\n", f(v.FirstAUMS, 1), v.FirstAUBytes)
-		if v.RepeatsChecked {
-			fmt.Fprintf(w, "- 앞 AU와 같은 이미지(밝기 차 %d 이상 픽셀 0개)를 다시 인코딩한 AU %d개는 지연 분포에서 뺐다\n", 24, v.Repeats)
-		}
+		fmt.Fprintf(w, "- 10초 반복 AU(앞 AU 캡처 10.00–10.05초 뒤의 키프레임 아닌 AU) %d개는 지연 분포에서 뺐다\n", v.Repeats)
 		fmt.Fprintf(w, "- AU 크기(키프레임 제외, 바이트) p50 / p95: %s; 키프레임: %s\n", dist(v.AUBytes, 0), dist(v.KeyBytes, 0))
 		fmt.Fprintf(w, "- 캡처→수신(시계 보정, 첫 AU 제외, ms) p50 / p95: %s\n", dist(v.CaptureToRecv, 2))
 		fmt.Fprintf(w, "- 캡처→인코딩 완료(에이전트 시계, ms): %s\n", dist(v.CaptureToEncoded, 2))

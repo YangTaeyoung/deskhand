@@ -10,7 +10,7 @@ import (
 )
 
 // keyCases are the cases of the keyframe scenario in order.
-var keyCases = []string{"start", "keyframe", "recreate"}
+var keyCases = []string{"start", "keyframe", "recreate", "resize"}
 
 // keyReport compares each key frame of the keyframe scenario with the still
 // image taken right after it, in RGB at the still's size: over the fixture
