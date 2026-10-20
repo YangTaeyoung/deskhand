@@ -85,17 +85,6 @@ func TestExecRunWithoutStdinGivesEmptyPipe(t *testing.T) {
 	}
 }
 
-func TestV1ExecWithoutStdinGivesEmptyPipe(t *testing.T) {
-	r, w, c := startServer(t, Options{Clipboard: &fakeClipboard{}, HomeDir: t.TempDir(), AllowExec: true})
-	c.SetDeadline(time.Now().Add(10 * time.Second))
-	expect(t, r, "hello")
-	w.Send(proto.Message{"t": "exec", "cmd": `read x; echo "got:$x"; [ -p /dev/stdin ] && echo pipe`})
-	res := expect(t, r, "exec.result")
-	if res.String("out") != "got:\npipe\n" || res.Int("code") != 0 {
-		t.Fatalf("res %v", res)
-	}
-}
-
 func TestExecRunRelativeCwdUsesHome(t *testing.T) {
 	home := t.TempDir()
 	if err := os.Mkdir(filepath.Join(home, "sub"), 0o755); err != nil {
@@ -165,16 +154,5 @@ func TestExecRunTruncatesToTail(t *testing.T) {
 	out := res.String("stdout")
 	if !res.Bool("truncated") || !strings.HasSuffix(out, "END\n") || len(out) > 200000 {
 		t.Fatalf("truncated=%v len=%d tail=%q", res.Bool("truncated"), len(out), out[max(0, len(out)-8):])
-	}
-}
-
-func TestV1ExecStillWorks(t *testing.T) {
-	r, w, c := startServer(t, Options{Clipboard: &fakeClipboard{}, HomeDir: t.TempDir(), AllowExec: true})
-	c.SetDeadline(time.Now().Add(10 * time.Second))
-	expect(t, r, "hello")
-	w.Send(proto.Message{"t": "exec", "cmd": "echo out; echo err 1>&2; exit 2"})
-	res := expect(t, r, "exec.result")
-	if res.Int("code") != 2 || !strings.Contains(res.String("out"), "out") || !strings.Contains(res.String("out"), "err") {
-		t.Fatalf("exec.result %v", res)
 	}
 }

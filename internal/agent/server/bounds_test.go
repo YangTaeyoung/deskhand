@@ -70,10 +70,10 @@ func TestClipboardRepliesCutLongText(t *testing.T) {
 	expect(t, r, "hello")
 	big := strings.Repeat("가", 300000)
 	cb.external(big)
-	changed := expect(t, r, "clipboard.changed").String("text")
-	w.Send(proto.Message{"t": "clipboard.get"})
-	got := expect(t, r, "clipboard.text").String("text")
-	for name, text := range map[string]string{"clipboard.changed": changed, "clipboard.text": got} {
+	changed := expectEvent(t, r, "clipboard.changed").String("text")
+	send(t, w, proto.Message{"t": "req", "id": 1, "op": "clipboard.get"})
+	got := expect(t, r, "res").String("text")
+	for name, text := range map[string]string{"clipboard.changed": changed, "clipboard.get": got} {
 		if len(text) > 700000 || len(text) < 700000-3 || !utf8.ValidString(text) || !strings.HasPrefix(big, text) {
 			t.Fatalf("%s carries %d bytes", name, len(text))
 		}

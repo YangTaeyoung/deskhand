@@ -1,7 +1,6 @@
 package server
 
 import (
-	"fmt"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -37,65 +36,26 @@ func (c *stuckClipboard) Sequence() uint64 {
 	return c.fakeClipboard.Sequence()
 }
 
-func TestAHungClipboardDoesNotStopPongsOrRequests(t *testing.T) {
+func TestAHungClipboardDoesNotStopOtherRequests(t *testing.T) {
 	cb := &stuckClipboard{release: make(chan struct{})}
 	cb.stuck.Store(true)
 	t.Cleanup(func() { close(cb.release) })
 	_, r, w, _ := startServerS(t, Options{Clipboard: cb, HomeDir: t.TempDir(), AllowExec: true})
 	expect(t, r, "hello")
-	send(t, w, proto.Message{"t": "clipboard.get"})
-	send(t, w, proto.Message{"t": "ping"})
-	expect(t, r, "pong")
-	send(t, w, proto.Message{"t": "req", "id": 1, "op": "ping"})
-	if res := expect(t, r, "res"); res["ok"] != true {
+	send(t, w, proto.Message{"t": "req", "id": 1, "op": "clipboard.get"})
+	send(t, w, proto.Message{"t": "req", "id": 2, "op": "ping"})
+	if res := expect(t, r, "res"); res.Int("id") != 2 || res["ok"] != true {
 		t.Fatalf("res %v", res)
 	}
 }
 
-func TestClipboardSetAndGetOfAConnectionRunInOrder(t *testing.T) {
-	cb := &fakeClipboard{}
-	_, r, w, _ := startServerS(t, Options{Clipboard: cb, HomeDir: t.TempDir()})
-	expect(t, r, "hello")
+func TestClipboardSetThenGetReadsTheSetText(t *testing.T) {
+	c, _ := newRPCClient(t, Options{Clipboard: &fakeClipboard{}})
 	for _, text := range []string{"one", "two", "three"} {
-		send(t, w, proto.Message{"t": "clipboard.set", "text": text})
-		send(t, w, proto.Message{"t": "clipboard.get"})
-		if got := expect(t, r, "clipboard.text"); got.String("text") != text {
-			t.Fatalf("clipboard.get after set %q answered %v", text, got)
+		c.ok("clipboard.set", proto.Message{"text": text})
+		if got := c.ok("clipboard.get", nil).String("text"); got != text {
+			t.Fatalf("clipboard.get after set %q answered %q", text, got)
 		}
-	}
-}
-
-func TestClipboardGetsBeyondTheQueueAreRefusedAndRepliesCarryTheirID(t *testing.T) {
-	cb := &stuckClipboard{release: make(chan struct{}), entered: make(chan struct{}, 1)}
-	cb.external("PC text")
-	cb.stuck.Store(true)
-	_, r, w, _ := startServerS(t, Options{Clipboard: cb, HomeDir: t.TempDir()})
-	expect(t, r, "hello")
-	send(t, w, proto.Message{"t": "clipboard.get", "id": "0"})
-	select {
-	case <-cb.entered:
-	case <-time.After(5 * time.Second):
-		t.Fatal("the first clipboard.get did not reach the clipboard")
-	}
-	for i := 1; i <= clipboardQueueSize+1; i++ {
-		send(t, w, proto.Message{"t": "clipboard.get", "id": fmt.Sprint(i)})
-	}
-	refused := expect(t, r, "clipboard.text")
-	want := "64 clipboard operations of this connection are waiting for the PC's clipboard tool; retry once it answers"
-	if refused.String("id") != fmt.Sprint(clipboardQueueSize+1) || refused.String("error") != want || refused.String("text") != "" {
-		t.Fatalf("the clipboard.get beyond the queue answered %v", refused)
-	}
-	cb.stuck.Store(false)
-	close(cb.release)
-	for i := 0; i <= clipboardQueueSize; i++ {
-		got := expect(t, r, "clipboard.text")
-		if got.String("id") != fmt.Sprint(i) || got.Has("error") || got.String("text") != "PC text" {
-			t.Fatalf("reply %d: %v", i, got)
-		}
-	}
-	send(t, w, proto.Message{"t": "clipboard.get"})
-	if got := expect(t, r, "clipboard.text"); got.Has("id") {
-		t.Fatalf("a clipboard.get without an id answered %v", got)
 	}
 }
 
@@ -127,7 +87,7 @@ func TestOneClipboardWatcherPollsLessWhileNothingChanges(t *testing.T) {
 	}
 	cb.external("changed on the PC")
 	for i, r := range readers {
-		if m := expect(t, r, "clipboard.changed"); m.String("text") != "changed on the PC" {
+		if m := expectEvent(t, r, "clipboard.changed"); m.String("text") != "changed on the PC" {
 			t.Fatalf("connection %d got %v", i, m)
 		}
 	}

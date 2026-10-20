@@ -92,10 +92,4 @@ func TestExecPowerShellDoesNotLoadAModuleOfTheInheritedModulePath(t *testing.T) 
 		t.Fatalf("exec.run with env PSModulePath printed %q, stderr %q, code %d", got, res.String("stderr"), res.Int("code"))
 	}
 	expectNotRun(t, marker)
-
-	out, code := runShell(check)
-	if got := strings.Fields(out); !reflect.DeepEqual(got, want) || code != 0 {
-		t.Fatalf("the v1 exec printed %q, code %d", out, code)
-	}
-	expectNotRun(t, marker)
 }

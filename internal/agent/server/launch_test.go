@@ -88,7 +88,7 @@ func TestLaunchGated(t *testing.T) {
 	expect(t, r, "hello")
 	w.Send(proto.Message{"t": "req", "id": 1, "op": "app.launch", "path": "sh"})
 	res := expect(t, r, "res")
-	if res["ok"] != false || res.String("error") != "exec disabled; start deskhand-agent with --allow-exec" {
+	if res["ok"] != false || res.String("error") != errExecDisabled {
 		t.Fatalf("res %v", res)
 	}
 }

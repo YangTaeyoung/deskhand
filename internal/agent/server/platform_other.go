@@ -5,20 +5,9 @@ package server
 import (
 	"errors"
 	"os"
-	"os/exec"
 	"syscall"
 	"time"
 )
-
-func platformShutdown() error {
-	if _, err := exec.LookPath("systemctl"); err == nil {
-		return exec.Command("systemctl", "poweroff").Run()
-	}
-	return exec.Command("shutdown", "-h", "now").Run()
-}
-
-// resolutionSupported says whether setResolution can change the display mode.
-const resolutionSupported = false
 
 // clipboardPollFastest and clipboardPollSlowest bound the time between two
 // clipboard polls, which run a clipboard tool here.
@@ -26,12 +15,6 @@ const (
 	clipboardPollFastest = 500 * time.Millisecond
 	clipboardPollSlowest = 4 * time.Second
 )
-
-func currentResolution() (int, int, bool) { return 0, 0, false }
-
-func setResolution(w, h int) error {
-	return errors.New("resolution change not supported on this platform")
-}
 
 // volumeRoots returns the root folder.
 func volumeRoots(string) ([]string, error) { return []string{"/"}, nil }

@@ -3,9 +3,7 @@
 package server
 
 import (
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -45,15 +43,7 @@ func TestEntriesCreatedInTheHomeBelongToTheSessionUser(t *testing.T) {
 	c.ok("fs.rename", proto.Message{"from": "proj/src/main.c.deskhand-part", "to": "proj/src/main.c"})
 	c.ok("fs.mkdir", proto.Message{"path": "proj/out/bin"})
 	c.ok("fs.write", proto.Message{"path": "kept.txt", "data": data, "append": true})
-	payload := []byte("drop")
-	sum := sha256.Sum256(payload)
-	send(t, c.w, proto.Message{"t": "file.begin", "id": "d1", "name": "drop.bin", "size": len(payload), "dest": "downloads"})
-	send(t, c.w, proto.Message{"t": "file.chunk", "id": "d1", "data": base64.StdEncoding.EncodeToString(payload)})
-	send(t, c.w, proto.Message{"t": "file.end", "id": "d1", "sha256": hex.EncodeToString(sum[:])})
-	if done := expect(t, c.r, "file.done"); done.String("error") != "" {
-		t.Fatalf("file.done %v", done)
-	}
-	for _, rel := range []string{"proj", "proj/src", "proj/src/main.c", "proj/out", "proj/out/bin", "Downloads", "Downloads/drop.bin"} {
+	for _, rel := range []string{"proj", "proj/src", "proj/src/main.c", "proj/out", "proj/out/bin"} {
 		if u, g := owner(t, filepath.Join(home, rel)); u != uid || g != gid {
 			t.Errorf("%s belongs to %d:%d", rel, u, g)
 		}

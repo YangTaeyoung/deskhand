@@ -144,12 +144,6 @@ func TestAnExecChildDoesNotGetTheAgentsEnvironmentOrRunAProgramOfItsPath(t *test
 		t.Fatalf("cmd printed %q", got)
 	}
 
-	out, code := runShell(show)
-	if code != 0 {
-		t.Fatalf("the v1 exec printed %q, code %d", out, code)
-	}
-	expectClean("the v1 exec", out)
-
 	res = c.ok("exec.run", proto.Message{"argv": []any{"where", "cmd.exe"}})
 	if res.Int("code") != 0 || !strings.Contains(strings.ToLower(res.String("stdout")), `\system32\cmd.exe`) {
 		t.Fatalf("where printed %q, stderr %q, code %d", res.String("stdout"), res.String("stderr"), res.Int("code"))

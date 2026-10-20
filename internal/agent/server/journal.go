@@ -53,7 +53,8 @@ type journalRecord struct {
 }
 
 // journalEntry is what the journal keeps in memory of one rid; res is kept
-// only by a journal without a folder.
+// by a journal without a folder and when the record of the answer could not
+// be written.
 type journalEntry struct {
 	op       string
 	running  bool
@@ -73,6 +74,8 @@ type journal struct {
 	mu      sync.Mutex
 	entries map[string]*journalEntry
 	pruned  time.Time
+	// writeRecord stores a record in dir; it is read with mu held.
+	writeRecord func(journalRecord) error
 }
 
 // openJournal returns the journal of dir, loading its records; an empty dir
@@ -81,6 +84,7 @@ type journal struct {
 // be read too, and records older than journalKeep are removed.
 func openJournal(dir string, lg *log.Logger) *journal {
 	j := &journal{dir: dir, lg: lg, now: time.Now, entries: map[string]*journalEntry{}}
+	j.writeRecord = j.write
 	if dir == "" {
 		return j
 	}
@@ -155,8 +159,22 @@ func windowsDeviceName(name string) bool {
 	return len(n) == 4 && (strings.HasPrefix(n, "COM") || strings.HasPrefix(n, "LPT")) && n[3] >= '0' && n[3] <= '9'
 }
 
-func ridError(rid string) error {
-	return coded(wire.CodeInvalidArgument, fmt.Sprintf("rid '%s' is not 1 to %d letters, digits, '-' or '_', or names a Windows device; use a ULID or UUID", cutChars(rid, ridMaxLen), ridMaxLen), false)
+func ridError(rid any) error {
+	return coded(wire.CodeInvalidArgument, fmt.Sprintf("rid %s is not a string of 1 to %d letters, digits, '-' or '_', or names a Windows device; use a ULID or UUID", cutChars(fmt.Sprintf("%q", fmt.Sprint(rid)), ridMaxLen+2), ridMaxLen), false)
+}
+
+// requestRID returns the rid of req and whether req has one; a rid that is
+// present but not a string validRID accepts is an error.
+func requestRID(req proto.Message) (string, bool, error) {
+	v, ok := req["rid"]
+	if !ok {
+		return "", false, nil
+	}
+	rid, isString := v.(string)
+	if !isString || !validRID(rid) {
+		return "", false, ridError(v)
+	}
+	return rid, true, nil
 }
 
 func (j *journal) path(rid string) string { return filepath.Join(j.dir, rid+".json") }
@@ -222,16 +240,23 @@ func (j *journal) pruneLocked(now time.Time) {
 	}
 }
 
-// storedLocked returns the answer fields of the finished entry e of rid.
-// j.mu is held.
+// storedLocked returns the answer fields of the finished entry e of rid: the
+// ones kept in memory, else the ones of its record, else, for a record
+// without an answer, interruptedAnswer. j.mu is held.
 func (j *journal) storedLocked(rid string, e *journalEntry) (proto.Message, error) {
-	if j.dir == "" {
+	if e.res != nil {
 		return e.res, nil
+	}
+	if j.dir == "" {
+		return interruptedAnswer(), nil
 	}
 	rec, err := j.read(rid)
 	if err != nil {
 		j.lg.Printf("journal: read the record of %s: %v", rid, err)
 		return nil, coded(wire.CodeInternal, fmt.Sprintf("the journal record of rid '%s' cannot be read; see the agent log", rid), false)
+	}
+	if rec.State != journalDone || rec.Res == nil {
+		return interruptedAnswer(), nil
 	}
 	return rec.Res, nil
 }
@@ -256,7 +281,7 @@ func (j *journal) begin(rid, op string) (string, proto.Message, error) {
 		return journalDone, res, err
 	}
 	if j.dir != "" {
-		if err := j.write(journalRecord{RID: rid, Op: op, State: journalRunning, Started: now}); err != nil {
+		if err := j.writeRecord(journalRecord{RID: rid, Op: op, State: journalRunning, Started: now}); err != nil {
 			j.lg.Printf("journal: %v", err)
 			return "", nil, coded(wire.CodeInternal, fmt.Sprintf("the request was not run because its journal record could not be written in %s; check that the folder is writable", j.dir), true)
 		}
@@ -265,23 +290,28 @@ func (j *journal) begin(rid, op string) (string, proto.Message, error) {
 	return "", nil, nil
 }
 
-// finish records res, an answer without t and id, as the answer of rid.
+// finish records res, an answer without t and id, as the answer of rid. The
+// answer stays in memory when the journal has no folder or its record could
+// not be written.
 func (j *journal) finish(rid string, res proto.Message) {
 	j.mu.Lock()
 	e := j.entries[rid]
+	write := j.writeRecord
 	j.mu.Unlock()
 	if e == nil {
 		return
 	}
 	now := j.now()
-	if j.dir != "" {
-		if err := j.write(journalRecord{RID: rid, Op: e.op, State: journalDone, Started: e.started, Finished: now, Res: res}); err != nil {
-			j.lg.Printf("journal: %v", err)
+	keep := j.dir == ""
+	if !keep {
+		if err := write(journalRecord{RID: rid, Op: e.op, State: journalDone, Started: e.started, Finished: now, Res: res}); err != nil {
+			j.lg.Printf("journal: %v; the answer of %s is kept in memory until the agent stops", err, rid)
+			keep = true
 		}
 	}
 	j.mu.Lock()
 	e.running, e.finished = false, now
-	if j.dir == "" {
+	if keep {
 		e.res = res
 	}
 	j.mu.Unlock()
@@ -333,10 +363,6 @@ func answerOf(id any, fields proto.Message, extra proto.Message) proto.Message {
 // rid runs is answered IN_PROGRESS, one whose rid finished gets the stored
 // answer with replayed set.
 func (s *Server) dispatchJournaled(ctx context.Context, req proto.Message, rid string, send func(m proto.Message, line []byte)) {
-	if !validRID(rid) {
-		send(failure(req["id"], ridError(rid)), nil)
-		return
-	}
 	state, stored, err := s.journal.begin(rid, req.String("op"))
 	switch {
 	case err != nil:
@@ -354,15 +380,12 @@ func (s *Server) dispatchJournaled(ctx context.Context, req proto.Message, rid s
 	send(res, line)
 }
 
-// reqStatus answers req.status: the state of the request with rid, and when
-// it is done the fields of its answer.
-func (s *Server) reqStatus(req proto.Message) proto.Message {
-	rid := req.String("rid")
+// reqStatus answers req.status for rid, a valid rid or "" when the request
+// has none: the state of the request with rid, and when it is done the fields
+// of its answer.
+func (s *Server) reqStatus(req proto.Message, rid string) proto.Message {
 	if rid == "" {
 		return failure(req["id"], coded(wire.CodeInvalidArgument, "req.status needs the rid of the request to look up", false))
-	}
-	if !validRID(rid) {
-		return failure(req["id"], ridError(rid))
 	}
 	state, stored, err := s.journal.status(rid)
 	if err != nil {

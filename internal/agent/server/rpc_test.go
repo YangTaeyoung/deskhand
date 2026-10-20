@@ -48,15 +48,21 @@ func capSet(m proto.Message) map[string]bool {
 	return set
 }
 
-// expectCaps returns the next caps.changed event.
-func expectCaps(t *testing.T, r *proto.Reader) proto.Message {
+// expectEvent returns the next event named name.
+func expectEvent(t *testing.T, r *proto.Reader, name string) proto.Message {
 	t.Helper()
 	for {
 		m := expect(t, r, "ev")
-		if m.String("name") == "caps.changed" {
+		if m.String("name") == name {
 			return m
 		}
 	}
+}
+
+// expectCaps returns the next caps.changed event.
+func expectCaps(t *testing.T, r *proto.Reader) proto.Message {
+	t.Helper()
+	return expectEvent(t, r, "caps.changed")
 }
 
 func TestHelloCarriesEveryCapabilityKey(t *testing.T) {
@@ -194,7 +200,7 @@ func TestGatedOpWithoutAllowExec(t *testing.T) {
 	expect(t, r, "hello")
 	send(t, w, proto.Message{"t": "req", "id": 2, "op": "t.gated"})
 	res := expect(t, r, "res")
-	if res["ok"] != false || res.String("error") != "exec disabled; start deskhand-agent with --allow-exec" || res.Has("ran") {
+	if res["ok"] != false || res.String("error") != "exec, file and process operations are off in this agent; start it with deskhand-agent run, which serves them" || res.Has("ran") {
 		t.Fatalf("res %v", res)
 	}
 }
@@ -374,18 +380,6 @@ func TestEmitReachesAllConnections(t *testing.T) {
 		if ev.String("name") != "x" || ev.Int("n") != 1 {
 			t.Fatalf("connection %d ev %v", i, ev)
 		}
-	}
-}
-
-func TestV1MessagesStillWork(t *testing.T) {
-	cb := &fakeClipboard{text: "v1 text"}
-	_, r, w, _ := startServerS(t, Options{Clipboard: cb, HomeDir: t.TempDir()})
-	expect(t, r, "hello")
-	send(t, w, proto.Message{"t": "req", "id": 1, "op": "ping"})
-	expect(t, r, "res")
-	send(t, w, proto.Message{"t": "clipboard.get"})
-	if got := expect(t, r, "clipboard.text"); got.String("text") != "v1 text" {
-		t.Fatalf("clipboard.text %v", got)
 	}
 }
 

@@ -3,9 +3,7 @@
 package server
 
 import (
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"net"
 	"os"
 	"os/exec"
@@ -66,20 +64,6 @@ func TestHomeRelativePathsResolveAgainstTheSessionHome(t *testing.T) {
 	}
 }
 
-func TestFileDropsGoToTheSessionHome(t *testing.T) {
-	home := t.TempDir()
-	c := sessionClient(t, session.Session{User: "deskhand", Home: home}, true)
-	payload := []byte("drop")
-	sum := sha256.Sum256(payload)
-	send(t, c.w, proto.Message{"t": "file.begin", "id": "d1", "name": "drop.bin", "size": len(payload), "dest": "downloads"})
-	send(t, c.w, proto.Message{"t": "file.chunk", "id": "d1", "data": base64.StdEncoding.EncodeToString(payload)})
-	send(t, c.w, proto.Message{"t": "file.end", "id": "d1", "sha256": hex.EncodeToString(sum[:])})
-	done := expect(t, c.r, "file.done")
-	if want := filepath.Join(home, "Downloads", "drop.bin"); done.String("path") != want {
-		t.Fatalf("file.done %v, want path %s", done, want)
-	}
-}
-
 func TestAMissingSessionHomeNamesHowToCreateIt(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "bob")
 	c := sessionClient(t, session.Session{User: "bob", Home: home}, true)
@@ -93,10 +77,6 @@ func TestAMissingSessionHomeNamesHowToCreateIt(t *testing.T) {
 		if res["ok"] != false || res.String("error") != want {
 			t.Fatalf("answer %v, want the error %q", res, want)
 		}
-	}
-	send(t, c.w, proto.Message{"t": "file.begin", "id": "d1", "name": "drop.bin", "size": 1})
-	if done := expect(t, c.r, "file.done"); done.String("error") != want {
-		t.Fatalf("file.done %v, want the error %q", done, want)
 	}
 }
 

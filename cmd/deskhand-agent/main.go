@@ -148,7 +148,11 @@ func cmdInstall(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, "설정을 읽지 못했습니다", err)
 	}
-	if err := install(cfg, stdout); err != nil {
+	taskConfig, err := taskConfigPath(*cfgPath, config.DefaultPath())
+	if err != nil {
+		return fail(stderr, "설정 경로를 확인하지 못했습니다", err)
+	}
+	if err := install(cfg, taskConfig, stdout); err != nil {
 		writeInstallLog(cfg.DataDir, "install failed: "+err.Error())
 		return fail(stderr, "설치하지 못했습니다", err)
 	}

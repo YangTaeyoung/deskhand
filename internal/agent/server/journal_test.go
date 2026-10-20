@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -316,5 +317,66 @@ func TestAReadOnlyOpWithRidIsNotJournaled(t *testing.T) {
 	}
 	if st := a.c.ok("req.status", proto.Message{"rid": "r-read"}).String("state"); st != "unknown" {
 		t.Fatalf("req.status of a read-only op is %s", st)
+	}
+}
+
+func TestAReplayAfterAFailedJournalWriteCarriesTheAnswer(t *testing.T) {
+	marks := filepath.Join(t.TempDir(), "marks.txt")
+	a := startAgentOn(t, t.TempDir())
+	j := a.s.journal
+	j.mu.Lock()
+	write := j.writeRecord
+	j.writeRecord = func(rec journalRecord) error {
+		if rec.State == journalDone {
+			return errors.New("the disk is full")
+		}
+		return write(rec)
+	}
+	j.mu.Unlock()
+	req := proto.Message{"rid": "r-unwritten", "cmd": appendLine(marks)}
+	first := a.c.ok("exec.run", req)
+	second := a.c.ok("exec.run", req)
+	if second["replayed"] != true || second.Int("code") != first.Int("code") || !second.Has("stdout") {
+		t.Fatalf("replay after a failed write %v", second)
+	}
+	status := a.c.ok("req.status", proto.Message{"rid": "r-unwritten"})
+	if status.String("state") != "done" || !status.Has("stdout") {
+		t.Fatalf("req.status after a failed write %v", status)
+	}
+	if n := countLines(t, marks); n != 1 {
+		t.Fatalf("the command ran %d times", n)
+	}
+}
+
+func TestAFinishedEntryWhoseRecordHasNoAnswerIsAnsweredAsUnknownOutcome(t *testing.T) {
+	dir := t.TempDir()
+	a := startAgentOn(t, dir)
+	a.c.ok("exec.run", proto.Message{"rid": "r-overwritten", "cmd": "echo x"})
+	record, _ := json.Marshal(map[string]any{"rid": "r-overwritten", "op": "exec.run", "state": "running", "started": time.Now().UTC()})
+	if err := os.WriteFile(filepath.Join(dir, "journal", "r-overwritten.json"), record, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res := a.c.call("exec.run", proto.Message{"rid": "r-overwritten", "cmd": "echo x"})
+	if res["ok"] != false || res.String("code") != "EXECUTION_OUTCOME_UNKNOWN" || res["replayed"] != true {
+		t.Fatalf("replay of a record without an answer %v", res)
+	}
+}
+
+func TestAPresentButInvalidRidIsRefusedOnEveryOp(t *testing.T) {
+	marks := filepath.Join(t.TempDir(), "marks.txt")
+	a := startAgentOn(t, t.TempDir())
+	for _, rid := range []any{5, "", "../x", nil, true} {
+		for _, op := range []string{"ping", "exec.list", "exec.run", "req.status"} {
+			res := a.c.call(op, proto.Message{"rid": rid, "cmd": appendLine(marks)})
+			if res["ok"] != false || res.String("code") != "INVALID_ARGUMENT" || res.Has("pong") {
+				t.Fatalf("%s with rid %#v: %v", op, rid, res)
+			}
+		}
+	}
+	if n := countLines(t, marks); n != 0 {
+		t.Fatalf("the command ran %d times", n)
+	}
+	if res := a.c.ok("ping", proto.Message{"rid": "r-valid"}); res["pong"] != true {
+		t.Fatalf("ping with a valid rid %v", res)
 	}
 }

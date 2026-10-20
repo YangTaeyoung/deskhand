@@ -3,9 +3,7 @@
 package server
 
 import (
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"os"
 	"path/filepath"
 	"testing"
@@ -42,22 +40,6 @@ func untouched(t *testing.T, outside string) {
 	if b, _ := os.ReadFile(filepath.Join(outside, "shadow")); string(b) != "secret" {
 		t.Fatalf("shadow holds %q", b)
 	}
-}
-
-func TestDropThroughALinkedDownloadsFolderFails(t *testing.T) {
-	home, outside := linkedHome(t)
-	symlink(t, outside, filepath.Join(home, "Downloads"))
-	c := sessionClient(t, session.Session{User: "deskhand", Home: home}, true)
-	payload := []byte("APT::Update::Pre-Invoke {\"id\"};")
-	sum := sha256.Sum256(payload)
-	send(t, c.w, proto.Message{"t": "file.begin", "id": "d1", "name": "build-log", "size": len(payload), "dest": "downloads"})
-	send(t, c.w, proto.Message{"t": "file.chunk", "id": "d1", "data": base64.StdEncoding.EncodeToString(payload)})
-	send(t, c.w, proto.Message{"t": "file.end", "id": "d1", "sha256": hex.EncodeToString(sum[:])})
-	done := expect(t, c.r, "file.done")
-	if done.String("error") == "" {
-		t.Fatalf("file.done %v", done)
-	}
-	untouched(t, outside)
 }
 
 func TestWritesThroughLinksThatLeaveTheHomeFail(t *testing.T) {

@@ -5,7 +5,6 @@ package server
 import (
 	"strings"
 	"testing"
-	"time"
 	"unicode/utf8"
 
 	"github.com/YangTaeyoung/deskhand/internal/proto"
@@ -27,14 +26,6 @@ func TestExecRunTruncatedStreamStartsOnACharacter(t *testing.T) {
 		t.Fatalf("res not truncated: %v", res["truncated"])
 	}
 	checkKoreanTail(t, "exec.run stdout", res.String("stdout"))
-}
-
-func TestV1ExecTruncatedStreamStartsOnACharacter(t *testing.T) {
-	r, w, c := startServer(t, Options{Clipboard: &fakeClipboard{}, HomeDir: t.TempDir(), AllowExec: true})
-	c.SetDeadline(time.Now().Add(20 * time.Second))
-	expect(t, r, "hello")
-	w.Send(proto.Message{"t": "exec", "cmd": koreanTail})
-	checkKoreanTail(t, "exec.result out", expect(t, r, "exec.result").String("out"))
 }
 
 func TestExecListCutsLongCommands(t *testing.T) {
@@ -59,16 +50,4 @@ func TestExecListCutsLongCommands(t *testing.T) {
 		return
 	}
 	t.Fatalf("job %s missing from exec.list", job)
-}
-
-func TestV1ExecKeepsLastBytes(t *testing.T) {
-	r, w, c := startServer(t, Options{Clipboard: &fakeClipboard{}, HomeDir: t.TempDir(), AllowExec: true})
-	c.SetDeadline(time.Now().Add(20 * time.Second))
-	expect(t, r, "hello")
-	w.Send(proto.Message{"t": "exec", "cmd": `head -c 300000 /dev/zero | tr '\0' 'a'; echo END`})
-	res := expect(t, r, "exec.result")
-	out := res.String("out")
-	if len(out) != 200000 || !strings.HasSuffix(out, "END\n") || res.Int("code") != 0 {
-		t.Fatalf("exec.result code %d, %d bytes, tail %q", res.Int("code"), len(out), out[max(0, len(out)-8):])
-	}
 }

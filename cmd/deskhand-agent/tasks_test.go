@@ -3,37 +3,80 @@ package main
 import (
 	"encoding/xml"
 	"io"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 	"unicode/utf16"
 )
 
-func TestTaskXMLStartsTheInstalledAgentAtTheUsersLogon(t *testing.T) {
-	doc := taskXML(`OFFICE-PC\kim & co`, "S-1-5-21-1-2-3-1001")
-	var task struct {
-		Trigger   string `xml:"Triggers>LogonTrigger>UserId"`
-		Principal struct {
-			UserID    string `xml:"UserId"`
-			LogonType string `xml:"LogonType"`
-			RunLevel  string `xml:"RunLevel"`
-		} `xml:"Principals>Principal"`
-		Limit   string `xml:"Settings>ExecutionTimeLimit"`
-		Battery string `xml:"Settings>DisallowStartIfOnBatteries"`
-		Command string `xml:"Actions>Exec>Command"`
-		Args    string `xml:"Actions>Exec>Arguments"`
-	}
+type taskDoc struct {
+	Trigger   string `xml:"Triggers>LogonTrigger>UserId"`
+	Principal struct {
+		UserID    string `xml:"UserId"`
+		LogonType string `xml:"LogonType"`
+		RunLevel  string `xml:"RunLevel"`
+	} `xml:"Principals>Principal"`
+	Limit   string `xml:"Settings>ExecutionTimeLimit"`
+	Battery string `xml:"Settings>DisallowStartIfOnBatteries"`
+	Command string `xml:"Actions>Exec>Command"`
+	Args    string `xml:"Actions>Exec>Arguments"`
+}
+
+func parseTask(t *testing.T, doc string) taskDoc {
+	t.Helper()
+	var task taskDoc
 	dec := xml.NewDecoder(strings.NewReader(doc))
 	dec.CharsetReader = func(_ string, r io.Reader) (io.Reader, error) { return r, nil }
 	if err := dec.Decode(&task); err != nil {
 		t.Fatal(err)
 	}
+	return task
+}
+
+func TestTaskXMLStartsTheInstalledAgentAtTheUsersLogon(t *testing.T) {
+	task := parseTask(t, taskXML(`OFFICE-PC\kim & co`, "S-1-5-21-1-2-3-1001", ""))
 	if task.Trigger != `OFFICE-PC\kim & co` || task.Principal.UserID != "S-1-5-21-1-2-3-1001" ||
 		task.Principal.LogonType != "InteractiveToken" || task.Principal.RunLevel != "HighestAvailable" {
 		t.Fatalf("task %+v", task)
 	}
-	if task.Command != `C:\Program Files\Deskhand\deskhand-agent.exe` || task.Args != "run" || task.Limit != "PT0S" || task.Battery != "false" {
+	if task.Command != `"C:\Program Files\Deskhand\deskhand-agent.exe"` || task.Args != "run" || task.Limit != "PT0S" || task.Battery != "false" {
 		t.Fatalf("task %+v", task)
+	}
+}
+
+func TestTaskXMLPassesAConfigPathOutsideTheDefault(t *testing.T) {
+	task := parseTask(t, taskXML(`PC\kim`, "S-1-5-21-1", `D:\Agent Data\a&b "x".json`))
+	if want := `run --config "D:\Agent Data\a&b \"x\".json"`; task.Args != want {
+		t.Fatalf("arguments %q, want %q", task.Args, want)
+	}
+}
+
+func TestQuoteArg(t *testing.T) {
+	for in, want := range map[string]string{
+		`C:\plain\agent.json`:  `C:\plain\agent.json`,
+		`C:\with space\a.json`: `"C:\with space\a.json"`,
+		`C:\dir with space\`:   `"C:\dir with space\\"`,
+		`a"b`:                  `"a\"b"`,
+		``:                     `""`,
+	} {
+		if got := quoteArg(in); got != want {
+			t.Fatalf("quoteArg(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestTaskConfigPathLeavesTheDefaultOut(t *testing.T) {
+	dir := t.TempDir()
+	def := filepath.Join(dir, "Deskhand", "agent.json")
+	for _, p := range []string{def, strings.ToUpper(def)} {
+		if got, err := taskConfigPath(p, def); err != nil || got != "" {
+			t.Fatalf("the default path %s gave %q, %v", p, got, err)
+		}
+	}
+	other := filepath.Join(dir, "other", "agent.json")
+	if got, err := taskConfigPath(other, def); err != nil || got != other {
+		t.Fatalf("another path gave %q, %v", got, err)
 	}
 }
 

@@ -131,10 +131,10 @@ func copySelf() error {
 }
 
 // install locks the data folder, copies the agent to installedExe, registers
-// the scheduled task for the user who runs it, opens the agent's UDP port to
-// the local subnet and starts the task. Running it again updates every part
-// in place.
-func install(cfg config.Agent, stdout io.Writer) error {
+// the scheduled task for the user who runs it, with --config configPath when
+// configPath is not empty, opens the agent's UDP port to the local subnet and
+// starts the task. Running it again updates every part in place.
+func install(cfg config.Agent, configPath string, stdout io.Writer) error {
 	port, err := listenPort(cfg.Listen)
 	if err != nil {
 		return err
@@ -151,7 +151,7 @@ func install(cfg config.Agent, stdout io.Writer) error {
 		return err
 	}
 	xmlPath := filepath.Join(cfg.DataDir, "task.xml")
-	if err := os.WriteFile(xmlPath, utf16File(taskXML(u.Username, u.Uid)), 0o600); err != nil {
+	if err := os.WriteFile(xmlPath, utf16File(taskXML(u.Username, u.Uid, configPath)), 0o600); err != nil {
 		return fmt.Errorf("could not write %s (%v); %s", xmlPath, err, elevatedRerun)
 	}
 	out, err := tool("schtasks.exe", taskCreateArgs(xmlPath)...)

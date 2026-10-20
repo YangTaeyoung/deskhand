@@ -23,6 +23,6 @@ func prepareDataDir(dataDir string) error {
 // newUI returns nil: UI Automation exists only on Windows.
 func newUI(string, *log.Logger, func() *server.Server) server.UI { return nil }
 
-func install(config.Agent, io.Writer) error { return errWindowsOnly }
+func install(config.Agent, string, io.Writer) error { return errWindowsOnly }
 
 func uninstall(string, bool, io.Writer) error { return errWindowsOnly }

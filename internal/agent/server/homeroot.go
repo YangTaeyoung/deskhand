@@ -11,7 +11,7 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/agent/session"
 )
 
-// writeFS is where the fs operations and file drops change entries: the plain
+// writeFS is where the fs operations change entries: the plain
 // file system for absolute paths, or the desktop session's home opened as an
 // os.Root for paths relative to it.
 type writeFS interface {

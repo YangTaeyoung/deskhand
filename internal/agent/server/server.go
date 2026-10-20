@@ -3,19 +3,11 @@ package server
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log"
 	"net"
-	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,23 +15,22 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/agent/clipboard"
 	"github.com/YangTaeyoung/deskhand/internal/agent/session"
 	"github.com/YangTaeyoung/deskhand/internal/proto"
+	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
 // Options configure the agent.
 type Options struct {
 	AllowExec bool
 	Clipboard clipboard.Clipboard
-	// HomeDir is the home directory of home-relative paths, file drops and
-	// the default working directory; empty means the home directory of the
+	// HomeDir is the home directory of home-relative paths and the default
+	// working directory; empty means the home directory of the
 	// desktop session, or the agent's own without a session.
 	HomeDir string
 	// Session returns the desktop session whose user runs app.launch and the
 	// clipboard tools; nil means the platform default (loginctl outside
 	// Windows, none on Windows), or none when HomeDir is set.
 	Session func() (session.Session, bool)
-	// Shutdown runs an OS shutdown; nil uses the platform default.
-	Shutdown func() error
-	Logger   *log.Logger
+	Logger  *log.Logger
 	// UI serves the ui and win ops; nil means the agent has no ui capability.
 	UI UI
 	// DeployRoot is a folder the agent keeps locked; nil means none.
@@ -192,68 +183,6 @@ func (s *Server) helloCaps() capStates {
 	return s.caps()
 }
 
-// fileXfer is a file push in progress: f is open on name in fsys, path is
-// its absolute path.
-type fileXfer struct {
-	f    *os.File
-	fsys writeFS
-	name string
-	path string
-	size int
-	got  int
-	h    interface{ Write([]byte) (int, error) }
-	sum  func() []byte
-}
-
-// discard closes the push and removes its file.
-func (x *fileXfer) discard() {
-	x.f.Close()
-	_ = x.fsys.Remove(x.name)
-	x.fsys.Close()
-}
-
-// finish closes the push and keeps its file.
-func (x *fileXfer) finish() {
-	x.f.Close()
-	x.fsys.Close()
-}
-
-// beginDrop creates the file of a file push named base(name) in the Desktop
-// folder of the home directory, or in its Downloads folder for dest
-// "downloads", creating that folder when missing. A name that is taken gets
-// " (2)", " (3)", … before its extension. In the desktop session's home the
-// folder and the file are created through an os.Root and belong to the
-// session's user.
-func (s *Server) beginDrop(dest, name string) (*fileXfer, error) {
-	name = filepath.Base(name)
-	if name == "." || name == "" || name == ".." || name == string(filepath.Separator) {
-		return nil, errors.New("bad name")
-	}
-	folder := "Desktop"
-	if dest == "downloads" {
-		folder = "Downloads"
-	}
-	v := s.view()
-	dir := filepath.Join(v.dir, folder)
-	fsys, dirName, err := s.writerIn(v, dir)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := fsys.Stat(dirName); errors.Is(err, fs.ErrNotExist) {
-		_ = fsys.MkdirAll(dirName)
-	}
-	fileName := uniqueName(fsys, filepath.Join(dirName, name))
-	f, err := fsys.OpenFile(fileName, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-	if err != nil {
-		err = fsys.explain(fileName, err)
-		fsys.Close()
-		return nil, err
-	}
-	h := sha256.New()
-	return &fileXfer{f: f, fsys: fsys, name: fileName, path: filepath.Join(dir, filepath.Base(fileName)), h: h,
-		sum: func() []byte { return h.Sum(nil) }}, nil
-}
-
 // greet writes the hello with caps and reads the host's first message, which
 // has to be its welcome within welcomeTimeout. It reports whether the welcome
 // arrived and returns the controller name it carries.
@@ -311,30 +240,8 @@ func (s *Server) ServeConn(ctx context.Context, rw io.ReadWriteCloser, peer stri
 	s.addConn(cn)
 	defer s.removeConn(cn)
 
-	quit := make(chan struct{})
-	defer close(quit)
 	s.startWatchers()
-	clipOps := newSerialQueue(quit)
-	go func() { // keepalive
-		t := time.NewTicker(10 * time.Second)
-		defer t.Stop()
-		for {
-			select {
-			case <-quit:
-				return
-			case <-t.C:
-				send(proto.Message{"t": "ping"})
-			}
-		}
-	}()
-
 	inFlight := make(chan struct{}, maxInFlight)
-	xfers := map[string]*fileXfer{}
-	defer func() {
-		for _, x := range xfers {
-			x.discard()
-		}
-	}()
 	for {
 		m, err := r.Next()
 		if err != nil {
@@ -344,9 +251,6 @@ func (s *Server) ServeConn(ctx context.Context, rw io.ReadWriteCloser, peer stri
 			return
 		}
 		switch m.Type() {
-		case "ping":
-			send(proto.Message{"t": "pong"})
-		case "pong", "welcome":
 		case "req":
 			select {
 			case inFlight <- struct{}{}:
@@ -357,118 +261,9 @@ func (s *Server) ServeConn(ctx context.Context, rw io.ReadWriteCloser, peer stri
 			default:
 				send(proto.Message{"t": "res", "id": m["id"], "ok": false, "error": tooManyRequests()})
 			}
-		case "clipboard.get":
-			reply := proto.Message{"t": "clipboard.text"}
-			if id, ok := m["id"]; ok {
-				reply["id"] = id
-			}
-			queued := clipOps.run(func() {
-				text, err := s.opt.Clipboard.Text()
-				if err != nil {
-					lg.Printf("clipboard.get: %v", err)
-				}
-				reply["text"] = cutUTF8Bytes(text, clipboardMaxBytes)
-				send(reply)
-			})
-			if !queued {
-				lg.Printf("clipboard.get: %s", errClipboardQueueFull)
-				reply["text"], reply["error"] = "", errClipboardQueueFull
-				send(reply)
-			}
-		case "clipboard.set":
-			text := m.String("text")
-			queued := clipOps.run(func() {
-				if err := s.opt.Clipboard.SetText(text); err != nil {
-					lg.Printf("clipboard.set: %v", err)
-				} else {
-					s.markOwnClipboard()
-				}
-			})
-			if !queued {
-				lg.Printf("clipboard.set dropped: %s", errClipboardQueueFull)
-			}
-		case "resolution.set":
-			if err := setResolution(m.Int("w"), m.Int("h")); err != nil {
-				lg.Printf("resolution.set: %v", err)
-			}
-			if wdt, hgt, ok := currentResolution(); ok {
-				send(proto.Message{"t": "resolution", "w": wdt, "h": hgt})
-			}
-		case "file.begin":
-			id := m.String("id")
-			x, err := s.beginDrop(m.String("dest"), m.String("name"))
-			if err != nil {
-				send(proto.Message{"t": "file.done", "id": id, "error": err.Error()})
-				continue
-			}
-			x.size = m.Int("size")
-			xfers[id] = x
-		case "file.chunk":
-			x := xfers[m.String("id")]
-			if x == nil {
-				continue
-			}
-			data, err := base64.StdEncoding.DecodeString(m.String("data"))
-			if err == nil && len(data) > fsChunkMax {
-				err = fmt.Errorf("a file.chunk carries at most %d bytes; send smaller chunks", fsChunkMax)
-			}
-			if err == nil {
-				_, err = x.f.Write(data)
-				x.h.Write(data)
-				x.got += len(data)
-			}
-			if err != nil {
-				x.discard()
-				delete(xfers, m.String("id"))
-				send(proto.Message{"t": "file.done", "id": m.String("id"), "error": err.Error()})
-			}
-		case "file.end":
-			id := m.String("id")
-			x := xfers[id]
-			if x == nil {
-				continue
-			}
-			delete(xfers, id)
-			if want := m.String("sha256"); (want != "" && want != hex.EncodeToString(x.sum())) || (x.size > 0 && x.got != x.size) {
-				x.discard()
-				send(proto.Message{"t": "file.done", "id": id, "error": "digest or size mismatch"})
-				continue
-			}
-			x.finish()
-			send(proto.Message{"t": "file.done", "id": id, "path": x.path})
-		case "shutdown":
-			fn := s.opt.Shutdown
-			if fn == nil {
-				fn = platformShutdown
-			}
-			if err := fn(); err != nil {
-				lg.Printf("shutdown: %v", err)
-			} else {
-				s.Close()
-			}
-		case "exec":
-			if !s.opt.AllowExec {
-				send(proto.Message{"t": "exec.result", "code": -1, "out": "exec disabled"})
-				continue
-			}
-			out, code := runShell(m.String("cmd"))
-			send(proto.Message{"t": "exec.result", "code": code, "out": out})
-		}
-	}
-}
-
-// uniqueName returns p, or p with " (2)", " (3)", … before its extension,
-// whichever is the first name fsys has no entry for.
-func uniqueName(fsys writeFS, p string) string {
-	if _, err := fsys.Lstat(p); err != nil {
-		return p
-	}
-	ext := filepath.Ext(p)
-	base := p[:len(p)-len(ext)]
-	for i := 2; ; i++ {
-		q := fmt.Sprintf("%s (%d)%s", base, i, ext)
-		if _, err := fsys.Lstat(q); err != nil {
-			return q
+		case "welcome":
+		default:
+			send(failure(m["id"], coded(wire.CodeInvalidArgument, fmt.Sprintf("the rpc stream carries only req messages, not '%s'; send {\"t\":\"req\",\"id\":…,\"op\":…}", cutChars(m.Type(), 64)), false)))
 		}
 	}
 }
@@ -551,7 +346,7 @@ func (s *Server) markOwnClipboard() {
 // watchClipboard polls the clipboard while a connection is open and the
 // clipboard is available, every clipboardPollMin after a change and up to
 // every clipboardPollMax while nothing changes, and sends a change the agent
-// did not make to every open connection as clipboard.changed.
+// did not make to every open stream as the event clipboard.changed.
 func (s *Server) watchClipboard() {
 	s.ownMu.Lock()
 	s.lastSeq = s.opt.Clipboard.Sequence()
@@ -585,73 +380,8 @@ func (s *Server) watchClipboard() {
 		if err != nil || text == "" {
 			continue
 		}
-		msg := proto.Message{"t": "clipboard.changed", "text": cutUTF8Bytes(text, clipboardMaxBytes)}
-		for _, c := range s.openConns() {
-			c.send(msg)
-		}
+		s.emit("clipboard.changed", proto.Message{"text": cutUTF8Bytes(text, clipboardMaxBytes)})
 	}
-}
-
-// serialQueue runs functions one after another on a goroutine of its own
-// until done is closed.
-type serialQueue chan func()
-
-// clipboardQueueSize bounds the clipboard operations a connection holds.
-const clipboardQueueSize = 64
-
-func newSerialQueue(done chan struct{}) serialQueue {
-	q := make(serialQueue, clipboardQueueSize)
-	go func() {
-		for {
-			select {
-			case <-done:
-				return
-			case f := <-q:
-				f()
-			}
-		}
-	}()
-	return q
-}
-
-// errClipboardQueueFull answers a clipboard operation that finds the queue
-// of its connection full.
-var errClipboardQueueFull = fmt.Sprintf("%d clipboard operations of this connection are waiting for the PC's clipboard tool; retry once it answers", clipboardQueueSize)
-
-// run queues f and reports whether it did; a full queue does not take f.
-func (q serialQueue) run(f func()) bool {
-	select {
-	case q <- f:
-		return true
-	default:
-		return false
-	}
-}
-
-func runShell(cmd string) (string, int) {
-	sys, err := agentSystem()
-	if err != nil {
-		return err.Error(), 1
-	}
-	c, err := buildCommand(proto.Message{"cmd": cmd}, sys)
-	if err != nil {
-		return err.Error(), 1
-	}
-	hideWindow(c)
-	// The child's input is a pipe at end-of-file.
-	c.Stdin = strings.NewReader("")
-	combined := newRing(runStreamBytes)
-	c.Stdout, c.Stderr = combined, combined
-	err = c.Run()
-	out, cut := combined.snapshot()
-	code := 0
-	if err != nil {
-		code = 1
-		if ee, ok := err.(*exec.ExitError); ok {
-			code = ee.ExitCode()
-		}
-	}
-	return streamText(out, cut), code
 }
 
 // Logger returns the logger of Options.Logger.

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"unicode/utf16"
@@ -43,11 +44,62 @@ func xmlText(s string) string {
 	return b.String()
 }
 
+// quoteArg quotes s for a Windows command line the way CommandLineToArgvW
+// splits it, when s is empty or holds a space, a tab or a quote.
+func quoteArg(s string) string {
+	if s != "" && !strings.ContainsAny(s, " \t\"") {
+		return s
+	}
+	var b strings.Builder
+	b.WriteByte('"')
+	slashes := 0
+	for _, c := range s {
+		switch c {
+		case '\\':
+			slashes++
+			continue
+		case '"':
+			b.WriteString(strings.Repeat(`\`, 2*slashes+1))
+		default:
+			b.WriteString(strings.Repeat(`\`, slashes))
+		}
+		slashes = 0
+		b.WriteRune(c)
+	}
+	b.WriteString(strings.Repeat(`\`, 2*slashes))
+	b.WriteByte('"')
+	return b.String()
+}
+
+// taskArguments returns the arguments of the task's action: run, with
+// --config and configPath when configPath is not empty.
+func taskArguments(configPath string) string {
+	if configPath == "" {
+		return "run"
+	}
+	return "run --config " + quoteArg(configPath)
+}
+
+// taskConfigPath returns the absolute form of path for the task's --config,
+// or "" when it names defaultPath, compared without regard to case.
+func taskConfigPath(path, defaultPath string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("the config path %s cannot be made absolute (%v); pass --config with a full path", path, err)
+	}
+	def, err := filepath.Abs(defaultPath)
+	if err == nil && strings.EqualFold(filepath.Clean(abs), filepath.Clean(def)) {
+		return "", nil
+	}
+	return abs, nil
+}
+
 // taskXML returns the Task Scheduler definition of the agent's task: it
-// starts `"installedExe" run` at the logon of user (DOMAIN\name), runs as the
-// account with the SID sid only while it is logged on, at the highest run
-// level, without a time limit, and starts again a minute after a failure.
-func taskXML(user, sid string) string {
+// starts the quoted installedExe with taskArguments(configPath) at the logon
+// of user (DOMAIN\name), runs as the account with the SID sid only while it
+// is logged on, at the highest run level, without a time limit, and starts
+// again a minute after a failure.
+func taskXML(user, sid, configPath string) string {
 	return `<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
@@ -91,8 +143,8 @@ func taskXML(user, sid string) string {
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>` + xmlText(installedExe) + `</Command>
-      <Arguments>run</Arguments>
+      <Command>` + xmlText(quoteArg(installedExe)) + `</Command>
+      <Arguments>` + xmlText(taskArguments(configPath)) + `</Arguments>
     </Exec>
   </Actions>
 </Task>

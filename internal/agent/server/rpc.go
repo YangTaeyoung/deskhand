@@ -12,7 +12,7 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/proto"
 )
 
-const errExecDisabled = "exec disabled; start deskhand-agent with --allow-exec"
+const errExecDisabled = "exec, file and process operations are off in this agent; start it with deskhand-agent run, which serves them"
 
 const (
 	// eventQueueSize bounds the events waiting to be written to one connection.
@@ -258,19 +258,24 @@ func (s *Server) removeConn(c *conn) {
 
 // dispatch runs one "req" message and sends the matching "res" with its
 // encoded line, or with a nil line when it was not encoded. A request without
-// an id is not run. req.status reads the journal; a journaled op with a rid
-// runs through dispatchJournaled.
+// an id, or with a rid requestRID refuses, is not run. req.status reads the
+// journal; a journaled op with a rid runs through dispatchJournaled.
 func (s *Server) dispatch(ctx context.Context, req proto.Message, send func(m proto.Message, line []byte)) {
 	if req["id"] == nil {
 		send(proto.Message{"t": "res", "id": nil, "ok": false, "error": errNoID}, nil)
 		return
 	}
-	op := req.String("op")
-	if op == "req.status" {
-		send(s.reqStatus(req), nil)
+	rid, hasRID, err := requestRID(req)
+	if err != nil {
+		send(failure(req["id"], err), nil)
 		return
 	}
-	if rid := req.String("rid"); rid != "" && journaledOps[op] {
+	op := req.String("op")
+	if op == "req.status" {
+		send(s.reqStatus(req, rid), nil)
+		return
+	}
+	if hasRID && journaledOps[op] {
 		s.dispatchJournaled(ctx, req, rid, send)
 		return
 	}
