@@ -160,9 +160,10 @@ deskhand/
 
 ## 10. QA
 
-- 시나리오 YAML: `name`, `host`, `setup`(push, launch), `steps`, `teardown`. 단계: `launch`, `wait_window`, `click`, `type`, `key`, `ui_act`, `assert_ui`, `assert_screen_text`(UIA 텍스트 기반), `assert_file`, `exec`, `screenshot`, `collect`, `sleep`.
-- 단계 결과: `pass | fail | blocked | not_run`, 각각 증거(스크린샷, UI 스냅샷, 로그)를 산출물로 저장.
+- 시나리오 YAML: `name`, `host`, `vars`, `setup`(push, launch), `steps`, `teardown`. 단계: `push`, `launch`, `wait_window`, `click`, `type`, `key`, `ui_act`, `assert_ui`, `assert_screen_text`(UIA 텍스트 기반), `assert_file`, `exec`, `screenshot`, `collect`, `sleep`, `close`.
+- 단계 결과: `pass | fail | blocked | not_run`, 각각 증거(스크린샷, UI 스냅샷, 로그)를 산출물로 저장. 입력·UI 계열 단계는 §5.1 제어권을 따르고 사람이 쥐고 있으면 `blocked`(제어권을 가져오지 않는다).
 - 결과 묶음: `report.json`(기계 판독, schema_version), `report.md`, `report.html`, `manifest.json`(산출물 sha256).
+- 시나리오 형식·단계 값·결과 규칙·결과 묶음의 세부 계약은 [local-api.md §10](local-api.md#10-qa-세부-계약).
 
 ## 11. 인터페이스
 
