@@ -359,18 +359,20 @@ func TestASoftwareEncoderIsNotWarmed(t *testing.T) {
 	for _, c := range []struct {
 		name     string
 		software func(n int) bool
+		tune     func(n int, e *fakeEncoder)
 		input    uint64
 		at       map[uint64]func(hs *harness)
 	}{
-		{"software from the start", func(int) bool { return true }, 2_000_000, nil},
-		{"software after a rebuild", func(n int) bool { return n > 0 }, 2_000_000, map[uint64]func(hs *harness){
+		{"software from the start", func(int) bool { return true }, nil, 2_000_000, nil},
+		{"software after a rebuild", func(n int) bool { return n > 0 }, nil, 2_000_000, map[uint64]func(hs *harness){
 			1_000_000: func(hs *harness) { hs.p.Control(wire.VideoControl{Op: wire.ControlConfig}) },
 		}},
+		{"software after two hardware encoders failed", nil, func(_ int, e *fakeEncoder) { e.failFrom = 1 }, 2_000_000, nil},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			var calls calls
 			hs := newHarness(calls.wrap(static), 1920, 1080)
-			hs.encs.software = c.software
+			hs.encs.software, hs.encs.tune = c.software, c.tune
 			at := map[uint64]func(){c.input: func() { hs.input.Store(c.input) }}
 			for when, fn := range c.at {
 				at[when] = func() { fn(hs) }

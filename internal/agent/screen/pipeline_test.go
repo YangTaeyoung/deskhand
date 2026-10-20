@@ -183,12 +183,15 @@ type fakeEncoder struct {
 	stop chan struct{}
 	// drop is the number of first frames that give no access unit; busy
 	// makes Encode refuse every frame with encode.ErrBusy; software makes
-	// Info report a software encoder.
+	// Info report a software encoder; failFrom, when not 0, makes the call
+	// of Encode with that number, counted from 1, and every later one fail.
 	drop     int
 	busy     bool
 	software bool
+	failFrom int
 
 	mu       sync.Mutex
+	calls    int
 	frames   int
 	emitted  int
 	bitrates []int
@@ -212,6 +215,10 @@ func (e *fakeEncoder) Encode(f capture.Frame, forceKey bool) error {
 	}
 	if f.Width != e.srcW || f.Height != e.srcH {
 		return fmt.Errorf("frame %dx%d for a %dx%d encoder", f.Width, f.Height, e.srcW, e.srcH)
+	}
+	e.calls++
+	if e.failFrom > 0 && e.calls >= e.failFrom {
+		return errors.New("the fake encoder failed")
 	}
 	if e.busy {
 		return encode.ErrBusy
@@ -306,9 +313,11 @@ type encoders struct {
 	busy    bool
 	// firstOnly gives hold, drop and busy to the first encoder only;
 	// software, when set, tells which encoders by the order made are
-	// software encoders.
+	// software encoders; tune, when set, adjusts each encoder that new
+	// makes, numbered by the order made.
 	firstOnly bool
 	software  func(n int) bool
+	tune      func(n int, e *fakeEncoder)
 	mu        sync.Mutex
 	made      []*fakeEncoder
 }
@@ -316,14 +325,31 @@ type encoders struct {
 func (es *encoders) new(_ *d3d.Device, srcW, srcH, outW, outH, fps, bps int) (encode.Encoder, error) {
 	es.mu.Lock()
 	defer es.mu.Unlock()
-	e := &fakeEncoder{clk: es.clk, srcW: srcW, srcH: srcH, outW: outW, outH: outH, fps: fps, bps: bps, out: make(chan wire.AU, 4096),
-		written: es.written, stop: make(chan struct{})}
+	e := es.fresh(srcW, srcH, outW, outH, fps, bps)
 	if !es.firstOnly || len(es.made) == 0 {
 		e.hold, e.drop, e.busy = es.hold, es.drop, es.busy
 	}
 	e.software = es.software != nil && es.software(len(es.made))
+	if es.tune != nil {
+		es.tune(len(es.made), e)
+	}
 	es.made = append(es.made, e)
 	return e, nil
+}
+
+// newSoftware makes a software encoder without the settings of new.
+func (es *encoders) newSoftware(_ *d3d.Device, srcW, srcH, outW, outH, fps, bps int) (encode.Encoder, error) {
+	es.mu.Lock()
+	defer es.mu.Unlock()
+	e := es.fresh(srcW, srcH, outW, outH, fps, bps)
+	e.software = true
+	es.made = append(es.made, e)
+	return e, nil
+}
+
+func (es *encoders) fresh(srcW, srcH, outW, outH, fps, bps int) *fakeEncoder {
+	return &fakeEncoder{clk: es.clk, srcW: srcW, srcH: srcH, outW: outW, outH: outH, fps: fps, bps: bps, out: make(chan wire.AU, 4096),
+		written: es.written, stop: make(chan struct{})}
 }
 
 func (es *encoders) list() []*fakeEncoder {
@@ -446,7 +472,7 @@ func newHarness(p plan, w, h int) *harness {
 	clk := &fakeClock{}
 	written := make(chan struct{}, 1)
 	hs := &harness{clk: clk, op: &opener{clk: clk, p: p, w: w, h: h}, encs: &encoders{clk: clk, written: written}, rec: &recorder{written: written}}
-	hs.p = New(Options{Open: hs.op.open, NewEncoder: hs.encs.new, Clock: clk, LastInput: hs.lastInput})
+	hs.p = New(Options{Open: hs.op.open, NewEncoder: hs.encs.new, NewSoftware: hs.encs.newSoftware, Clock: clk, LastInput: hs.lastInput})
 	return hs
 }
 

@@ -58,6 +58,10 @@ const (
 	// giving an access unit, while none waits for the network, before it
 	// is made again.
 	busyLimit = 3 * time.Second
+	// hwFailLimit is the number of hardware encoders in a row that fail
+	// without giving an access unit after which a stream makes software
+	// encoders only.
+	hwFailLimit = 2
 	// staleSubmission is how long a submission waits for its access unit
 	// in the stats before it is forgotten.
 	staleSubmission = 10 * time.Second
@@ -103,6 +107,9 @@ type Options struct {
 	// NewEncoder makes an encoder on the source's device; nil means
 	// encode.New.
 	NewEncoder func(dev *d3d.Device, srcW, srcH, outW, outH, fps, bps int) (encode.Encoder, error)
+	// NewSoftware makes a software encoder on the source's device; nil
+	// means encode.NewSoftware.
+	NewSoftware func(dev *d3d.Device, srcW, srcH, outW, outH, fps, bps int) (encode.Encoder, error)
 	// InitThread prepares the capture thread; nil means encode.InitThread.
 	InitThread func() (leave func(), err error)
 	// LastInput returns the Clock readings when an input was injected last
@@ -136,6 +143,9 @@ func New(opt Options) *Pipeline {
 	}
 	if opt.NewEncoder == nil {
 		opt.NewEncoder = encode.New
+	}
+	if opt.NewSoftware == nil {
+		opt.NewSoftware = encode.NewSoftware
 	}
 	if opt.InitThread == nil {
 		opt.InitThread = encode.InitThread
@@ -332,14 +342,21 @@ type run struct {
 	openAtUS  uint64
 	openRetry time.Duration
 
-	// enc is the encoder, a hardware one when hardware is set.
+	// enc is the encoder, a hardware one when hardware is set; received
+	// was encReceived when it was made.
 	enc                        encode.Encoder
 	hardware                   bool
 	encSrcW, encSrcH           int
 	encW, encH, encFPS, encBPS int
 	encAtUS                    uint64
 	encRetry                   time.Duration
+	encReceived                uint64
 	fwdStop, fwdDone           chan struct{}
+	// hwFailures counts the hardware encoders in a row that failed without
+	// giving an access unit; softwareOnly is set once it reached
+	// hwFailLimit.
+	hwFailures   int
+	softwareOnly bool
 
 	// last is the newest image of the source, taken at imageAtUS. pending
 	// reports that it is to be encoded, and repeat that it was encoded
@@ -621,13 +638,34 @@ func (r *run) closeSource() {
 
 // closeEncoder closes the encoder and waits for its forwarder; the access
 // units it queued stay queued.
-func (r *run) closeEncoder() {
+func (r *run) closeEncoder() { r.dropEncoder(false) }
+
+// failEncoder closes the encoder after a failure.
+func (r *run) failEncoder() { r.dropEncoder(true) }
+
+// dropEncoder closes the encoder and waits for its forwarder. A hardware
+// encoder that gave an access unit sets hwFailures to 0; one that failed
+// without giving any adds 1, and at hwFailLimit the stream makes software
+// encoders only.
+func (r *run) dropEncoder(failed bool) {
 	if r.enc == nil {
 		return
 	}
 	r.enc.Close()
 	close(r.fwdStop)
 	<-r.fwdDone
+	if r.hardware {
+		switch {
+		case r.received.Load() != r.encReceived:
+			r.hwFailures = 0
+		case failed:
+			r.hwFailures++
+			if r.hwFailures >= hwFailLimit && !r.softwareOnly {
+				r.softwareOnly = true
+				r.log.Printf("video: %d hardware encoders in a row failed without an access unit; display %d goes on with the software encoder", r.hwFailures, r.set.display)
+			}
+		}
+	}
 	r.enc, r.hardware = nil, false
 }
 
@@ -821,7 +859,7 @@ func (r *run) encode(now uint64) error {
 	default:
 		r.stats.forget(f.MonoUS)
 		r.log.Printf("video: %s failed: %v; making it again", r.enc.Info().Name, err)
-		r.closeEncoder()
+		r.failEncoder()
 		r.encAtUS = now + uint64(backoff(&r.encRetry)/time.Microsecond)
 	}
 	return nil
@@ -840,21 +878,26 @@ func (r *run) checkStall(now uint64) {
 		r.busy, r.busySinceUS, r.busyReceived = true, now, got
 	case now-r.busySinceUS > uint64(busyLimit/time.Microsecond):
 		r.log.Printf("video: %s gave no access unit for %v; making it again", r.enc.Info().Name, busyLimit)
-		r.closeEncoder()
+		r.failEncoder()
 		r.busy = false
 	}
 }
 
-// makeEncoder replaces the encoder with one for f at outW×outH. A PC
-// without an encoder is a refusal before anything was written; another
-// failure is a paused frame, no_encoder, and a later retry.
+// makeEncoder replaces the encoder with one for f at outW×outH, a software
+// one once softwareOnly is set. A PC without an encoder is a refusal
+// before anything was written; another failure is a paused frame,
+// no_encoder, and a later retry.
 func (r *run) makeEncoder(f capture.Frame, outW, outH int, now uint64) error {
 	r.closeEncoder()
 	bps := r.set.bitrate
 	if bps == 0 {
 		bps = DefaultBitrate(outW)
 	}
-	enc, err := r.p.opt.NewEncoder(r.src.Device(), f.Width, f.Height, outW, outH, r.set.maxFPS, bps)
+	newEncoder := r.p.opt.NewEncoder
+	if r.softwareOnly {
+		newEncoder = r.p.opt.NewSoftware
+	}
+	enc, err := newEncoder(r.src.Device(), f.Width, f.Height, outW, outH, r.set.maxFPS, bps)
 	if err != nil {
 		if !r.wrote.Load() && (errors.Is(err, encode.ErrNoEncoder) || errors.Is(err, encode.ErrUnsupported)) {
 			return &Refusal{Code: wire.CodeCapabilityUnsupported, Message: err.Error()}
@@ -867,7 +910,7 @@ func (r *run) makeEncoder(f capture.Frame, outW, outH int, now uint64) error {
 	r.log.Printf("video: display %d %dx%d to %dx%d at %d fps, %d bps on %s (hardware %v)", r.set.display, f.Width, f.Height,
 		outW, outH, r.set.maxFPS, bps, info.Name, info.Hardware)
 	r.enc, r.encSrcW, r.encSrcH, r.encW, r.encH, r.encFPS, r.encBPS = enc, f.Width, f.Height, outW, outH, r.set.maxFPS, bps
-	r.hardware = info.Hardware
+	r.hardware, r.encReceived = info.Hardware, r.received.Load()
 	r.needInfo, r.forceKey = true, true
 	r.fwdStop, r.fwdDone = make(chan struct{}), make(chan struct{})
 	go r.forward(enc, r.epoch.Load(), r.fwdStop, r.fwdDone)
