@@ -12,7 +12,10 @@
 #   - --ssh: directly in the SSH session (Session 0).
 # scripts/wintestlaunch starts the binary there without any console window
 # and kills it after DESKHAND_WINTEST_WAIT seconds (default 480; at most 510
-# with --ssh). go test flags (-run, -v, -count, -timeout, …) become -test.*
+# with --ssh). With DESKHAND_WINTEST_ARTIFACTS set to a local folder, the
+# binary gets DESKHAND_WINTEST_ARTIFACTS=<run folder>\artifacts and the
+# files it leaves there are copied into the local folder before the run
+# folder is deleted. go test flags (-run, -v, -count, -timeout, …) become -test.*
 # flags after the defaults -test.v and -test.timeout (nine tenths of the
 # wait). Prints the test output, deletes the run's task and folder, and
 # exits with the binary's exit code: 0 only for 0, otherwise its low byte,
@@ -24,6 +27,7 @@ cd "$(dirname "$0")/.."
 host="${DESKHAND_WINTEST_HOST:-windows}"
 wait_secs="${DESKHAND_WINTEST_WAIT:-480}"
 base_dir="${DESKHAND_WINTEST_DIR:-C:\Users\apxkf\dev\deskhand-test}"
+artifacts="${DESKHAND_WINTEST_ARTIFACTS:-}"
 ssh_opts=(-o BatchMode=yes -o ClearAllForwardings=yes -o ServerAliveInterval=15)
 if ssh -G -o WarnWeakCrypto=no localhost >/dev/null 2>&1; then
   ssh_opts+=(-o WarnWeakCrypto=no)
@@ -120,6 +124,9 @@ done
   if [ "$mode" = task ]; then
     printf 'env DESKHAND_WINTEST=1\r\n'
   fi
+  if [ -n "$artifacts" ]; then
+    printf 'env DESKHAND_WINTEST_ARTIFACTS=%s\\artifacts\r\n' "$remote_dir"
+  fi
   for a in "${args[@]}"; do
     printf 'arg %s\r\n' "$a"
   done
@@ -192,6 +199,13 @@ while [ "$mode" = task ]; do
 done
 
 finished=1
+if [ -n "$artifacts" ]; then
+  mkdir -p "$artifacts"
+  if remote_ssh "if exist \"${remote_dir}\\artifacts\" echo yes" | grep -q yes; then
+    { scp -q -r "${ssh_opts[@]}" "${host}:${remote_scp}/artifacts" "$work/" && cp -R "$work/artifacts/." "$artifacts/"; } ||
+      echo "wintest: 경고: 산출물을 ${artifacts}로 가져오지 못했습니다." >&2
+  fi
+fi
 scp -q "${ssh_opts[@]}" "${host}:${remote_scp}/out.txt" "$work/out.txt" 2>/dev/null || true
 if [ -f "$work/out.txt" ]; then
   cat "$work/out.txt"

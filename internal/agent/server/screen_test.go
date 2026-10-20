@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/YangTaeyoung/deskhand/internal/agent/capture"
+	"github.com/YangTaeyoung/deskhand/internal/agent/encode"
 	"github.com/YangTaeyoung/deskhand/internal/proto"
 	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
@@ -143,6 +144,7 @@ func TestScreenCapFollowsTheScreenState(t *testing.T) {
 		{&capture.Unavailable{Reason: capture.ReasonAccessLost}, capState{State: capUnavailable, Reason: "access_lost"}},
 		{&capture.Unavailable{Reason: capture.ReasonNoOutput}, capState{State: capUnavailable, Reason: "no_output"}},
 		{capture.ErrUnsupported, capState{State: capUnsupported, Reason: capture.ErrUnsupported.Error()}},
+		{fmt.Errorf("%w (hardware: none; software: none)", encode.ErrNoEncoder), capState{State: capUnavailable, Reason: "no_encoder"}},
 		{errors.New("BitBlt failed"), capState{State: capUnavailable, Reason: "access_lost"}},
 	} {
 		if got := screenCap(c.state); got != c.want {

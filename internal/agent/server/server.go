@@ -52,8 +52,8 @@ type Options struct {
 	// Capture takes the still image of screen.capture; nil means
 	// capture.CaptureStill.
 	Capture func(display int, format string, maxWidth, quality int) (capture.StillResult, error)
-	// ScreenState reports whether the screen can be captured, for the
-	// screen capability; nil means capture.Probe.
+	// ScreenState reports whether the screen can be captured and encoded,
+	// for the screen capability; nil means screenState.
 	ScreenState func() error
 }
 
@@ -133,7 +133,7 @@ func New(opt Options) *Server {
 		opt.Capture = capture.CaptureStill
 	}
 	if opt.ScreenState == nil {
-		opt.ScreenState = capture.Probe
+		opt.ScreenState = screenState
 	}
 	s := &Server{opt: opt, ops: map[string]opEntry{}, conns: map[*conn]struct{}{}, jobs: newJobTable(), ownHome: agentHome(),
 		clipKick: make(chan struct{}, 1)}

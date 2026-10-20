@@ -3,8 +3,11 @@
 package com
 
 import (
+	"fmt"
 	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 // object is the memory layout of a COM interface pointer's target: a
@@ -61,5 +64,38 @@ func AddRef(obj uintptr) {
 func Release(obj uintptr) {
 	if obj != 0 {
 		CallRaw(obj, 2)
+	}
+}
+
+var (
+	ole32              = windows.NewLazySystemDLL("ole32.dll")
+	procCoInitializeEx = ole32.NewProc("CoInitializeEx")
+	procCoUninitialize = ole32.NewProc("CoUninitialize")
+	procCoTaskMemFree  = ole32.NewProc("CoTaskMemFree")
+)
+
+// coinitMultithreaded is COINIT_MULTITHREADED.
+const coinitMultithreaded = 0
+
+// InitMTA makes the calling thread a member of the multithreaded
+// apartment and returns the function that takes it out again. A thread in
+// a single-threaded apartment already stays there, and leave does
+// nothing. Call both on one goroutine locked to its thread.
+func InitMTA() (leave func(), err error) {
+	r, _, _ := procCoInitializeEx.Call(0, coinitMultithreaded)
+	switch hr := HRESULT(uint32(r)); {
+	case hr == RPC_E_CHANGED_MODE:
+		return func() {}, nil
+	case hr.Failed():
+		return nil, fmt.Errorf("CoInitializeEx: %w", hr)
+	}
+	return func() { procCoUninitialize.Call() }, nil
+}
+
+// TaskMemFree frees memory a COM method allocated for its caller; it does
+// nothing for 0.
+func TaskMemFree(p uintptr) {
+	if p != 0 {
+		procCoTaskMemFree.Call(p)
 	}
 }

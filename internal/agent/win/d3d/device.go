@@ -21,6 +21,8 @@ type Device struct {
 	OutputName  string
 	AdapterName string
 	AdapterLUID uint64
+	// VendorID is the PCI vendor id of the adapter, such as 0x10de.
+	VendorID uint32
 	// FeatureLevel is the D3D_FEATURE_LEVEL of the device.
 	FeatureLevel uint32
 	// Video reports whether the device was created with

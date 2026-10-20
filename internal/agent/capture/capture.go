@@ -24,7 +24,8 @@ type Frame struct {
 	Texture uintptr
 	// CPU is the image as Width×Height BGRA pixels, rows of Width*4 bytes
 	// with the alpha byte unset, on the GDI path, nil on the Desktop
-	// Duplication path. It stays valid until the next call of Next.
+	// Duplication path. On a source from Open it stays valid until Next
+	// returns another frame, ErrReset or another error.
 	CPU           []byte
 	Width, Height int
 	// MonoUS is the monoclock reading of the moment the image was taken.

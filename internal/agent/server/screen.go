@@ -8,12 +8,17 @@ import (
 	"math"
 
 	"github.com/YangTaeyoung/deskhand/internal/agent/capture"
+	"github.com/YangTaeyoung/deskhand/internal/agent/encode"
 	"github.com/YangTaeyoung/deskhand/internal/proto"
 	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
 // capNeedsUser is the capability state that waits for a person at the PC.
 const capNeedsUser = "needs_user"
+
+// reasonNoEncoder is the reason of a screen capability without an H.264
+// encoder.
+const reasonNoEncoder = "no_encoder"
 
 // maxStillData bounds the encoded image of a screen.capture reply: its
 // base64 and 4 KiB of other fields fit in maxReplyLine.
@@ -27,8 +32,8 @@ func (s *Server) registerScreen() {
 // screenCap is the screen capability for the result of
 // Options.ScreenState: ready without an error, needs_user for an outage a
 // person at the PC clears, unsupported off Windows and unavailable
-// otherwise, with the outage's reason, access_lost for an error without
-// one.
+// otherwise, with the outage's reason, no_encoder when no H.264 encoder
+// can be set up and access_lost for an error without a reason.
 func screenCap(err error) capState {
 	var u *capture.Unavailable
 	switch {
@@ -40,6 +45,8 @@ func screenCap(err error) capState {
 		return capState{State: capNeedsUser, Reason: u.Reason}
 	case errors.As(err, &u):
 		return capState{State: capUnavailable, Reason: u.Reason}
+	case errors.Is(err, encode.ErrNoEncoder):
+		return capState{State: capUnavailable, Reason: reasonNoEncoder}
 	}
 	return capState{State: capUnavailable, Reason: capture.ReasonAccessLost}
 }
@@ -135,4 +142,13 @@ func stillError(err error) error {
 		return coded(wire.CodeNotFound, err.Error(), false)
 	}
 	return coded(wire.CodeInternal, fmt.Sprintf("the screen could not be captured (%v); try again, and restart deskhand-agent if it persists", err), true)
+}
+
+// screenState is capture.Probe and then encode.Probe: nil once the screen
+// can be captured and an H.264 encoder can be made.
+func screenState() error {
+	if err := capture.Probe(); err != nil {
+		return err
+	}
+	return encode.Probe()
 }

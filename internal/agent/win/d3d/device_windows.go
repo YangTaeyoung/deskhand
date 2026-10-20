@@ -179,7 +179,7 @@ func NewDeviceForOutput(outputName string) (*Device, error) {
 		}
 		dev, createErr = newDevice(adapter, output)
 		if dev != nil {
-			dev.OutputName, dev.AdapterName, dev.AdapterLUID = outputName, windows.UTF16ToString(a.Description[:]), luid(a)
+			dev.OutputName, dev.AdapterName, dev.AdapterLUID, dev.VendorID = outputName, windows.UTF16ToString(a.Description[:]), luid(a), a.VendorID
 		}
 		return true
 	})

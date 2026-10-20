@@ -55,3 +55,63 @@ func UnmarshalAU(p []byte) (AU, error) {
 		Data:             p[auHeaderLen:],
 	}, nil
 }
+
+// VideoInfo is the body of a KindVideoInfo frame: the stream's encoding
+// from the next access unit on.
+type VideoInfo struct {
+	Codec     string `json:"codec"`
+	Width     int    `json:"width"`
+	Height    int    `json:"height"`
+	SrcWidth  int    `json:"src_width"`
+	SrcHeight int    `json:"src_height"`
+	FPS       int    `json:"fps"`
+	Bitrate   int    `json:"bitrate"`
+	Encoder   string `json:"encoder"`
+	Hardware  bool   `json:"hardware"`
+	Capture   string `json:"capture"`
+	Display   int    `json:"display"`
+}
+
+// VideoStats is the body of a KindVideoStats frame, about the second
+// before it.
+type VideoStats struct {
+	FPS          float64 `json:"fps"`
+	Bitrate      int     `json:"bitrate"`
+	Dropped      int     `json:"dropped"`
+	EncodeMSP50  float64 `json:"encode_ms_p50"`
+	EncodeMSP95  float64 `json:"encode_ms_p95"`
+	CaptureMSP50 float64 `json:"capture_ms_p50"`
+}
+
+// VideoPaused is the body of a KindVideoPaused frame.
+type VideoPaused struct {
+	Reason string `json:"reason"`
+}
+
+// Reasons of a VideoPaused.
+const (
+	PausedNoViewer           = "no_viewer"
+	PausedDisplayUnavailable = "display_unavailable"
+	PausedSecureDesktop      = "secure_desktop"
+	PausedSessionLocked      = "session_locked"
+)
+
+// VideoControl is the body of a KindClientControl frame of the video
+// stream. BPS goes with ControlBitrate; MaxFPS and MaxWidth go with
+// ControlConfig and mean what the stream header's max_fps and max_width
+// mean.
+type VideoControl struct {
+	Op       string `json:"op"`
+	BPS      int    `json:"bps,omitempty"`
+	MaxFPS   int    `json:"max_fps,omitempty"`
+	MaxWidth int    `json:"max_width,omitempty"`
+}
+
+// Ops of a VideoControl.
+const (
+	ControlKeyframe = "keyframe"
+	ControlBitrate  = "bitrate"
+	ControlConfig   = "config"
+	ControlPause    = "pause"
+	ControlResume   = "resume"
+)

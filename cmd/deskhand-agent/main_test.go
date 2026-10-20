@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -105,5 +107,12 @@ func TestVersionPrintsJSON(t *testing.T) {
 func TestAnUnknownCommandShowsTheUsage(t *testing.T) {
 	if code, _, stderr := runCLI(t, "frobnicate"); code != 2 || !strings.Contains(stderr, "deskhand-agent init") {
 		t.Fatalf("exited %d: %q", code, stderr)
+	}
+}
+
+func TestTheAgentServesVideoStreams(t *testing.T) {
+	handlers := streamHandlers(log.New(io.Discard, "", 0))
+	if handlers["video"] == nil {
+		t.Fatalf("stream handlers %v have no video", handlers)
 	}
 }

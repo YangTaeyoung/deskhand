@@ -1,6 +1,7 @@
 package capture
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 
 	"golang.org/x/sys/windows"
 
+	"github.com/YangTaeyoung/deskhand/internal/agent/display"
 	"github.com/YangTaeyoung/deskhand/internal/agent/session"
 )
 
@@ -230,6 +232,36 @@ func TestGDIStillSourceHasOneSection(t *testing.T) {
 	for range 2 {
 		if f, err := g.Next(context.Background(), 50*time.Millisecond); err != nil || !f.Dirty || len(f.CPU) != d.Width*d.Height*4 {
 			t.Fatalf("Next of a one-section source: %v, dirty %v, %d bytes", err, f.Dirty, len(f.CPU))
+		}
+	}
+}
+
+func TestGDIFrameStaysWhileNoNewFrameComes(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	index := 0
+	if list, err := display.List(); err == nil && len(list) > 1 {
+		index = 1
+	}
+	first := openOrSkip(t, index)
+	defer first.Close()
+	src := Source(first)
+	if _, ok := first.(*ddSource); ok {
+		src = openOrSkip(t, index)
+		defer src.Close()
+	}
+	if _, ok := src.(*gdiSource); !ok {
+		t.Fatalf("the source is %T, not GDI", src)
+	}
+	f := firstImage(t, src)
+	kept := bytes.Clone(f.CPU)
+	for range 3 {
+		_, err := src.Next(context.Background(), 100*time.Millisecond)
+		if !errors.Is(err, ErrNoNewFrame) {
+			t.Skipf("display %d changed (%v); the pixels of an unchanged frame cannot be compared", index, err)
+		}
+		if !bytes.Equal(f.CPU, kept) {
+			t.Fatal("the pixels of the latest frame changed while Next returned ErrNoNewFrame")
 		}
 	}
 }

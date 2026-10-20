@@ -23,7 +23,7 @@
 | `s` | 연 쪽 | 헤더 필드 | 본문 |
 |---|---|---|---|
 | `rpc` | 데몬 | — | NDJSON(§3) |
-| `video` | 데몬 | `display`(인덱스, 기본 0), `max_fps`(기본 60), `bitrate`(bps), `max_width`(0=원본), `codec`(`h264`) | 프레임(§4) |
+| `video` | 데몬 | `display`(인덱스, 기본 0), `max_fps`(1–240, 0·생략은 60), `bitrate`(bps, 100000–200000000, 0·생략은 출력 폭 1920 이하 6 Mbps·2560 이하 12 Mbps·그 위 20 Mbps), `max_width`(64–16384, 0·생략은 원본), `codec`(`h264`, 생략 가능) | 프레임(§4) |
 | `cursor` | 데몬 | `display` | 프레임(§5) |
 | `input` | 데몬 | `gen`(writer generation) | 프레임(§6) |
 | `pty` | 데몬 | `job`(재부착) 또는 `new`: {`shell`, `cwd`, `cols`, `rows`, `env`} | 프레임(§7) |
@@ -89,7 +89,7 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 - `session.info`: `user`(`DOMAIN\이름`)·`sid`·`integrity`(`untrusted`/`low`/`medium`/`high`/`system`/`protected`)는 에이전트 프로세스 토큰 기준이다. `connect_state`는 WTS 상태를 접는다(Active·Shadow → `active`, Connected·ConnectQuery·Init → `connected`, 나머지 → `disconnected`). `protocol`은 세션의 클라이언트 프로토콜이 콘솔이 아니면 `rdp`. `input_desktop`은 에이전트가 입력 데스크톱을 열 권한이 없으면 `Winlogon`, 입력 데스크톱이 없는 세션(Session 0)이면 `unknown`. Linux 에이전트는 Alcove의 데스크톱 세션 필드(`session`, `user`, `uid`, `home`, `type`, `locked`, exec 허용 시)를 돌려주고, 그 밖의 OS는 `CAPABILITY_UNSUPPORTED`.
 - `display.list`: 크기·위치는 물리 픽셀(에이전트는 Per-Monitor DPI aware v2), `scale`은 `dpi`/96, `index`는 주 디스플레이가 0이고 나머지는 왼쪽→오른쪽, 위→아래 순. Session 0에서는 `DISPLAY_UNAVAILABLE`, Windows가 아닌 에이전트는 `CAPABILITY_UNSUPPORTED`.
 - `screen.capture`: 기본값은 `display` 0, `format` `png`, `max_width` 1568(0이면 디스플레이 폭 그대로, 더 좁을 때만 면적 평균으로 축소, 높이는 종횡비 유지·반올림), `quality` 80(`jpeg`에만 적용, 1–100). `capture_id`는 `c-` + 16진수 12자리, `scale`은 결과 폭 ÷ 디스플레이 폭, `origin`은 디스플레이의 가상 데스크톱 좌표, `mono_us`는 이미지를 얻은 시각(`time.sync`와 같은 시계). Desktop Duplication이 500 ms 안에 이미지를 주지 못하거나 거부되면 GDI로 찍고 `method`가 `gdi`. `window`는 아직 지원하지 않는다(`CAPABILITY_UNSUPPORTED`, 디스플레이를 찍고 `win.list`의 창 영역으로 자른다). 오류: 캡처할 수 없으면 `DISPLAY_UNAVAILABLE`(PC가 잠겼으면 `SESSION_LOCKED`)이고 `error`에 고정 사유(`session0`, `rdp_output_suppressed`, `secure_desktop`, `session_locked`, `session_disconnected`, `access_lost`, `no_output`)를 괄호로 넣는다(`access_lost`만 `retryable`). 없는 디스플레이는 `NOT_FOUND`, 이미지가 응답 한 줄(8 MiB)에 넘치면 `INVALID_ARGUMENT`(더 작은 `max_width`나 `jpeg`로 다시 요청).
-- caps `screen`: 주 디스플레이의 1픽셀을 GDI로 복사할 수 있으면 `ready`(캡처 소스가 열려 있으면 그 소스의 상태), 사유가 `secure_desktop`·`session_locked`·`rdp_output_suppressed`면 `needs_user`, 그 밖의 사유면 `unavailable`. `reason`은 위 고정 사유. 판정은 5초 동안 재사용한다.
+- caps `screen`: 주 디스플레이의 1픽셀을 GDI로 복사할 수 있고 H.264 인코더를 만들 수 있으면 `ready`(캡처 소스가 열려 있으면 그 소스의 상태), 사유가 `secure_desktop`·`session_locked`·`rdp_output_suppressed`면 `needs_user`, 그 밖의 사유면 `unavailable`. `reason`은 위 고정 사유이고, 인코더를 만들 수 없으면(하드웨어·소프트웨어 H.264 인코더 MFT 모두 실패) `unavailable`·`no_encoder`. 캡처 판정은 5초 동안 재사용하고, 인코더 판정은 에이전트가 시작할 때 첫 디스플레이의 장치에 640×360 인코더를 한 번 만들어 보고(디스플레이가 없는 세션에서는 H.264 인코더 MFT가 등록돼 있는지만 본다) 결과를 재사용한다(성공은 프로세스 끝까지, 실패는 1분).
 
 이벤트(`ev`): Alcove의 `job.exited`, `process.exited`, 창 이벤트, `events.dropped`에 더해 `clipboard.changed`(`text`: 에이전트가 쓰지 않은 PC 클립보드 변경, 700000바이트까지), `session.changed`, `display.changed`, `caps.changed`, `input.preempted`.
 
@@ -107,6 +107,14 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 | `0x04` paused | JSON: `reason`(`no_viewer`/`display_unavailable`/`secure_desktop`/`session_locked`) |
 
 데몬 → 에이전트(같은 스트림 반대 방향): 종류 `0x40` 프레임 + JSON — `{"op":"keyframe"}`, `{"op":"bitrate","bps":…}`, `{"op":"config","max_fps":…,"max_width":…}`, `{"op":"pause"}`, `{"op":"resume"}`.
+
+- 수락: 헤더를 받아들이면 첫 프레임이 `info`다. 디스플레이가 지금 캡처되지 않으면 첫 프레임이 `paused`이고, 캡처가 되면 `info`가 이어진다. 거절(줄 하나, §2): `codec`이 `h264`가 아니거나 이 OS가 캡처·인코딩을 못 하면 `CAPABILITY_UNSUPPORTED`, 없는 `display`는 `NOT_FOUND`, 범위 밖 값은 `INVALID_ARGUMENT`.
+- `info`: 이후 AU의 인코딩. 인코더를 새로 만들 때(출력 크기·`max_fps` 변경, 원본 크기 변경, 인코더 장애) 그리고 `paused` 뒤에 영상이 다시 흐를 때 보내고, 그 다음 AU는 SPS/PPS를 가진 IDR이다. `width`·`height`는 짝수이고 원본의 종횡비를 따른다(`max_width`보다 좁으면 원본 크기). 커서는 영상에 그리지 않는다(§5).
+- AU: `seq`는 스트림 안에서 1부터 1씩 는다. flags는 Annex-B의 NAL 종류로 정한다(5가 있으면 키프레임, 7과 8이 모두 있으면 SPS/PPS). 모든 IDR에 SPS/PPS가 들어 있다. 주기 IDR은 없다(GOP 0, 키프레임은 첫 프레임·`keyframe` 요청·`info` 뒤에만). `capture_mono_us`는 이미지를 얻은 시각(`time.sync`와 같은 시계), 같은 이미지를 다시 인코딩한 AU는 그 인코딩을 시작한 시각이다.
+- 속도: `max_fps`가 상한이다(어느 1초에도 `max_fps`+1개 이하). 화면이 바뀌지 않으면 AU를 보내지 않고, 10초 동안 AU가 없으면 마지막 이미지를 키프레임이 아닌 AU로 한 번 다시 보낸다. 데몬의 주기 키프레임 요청은 데몬 몫이다.
+- `stats`: 영상이 흐르는 동안(`paused` 아님) 1초마다. `fps`는 그 1초에 쓴 AU 수, `bitrate`는 AU Annex-B 바이트의 bps, `dropped`는 인코더가 받을 자리가 없어 버린 프레임 수, `encode_ms`는 인코더에 넘기기 시작한 때부터 AU가 나온 때까지(NV12 변환 포함), `capture_ms`는 이미지를 얻은 때부터 인코더에 넘기기 시작한 때까지(속도 조절 대기 포함). 값이 없으면 0.
+- `paused`: 캡처 장애의 고정 사유(§3.1)가 `secure_desktop`·`session_locked`면 같은 이름, 그 밖의 사유와 인코더를 만들지 못한 경우는 `display_unavailable`, `pause` 요청이면 `no_viewer`. 사유가 바뀔 때만 보내고, 그 전에 이미 인코더에 넣은 프레임의 AU를 먼저 쓴다. 다음 `info` 전에는 AU가 없다. 에이전트는 회복을 스스로 재시도한다(디스플레이 다시 열기는 0.5초부터 두 배씩 최대 5초 간격).
+- 역방향 제어: `keyframe`은 다음 AU를 IDR로 만든다(화면이 그대로여도 곧바로 마지막 이미지를 IDR로 보낸다). `bitrate`(`bps` 100000–200000000)는 인코더에 바로 적용하고, 적용하지 못하면 인코더를 새로 만들어 `info`와 IDR을 보낸다. `config`는 `max_fps`·`max_width`를 헤더와 같은 뜻(0은 기본값)으로 둘 다 바꾸고 `info`와 IDR을 보낸다. `pause`는 캡처·인코더를 닫고 `paused`(`no_viewer`)를 보내며, `resume`은 다시 열어 `info`와 IDR부터 보낸다. 범위 밖 값, 알 수 없는 `op`, `0x40`이 아닌 종류의 프레임은 무시한다. 데몬이 자기 쪽 방향을 닫으면(FIN) 에이전트는 파이프라인을 멈추고 스트림을 닫는다.
 
 ## 5. `cursor` 프레임
 
