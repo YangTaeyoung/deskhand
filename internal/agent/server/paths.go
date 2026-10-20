@@ -99,42 +99,17 @@ func windowsVolumeLen(p string) int {
 	return n
 }
 
-// reservedWindowsName reports whether Windows takes the name for a device:
-// CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM0–COM9, LPT0–LPT9 and COM or LPT
-// with ¹, ² or ³, in any letter case, alone or before an extension and
-// spaces.
-func reservedWindowsName(name string) bool {
-	stem, _, _ := strings.Cut(name, ".")
-	stem = strings.ToUpper(strings.TrimRight(stem, " "))
-	switch stem {
-	case "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$":
-		return true
-	}
-	if !strings.HasPrefix(stem, "COM") && !strings.HasPrefix(stem, "LPT") {
-		return false
-	}
-	switch d := stem[3:]; d {
-	case "¹", "²", "³":
-		return true
-	default:
-		return len(d) == 1 && d[0] >= '0' && d[0] <= '9'
-	}
-}
-
 // windowsNameError returns the INVALID_ARGUMENT error for name, one name of
 // the path p, when Windows does not hold it as written: it has a control
 // character or one of < > : " | ? *, it ends with a dot or a space, or it is
-// a device name (reservedWindowsName). Other names answer nil.
+// a device name (wire.CheckWindowsName). Other names answer nil.
 func windowsNameError(p, name string) error {
-	for _, r := range name {
-		if r < 0x20 || strings.ContainsRune(`<>:"|?*`, r) {
-			return invalidArgument(fmt.Sprintf("'%s' has the character %q in the name '%s', which Windows does not allow in names; pass a name without it", p, r, name))
-		}
-	}
-	if strings.HasSuffix(name, ".") || strings.HasSuffix(name, " ") {
+	switch fault, r := wire.CheckWindowsName(name); fault {
+	case wire.NameBadChar:
+		return invalidArgument(fmt.Sprintf("'%s' has the character %q in the name '%s', which Windows does not allow in names; pass a name without it", p, r, name))
+	case wire.NameTrailing:
 		return invalidArgument(fmt.Sprintf("'%s' has the name '%s', which ends with a dot or a space that Windows drops; pass the name without it", p, name))
-	}
-	if reservedWindowsName(name) {
+	case wire.NameDevice:
 		return invalidArgument(fmt.Sprintf("'%s' has the name '%s', which Windows reserves for a device; pass another name", p, name))
 	}
 	return nil
