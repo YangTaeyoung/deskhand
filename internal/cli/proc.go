@@ -1,0 +1,91 @@
+package cli
+
+import (
+	"context"
+	"fmt"
+	"strconv"
+)
+
+func (r *run) proc(ctx context.Context, args []string) int {
+	if len(args) == 0 {
+		return r.fail(usagef("deskhand proc ls|kill 중 하나를 고르세요"))
+	}
+	switch args[0] {
+	case "ls":
+		return r.procList(ctx, args[1:])
+	case "kill":
+		return r.procKill(ctx, args[1:])
+	}
+	return r.fail(usagef("알 수 없는 proc 명령 %q입니다. ls, kill 중 하나를 고르세요", args[0]))
+}
+
+func (r *run) procList(ctx context.Context, args []string) int {
+	fs := newFlags("proc ls")
+	name := fs.String("name", "", "프로세스 이름")
+	pos, _, err := parseArgs(fs, args)
+	if err != nil {
+		return r.fail(err)
+	}
+	if len(pos) != 1 {
+		return r.fail(usagef("deskhand proc ls <호스트> [--name N] 형식으로 주세요"))
+	}
+	params := map[string]any{"host_id": pos[0]}
+	if *name != "" {
+		params["name"] = *name
+	}
+	res, err := r.simple(ctx, "proc.list", params)
+	if err != nil {
+		return r.fail(err)
+	}
+	if r.asJSON {
+		writeJSON(r.Stdout, res)
+		return exitOK
+	}
+	procs := res.list("procs")
+	if len(procs) == 0 {
+		fmt.Fprintln(r.Stdout, "일치하는 프로세스가 없습니다")
+		return exitOK
+	}
+	rows := make([][]string, 0, len(procs))
+	for _, p := range procs {
+		pid, _ := p.num("pid")
+		mem, _ := p.num("mem_kb")
+		by := ""
+		if p.boolean("started_by_deskhand") {
+			by = "예"
+		}
+		rows = append(rows, []string{strconv.FormatInt(pid, 10), p.str("name"), humanSize(mem * 1024), dash(p.str("user")), dash(by)})
+	}
+	writeTable(r.Stdout, []string{"PID", "이름", "메모리", "사용자", "Deskhand 시작"}, rows)
+	return exitOK
+}
+
+func (r *run) procKill(ctx context.Context, args []string) int {
+	fs := newFlags("proc kill")
+	tree := fs.Bool("tree", false, "자식 프로세스까지 종료")
+	pos, _, err := parseArgs(fs, args)
+	if err != nil {
+		return r.fail(err)
+	}
+	if len(pos) != 2 {
+		return r.fail(usagef("deskhand proc kill <호스트> <pid> [--tree] 형식으로 주세요"))
+	}
+	pid, perr := strconv.Atoi(pos[1])
+	if perr != nil || pid <= 0 {
+		return r.fail(usagef("pid %q가 올바르지 않습니다. 양의 정수 PID를 주세요", pos[1]))
+	}
+	params := map[string]any{"host_id": pos[0], "pid": pid}
+	if *tree {
+		params["tree"] = true
+	}
+	res, err := r.simple(ctx, "proc.kill", params)
+	if err != nil {
+		return r.fail(err)
+	}
+	code := r.settle(res, "프로세스 종료")
+	if code == exitOK {
+		n, _ := res.num("killed")
+		r.say("프로세스 %d개를 종료했습니다", n)
+	}
+	return code
+}
