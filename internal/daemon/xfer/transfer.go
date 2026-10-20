@@ -223,8 +223,8 @@ func (t *transfer) armLocked(due time.Time) {
 
 // flushLocked stores the row and the changed files of the transfer with
 // the next rev and publishes transfer.updated; a rev that could not be
-// stored is not published and the flush runs again after rateRefresh. t.mu
-// is held.
+// stored is not published and the flush runs again after rateRefresh, and a
+// transfer the store no longer has is not flushed again. t.mu is held.
 func (t *transfer) flushLocked() {
 	if t.timer != nil {
 		t.timer.Stop()
@@ -239,6 +239,10 @@ func (t *transfer) flushLocked() {
 	t.row.UpdatedAt = now
 	if err := t.m.save(t.row, t.dirtyFilesLocked(), false); err != nil {
 		t.m.lg.Printf("transfer %s: store rev %d: %v", t.row.TransferID, t.row.Rev, err)
+		if errors.Is(err, store.ErrNotFound) {
+			t.closed, t.unsaved = true, false
+			return
+		}
 		t.unsaved = true
 		t.armLocked(now.Add(rateRefresh))
 		return

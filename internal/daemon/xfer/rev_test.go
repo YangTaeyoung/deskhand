@@ -77,3 +77,22 @@ func TestATransferWhoseChangeIsNotStoredStaysLiveAndItsRevKeepsRising(t *testing
 		t.Fatalf("the last event has rev %d, the store %d", last, stored.Rev)
 	}
 }
+
+func TestATransferRemovedFromTheStoreStopsBeingLive(t *testing.T) {
+	m, st := testManager(t)
+	m.save = func(store.Transfer, []store.TransferFile, bool) error { return store.ErrNotFound }
+	now := time.Now()
+	if err := st.CreateTransfer(store.Transfer{TransferID: "t-gone", HostID: "pc", Direction: Push, Local: "/l", Remote: "/r", OnConflict: "fail",
+		State: StateQueued, Planned: true, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Pause("t-gone", model.Caller{Actor: model.ActorHuman}); err != nil {
+		t.Fatal(err)
+	}
+	m.mu.Lock()
+	_, live := m.live["t-gone"]
+	m.mu.Unlock()
+	if live {
+		t.Fatal("a transfer the store no longer has stays live")
+	}
+}
