@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/YangTaeyoung/deskhand/internal/agent/config"
+	"github.com/YangTaeyoung/deskhand/internal/agent/input"
 	"github.com/YangTaeyoung/deskhand/internal/transport"
 )
 
@@ -110,9 +111,11 @@ func TestAnUnknownCommandShowsTheUsage(t *testing.T) {
 	}
 }
 
-func TestTheAgentServesVideoStreams(t *testing.T) {
-	handlers := streamHandlers(log.New(io.Discard, "", 0))
-	if handlers["video"] == nil {
-		t.Fatalf("stream handlers %v have no video", handlers)
+func TestTheAgentServesVideoInputAndCursorStreams(t *testing.T) {
+	handlers := streamHandlers(log.New(io.Discard, "", 0), input.New(input.Options{Logger: log.New(io.Discard, "", 0)}))
+	for _, s := range []string{"video", "input", "cursor"} {
+		if handlers[s] == nil {
+			t.Fatalf("stream handlers %v have no %s", handlers, s)
+		}
 	}
 }

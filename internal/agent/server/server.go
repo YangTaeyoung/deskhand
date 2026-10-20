@@ -15,6 +15,7 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/agent/capture"
 	"github.com/YangTaeyoung/deskhand/internal/agent/clipboard"
 	"github.com/YangTaeyoung/deskhand/internal/agent/display"
+	"github.com/YangTaeyoung/deskhand/internal/agent/input"
 	"github.com/YangTaeyoung/deskhand/internal/agent/session"
 	"github.com/YangTaeyoung/deskhand/internal/proto"
 	"github.com/YangTaeyoung/deskhand/internal/wire"
@@ -111,6 +112,10 @@ type Server struct {
 
 	// lastCaps holds the capabilities caps returned last.
 	lastCaps atomic.Pointer[capStates]
+
+	// input injects the input stream's events and holds the writer
+	// generation that the UI ops of writerOps are checked against.
+	input *input.Injector
 }
 
 func New(opt Options) *Server {
@@ -145,6 +150,7 @@ func New(opt Options) *Server {
 		s.jobs.restore(s.jobs.store.load())
 	}
 	s.journal = openJournal(journalDir, opt.Logger)
+	s.input = s.newInjector()
 	s.registerBuiltins()
 	return s
 }

@@ -121,6 +121,11 @@ func locked(id uint32) bool {
 	return ok && ex.SessionFlags == wtsSessionStateLock
 }
 
+// InputDesktop names the desktop that receives input in the agent's
+// session as Current reports it in Info.InputDesktop, without the rest of
+// Current's queries.
+func InputDesktop() string { return inputDesktop() }
+
 // inputDesktop names the desktop that receives input in the agent's
 // session.
 func inputDesktop() string {
@@ -165,21 +170,32 @@ var account = sync.OnceValue(func() processAccount {
 
 // integrityLevel names the mandatory label of tok by its RID.
 func integrityLevel(tok windows.Token) string {
+	rid, ok := TokenIntegrityRID(tok)
+	if !ok {
+		return ""
+	}
+	return integrityName(rid)
+}
+
+// TokenIntegrityRID returns the RID of the mandatory label of tok, such as
+// 0x2000 for medium and 0x3000 for high integrity; ok is false when the
+// label cannot be read.
+func TokenIntegrityRID(tok windows.Token) (rid uint32, ok bool) {
 	var n uint32
 	_ = windows.GetTokenInformation(tok, windows.TokenIntegrityLevel, nil, 0, &n)
 	if n == 0 {
-		return ""
+		return 0, false
 	}
 	buf := make([]byte, n)
 	if err := windows.GetTokenInformation(tok, windows.TokenIntegrityLevel, &buf[0], n, &n); err != nil {
-		return ""
+		return 0, false
 	}
 	sid := (*windows.Tokenmandatorylabel)(unsafe.Pointer(&buf[0])).Label.Sid
 	count := sid.SubAuthorityCount()
 	if count == 0 {
-		return ""
+		return 0, false
 	}
-	return integrityName(sid.SubAuthority(uint32(count) - 1))
+	return sid.SubAuthority(uint32(count) - 1), true
 }
 
 // integrityName names an integrity RID: below 0x1000 untrusted, then low,

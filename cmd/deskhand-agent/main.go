@@ -25,8 +25,10 @@ import (
 	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/agent/config"
+	"github.com/YangTaeyoung/deskhand/internal/agent/cursor"
 	"github.com/YangTaeyoung/deskhand/internal/agent/display"
 	"github.com/YangTaeyoung/deskhand/internal/agent/encode"
+	"github.com/YangTaeyoung/deskhand/internal/agent/input"
 	"github.com/YangTaeyoung/deskhand/internal/agent/logfile"
 	"github.com/YangTaeyoung/deskhand/internal/agent/quicserve"
 	"github.com/YangTaeyoung/deskhand/internal/agent/screen"
@@ -235,7 +237,7 @@ func cmdRun(args []string, stderr io.Writer) int {
 			logger.Printf("screen: %v", err)
 		}
 	}()
-	streams := streamHandlers(logger)
+	streams := streamHandlers(logger, s.Input())
 	pause := serveFirstPause
 	for {
 		err := quicserve.Run(ctx, cfg, id, s, streams)
@@ -265,11 +267,18 @@ func writeInstallLog(dataDir, msg string) {
 	fmt.Fprintf(f, "%s %s\n", time.Now().Format(time.RFC3339), msg)
 }
 
-// streamHandlers are the handlers of the streams after the rpc stream.
-func streamHandlers(logger *log.Logger) quicserve.StreamHandlers {
+// streamHandlers are the handlers of the streams after the rpc stream;
+// input streams go to inj.
+func streamHandlers(logger *log.Logger, inj *input.Injector) quicserve.StreamHandlers {
 	return quicserve.StreamHandlers{
 		"video": func(ctx context.Context, st *quic.Stream, h wire.StreamHeader) {
 			screen.ServeVideo(ctx, quicStream{st}, h, screen.Options{Logger: logger})
+		},
+		"input": func(ctx context.Context, st *quic.Stream, h wire.StreamHeader) {
+			inj.ServeStream(ctx, quicStream{st}, h)
+		},
+		"cursor": func(ctx context.Context, st *quic.Stream, h wire.StreamHeader) {
+			cursor.Serve(ctx, quicStream{st}, h, cursor.Options{Logger: logger})
 		},
 	}
 }

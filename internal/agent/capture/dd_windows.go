@@ -299,7 +299,7 @@ func (s *ddSource) pointerShape(size uint32) *wire.CursorShape {
 	if hr.Failed() || int(need) > len(s.shapeBuf) {
 		return nil
 	}
-	return pointerShape(si.Type, int(si.Width), int(si.Height), int(si.Pitch), int(si.HotX), int(si.HotY), s.shapeBuf[:need])
+	return PointerShape(si.Type, int(si.Width), int(si.Height), int(si.Pitch), int(si.HotX), int(si.HotY), s.shapeBuf[:need])
 }
 
 // redupReason is the reason of a failed duplication of the output again:

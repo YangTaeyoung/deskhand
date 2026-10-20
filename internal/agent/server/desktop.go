@@ -11,13 +11,6 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
-// inputImplemented reports whether this agent version injects input.
-const inputImplemented = false
-
-// reasonSession0 is the reason of a capability that needs a desktop while
-// the agent runs in Session 0.
-const reasonSession0 = "session0"
-
 // errSession0Displays is the error of display.list in Session 0.
 const errSession0Displays = "the agent runs in Session 0, which has no displays; start deskhand-agent through its scheduled task in the signed-in user's session"
 
@@ -92,22 +85,4 @@ func (s *Server) helloDisplays() any {
 		return []any{}
 	}
 	return list
-}
-
-// sessionCap is the state of a capability that needs the desktop of the
-// agent's session: unsupported while not implemented or without Windows
-// session information, unavailable when the session cannot be read or is
-// Session 0, and ready otherwise.
-func sessionCap(implemented bool, info session.Info, err error) capState {
-	switch {
-	case !implemented:
-		return capState{State: capUnsupported, Reason: notImplemented}
-	case errors.Is(err, session.ErrUnsupported):
-		return capState{State: capUnsupported, Reason: err.Error()}
-	case err != nil:
-		return capState{State: capUnavailable, Reason: err.Error()}
-	case info.SessionID == 0:
-		return capState{State: capUnavailable, Reason: reasonSession0}
-	}
-	return capState{State: capReady}
 }

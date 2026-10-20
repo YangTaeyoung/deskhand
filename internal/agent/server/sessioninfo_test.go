@@ -112,25 +112,3 @@ func TestSessionAndDisplayOpsUnsupportedOffWindows(t *testing.T) {
 		}
 	}
 }
-
-func TestSessionCapFollowsTheSession(t *testing.T) {
-	zero := testSession
-	zero.SessionID = 0
-	for _, c := range []struct {
-		name        string
-		implemented bool
-		info        session.Info
-		err         error
-		want        capState
-	}{
-		{"not implemented", false, testSession, nil, capState{State: capUnsupported, Reason: notImplemented}},
-		{"user session", true, testSession, nil, capState{State: capReady}},
-		{"session 0", true, zero, nil, capState{State: capUnavailable, Reason: "session0"}},
-		{"no windows", true, session.Info{}, session.ErrUnsupported, capState{State: capUnsupported, Reason: session.ErrUnsupported.Error()}},
-		{"unreadable", true, session.Info{}, errors.New("WTSQuerySessionInformation failed"), capState{State: capUnavailable, Reason: "WTSQuerySessionInformation failed"}},
-	} {
-		if got := sessionCap(c.implemented, c.info, c.err); got != c.want {
-			t.Errorf("%s: %+v, want %+v", c.name, got, c.want)
-		}
-	}
-}

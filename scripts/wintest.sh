@@ -3,7 +3,8 @@
 #
 # Cross-builds the test binary of a Go package for windows/amd64 and runs it
 # on the SSH host DESKHAND_WINTEST_HOST (default "windows") in a folder of
-# its own, <base>\<name>-<run id>\, with the package's testdata/; <base> is
+# its own, <base>\<name>-<run id>\, with the package's testdata/ and
+# deskhand-fixture.exe (cmd/deskhand-fixture) for UI tests; <base> is
 # DESKHAND_WINTEST_DIR (default C:\Users\apxkf\dev\deskhand-test, an
 # absolute Windows path without spaces or quotes):
 #   - default: in the signed-in user's session, through an interactive
@@ -104,6 +105,7 @@ if [ ! -f "$work/$exe" ]; then
   exit 2
 fi
 go build -ldflags=-H=windowsgui -o "$work/$launcher" ./scripts/wintestlaunch
+go build -o "$work/deskhand-fixture.exe" ./cmd/deskhand-fixture
 
 args=(-test.v "-test.timeout=$(( wait_secs * 9 / 10 + 1 ))s")
 for a in "$@"; do
@@ -146,7 +148,7 @@ PS1
 
 remote_created=1
 remote_ssh "mkdir \"${remote_dir}\\home\"" >/dev/null
-files=("$work/$exe" "$work/$launcher" "$work/run.txt" "$work/wait.ps1")
+files=("$work/$exe" "$work/$launcher" "$work/deskhand-fixture.exe" "$work/run.txt" "$work/wait.ps1")
 if [ -d "$pkg_dir/testdata" ]; then
   files+=("$pkg_dir/testdata")
 fi

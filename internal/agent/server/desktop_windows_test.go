@@ -39,8 +39,8 @@ func TestHelloDescribesTheUserSessionAndDisplays(t *testing.T) {
 		t.Fatalf("session.info %v", got)
 	}
 	caps, _ := hello["caps"].(map[string]any)
-	if st, _ := caps["input"].(map[string]any); st["state"] != capUnsupported {
-		t.Fatalf("caps.input %v", caps["input"])
+	if st, _ := caps["input"].(map[string]any); st["state"] != capReady {
+		t.Fatalf("caps.input %v in the user's session", caps["input"])
 	}
 	screen, _ := caps["screen"].(map[string]any)
 	t.Logf("caps.screen %v", screen)
@@ -62,6 +62,10 @@ func TestDisplayListOverSSHReportsSession0(t *testing.T) {
 	}
 	if d, ok := hello["displays"].([]any); !ok || len(d) != 0 {
 		t.Fatalf("hello displays %v", hello["displays"])
+	}
+	caps, _ := hello["caps"].(map[string]any)
+	if st, _ := caps["input"].(map[string]any); st["state"] != capUnavailable || st["reason"] != "session0" {
+		t.Fatalf("caps.input %v in Session 0", caps["input"])
 	}
 	c := &rpcClient{t: t, r: r, w: w}
 	got := c.call("display.list", nil)

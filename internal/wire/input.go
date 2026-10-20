@@ -58,6 +58,26 @@ func (e InputEvent) MarshalJSON() ([]byte, error) {
 	return json.Marshal(j)
 }
 
+// UnmarshalJSON implements json.Unmarshaler with the keys of MarshalJSON;
+// down and ext are false when absent.
+func (e *InputEvent) UnmarshalJSON(b []byte) error {
+	var j inputEventJSON
+	if err := json.Unmarshal(b, &j); err != nil {
+		return err
+	}
+	*e = InputEvent{
+		Seq: j.Seq, Gen: j.Gen, K: j.K, X: j.X, Y: j.Y, Display: j.Display,
+		B: j.B, DX: j.DX, DY: j.DY, SC: j.SC, VK: j.VK, Text: j.Text, Method: j.Method,
+	}
+	if j.Down != nil {
+		e.Down = *j.Down
+	}
+	if j.Ext != nil {
+		e.Ext = *j.Ext
+	}
+	return nil
+}
+
 // InputAck is the agent's reply to one InputEvent.
 type InputAck struct {
 	Seq        uint64 `json:"seq"`

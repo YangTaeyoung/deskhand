@@ -79,10 +79,13 @@ func TestHelloCarriesEveryCapabilityKey(t *testing.T) {
 			t.Fatalf("caps.%s %v", k, caps[k])
 		}
 	}
-	for _, k := range []string{"input", "pty", "tunnel", "diag"} {
+	for _, k := range []string{"pty", "tunnel", "diag"} {
 		if st, _ := caps[k].(map[string]any); st["state"] != "unsupported" || st["reason"] != "not implemented in this agent version" {
 			t.Fatalf("caps.%s %v", k, caps[k])
 		}
+	}
+	if st, _ := caps["input"].(map[string]any); runtime.GOOS != "windows" && (st["state"] != "unsupported" || st["reason"] != errInputUnsupported) {
+		t.Fatalf("caps.input %v", caps["input"])
 	}
 	set := capSet(hello)
 	if set["exec"] || set["files"] || set["processes"] {

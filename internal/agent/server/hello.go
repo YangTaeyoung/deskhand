@@ -44,7 +44,7 @@ func newBootID() string {
 }
 
 // checkCaps returns the state of every capability key. screen follows
-// Options.ScreenState (screenCap), input the agent's session (sessionCap),
+// Options.ScreenState (screenCap), input the agent's session (inputCap),
 // exec, files and processes Options.AllowExec, uia the UI helper and
 // clipboard the clipboard's availability; the other keys are unsupported.
 func (s *Server) checkCaps() capStates {
@@ -55,7 +55,7 @@ func (s *Server) checkCaps() capStates {
 	}
 	info, err := s.opt.SessionInfo()
 	caps["screen"] = screenCap(s.opt.ScreenState())
-	caps["input"] = sessionCap(inputImplemented, info, err)
+	caps["input"] = inputCap(s.input.Supported(), info, err)
 	for _, k := range []string{"exec", "files", "processes"} {
 		if s.opt.AllowExec {
 			caps[k] = ready

@@ -217,8 +217,12 @@ func (c *conn) write(o outgoing) bool {
 
 func (c *conn) stopWriter() { close(c.stop) }
 
-// register adds an op; gated ops need Options.AllowExec.
+// register adds an op; gated ops need Options.AllowExec, and the ops of
+// writerOps run only for the current writer generation.
 func (s *Server) register(op string, gated bool, h Handler) {
+	if writerOps[op] {
+		h = s.writerGated(op, h)
+	}
 	s.connMu.Lock()
 	defer s.connMu.Unlock()
 	s.ops[op] = opEntry{gated: gated, h: h}
@@ -348,6 +352,7 @@ func (s *Server) registerBuiltins() {
 	s.registerClipboard()
 	s.registerDesktop()
 	s.registerScreen()
+	s.registerInput()
 }
 
 // desktopSessionInfo describes the desktop session that Options.Session

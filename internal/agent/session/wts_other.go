@@ -4,3 +4,6 @@ package session
 
 // Current returns ErrUnsupported.
 func Current() (Info, error) { return Info{}, ErrUnsupported }
+
+// InputDesktop returns DesktopUnknown.
+func InputDesktop() string { return DesktopUnknown }

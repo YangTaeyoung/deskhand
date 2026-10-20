@@ -7,11 +7,13 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
-// Pointer shape types of DXGI_OUTDUPL_POINTER_SHAPE_INFO.
+// Pointer shape types of DXGI_OUTDUPL_POINTER_SHAPE_INFO, which are also
+// the forms of a cursor's bitmaps: a monochrome AND and XOR mask, a color
+// bitmap with alpha, and a color bitmap with an AND mask in its alpha.
 const (
-	pointerMonochrome  = 1
-	pointerColor       = 2
-	pointerMaskedColor = 4
+	PointerMonochrome  = 1
+	PointerColor       = 2
+	PointerMaskedColor = 4
 )
 
 // pixelKind is what a pointer pixel does to the screen under it.
@@ -23,19 +25,19 @@ const (
 	pixelInvert
 )
 
-// pointerShape converts a DXGI pointer shape of type typ to
+// PointerShape converts a DXGI pointer shape of type typ to
 // non-premultiplied BGRA. w and h are the shape's width and height (for a
 // monochrome shape h covers the AND mask and the XOR mask below it), pitch
 // the bytes of a row of buf. Pixels that invert the screen become black
 // with a white outline on the clear pixels around them. The ID is a hash
 // of the pixels and the hot spot. It returns nil for an unknown type or a
 // buffer too short for the size.
-func pointerShape(typ uint32, w, h, pitch, hotX, hotY int, buf []byte) *wire.CursorShape {
+func PointerShape(typ uint32, w, h, pitch, hotX, hotY int, buf []byte) *wire.CursorShape {
 	if w <= 0 || h <= 0 || w > 0xFFFF || h > 0xFFFF || pitch <= 0 {
 		return nil
 	}
 	rowBytes := w * 4
-	if typ == pointerMonochrome {
+	if typ == PointerMonochrome {
 		if h%2 != 0 {
 			return nil
 		}
@@ -45,7 +47,7 @@ func pointerShape(typ uint32, w, h, pitch, hotX, hotY int, buf []byte) *wire.Cur
 		return nil
 	}
 	outH := h
-	if typ == pointerMonochrome {
+	if typ == PointerMonochrome {
 		outH = h / 2
 	}
 	bgra := make([]byte, w*outH*4)
@@ -55,7 +57,7 @@ func pointerShape(typ uint32, w, h, pitch, hotX, hotY int, buf []byte) *wire.Cur
 			i := y*w + x
 			px := bgra[i*4 : i*4+4]
 			switch typ {
-			case pointerMonochrome:
+			case PointerMonochrome:
 				bit := byte(0x80) >> (x % 8)
 				and := buf[y*pitch+x/8]&bit != 0
 				xor := buf[(y+outH)*pitch+x/8]&bit != 0
@@ -67,10 +69,10 @@ func pointerShape(typ uint32, w, h, pitch, hotX, hotY int, buf []byte) *wire.Cur
 				case xor:
 					kinds[i] = pixelInvert
 				}
-			case pointerColor:
+			case PointerColor:
 				copy(px, buf[y*pitch+x*4:y*pitch+x*4+4])
 				kinds[i] = pixelPaint
-			case pointerMaskedColor:
+			case PointerMaskedColor:
 				s := buf[y*pitch+x*4 : y*pitch+x*4+4]
 				switch {
 				case s[3] == 0:
