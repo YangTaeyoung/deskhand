@@ -47,14 +47,15 @@ type Capability struct {
 	Reason string `json:"reason,omitempty"`
 }
 
-// SessionInfo is the desktop session of a host.
+// SessionInfo is the desktop session of a host. Locked is nil when the
+// agent did not report the lock state.
 type SessionInfo struct {
 	SessionID    int    `json:"session_id"`
 	User         string `json:"user"`
 	SID          string `json:"sid,omitempty"`
 	ConnectState string `json:"connect_state"`
 	Protocol     string `json:"protocol"`
-	Locked       bool   `json:"locked"`
+	Locked       *bool  `json:"locked,omitempty"`
 	InputDesktop string `json:"input_desktop"`
 	Integrity    string `json:"integrity,omitempty"`
 }

@@ -461,11 +461,14 @@ func TestSessionInspectAndEvents(t *testing.T) {
 	e := setup(t, setupOpts{trustDaemon: true})
 	e.waitState(t, "ready")
 	in := e.call(t, "session.inspect", map[string]any{"host_id": "pc"})
-	for _, k := range []string{"session_id", "user", "connect_state", "protocol", "locked", "input_desktop", "owner", "gen", "ai_paused",
+	for _, k := range []string{"session_id", "user", "connect_state", "protocol", "input_desktop", "owner", "gen", "ai_paused",
 		"displays", "caps", "connection_generation"} {
 		if _, ok := in[k]; !ok {
 			t.Fatalf("session.inspect has no %s: %v", k, in)
 		}
+	}
+	if _, ok := in["locked"]; ok {
+		t.Fatalf("session.inspect reports locked though the agent did not: %v", in)
 	}
 	if in["owner"] != "none" || in["connection_generation"] != float64(1) {
 		t.Fatalf("session.inspect %v", in)

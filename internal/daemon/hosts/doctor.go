@@ -188,9 +188,13 @@ func (r *Registry) sessionCheck(ctx context.Context, h *conn.Host, connected boo
 		add(CheckSession, model.CheckWarn, "에이전트가 데스크톱 세션을 보고하지 않습니다", "PC에 사용자가 로그인해 있는지 확인하세요")
 		return
 	}
-	detail := fmt.Sprintf("세션 %d, 사용자 %s, 상태 %s, 프로토콜 %s, 잠김 %t", s.SessionID, s.User, s.ConnectState, s.Protocol, s.Locked)
+	locked := "알 수 없음"
+	if s.Locked != nil {
+		locked = strconv.FormatBool(*s.Locked)
+	}
+	detail := fmt.Sprintf("세션 %d, 사용자 %s, 상태 %s, 프로토콜 %s, 잠김 %s", s.SessionID, s.User, s.ConnectState, s.Protocol, locked)
 	switch {
-	case s.Locked:
+	case s.Locked != nil && *s.Locked:
 		add(CheckSession, model.CheckWarn, detail, "PC 화면 잠금을 해제하세요")
 	case s.ConnectState == "disconnected":
 		add(CheckSession, model.CheckWarn, detail, "PC에 다시 로그인하거나 원격 데스크톱 세션을 다시 연결하세요")

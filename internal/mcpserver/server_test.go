@@ -591,3 +591,14 @@ func TestExclusiveAndSizeLimitsAreSchemaValidated(t *testing.T) {
 		t.Fatalf("daemon called: %v", f.calls)
 	}
 }
+
+func TestSessionSummarySaysAnUnknownLockStateIsUnknown(t *testing.T) {
+	res := success("session_inspect", spec{Method: "session.inspect"}, nil, map[string]any{"user": "me", "connect_state": "active"})
+	if !strings.Contains(text(res), "locked=unknown") {
+		t.Fatalf("text %q", text(res))
+	}
+	res = success("session_inspect", spec{Method: "session.inspect"}, nil, map[string]any{"user": "me", "locked": true})
+	if !strings.Contains(text(res), "locked=true") {
+		t.Fatalf("text %q", text(res))
+	}
+}

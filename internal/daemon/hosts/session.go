@@ -35,8 +35,11 @@ func sessionInfo(hello, info proto.Message) *model.SessionInfo {
 		return nil
 	}
 	s := &model.SessionInfo{SessionID: id, User: user, SID: src.String("sid"), ConnectState: orUnknown(src.String("connect_state")),
-		Protocol: orUnknown(src.String("protocol")), Locked: src.Bool("locked"), InputDesktop: orUnknown(src.String("input_desktop")),
+		Protocol: orUnknown(src.String("protocol")), InputDesktop: orUnknown(src.String("input_desktop")),
 		Integrity: src.String("integrity")}
+	if locked, ok := src["locked"].(bool); ok {
+		s.Locked = &locked
+	}
 	return s
 }
 

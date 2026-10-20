@@ -55,7 +55,8 @@ func TestEnvelopeHasEveryField(t *testing.T) {
 }
 
 func TestSessionInspectIsFlat(t *testing.T) {
-	in := SessionInspect{SessionInfo: SessionInfo{SessionID: 1, User: "bob", ConnectState: "active", Protocol: "console", InputDesktop: "Default"},
+	locked := false
+	in := SessionInspect{SessionInfo: SessionInfo{SessionID: 1, User: "bob", ConnectState: "active", Protocol: "console", Locked: &locked, InputDesktop: "Default"},
 		ControlState: ControlState{Owner: OwnerNone}, HostID: "pc", Displays: []any{}, Caps: map[string]Capability{}}
 	want := []string{"ai_paused", "caps", "connect_state", "connection_generation", "displays", "gen", "host_id", "input_desktop", "locked",
 		"owner", "protocol", "session_id", "user"}

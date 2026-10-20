@@ -197,8 +197,12 @@ func detail(tool string, params, m map[string]any) string {
 		}
 		return "problems: " + strings.Join(bad, "; ")
 	case "session_inspect":
+		locked := any("unknown")
+		if l, ok := m["locked"]; ok && l != nil {
+			locked = l
+		}
 		return fmt.Sprintf("session: user=%v connect_state=%v locked=%v input_desktop=%v owner=%v ai_paused=%v",
-			m["user"], m["connect_state"], m["locked"], m["input_desktop"], m["owner"], m["ai_paused"])
+			m["user"], m["connect_state"], locked, m["input_desktop"], m["owner"], m["ai_paused"])
 	case "exec_run":
 		var b strings.Builder
 		if c, ok := num(m, "code"); ok {
