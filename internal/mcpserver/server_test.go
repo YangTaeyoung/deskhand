@@ -602,3 +602,13 @@ func TestSessionSummarySaysAnUnknownLockStateIsUnknown(t *testing.T) {
 		t.Fatalf("text %q", text(res))
 	}
 }
+
+func TestExecRunCutByTheConnectionIsReportedInterrupted(t *testing.T) {
+	env := map[string]any{"status": "failed", "action": map[string]any{"executed": true, "outcome": "done"}, "job_id": "j-1", "code": json.Number("-1"),
+		"killed": "connection_closed", "stdout": "", "stderr": "", "next_action": "check_state",
+		"error": map[string]any{"code": "OFFLINE", "message": "연결이 끊겨 중단", "retryable": false, "next_action": "check_state"}}
+	res := success("exec_run", spec{Method: "exec.run", Mutating: true}, nil, env)
+	if !res.IsError || !strings.Contains(text(res), "interrupted: the connection to the PC closed") {
+		t.Fatalf("error %v text %q", res.IsError, text(res))
+	}
+}

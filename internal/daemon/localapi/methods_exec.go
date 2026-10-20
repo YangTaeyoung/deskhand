@@ -16,6 +16,10 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
+// killedConnectionClosed is the killed value of an exec.run answer whose
+// command the agent ended because the request's connection closed.
+const killedConnectionClosed = "connection_closed"
+
 const (
 	// defaultExecTimeout is the timeout of exec.run without timeout_ms.
 	defaultExecTimeout = 120 * time.Second
@@ -164,9 +168,15 @@ func (s *Server) execRun(ctx context.Context, sess *session, raw json.RawMessage
 		timedOut := res.Bool("timed_out")
 		fields = map[string]any{"code": code, "stdout": stdout, "stderr": stderr, "timed_out": timedOut, "truncated": res.Bool("truncated")}
 		o.status = jobs.ExitStatus(code)
-		if timedOut {
+		switch {
+		case timedOut:
 			o.status = model.StatusFailed
 			o.err = apierr.New(wire.CodeTimeout, fmt.Sprintf("명령이 %s 안에 끝나지 않아 종료했습니다. timeout_ms를 늘리거나 exec.start로 실행하세요", timeout), true, apierr.NextRetry)
+		case res.String("killed") == killedConnectionClosed:
+			fields["killed"] = killedConnectionClosed
+			o.status = model.StatusFailed
+			o.err = apierr.New(wire.CodeOffline,
+				"PC와의 연결이 끊겨 에이전트가 명령을 중간에 끝냈습니다. 명령이 일부만 실행됐을 수 있으니 PC 상태를 확인한 뒤 다시 실행하세요", false, apierr.NextCheckState)
 		}
 		for _, st := range []struct{ name, data string }{{"stdout.txt", stdout}, {"stderr.txt", stderr}} {
 			if len(st.data) >= artifactThreshold {
@@ -188,7 +198,10 @@ func (s *Server) execRun(ctx context.Context, sess *session, raw json.RawMessage
 	}
 	_, _ = s.d.Jobs.Finish(job.JobID, o.status, result)
 	tl := "명령 실행: " + summary
-	if err == nil {
+	switch {
+	case fields["killed"] == killedConnectionClosed:
+		tl += " (연결이 끊겨 중단됨)"
+	case err == nil:
 		tl += fmt.Sprintf(" (종료 코드 %d)", res.Int("code"))
 	}
 	_, _ = s.d.Bus.Record(sess.Caller().Entry(row.HostID, model.TimelineExec, tl, timelineOutcome(o.status), job.JobID))

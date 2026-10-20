@@ -829,3 +829,49 @@ func TestExecStartTimeoutEndsTheJobWithTimeoutAndKeepsItsOutput(t *testing.T) {
 		t.Fatalf("exit %d after %s, stdout %q, stderr %q", code, time.Since(start), stdout.String(), stderr.String())
 	}
 }
+
+func TestExecRunCutByTheConnectionSaysItWasInterrupted(t *testing.T) {
+	e := setup(t, setupOpts{trustDaemon: true})
+	e.waitState(t, "ready")
+	marker := filepath.Join(e.agent.home, "started")
+	type result struct {
+		res map[string]any
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		var out map[string]any
+		err := e.c.Call(ctx, "exec.run", map[string]any{"host_id": "pc", "shell": "sh", "cmd": "touch '" + marker + "'; sleep 20"}, &out)
+		done <- result{out, err}
+	}()
+	for deadline := time.Now().Add(10 * time.Second); ; {
+		if _, err := os.Stat(marker); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the command did not start")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	e.call(t, "host.disconnect", map[string]any{"host_id": "pc"})
+	e.call(t, "host.connect", map[string]any{"host_id": "pc"})
+	var r result
+	select {
+	case r = <-done:
+	case <-time.After(60 * time.Second):
+		t.Fatal("exec.run did not return")
+	}
+	if r.err != nil {
+		t.Fatal(r.err)
+	}
+	errObj, _ := r.res["error"].(map[string]any)
+	if r.res["status"] != "failed" || r.res["killed"] != "connection_closed" || errObj["code"] != "OFFLINE" || r.res["next_action"] != "check_state" {
+		t.Fatalf("envelope %v", r.res)
+	}
+	job := e.call(t, "jobs.get", map[string]any{"job_id": r.res["job_id"]})
+	if job["result"].(map[string]any)["killed"] != "connection_closed" {
+		t.Fatalf("job %v", job)
+	}
+}

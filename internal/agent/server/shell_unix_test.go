@@ -3,6 +3,7 @@
 package server
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -154,5 +155,47 @@ func TestExecRunTruncatesToTail(t *testing.T) {
 	out := res.String("stdout")
 	if !res.Bool("truncated") || !strings.HasSuffix(out, "END\n") || len(out) > 200000 {
 		t.Fatalf("truncated=%v len=%d tail=%q", res.Bool("truncated"), len(out), out[max(0, len(out)-8):])
+	}
+}
+
+func TestExecRunOfAClosedConnectionIsKilledAndSaysSo(t *testing.T) {
+	s, r, w, nc := startServerS(t, Options{Clipboard: &fakeClipboard{}, HomeDir: t.TempDir(), AllowExec: true, DataDir: t.TempDir()})
+	expect(t, r, "hello")
+	marker := filepath.Join(t.TempDir(), "started")
+	send(t, w, proto.Message{"t": "req", "id": 1, "op": "exec.run", "rid": "r-closed", "cmd": "touch '" + marker + "'; sleep 30"})
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		if _, err := os.Stat(marker); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the command did not start")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	nc.Close()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { l.Close() })
+	go s.Serve(l)
+	_, r2, w2 := dialAgent(t, l.Addr().String())
+	expect(t, r2, "hello")
+	c2 := &rpcClient{t: t, r: r2, w: w2}
+	for deadline := time.Now().Add(10 * time.Second); ; {
+		res := c2.call("req.status", proto.Message{"rid": "r-closed"})
+		if res.String("state") == "done" {
+			if res["ok"] != true || res.String("killed") != "connection_closed" || res.Int("code") != -1 || res["timed_out"] != false {
+				t.Fatalf("answer %v", res)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("req.status %v", res)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if res := c2.ok("exec.run", proto.Message{"cmd": "echo fine"}); res.Has("killed") {
+		t.Fatalf("a finished command carries killed: %v", res)
 	}
 }

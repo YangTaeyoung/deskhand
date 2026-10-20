@@ -126,6 +126,9 @@ func (r *run) jobsGet(ctx context.Context, args []string) int {
 	}
 	fmt.Fprintf(r.Stdout, "작업: %s\n호스트: %s\n종류: %s\n상태: %s\n요약: %s\n갱신: %s\n", res.str("job_id"), res.str("host_id"),
 		res.str("kind"), statusKorean(res.str("status")), res.str("summary"), res.str("updated_at"))
+	if res.sub("result").str("killed") == "connection_closed" {
+		fmt.Fprintln(r.Stdout, "중단됨: PC와의 연결이 끊겨 명령이 중간에 끝났습니다. PC 상태를 확인한 뒤 다시 실행하세요")
+	}
 	if n, ok := res.num("output_bytes"); ok {
 		fmt.Fprintf(r.Stdout, "출력: %d바이트 (deskhand jobs watch %s 로 보기)\n", n, res.str("job_id"))
 	}

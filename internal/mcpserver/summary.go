@@ -205,6 +205,9 @@ func detail(tool string, params, m map[string]any) string {
 			m["user"], m["connect_state"], locked, m["input_desktop"], m["owner"], m["ai_paused"])
 	case "exec_run":
 		var b strings.Builder
+		if str(m, "killed") == "connection_closed" {
+			b.WriteString("interrupted: the connection to the PC closed while the command ran, so the agent killed it; it may have done part of its work. Check the PC state before running it again.\n")
+		}
 		if c, ok := num(m, "code"); ok {
 			fmt.Fprintf(&b, "exit code %d", c)
 		}

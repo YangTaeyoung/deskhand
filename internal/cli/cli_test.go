@@ -764,3 +764,12 @@ func TestJobsGetShowsTheOutputSizeNotTheOutput(t *testing.T) {
 		t.Fatalf("code %d stdout %q", r.code, r.stdout)
 	}
 }
+
+func TestJobsGetSaysACommandCutByTheConnectionWasInterrupted(t *testing.T) {
+	startFake(t, map[string]handler{"jobs.get": ok(map[string]any{"job_id": "j-4", "host_id": "pc", "kind": "exec", "status": "failed",
+		"summary": "sleep", "updated_at": "2026-10-20T00:00:00.000Z", "result": map[string]any{"code": -1, "killed": "connection_closed"}})})
+	r := runCLI(t, false, "", "jobs", "get", "j-4")
+	if r.code != 0 || !strings.Contains(r.stdout, "중단됨: PC와의 연결이 끊겨") {
+		t.Fatalf("code %d stdout %q", r.code, r.stdout)
+	}
+}

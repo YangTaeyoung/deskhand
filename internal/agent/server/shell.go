@@ -230,7 +230,8 @@ func (s *Server) registerShell() {
 }
 
 // execRun runs a command to its end. Its process tree is killed when the
-// timeout passes or the connection of the request closes.
+// timeout passes (timed_out) or the connection of the request closes
+// (killed "connection_closed"); code is then -1.
 func (s *Server) execRun(ctx context.Context, req proto.Message) (proto.Message, error) {
 	c, err := s.newCommand(req)
 	if err != nil {
@@ -255,23 +256,35 @@ func (s *Server) execRun(ctx context.Context, req proto.Message) (proto.Message,
 		timedOut.Store(true)
 		_ = killTree(pid)
 	})
-	stopOnClose := context.AfterFunc(ctx, func() { _ = killTree(pid) })
+	var closed, waited atomic.Bool
+	stopOnClose := context.AfterFunc(ctx, func() {
+		if waited.Load() {
+			return
+		}
+		closed.Store(true)
+		_ = killTree(pid)
+	})
 	_ = c.Wait()
+	waited.Store(true)
 	flushOutput()
 	timer.Stop()
 	stopOnClose()
 
 	code := -1
-	if c.ProcessState != nil && !timedOut.Load() {
+	if c.ProcessState != nil && !timedOut.Load() && !closed.Load() {
 		code = c.ProcessState.ExitCode()
 	}
 	out, outCut := stdout.snapshot()
 	errOut, errCut := stderr.snapshot()
-	return proto.Message{
+	res := proto.Message{
 		"code":      code,
 		"stdout":    streamText(out, outCut),
 		"stderr":    streamText(errOut, errCut),
 		"timed_out": timedOut.Load(),
 		"truncated": outCut || errCut,
-	}, nil
+	}
+	if closed.Load() {
+		res["killed"] = "connection_closed"
+	}
+	return res, nil
 }
