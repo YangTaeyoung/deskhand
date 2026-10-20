@@ -22,6 +22,8 @@ enum DiagnosticsScenes {
         var paused = false
         var notice: DiagnosticsNotice?
         var killing: Set<Int> = []
+        /// PIDs left out of the seeded list.
+        var ended: Set<Int> = []
     }
 
     static func processList(_ hostID: String = dev) -> [RemoteProcess] {
@@ -31,15 +33,15 @@ enum DiagnosticsScenes {
     static func seed(_ store: AppStore, hostID: String, _ processes: Processes) {
         guard let host = store.host(hostID) else { return }
         let model = store.processes(for: host)
-        let list = processes.phase == .loaded ? processList(hostID) : []
+        let list = processes.phase == .loaded ? processList(hostID).filter { !processes.ended.contains($0.pid) } : []
         model.seed(list, query: processes.query, sort: processes.sort, tree: processes.tree, collapsed: processes.collapsed,
                    selectedPID: processes.selected, phase: processes.phase, refreshError: processes.refreshError,
                    paused: processes.paused, notice: processes.notice, killing: processes.killing)
     }
 
-    static func processesScene(_ name: String, _ setup: Setup, _ processes: Processes = Processes(),
+    static func processesScene(_ name: String, _ setup: Setup, _ processes: Processes = Processes(), size: CGSize = WorkspaceScenes.size,
                                sheet: ((AppStore) -> AnyView)? = nil) -> SnapshotScene {
-        SnapshotScene(name: name, size: WorkspaceScenes.size) {
+        SnapshotScene(name: name, size: size) {
             let store = WorkspaceScenes.store(setup)
             let _ = seed(store, hostID: setup.selected, processes)
             if let sheet {
@@ -119,10 +121,19 @@ enum DiagnosticsScenes {
         ]
     }
 
+    /// The kill confirmation for `pid` of the seeded list, with the seeded row as its current values.
+    static func killSheet(_ store: AppStore, pid: Int, tree: Bool) -> AnyView {
+        guard let host = store.host(dev) else { return AnyView(EmptyView()) }
+        let model = store.processes(for: host)
+        guard let process = model.forest.process(pid) else { return AnyView(EmptyView()) }
+        let descendants = model.forest.descendants(of: pid)
+        let request = KillRequest(process: process, tree: tree, descendants: tree ? descendants : [],
+                                  survivors: tree ? 0 : descendants.count)
+        return AnyView(KillConfirmSheet(request: request, hostName: host.name, current: process, confirm: {}, cancel: {}))
+    }
+
     static var all: [SnapshotScene] {
         let chrome = processList().first { $0.pid == 6100 }!
-        let shell = processList().first { $0.pid == PreviewFixtures.deskhandShellPID }!
-        let forest = ProcessForest(processList())
         var application = EventFilter()
         application.log = .application
         application.range = .lastWeek
@@ -133,17 +144,14 @@ enum DiagnosticsScenes {
             processesScene("processes-tree", Setup(selected: dev, tab: .processes), Processes(
                 sort: ProcessSort(column: .pid, ascending: true), tree: true, collapsed: [4, 1104, 1392],
                 selected: PreviewFixtures.deskhandShellPID)),
+            processesScene("processes-tree-narrow", Setup(selected: dev, tab: .processes), Processes(
+                sort: ProcessSort(column: .pid, ascending: true), tree: true, collapsed: [4, 1104, 1392],
+                selected: 9300), size: CGSize(width: 1180, height: 760)),
             processesScene("processes-kill-confirm", Setup(selected: dev, tab: .processes, inspector: nil), Processes(selected: 6100),
-                           sheet: { store in
-                AnyView(KillConfirmSheet(request: KillRequest(process: chrome, tree: true, descendants: forest.descendants(of: 6100)),
-                                         hostName: store.host(dev)?.name ?? "개발 PC", confirm: {}, cancel: {}))
-            }),
+                           sheet: { killSheet($0, pid: 6100, tree: true) }),
             processesScene("processes-kill-deskhand", Setup(selected: dev, tab: .processes, inspector: nil),
-                           Processes(selected: PreviewFixtures.deskhandShellPID), sheet: { store in
-                AnyView(KillConfirmSheet(request: KillRequest(process: shell, tree: false, descendants: [],
-                                                              survivors: forest.descendants(of: shell.pid).count),
-                                         hostName: store.host(dev)?.name ?? "개발 PC", confirm: {}, cancel: {}))
-            }),
+                           Processes(selected: PreviewFixtures.deskhandShellPID),
+                           sheet: { killSheet($0, pid: PreviewFixtures.deskhandShellPID, tree: false) }),
             processesScene("processes-kill-result", Setup(selected: dev, tab: .processes, inspector: nil), Processes(
                 sort: ProcessSort(column: .memory, ascending: false), selected: 2260,
                 refreshError: OperationError(code: "TIMEOUT", message: "에이전트가 5초 안에 답하지 않았습니다"),
@@ -157,7 +165,7 @@ enum DiagnosticsScenes {
                                           code: "EXECUTION_OUTCOME_UNKNOWN"))),
             processesScene("processes-protected", Setup(selected: dev, tab: .processes, inspector: nil),
                            Processes(selected: PreviewFixtures.agentPID)),
-            processesScene("processes-kill-ended", Setup(selected: dev, tab: .processes, inspector: nil), Processes(selected: 6100),
+            processesScene("processes-kill-ended", Setup(selected: dev, tab: .processes, inspector: nil), Processes(ended: [6100]),
                            sheet: { store in
                 AnyView(KillConfirmSheet(request: KillRequest(process: chrome, tree: false, descendants: [], survivors: 8),
                                          hostName: store.host(dev)?.name ?? "개발 PC", ended: true, confirm: {}, cancel: {}))

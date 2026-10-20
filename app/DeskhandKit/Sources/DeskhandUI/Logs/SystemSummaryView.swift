@@ -78,7 +78,7 @@ private struct SummaryErrorStrip: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(String.ui("logs.system.failed", "시스템 요약을 불러오지 못했습니다"))
                     .font(DS.Font.body.weight(.semibold))
-                Text(LogsModel.explanation(error).replacingOccurrences(of: "\n", with: " "))
+                Text(LogsModel.explanation(error))
                     .font(DS.Font.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)

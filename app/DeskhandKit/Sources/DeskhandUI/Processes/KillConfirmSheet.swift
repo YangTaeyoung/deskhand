@@ -8,13 +8,17 @@ public struct KillConfirmSheet: View {
     let request: KillRequest
     let hostName: String
     let ended: Bool
+    /// The process as the latest list shows it, for the user and memory on the sheet.
+    let current: RemoteProcess?
     let confirm: () -> Void
     let cancel: () -> Void
 
-    public init(request: KillRequest, hostName: String, ended: Bool = false, confirm: @escaping () -> Void, cancel: @escaping () -> Void) {
+    public init(request: KillRequest, hostName: String, ended: Bool = false, current: RemoteProcess? = nil,
+                confirm: @escaping () -> Void, cancel: @escaping () -> Void) {
         self.request = request
         self.hostName = hostName
         self.ended = ended
+        self.current = current
         self.confirm = confirm
         self.cancel = cancel
     }
@@ -31,11 +35,12 @@ public struct KillConfirmSheet: View {
         return .ui("processes.confirm.title", "‘\(name)’ 프로세스를 종료할까요?")
     }
 
-    /// `PID 6100 · taeyoung · 410.3 MB`.
+    /// `PID 6100 · taeyoung · 410.3 MB`, from the latest list while the process is listed.
     private var meta: String {
-        var parts = [String.ui("processes.pidLabel", "PID \(String(process.pid))")]
-        if let user = process.user { parts.append(ProcessFormat.user(user)) }
-        parts.append(ProcessFormat.memory(kb: process.memKb))
+        let shown = current ?? process
+        var parts = [String.ui("processes.pidLabel", "PID \(String(shown.pid))")]
+        if let user = shown.user { parts.append(ProcessFormat.user(user)) }
+        parts.append(ProcessFormat.memory(kb: shown.memKb))
         return parts.joined(separator: " · ")
     }
 

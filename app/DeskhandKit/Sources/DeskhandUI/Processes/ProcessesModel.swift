@@ -336,14 +336,7 @@ public final class ProcessesModel {
     private func showFailure(_ request: KillRequest, _ error: OperationError) {
         let name = request.process.name
         show(.error, .ui("processes.kill.failed", "‘\(name)’ 프로세스를 종료하지 못했습니다"),
-             detail: [Self.sentence(error.message), Self.killFix(error)].compactMap { $0 }.joined(separator: "\n"), code: error.code)
-    }
-
-    /// `text` ending with a period when it ends without punctuation.
-    static func sentence(_ text: String) -> String {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let last = trimmed.last, !".!?…".contains(last) else { return trimmed }
-        return trimmed + "."
+             detail: [error.message.asSentence, Self.killFix(error)].compactMap { $0 }.joined(separator: "\n"), code: error.code)
     }
 
     /// What to do after a refused kill.

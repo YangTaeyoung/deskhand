@@ -136,7 +136,7 @@ struct DataTable<Row: Identifiable & Equatable>: NSViewRepresentable where Row.I
         coordinator.table = table
         coordinator.scroll = scroll
         coordinator.rows = rows
-        table.usesAlternatingRowBackgroundColors = !rows.isEmpty
+        table.usesAlternatingRowBackgroundColors = false
         table.reloadData()
         coordinator.applySelection()
         coordinator.fitColumns()
@@ -172,7 +172,6 @@ struct DataTable<Row: Identifiable & Equatable>: NSViewRepresentable where Row.I
             if rows != new.rows {
                 let old = rows
                 rows = new.rows
-                table.usesAlternatingRowBackgroundColors = !rows.isEmpty
                 applyingSelection = true
                 if old.count == rows.count, zip(old, rows).allSatisfy({ $0.id == $1.id }) {
                     let changed = IndexSet(rows.indices.filter { old[$0] != rows[$0] })
@@ -183,6 +182,7 @@ struct DataTable<Row: Identifiable & Equatable>: NSViewRepresentable where Row.I
                     table.reloadData()
                 }
                 applyingSelection = false
+                table.enumerateAvailableRowViews { rowView, row in (rowView as? DataRowView)?.striped = row % 2 == 1 }
             }
             applySelection()
             if let sort = new.sort,
@@ -218,7 +218,8 @@ struct DataTable<Row: Identifiable & Equatable>: NSViewRepresentable where Row.I
             fitColumns()
         }
 
-        /// Hides the columns the table is too narrow for and lets the last column fill the rest.
+        /// Hides the columns the table is too narrow for, narrows the first column down to its
+        /// minimum when the rest still do not fit, and lets the last column fill the rest.
         func fitColumns() {
             guard let table, let scroll else { return }
             let width = scroll.contentSize.width
@@ -227,6 +228,13 @@ struct DataTable<Row: Identifiable & Equatable>: NSViewRepresentable where Row.I
                 guard let spec = parent.columns.first(where: { $0.id == column.identifier.rawValue }), let limit = spec.hideBelow else { continue }
                 let hidden = width < limit
                 if column.isHidden != hidden { column.isHidden = hidden }
+            }
+            let visible = table.tableColumns.filter { !$0.isHidden }
+            if let first = visible.first, let last = visible.last, first !== last {
+                let spacing = table.intercellSpacing.width * CGFloat(visible.count) + 24
+                let others = visible.dropFirst().reduce(0) { $0 + ($1 === last ? $1.minWidth : $1.width) }
+                let room = width - others - spacing
+                if first.width > room { first.width = max(first.minWidth, room) }
             }
             table.sizeLastColumnToFit()
         }
@@ -241,10 +249,14 @@ struct DataTable<Row: Identifiable & Equatable>: NSViewRepresentable where Row.I
         }
 
         func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
-            let view = tableView.makeView(withIdentifier: FileRowView.identifier, owner: nil) as? FileRowView ?? FileRowView()
-            view.identifier = FileRowView.identifier
-            view.paneActive = true
+            let view = tableView.makeView(withIdentifier: DataRowView.identifier, owner: nil) as? DataRowView ?? DataRowView()
+            view.identifier = DataRowView.identifier
+            view.striped = row % 2 == 1
             return view
+        }
+
+        func tableView(_ tableView: NSTableView, didAdd rowView: NSTableRowView, forRow row: Int) {
+            (rowView as? DataRowView)?.striped = row % 2 == 1
         }
 
         func tableViewSelectionDidChange(_ notification: Notification) {
@@ -351,6 +363,31 @@ final class DataNSTableView: NSTableView {
     }
 }
 
+/// A row of `DataTable`: a stripe behind odd rows only, and the selection in the accent color.
+final class DataRowView: NSTableRowView {
+    static let identifier = NSUserInterfaceItemIdentifier("data.row")
+
+    var striped = false {
+        didSet { if striped != oldValue { needsDisplay = true } }
+    }
+
+    override var interiorBackgroundStyle: NSView.BackgroundStyle {
+        isSelected ? .emphasized : .normal
+    }
+
+    override func drawBackground(in dirtyRect: NSRect) {
+        guard striped else { return }
+        NSColor.alternatingContentBackgroundColors.dropFirst().first?.setFill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 0), xRadius: 5, yRadius: 5).fill()
+    }
+
+    override func drawSelection(in dirtyRect: NSRect) {
+        guard selectionHighlightStyle != .none else { return }
+        NSColor(DS.Color.accent).setFill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 0), xRadius: 5, yRadius: 5).fill()
+    }
+}
+
 /// A table header that paints the window background under its titles.
 final class OpaqueTableHeaderView: NSTableHeaderView {
     override func draw(_ dirtyRect: NSRect) {
@@ -431,7 +468,8 @@ final class DataTextCell: NSTableCellView {
 }
 
 /// A small rounded tag drawn in a table cell, such as `Deskhand가 시작함`. Narrower than its text,
-/// it draws as a dot. Its colors resolve for the cell's appearance and turn white on a selected row.
+/// it draws as a dot at its leading edge. Its colors resolve for the cell's appearance and turn
+/// white on a selected row.
 final class TagView: NSView {
     static let dotWidth: CGFloat = 10
 
@@ -464,7 +502,7 @@ final class TagView: NSView {
         guard bounds.width >= textWidth - 0.5 else {
             ink.setFill()
             let side: CGFloat = 7
-            NSBezierPath(ovalIn: NSRect(x: (bounds.width - side) / 2, y: (bounds.height - side) / 2, width: side, height: side)).fill()
+            NSBezierPath(ovalIn: NSRect(x: 1.5, y: (bounds.height - side) / 2, width: side, height: side)).fill()
             return
         }
         let rect = bounds.insetBy(dx: 0.5, dy: 0.5)

@@ -506,7 +506,7 @@ public final class LogsModel {
         default:
             error.fix
         }
-        return [error.message, fix].compactMap { $0 }.joined(separator: "\n")
+        return [error.message, fix].compactMap { $0?.asSentence }.filter { !$0.isEmpty }.joined(separator: " ")
     }
 
     // MARK: Notices
