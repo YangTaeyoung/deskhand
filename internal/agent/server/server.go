@@ -155,8 +155,14 @@ func New(opt Options) *Server {
 	return s
 }
 
-// Close shuts the UI helper down when the server has one.
+// Close releases every key and button the agent holds pressed and shuts
+// the UI helper down when the server has one.
 func (s *Server) Close() {
+	if released, err := s.input.ReleaseAll(); err != nil {
+		s.opt.Logger.Printf("input: releasing the held keys and buttons at shutdown: %v", err)
+	} else if len(released) > 0 {
+		s.opt.Logger.Printf("input: released %d keys and buttons at shutdown", len(released))
+	}
 	if c, ok := s.opt.UI.(interface{ Close() }); ok {
 		c.Close()
 	}
