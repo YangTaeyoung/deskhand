@@ -133,6 +133,8 @@ type setupOpts struct {
 	storedFP      func(agent transport.Identity) string
 	trustDaemon   bool
 	dropAfterSend string
+	// jobs are stored before the daemon starts.
+	jobs []store.Job
 }
 
 func newID(t *testing.T, cn string) transport.Identity {
@@ -176,6 +178,11 @@ func setup(t *testing.T, o setupOpts) *env {
 	if err := st.PutHost(store.Host{HostID: "pc", Name: "pc", Address: "127.0.0.1", Port: agent.port, AgentFP: fp, OS: "darwin",
 		Arch: "arm64", SSHAlias: "pc", CreatedAt: time.Now()}); err != nil {
 		t.Fatal(err)
+	}
+	for _, j := range o.jobs {
+		if err := st.CreateJob(j); err != nil {
+			t.Fatal(err)
+		}
 	}
 	st.Close()
 	d, err := daemon.New(daemon.Options{Version: "test", Logger: quiet, DropAfterSend: o.dropAfterSend})
@@ -736,5 +743,41 @@ func TestJobPayloadsCarryNoOutput(t *testing.T) {
 	}
 	if text.String() != "out\nerr\n" || out["next_cursor"] != "end" {
 		t.Fatalf("jobs.output %v", out)
+	}
+}
+
+func TestJobsLeftRunningAreSettledAtStartAndOnReady(t *testing.T) {
+	now := time.Now()
+	running := func(id, kind, remote string) store.Job {
+		return store.Job{JobID: id, HostID: "pc", Kind: kind, Status: "running", Summary: id, RemoteJob: remote, CreatedAt: now, UpdatedAt: now}
+	}
+	e := setup(t, setupOpts{trustDaemon: true, jobs: []store.Job{running("j-run", "exec", ""), running("j-install", "install", ""),
+		running("j-remote", "exec", "j77")}})
+	for _, id := range []string{"j-run", "j-install"} {
+		if j := e.call(t, "jobs.get", map[string]any{"job_id": id}); j["status"] != "unknown" || j["finished_at"] == nil {
+			t.Fatalf("%s after the start %v", id, j)
+		}
+	}
+	e.waitState(t, "ready")
+	for deadline := time.Now().Add(10 * time.Second); ; {
+		j := e.call(t, "jobs.get", map[string]any{"job_id": "j-remote"})
+		if j["status"] == "unknown" && j["result"].(map[string]any)["state"] == "lost" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the job the agent does not know %v", j)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	entries := e.call(t, "timeline.list", map[string]any{"host_id": "pc"})["entries"].([]any)
+	seen := map[string]bool{}
+	for _, en := range entries {
+		m := en.(map[string]any)
+		if m["actor"] == "system" && m["outcome"] == "unknown" {
+			seen[m["job_id"].(string)] = true
+		}
+	}
+	if !seen["j-run"] || !seen["j-install"] {
+		t.Fatalf("timeline %v", entries)
 	}
 }

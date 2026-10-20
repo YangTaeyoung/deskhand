@@ -311,14 +311,17 @@ func (s *Store) JobByRemote(hostID, remote string) (Job, error) {
 		hostID, remote))
 }
 
-// JobFilter selects jobs; empty fields match every job.
+// JobFilter selects jobs; empty fields match every job. Unfinished selects
+// the jobs that have not finished; All lifts the limit.
 type JobFilter struct {
 	HostID, Kind, Status string
+	Unfinished           bool
+	All                  bool
 	Limit                int
 }
 
 // ListJobs returns the jobs that f selects, newest first, at most f.Limit
-// (500 when 0).
+// (500 when 0) unless f.All.
 func (s *Store) ListJobs(f JobFilter) ([]Job, error) {
 	q := `SELECT ` + jobColumns + ` FROM jobs WHERE 1 = 1`
 	var args []any
@@ -328,9 +331,15 @@ func (s *Store) ListJobs(f JobFilter) ([]Job, error) {
 			args = append(args, c.v)
 		}
 	}
+	if f.Unfinished {
+		q += ` AND finished_at = ''`
+	}
 	limit := f.Limit
 	if limit <= 0 {
 		limit = 500
+	}
+	if f.All {
+		limit = -1
 	}
 	q += ` ORDER BY created_at DESC, job_id DESC LIMIT ?`
 	args = append(args, limit)

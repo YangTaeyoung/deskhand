@@ -109,7 +109,8 @@ type agentEnv struct {
 }
 
 // newAgentEnv connects the Registry's host "pc" to agent and waits until it
-// is ready. Agent events reach HandleAgentEvent, as in the daemon.
+// is ready. Agent events reach HandleAgentEvent and a ready host reaches
+// Reconcile, as in the daemon.
 func newAgentEnv(t *testing.T, agent *scriptAgent) *agentEnv {
 	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "d.db"))
@@ -131,6 +132,7 @@ func connectAgentEnv(t *testing.T, st *store.Store, agent *scriptAgent) *agentEn
 				r.HandleAgentEvent(ev.HostID, ev.Payload)
 			}
 		},
+		OnReady: func(hostID string, _ uint64) { go r.Reconcile(hostID) },
 	})
 	t.Cleanup(mgr.Close)
 	r = New(st, bus, mgr)

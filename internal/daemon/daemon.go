@@ -142,9 +142,15 @@ func New(opt Options) (*Daemon, error) {
 	}
 	controller, _ := os.Hostname()
 	var reg *hosts.Registry
+	var jreg *jobs.Registry
 	d.mgr = conn.NewManager(conn.Options{Identity: id, Controller: controller, Dial: opt.Dial, Requests: d.st,
-		OnEvent: func(ev conn.Event) { reg.HandleConnEvent(ev) }, DropAfterSend: drop, Logger: lg})
-	jreg := jobs.New(d.st, bus, d.mgr)
+		OnEvent:       func(ev conn.Event) { reg.HandleConnEvent(ev) },
+		OnReady:       func(hostID string, _ uint64) { go jreg.Reconcile(hostID) },
+		DropAfterSend: drop, Logger: lg})
+	jreg = jobs.New(d.st, bus, d.mgr)
+	if n := jreg.SettleInterrupted(); n > 0 {
+		lg.Printf("%d jobs were running without a remote job when the daemon stopped; they are recorded unknown", n)
+	}
 	reg = hosts.New(hosts.Options{Store: d.st, Bus: bus, Manager: d.mgr, Jobs: jreg, Identity: id, SSHExec: opt.SSHExec,
 		AgentFiles: opt.AgentFiles, Version: opt.Version, Logger: lg})
 	d.Hosts = reg

@@ -236,6 +236,84 @@ func (r *Registry) List(f store.JobFilter) ([]model.Job, error) {
 	return out, nil
 }
 
+// SettleInterrupted finishes, when the daemon starts, every job that had not
+// finished and has no remote job: an exec.run, an exec.start whose answer
+// had not come, or an install. Their outcome is unknown; each gets a
+// job.updated event and a timeline entry. It returns how many it finished.
+func (r *Registry) SettleInterrupted() int {
+	rows, err := r.st.ListJobs(store.JobFilter{Unfinished: true, All: true})
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, j := range rows {
+		if j.RemoteJob != "" {
+			continue
+		}
+		e := apierr.New(wire.CodeExecutionOutcomeUnknown,
+			"데몬이 멈춘 동안 이 작업의 결과를 받지 못했습니다. PC 상태를 확인한 뒤 필요하면 다시 실행하세요", false, apierr.NextCheckState)
+		if _, err := r.Finish(j.JobID, model.StatusUnknown, mergeResult(j, map[string]any{"state": "interrupted", "error": e})); err != nil {
+			continue
+		}
+		kind := model.TimelineExec
+		if j.Kind == KindInstall {
+			kind = model.TimelineInstall
+		}
+		_, _ = r.bus.Record(model.System.Entry(j.HostID, kind, "결과 불명(데몬이 멈춘 동안 실행 중): "+j.Summary, model.TimelineUnknown, j.JobID))
+		n++
+	}
+	return n
+}
+
+// Reconcile reads the jobs of hostID's agent once with exec.list and
+// finishes the host's running remote exec jobs that ended: an exited job by
+// its exit code, and a lost job or one the agent no longer lists as
+// unknown. It runs when the host becomes ready.
+func (r *Registry) Reconcile(hostID string) {
+	h := r.readyHost(hostID)
+	if h == nil {
+		return
+	}
+	rows, err := r.st.ListJobs(store.JobFilter{HostID: hostID, Kind: KindExec, Unfinished: true, All: true})
+	if err != nil {
+		return
+	}
+	var running []store.Job
+	for _, j := range rows {
+		if j.RemoteJob != "" {
+			running = append(running, j)
+		}
+	}
+	if len(running) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), reconcileTimeout)
+	defer cancel()
+	res, err := h.Call(ctx, "exec.list", nil, conn.CallOpts{})
+	if err != nil {
+		return
+	}
+	listed := map[string]proto.Message{}
+	list, _ := res["jobs"].([]any)
+	for _, item := range list {
+		if m, ok := item.(map[string]any); ok {
+			listed[remoteID(m["job"])] = proto.Message(m)
+		}
+	}
+	for _, j := range running {
+		m, ok := listed[j.RemoteJob]
+		switch {
+		case ok && m.String("state") == "exited":
+			_, _ = r.finishExit(j, m.Int("code"))
+		case !ok || m.String("state") == "lost":
+			_, _ = r.Finish(j.JobID, model.StatusUnknown, mergeResult(j, map[string]any{"state": "lost"}))
+		}
+	}
+}
+
+// reconcileTimeout bounds the exec.list of Reconcile.
+const reconcileTimeout = 30 * time.Second
+
 // readyHost returns the connection of the job's host when it is connected.
 func (r *Registry) readyHost(hostID string) *conn.Host {
 	h := r.mgr.Get(hostID)
