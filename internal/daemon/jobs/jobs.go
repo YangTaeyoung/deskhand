@@ -40,6 +40,9 @@ type Registry struct {
 
 	mu         sync.Mutex
 	earlyExits map[string]earlyExit
+	// cancelling holds the jobs whose cancel is under way; their exit
+	// finishes them cancelled.
+	cancelling map[string]bool
 }
 
 type earlyExit struct {
@@ -50,7 +53,7 @@ type earlyExit struct {
 // New returns a Registry over st that publishes on bus and reaches agents
 // through mgr.
 func New(st *store.Store, bus *events.Bus, mgr *conn.Manager) *Registry {
-	return &Registry{st: st, bus: bus, mgr: mgr, earlyExits: map[string]earlyExit{}}
+	return &Registry{st: st, bus: bus, mgr: mgr, earlyExits: map[string]earlyExit{}, cancelling: map[string]bool{}}
 }
 
 func raw(v any) json.RawMessage {
@@ -93,10 +96,24 @@ func (r *Registry) Create(hostID, kind, requestID, summary string, params any) (
 	return r.publish(j), nil
 }
 
+// current returns a job as it is stored.
+func (r *Registry) current(jobID string) (model.Job, error) {
+	j, err := r.load(jobID)
+	if err != nil {
+		return model.Job{}, err
+	}
+	return model.JobFrom(j), nil
+}
+
 // SetRemote records the remote job id of a running exec job and its start
-// result. An exit the agent reported before is applied at once.
+// result. An exit the agent reported before is applied at once; a job that
+// finished meanwhile is returned as it is.
 func (r *Registry) SetRemote(jobID, remote string, result any) (model.Job, error) {
-	if err := r.st.SetJobRunning(jobID, remote, raw(result), time.Now()); err != nil {
+	err := r.st.SetJobRunning(jobID, remote, raw(result), time.Now())
+	if errors.Is(err, store.ErrJobFinished) || errors.Is(err, store.ErrNotFound) {
+		return r.current(jobID)
+	}
+	if err != nil {
 		return model.Job{}, err
 	}
 	j, err := r.load(jobID)
@@ -114,9 +131,14 @@ func (r *Registry) SetRemote(jobID, remote string, result any) (model.Job, error
 	return r.publish(j), nil
 }
 
-// Finish records the final status and result of a job.
+// Finish records the final status and result of a job. A job that has
+// finished keeps its status and result and is returned as it is.
 func (r *Registry) Finish(jobID, status string, result any) (model.Job, error) {
-	if err := r.st.FinishJob(jobID, status, raw(result), time.Now()); err != nil {
+	err := r.st.FinishJob(jobID, status, raw(result), time.Now())
+	if errors.Is(err, store.ErrJobFinished) || errors.Is(err, store.ErrNotFound) {
+		return r.current(jobID)
+	}
+	if err != nil {
 		return model.Job{}, err
 	}
 	j, err := r.load(jobID)
@@ -147,8 +169,17 @@ func mergeResult(j store.Job, extra map[string]any) map[string]any {
 	return out
 }
 
+// finishExit finishes j after its process exited with code: cancelled
+// while a cancel of j is under way, else by ExitStatus.
 func (r *Registry) finishExit(j store.Job, code int) (model.Job, error) {
-	return r.Finish(j.JobID, ExitStatus(code), mergeResult(j, map[string]any{"state": "exited", "code": code}))
+	r.mu.Lock()
+	cancelling := r.cancelling[j.JobID]
+	r.mu.Unlock()
+	status := ExitStatus(code)
+	if cancelling {
+		status = model.StatusCancelled
+	}
+	return r.Finish(j.JobID, status, mergeResult(j, map[string]any{"state": "exited", "code": code}))
 }
 
 // HandleAgentEvent applies the job.exited event of hostID's agent.
@@ -355,7 +386,9 @@ func (r *Registry) remoteOutput(ctx context.Context, j store.Job, cursor string,
 }
 
 // Cancel kills the remote process of a running exec.start job and records
-// it cancelled. info receives what happened to the exec.kill request.
+// it cancelled, also when its exit arrives before the answer to exec.kill.
+// A job that finished before the cancel keeps its status. info receives
+// what happened to the exec.kill request.
 func (r *Registry) Cancel(ctx context.Context, jobID string, info *conn.CallInfo) (model.Job, error) {
 	j, err := r.load(jobID)
 	if err != nil {
@@ -371,9 +404,21 @@ func (r *Registry) Cancel(ctx context.Context, jobID string, info *conn.CallInfo
 	if h == nil {
 		return model.Job{}, apierr.NotFound(fmt.Sprintf("job %s의 PC %s가 등록돼 있지 않습니다. host.list로 확인하세요", j.JobID, j.HostID))
 	}
+	r.mu.Lock()
+	r.cancelling[jobID] = true
+	r.mu.Unlock()
+	defer func() {
+		r.mu.Lock()
+		delete(r.cancelling, jobID)
+		r.mu.Unlock()
+	}()
 	res, err := h.Call(ctx, "exec.kill", proto.Message{"job": j.RemoteJob}, conn.CallOpts{Info: info})
 	if err != nil {
-		return model.JobFrom(j), err
+		cur, cerr := r.current(jobID)
+		if cerr != nil {
+			cur = model.JobFrom(j)
+		}
+		return cur, err
 	}
 	extra := map[string]any{"state": "cancelled"}
 	if s := res.String("state"); s != "" {

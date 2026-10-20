@@ -69,22 +69,30 @@ func (r *Registry) Doctor(ctx context.Context, ref string) ([]model.Check, error
 	}
 
 	st := h.State()
-	if st != conn.StateReady && st != conn.StateDegraded && st != conn.StateBlocked {
+	wasOffline := st == conn.StateOffline
+	if wasOffline {
 		h.Connect()
+		defer h.Disconnect()
+	}
+	if st != conn.StateReady && st != conn.StateDegraded && st != conn.StateBlocked {
 		r.waitConnected(ctx, h)
 		st = h.State()
 	}
 	connected := st == conn.StateReady || st == conn.StateDegraded
+	restored := ""
+	if wasOffline {
+		restored = " (검사를 위해 잠시 연결했고 검사 뒤 다시 끊습니다)"
+	}
 
 	r.agentCheck(ctx, h, row.SSHAlias, sshOK, connected, repair, add)
 
 	switch {
 	case connected:
-		add(CheckQUIC, model.CheckPass, fmt.Sprintf("%s:%d에 연결돼 있습니다 (세대 %d)", row.Address, row.Port, h.Generation()), "")
+		add(CheckQUIC, model.CheckPass, fmt.Sprintf("%s:%d에 연결됩니다 (세대 %d)%s", row.Address, row.Port, h.Generation(), restored), "")
 	case st == conn.StateBlocked:
-		add(CheckQUIC, model.CheckFail, reasonOf(h), repair)
+		add(CheckQUIC, model.CheckFail, reasonOf(h)+restored, repair)
 	default:
-		add(CheckQUIC, model.CheckFail, reasonOf(h),
+		add(CheckQUIC, model.CheckFail, reasonOf(h)+restored,
 			fmt.Sprintf("PC가 켜져 있는지, 같은 네트워크인지, UDP %d가 방화벽에서 열려 있는지 확인하세요", row.Port))
 	}
 
@@ -161,7 +169,7 @@ func (r *Registry) sessionCheck(ctx context.Context, h *conn.Host, connected boo
 		add(CheckSession, model.CheckSkip, "연결되지 않아 세션을 확인하지 못했습니다", "quic_connect 항목을 먼저 해결하세요")
 		return
 	}
-	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	cctx, cancel := context.WithTimeout(ctx, inspectTimeout)
 	defer cancel()
 	var info proto.Message
 	res, err := h.Call(cctx, "session.info", nil, callOpts())

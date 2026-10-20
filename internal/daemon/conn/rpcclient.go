@@ -180,6 +180,16 @@ func (c *rpcClient) shutdown(err error) {
 // Done is closed when the client has shut down.
 func (c *rpcClient) Done() <-chan struct{} { return c.done }
 
+// closed reports whether the client has shut down.
+func (c *rpcClient) closed() bool {
+	select {
+	case <-c.done:
+		return true
+	default:
+		return false
+	}
+}
+
 // Err returns why the client shut down.
 func (c *rpcClient) Err() error {
 	c.mu.Lock()
@@ -187,8 +197,40 @@ func (c *rpcClient) Err() error {
 	return c.err
 }
 
-// call sends req with a new id and returns the answer. A connection that
-// ended before req was written gives errNotSent, one that ended after it
+// requestError is a request refused before any of it was written: it
+// cannot be encoded or its line is longer than maxDaemonLine.
+type requestError struct{ err *apierr.Error }
+
+func (e *requestError) Error() string { return e.err.Message }
+func (e *requestError) Unwrap() error { return e.err }
+
+// IsRequestError reports whether err is a request refused before it was
+// sent, an INVALID_ARGUMENT problem of the request itself.
+func IsRequestError(err error) bool {
+	var re *requestError
+	return errors.As(err, &re)
+}
+
+// encodeRequest returns the line of req with id, or a *requestError.
+func encodeRequest(req proto.Message, id int64) ([]byte, error) {
+	msg := make(proto.Message, len(req)+1)
+	for k, v := range req {
+		msg[k] = v
+	}
+	msg["id"] = id
+	line, err := proto.Encode(msg)
+	if err != nil {
+		return nil, &requestError{apierr.Invalid(fmt.Sprintf("요청을 JSON으로 만들 수 없습니다(%v). 파라미터 값을 확인하세요", err))}
+	}
+	if len(line) > maxDaemonLine {
+		return nil, &requestError{apierr.Invalid(fmt.Sprintf("요청이 %d바이트로 1 MiB를 넘습니다. 데이터를 나눠서 보내세요", len(line)))}
+	}
+	return line, nil
+}
+
+// call sends req with a new id and returns the answer. A request that
+// cannot be encoded or is too long gives a *requestError, a connection that
+// ended before req was written errNotSent, one that ended after it
 // errConnLost.
 func (c *rpcClient) call(ctx context.Context, req proto.Message, drop bool) (proto.Message, error) {
 	c.mu.Lock()
@@ -200,19 +242,10 @@ func (c *rpcClient) call(ctx context.Context, req proto.Message, drop bool) (pro
 	}
 	c.nextID++
 	id := c.nextID
-	msg := make(proto.Message, len(req)+1)
-	for k, v := range req {
-		msg[k] = v
-	}
-	msg["id"] = id
-	line, err := proto.Encode(msg)
+	line, err := encodeRequest(req, id)
 	if err != nil {
 		c.mu.Unlock()
-		return nil, apierr.Invalid(fmt.Sprintf("요청을 JSON으로 만들 수 없습니다(%v). 파라미터 값을 확인하세요", err))
-	}
-	if len(line) > maxDaemonLine {
-		c.mu.Unlock()
-		return nil, apierr.Invalid("요청이 1 MiB를 넘습니다. 데이터를 나눠서 보내세요")
+		return nil, err
 	}
 	pc := &pendingCall{ch: make(chan proto.Message, 1), drop: drop}
 	c.pending[id] = pc

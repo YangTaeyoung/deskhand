@@ -12,6 +12,10 @@ import (
 // unknown fills the SessionInfo fields the agent did not report.
 const unknown = "unknown"
 
+// inspectTimeout bounds session.inspect and the session check of
+// host.doctor, including the wait for a connecting host.
+const inspectTimeout = 30 * time.Second
+
 // sessionInfo merges the hello's session with a session.info answer, the
 // answer winning, into a SessionInfo; nil when neither names a session.
 func sessionInfo(hello, info proto.Message) *model.SessionInfo {
@@ -66,7 +70,7 @@ func (r *Registry) Inspect(ctx context.Context, ref string) (model.SessionInspec
 	if err != nil {
 		return model.SessionInspect{}, err
 	}
-	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	cctx, cancel := context.WithTimeout(ctx, inspectTimeout)
 	defer cancel()
 	var info proto.Message
 	res, err := h.Call(cctx, "session.info", nil, callOpts())

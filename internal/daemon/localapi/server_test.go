@@ -122,6 +122,7 @@ func (w *wireConn) hello() {
 func TestHelloRequiredFirst(t *testing.T) {
 	r := newRig(t)
 	w := r.dial(t)
+	w.send(`{"jsonrpc":"2.0","method":"host.list"}`)
 	w.send(`{"jsonrpc":"2.0","id":1,"method":"host.list"}`)
 	if code, data := errorOf(t, w.next()); code != codeServer || data != "INVALID_ARGUMENT" {
 		t.Fatalf("before hello %v %v", code, data)
@@ -167,6 +168,8 @@ func TestProtocolErrors(t *testing.T) {
 		t.Fatalf("bad params %v %v", code, data)
 	}
 	w.send(`{"jsonrpc":"2.0","method":"host.list"}`)
+	w.send(`{"jsonrpc":"2.0","method":"screen.teleport"}`)
+	w.send(`{"jsonrpc":"2.0","method":"exec.run","params":{"host_id":7}}`)
 	w.send(`{"jsonrpc":"2.0","id":5,"method":"exec.run","params":{"host_id":"nope","argv":["x"]}}`)
 	m = w.next()
 	if m["id"] != float64(5) {
@@ -239,5 +242,33 @@ func TestListenRefusesRunningDaemon(t *testing.T) {
 	}
 	if fi, err := os.Stat(filepath.Dir(r.socket)); err != nil || fi.Mode().Perm() != 0o700 {
 		t.Fatalf("socket folder mode %v, %v", fi.Mode(), err)
+	}
+}
+
+func TestOversizedRequestIsRPCError(t *testing.T) {
+	r := newRig(t)
+	if err := r.st.PutHost(store.Host{HostID: "pc", Name: "pc", Address: "127.0.0.1", Port: 1, AgentFP: "fp", CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	w := r.dial(t)
+	w.hello()
+	big := strings.Repeat("A", 2<<20)
+	w.send(`{"jsonrpc":"2.0","id":1,"method":"files.write","params":{"host_id":"pc","path":"C:\\a.bin","data":"` + big + `"}}`)
+	m := w.next()
+	if code, data := errorOf(t, m); code != codeInvalidParams || data != "INVALID_ARGUMENT" {
+		t.Fatalf("oversized files.write %v", m)
+	}
+	if msg := m["error"].(map[string]any)["message"].(string); !strings.Contains(msg, "1 MiB") {
+		t.Fatalf("message %q", msg)
+	}
+	w.send(`{"jsonrpc":"2.0","id":2,"method":"exec.run","params":{"host_id":"pc","argv":["x"],"stdin":"` + big + `"}}`)
+	if code, data := errorOf(t, w.next()); code != codeInvalidParams || data != "INVALID_ARGUMENT" {
+		t.Fatal("oversized exec.run was not a params error")
+	}
+	if jobsList, _ := r.st.ListJobs(store.JobFilter{}); len(jobsList) != 0 {
+		t.Fatalf("a refused request made jobs %+v", jobsList)
+	}
+	if entries, _ := r.st.ListTimeline(store.TimelineFilter{}); len(entries) != 0 {
+		t.Fatalf("a refused request was recorded %+v", entries)
 	}
 }

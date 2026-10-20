@@ -45,6 +45,17 @@ func shortDir(t *testing.T) string {
 type fakeDaemon struct {
 	ln     net.Listener
 	hellos atomic.Int32
+	mu     sync.Mutex
+	conns  []net.Conn
+}
+
+// closeAll closes every accepted connection.
+func (f *fakeDaemon) closeAll() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, c := range f.conns {
+		c.Close()
+	}
 }
 
 func startFake(t *testing.T, socket string) *fakeDaemon {
@@ -74,6 +85,9 @@ func startFake(t *testing.T, socket string) *fakeDaemon {
 
 func (f *fakeDaemon) serve(c net.Conn) {
 	defer c.Close()
+	f.mu.Lock()
+	f.conns = append(f.conns, c)
+	f.mu.Unlock()
 	var wmu sync.Mutex
 	write := func(v any) {
 		b, _ := json.Marshal(v)
@@ -206,5 +220,39 @@ func TestCallAndErrors(t *testing.T) {
 	c.Close()
 	if err := c.Call(context.Background(), "echo", nil, nil); err == nil {
 		t.Fatal("call after Close succeeded")
+	}
+	select {
+	case _, ok := <-evs:
+		if ok {
+			t.Fatal("an event arrived after Close")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the events channel stayed open after Close")
+	}
+}
+
+func TestEventsCloseWhenDaemonGoes(t *testing.T) {
+	socket := filepath.Join(shortDir(t), "run", "d.sock")
+	f := startFake(t, socket)
+	c, err := DialOptions(context.Background(), "cli", "t", Options{Socket: socket, Start: func(context.Context) error {
+		return errors.New("the fake daemon is already running")
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	evs, err := c.Subscribe(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-evs
+	f.closeAll()
+	select {
+	case _, ok := <-evs:
+		if ok {
+			t.Fatal("unexpected event")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the events channel stayed open after the daemon closed the connection")
 	}
 }

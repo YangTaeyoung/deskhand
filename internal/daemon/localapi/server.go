@@ -336,10 +336,11 @@ func rpcErr(code int, e *apierr.Error) *rpcError {
 	return &rpcError{Code: code, Message: e.Message, Data: data}
 }
 
-// reply writes the response to the request with id; a request without an
-// id is a notification and gets none.
+// reply writes the response to the request with id. A request without an
+// id is a notification and gets no response; only a parse error, whose id
+// cannot be read, is answered with id null.
 func (s *session) reply(id json.RawMessage, result any, e *rpcError) {
-	if len(id) == 0 && e == nil {
+	if len(id) == 0 && (e == nil || e.Code != codeParse) {
 		return
 	}
 	var idv any = json.RawMessage("null")

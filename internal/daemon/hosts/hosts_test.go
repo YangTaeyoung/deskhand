@@ -259,6 +259,9 @@ func TestDoctorReportsEveryCheck(t *testing.T) {
 		SSHAlias: "windows", CreatedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
+	if err := fx.r.Load(); err != nil {
+		t.Fatal(err)
+	}
 	checks, err := fx.r.Doctor(context.Background(), "pc")
 	if err != nil {
 		t.Fatal(err)
@@ -299,6 +302,9 @@ func TestDoctorReportsFingerprintMismatch(t *testing.T) {
 		SSHAlias: "windows", CreatedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
+	if err := fx.r.Load(); err != nil {
+		t.Fatal(err)
+	}
 	checks, err := fx.r.Doctor(context.Background(), "pc")
 	if err != nil {
 		t.Fatal(err)
@@ -324,5 +330,36 @@ func TestFindAgentBinarySearchesAgentDir(t *testing.T) {
 	}
 	if got, err := FindAgentBinary("arm64"); err != nil || got != p {
 		t.Fatalf("found %q, %v", got, err)
+	}
+}
+
+func TestDoctorLeavesDisconnectedHostOffline(t *testing.T) {
+	fx := newFixture(t, nil)
+	if err := fx.st.PutHost(store.Host{HostID: "pc", Name: "pc", Address: "192.168.0.20", Port: 47600, AgentFP: agentFP,
+		SSHAlias: "windows", CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if h, err := fx.r.Disconnect("pc"); err != nil || h.State != "offline" {
+		t.Fatalf("disconnect %+v, %v", h, err)
+	}
+	checks, err := fx.r.Doctor(context.Background(), "pc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if checks[2].ID != "quic_connect" || !strings.Contains(checks[2].Detail, "다시 끊습니다") {
+		t.Fatalf("quic_connect %+v", checks[2])
+	}
+	if h, _ := fx.r.Get("pc"); h.State != "offline" {
+		t.Fatalf("state after doctor %s", h.State)
+	}
+
+	if _, err := fx.r.Connect(context.Background(), "pc"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fx.r.Doctor(context.Background(), "pc"); err != nil {
+		t.Fatal(err)
+	}
+	if h, _ := fx.r.Get("pc"); h.State == "offline" {
+		t.Fatal("doctor disconnected a host that was connecting")
 	}
 }

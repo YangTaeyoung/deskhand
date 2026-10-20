@@ -107,6 +107,9 @@ func (s *Server) procKill(ctx context.Context, sess *session, raw json.RawMessag
 	defer cancel()
 	info := conn.CallInfo{}
 	res, err := h.Call(cctx, "proc.kill", params, conn.CallOpts{Info: &info})
+	if pe := requestProblem(err); pe != nil {
+		return nil, pe
+	}
 	o := outcomeOf(info, err)
 	fields := map[string]any{}
 	if err == nil {
@@ -153,6 +156,9 @@ func (s *Server) appLaunch(ctx context.Context, sess *session, raw json.RawMessa
 	defer cancel()
 	info := conn.CallInfo{}
 	res, err := h.Call(cctx, "app.launch", params, conn.CallOpts{Info: &info})
+	if pe := requestProblem(err); pe != nil {
+		return nil, pe
+	}
 	o := outcomeOf(info, err)
 	fields := map[string]any{}
 	if err == nil {

@@ -60,7 +60,14 @@ type fakeAgent struct {
 	forget bool
 	// noPong keeps the agent from answering ping.
 	noPong bool
-	conns  []net.Conn
+	// capsAfterWelcome makes the agent send caps.changed right after the
+	// welcome.
+	capsAfterWelcome bool
+	// runningPolls is how many req.status calls of a journaled rid answer
+	// running before done.
+	runningPolls int
+	statusCalls  int
+	conns        []net.Conn
 }
 
 func newFakeAgent(t *testing.T) *fakeAgent {
@@ -145,6 +152,15 @@ func (f *fakeAgent) serve(c net.Conn) {
 	if err != nil || w.Type() != "welcome" {
 		return
 	}
+	f.mu.Lock()
+	capsEv := f.capsAfterWelcome
+	f.mu.Unlock()
+	if capsEv {
+		ev := proto.Message{"t": "ev", "name": "caps.changed", "caps": map[string]any{"exec": map[string]any{"state": "unavailable", "reason": "off"}}}
+		if send(c, ev) != nil {
+			return
+		}
+	}
 	for {
 		m, err := r.Next()
 		if err != nil {
@@ -181,9 +197,13 @@ func (f *fakeAgent) handle(m proto.Message) (proto.Message, bool) {
 		}
 		return proto.Message{"ok": true, "pong": true}, false
 	case "req.status":
+		f.statusCalls++
 		stored, ok := f.journal[rid]
 		if !ok {
 			return proto.Message{"ok": true, "state": "unknown"}, false
+		}
+		if f.statusCalls <= f.runningPolls {
+			return proto.Message{"ok": true, "state": "running"}, false
 		}
 		out := proto.Message{"state": "done"}
 		for k, v := range stored {

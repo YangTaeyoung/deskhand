@@ -97,11 +97,11 @@ func (s *Server) jobsCancel(ctx context.Context, sess *session, raw json.RawMess
 		return nil, err
 	}
 	o := outcomeOf(info, err)
-	if err == nil {
-		o.status = model.StatusCancelled
-	}
 	if job.JobID == "" {
 		job = before
+	}
+	if err == nil {
+		o.status = job.Status
 	}
 	_, _ = s.d.Bus.Record(sess.Caller().Entry(before.HostID, model.TimelineExec, "job 취소: "+before.Summary, timelineOutcome(o.status), before.JobID))
 	return s.envelope(before.HostID, before.JobID, info, o, nil).Map(map[string]any{"job": job}), nil

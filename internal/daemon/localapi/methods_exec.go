@@ -143,6 +143,9 @@ func (s *Server) execRun(ctx context.Context, sess *session, raw json.RawMessage
 		timeout = time.Duration(p.TimeoutMS) * time.Millisecond
 	}
 	rid := conn.NewRID()
+	if pe := requestProblem(conn.CheckRequest("exec.run", p.agentParams(), rid)); pe != nil {
+		return nil, pe
+	}
 	summary := p.summary()
 	job, err := s.d.Jobs.Create(row.HostID, jobs.KindExec, rid, summary, p.jobParams())
 	if err != nil {
@@ -205,6 +208,11 @@ func (s *Server) execStart(ctx context.Context, sess *session, raw json.RawMessa
 		return nil, err
 	}
 	rid := conn.NewRID()
+	params := p.agentParams()
+	delete(params, "timeout_ms")
+	if pe := requestProblem(conn.CheckRequest("exec.start", params, rid)); pe != nil {
+		return nil, pe
+	}
 	summary := p.summary()
 	job, err := s.d.Jobs.Create(row.HostID, jobs.KindExec, rid, summary, p.jobParams())
 	if err != nil {
@@ -213,8 +221,6 @@ func (s *Server) execStart(ctx context.Context, sess *session, raw json.RawMessa
 	cctx, cancel := s.detached(remoteTimeout)
 	defer cancel()
 	info := conn.CallInfo{}
-	params := p.agentParams()
-	delete(params, "timeout_ms")
 	res, err := h.Call(cctx, "exec.start", params, conn.CallOpts{RID: rid, Info: &info})
 	o := outcomeOf(info, err)
 	fields := map[string]any{}

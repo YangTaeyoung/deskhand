@@ -158,6 +158,15 @@ func TestJobsRoundTrip(t *testing.T) {
 	if err := s.FinishJob("j-1", "succeeded", json.RawMessage(`{"code":0}`), done); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.FinishJob("j-1", "failed", nil, done.Add(time.Second)); !errors.Is(err, ErrJobFinished) {
+		t.Fatalf("second finish: %v", err)
+	}
+	if err := s.SetJobRunning("j-1", "9", nil, done); !errors.Is(err, ErrJobFinished) {
+		t.Fatalf("running after finish: %v", err)
+	}
+	if err := s.FinishJob("j-none", "failed", nil, done); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("finish of a missing job: %v", err)
+	}
 	got, err := s.GetJob("j-1")
 	if err != nil {
 		t.Fatal(err)

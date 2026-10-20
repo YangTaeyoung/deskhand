@@ -375,3 +375,152 @@ func TestBlockReason(t *testing.T) {
 		t.Fatalf("block reason %q", h.BlockReason())
 	}
 }
+
+func dropFirst() func(proto.Message) bool {
+	var once sync.Once
+	return func(proto.Message) bool {
+		drop := false
+		once.Do(func() { drop = true })
+		return drop
+	}
+}
+
+func TestOversizedRequestIsNotSent(t *testing.T) {
+	f := newFakeAgent(t)
+	m, l, _ := testManager(t, f, nil)
+	h := connected(t, m)
+	var info CallInfo
+	_, err := h.Call(context.Background(), "fs.write", proto.Message{"path": "C:\\a", "data": strings.Repeat("A", 2<<20)}, CallOpts{Info: &info})
+	if !IsRequestError(err) || apierr.CodeOf(err) != wire.CodeInvalidArgument {
+		t.Fatalf("error %#v", err)
+	}
+	if info.Sent || info.RID == "" {
+		t.Fatalf("call info %+v", info)
+	}
+	if got := l.history(info.RID); len(got) != 0 {
+		t.Fatalf("request log of a request never sent %v", got)
+	}
+	if got := f.requests("fs.write"); len(got) != 0 {
+		t.Fatalf("the agent received %v", got)
+	}
+	if err := CheckRequest("fs.write", proto.Message{"data": strings.Repeat("A", 2<<20)}, "r-x"); !IsRequestError(err) {
+		t.Fatalf("CheckRequest %v", err)
+	}
+	if err := CheckRequest("fs.write", proto.Message{"data": "AAAA"}, "r-x"); err != nil {
+		t.Fatalf("CheckRequest of a small request %v", err)
+	}
+}
+
+func TestAgentEventsFollowReady(t *testing.T) {
+	for i := 0; i < 20; i++ {
+		f := newFakeAgent(t)
+		f.capsAfterWelcome = true
+		m, _, evs := testManager(t, f, nil)
+		h := connected(t, m)
+		deadline := time.Now().Add(5 * time.Second)
+		for h.Hello().Caps["exec"].State != "unavailable" {
+			if time.Now().After(deadline) {
+				t.Fatalf("caps after caps.changed %+v", h.Hello().Caps)
+			}
+			time.Sleep(time.Millisecond)
+		}
+		evs.mu.Lock()
+		ready, agent := -1, -1
+		for j, ev := range evs.evs {
+			if ev.Kind == KindConnectionState && ev.Payload.String("state") == "ready" && ready < 0 {
+				ready = j
+			}
+			if ev.Kind == KindAgentEvent && agent < 0 {
+				agent = j
+			}
+		}
+		evs.mu.Unlock()
+		if ready < 0 || agent < ready {
+			t.Fatalf("run %d: ready event at %d, first agent event at %d", i, ready, agent)
+		}
+		m.Close()
+	}
+}
+
+func TestResolvePollsWhileRunning(t *testing.T) {
+	f := newFakeAgent(t)
+	f.dropBefore = dropFirst()
+	f.runningPolls = 2
+	m, l, _ := testManager(t, f, nil)
+	h := connected(t, m)
+	var info CallInfo
+	res, err := h.Call(context.Background(), "exec.run", proto.Message{"argv": []string{"x"}}, CallOpts{Info: &info})
+	if err != nil || res.String("stdout") != "hi\n" {
+		t.Fatalf("result %v, %v", res, err)
+	}
+	if n := len(f.requests("req.status")); n != 3 {
+		t.Fatalf("req.status sent %d times, want 3", n)
+	}
+	if got := l.history(info.RID); !reflect.DeepEqual(got, []string{"sent", "unknown", "done"}) {
+		t.Fatalf("request log %v", got)
+	}
+}
+
+func TestResolveWaitsThroughFailedReconnects(t *testing.T) {
+	f := newFakeAgent(t)
+	f.dropBefore = dropFirst()
+	f.dialErr = func(n int) error {
+		if n >= 2 && n <= 8 {
+			return errors.New("network is unreachable")
+		}
+		return nil
+	}
+	m, l, _ := testManager(t, f, func(o *Options) {
+		o.ReadyWait = 20 * time.Millisecond
+		o.Backoff = BackoffConfig{Initial: 10 * time.Millisecond, Max: 20 * time.Millisecond, Jitter: -1}
+	})
+	h := connected(t, m)
+	var info CallInfo
+	if _, err := h.Call(context.Background(), "exec.run", proto.Message{"argv": []string{"x"}}, CallOpts{Info: &info}); err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if !info.Resolved || f.execCount() != 1 || f.dialCount() < 9 {
+		t.Fatalf("info %+v, execs %d, dials %d", info, f.execCount(), f.dialCount())
+	}
+	if got := l.history(info.RID); got[len(got)-1] != "done" {
+		t.Fatalf("request log %v", got)
+	}
+}
+
+func TestWaitReadySkipsEndedConnection(t *testing.T) {
+	f := newFakeAgent(t)
+	m, _, _ := testManager(t, f, func(o *Options) { o.ReadyWait = 100 * time.Millisecond })
+	h := m.Add(target)
+	ended := newRPCClient(nil, nil, nil, nil)
+	ended.once.Do(func() { close(ended.done) })
+	h.mu.Lock()
+	h.state, h.rpc, h.gen = StateReady, ended, 1
+	h.mu.Unlock()
+	begin := time.Now()
+	rpc, _, err := h.waitReady(context.Background())
+	if rpc != nil || err == nil || apierr.As(err).Code != wire.CodeOffline {
+		t.Fatalf("waitReady %v, %v", rpc, err)
+	}
+	if d := time.Since(begin); d < 90*time.Millisecond {
+		t.Fatalf("waitReady returned after %s instead of waiting for a change", d)
+	}
+	h.mu.Lock()
+	h.state = StateOffline
+	h.mu.Unlock()
+}
+
+func TestWaitReadyNamesNextStepWhenContextEnds(t *testing.T) {
+	f := newFakeAgent(t)
+	f.dialErr = func(int) error { return errors.New("network is unreachable") }
+	m, _, _ := testManager(t, f, func(o *Options) { o.Backoff = BackoffConfig{Initial: time.Hour} })
+	h := m.Add(target)
+	h.Connect()
+	waitState(t, h, StateReconnecting)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	_, err := h.Call(ctx, "fs.list", proto.Message{"path": "C:\\"}, CallOpts{})
+	e := apierr.As(err)
+	if e == nil || e.Code != wire.CodeOffline || strings.Contains(e.Message, "context deadline") || e.NextAction == "" {
+		t.Fatalf("error %#v", err)
+	}
+}

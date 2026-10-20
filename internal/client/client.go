@@ -250,7 +250,10 @@ func connect(ctx context.Context, socket, kind, name, version string) (*Client, 
 	return c, nil
 }
 
+// read handles the lines of the daemon until the connection ends, then
+// closes the events channel.
 func (c *Client) read() {
+	defer close(c.events)
 	defer c.shutdown()
 	sc := bufio.NewScanner(c.c)
 	sc.Buffer(make([]byte, 64<<10), maxResponseLine)
@@ -395,8 +398,9 @@ func decodeResponse(method string, res response, out any) error {
 }
 
 // Subscribe asks for the events of kinds (all when empty) and returns the
-// channel they arrive on. A connection has one subscription; a later call
-// replaces the filter and returns the same channel.
+// channel they arrive on; the channel closes when the connection ends. A
+// connection has one subscription; a later call replaces the filter and
+// returns the same channel.
 func (c *Client) Subscribe(ctx context.Context, kinds []string) (<-chan Event, error) {
 	return c.SubscribeHost(ctx, "", kinds)
 }

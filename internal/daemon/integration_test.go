@@ -63,10 +63,11 @@ func freeUDPPort(t *testing.T) int {
 
 // testAgent is an agent served over QUIC in this process.
 type testAgent struct {
-	port int
-	id   transport.Identity
-	home string
-	stop func()
+	port    int
+	id      transport.Identity
+	home    string
+	dataDir string
+	stop    func()
 }
 
 // startAgent serves an agent that trusts the controller fingerprints,
@@ -117,7 +118,7 @@ func startAgent(t *testing.T, port int, id transport.Identity, dataDir string, c
 		srv.Close()
 	}
 	t.Cleanup(stop)
-	return &testAgent{port: port, id: id, home: home, stop: stop}
+	return &testAgent{port: port, id: id, home: home, dataDir: dataDir, stop: stop}
 }
 
 // env is a daemon with one stored host and a client connected to it.
@@ -570,5 +571,68 @@ func TestDialSpawnsDaemonAndStopEndsIt(t *testing.T) {
 	}
 	if b, err := os.ReadFile(paths.DaemonLog()); err != nil || !strings.Contains(string(b), "listening on") {
 		t.Fatalf("daemon log %q, %v", b, err)
+	}
+}
+
+func TestSettlementAcrossAgentRestartWithSameDataDir(t *testing.T) {
+	e := setup(t, setupOpts{trustDaemon: true})
+	e.waitState(t, "ready")
+	controller, err := daemon.ControllerIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(e.agent.home, "run.txt")
+	type result struct {
+		res map[string]any
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		var out map[string]any
+		err := e.c.Call(ctx, "exec.run", map[string]any{"host_id": "pc", "shell": "sh",
+			"cmd": fmt.Sprintf("echo start >> '%s'; sleep 5; echo end >> '%s'", file, file)}, &out)
+		done <- result{out, err}
+	}()
+	for deadline := time.Now().Add(10 * time.Second); ; {
+		if b, _ := os.ReadFile(file); strings.Contains(string(b), "start") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the command did not start")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	e.agent.stop()
+	time.Sleep(300 * time.Millisecond)
+	startAgent(t, e.agent.port, e.agent.id, e.agent.dataDir, controller.Fingerprint)
+	var r result
+	select {
+	case r = <-done:
+	case <-time.After(60 * time.Second):
+		t.Fatal("exec.run did not return")
+	}
+	if r.err != nil {
+		t.Fatal(r.err)
+	}
+	checkEnvelope(t, r.res)
+	if st := r.res["status"]; st != "failed" && st != "unknown" || r.res["connection_generation"] != float64(1) {
+		t.Fatalf("envelope %v", r.res)
+	}
+	st, err := store.Open(paths.DB())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	req, err := st.GetRequest(r.res["request_id"].(string))
+	if err != nil || req.State != store.RequestDone {
+		t.Fatalf("request %+v, %v: the outcome was not settled through req.status", req, err)
+	}
+	if b, _ := os.ReadFile(file); string(b) != "start\n" {
+		t.Fatalf("file %q: the command ran again or finished", b)
+	}
+	if h := e.waitState(t, "ready"); h.Gen != 2 {
+		t.Fatalf("generation %v", h.Gen)
 	}
 }

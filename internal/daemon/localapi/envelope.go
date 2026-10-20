@@ -37,6 +37,16 @@ func outcomeOf(info conn.CallInfo, err error) outcome {
 	return outcome{status: model.StatusFailed, action: model.NotStarted(), err: e}
 }
 
+// requestProblem returns err as a params error when the daemon refused the
+// request before sending it (it cannot be encoded or is too long), and nil
+// for any other error.
+func requestProblem(err error) error {
+	if conn.IsRequestError(err) {
+		return &paramError{e: apierr.As(err)}
+	}
+	return nil
+}
+
 // timelineOutcome maps an envelope status to a timeline outcome.
 func timelineOutcome(status string) string {
 	switch status {

@@ -13,7 +13,7 @@ import (
 // SchemaVersion is the schema_version of result envelopes.
 const SchemaVersion = 1
 
-// Owner values; control arrives in phase 2, so every host reports none.
+// OwnerNone is the owner every host reports: nobody holds control.
 const OwnerNone = "none"
 
 // Envelope statuses.
@@ -59,8 +59,7 @@ type SessionInfo struct {
 	Integrity    string `json:"integrity,omitempty"`
 }
 
-// Host is a paired PC. Reason, beyond the model of local-api.md §5, says
-// why the host is not ready.
+// Host is a paired PC; Reason says why it is not ready.
 type Host struct {
 	HostID               string                `json:"host_id"`
 	Name                 string                `json:"name"`

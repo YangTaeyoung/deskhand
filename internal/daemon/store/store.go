@@ -265,26 +265,39 @@ func (s *Store) CreateJob(j Job) error {
 	return err
 }
 
-// SetJobRunning records the remote job id and result of a running job.
+// ErrJobFinished is returned for a change to a job that has finished.
+var ErrJobFinished = errors.New("job finished")
+
+// unfinished returns ErrJobFinished when the update of res touched no row
+// and the job exists, and ErrNotFound when it does not exist.
+func (s *Store) unfinished(jobID string, res sql.Result, err error) error {
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil || n > 0 {
+		return err
+	}
+	if _, err := s.GetJob(jobID); err != nil {
+		return err
+	}
+	return ErrJobFinished
+}
+
+// SetJobRunning records the remote job id and result of a running job; a
+// finished job is left as it is (ErrJobFinished).
 func (s *Store) SetJobRunning(jobID, remoteJob string, result json.RawMessage, now time.Time) error {
-	res, err := s.db.Exec(`UPDATE jobs SET status = 'running', remote_job = ?, result_json = ?, updated_at = ? WHERE job_id = ?`,
+	res, err := s.db.Exec(`UPDATE jobs SET status = 'running', remote_job = ?, result_json = ?, updated_at = ? WHERE job_id = ? AND finished_at = ''`,
 		remoteJob, rawOr(result, ""), FormatTime(now), jobID)
-	return affected(res, err)
+	return s.unfinished(jobID, res, err)
 }
 
-// UpdateJobStatus sets the status and result of a job that has not finished.
-func (s *Store) UpdateJobStatus(jobID, status string, result json.RawMessage, now time.Time) error {
-	res, err := s.db.Exec(`UPDATE jobs SET status = ?, result_json = ?, updated_at = ? WHERE job_id = ?`,
-		status, rawOr(result, ""), FormatTime(now), jobID)
-	return affected(res, err)
-}
-
-// FinishJob sets the final status and result of a job.
+// FinishJob sets the final status and result of a job that has not
+// finished; a finished job is left as it is (ErrJobFinished).
 func (s *Store) FinishJob(jobID, status string, result json.RawMessage, now time.Time) error {
 	ts := FormatTime(now)
-	res, err := s.db.Exec(`UPDATE jobs SET status = ?, result_json = ?, updated_at = ?, finished_at = ? WHERE job_id = ?`,
+	res, err := s.db.Exec(`UPDATE jobs SET status = ?, result_json = ?, updated_at = ?, finished_at = ? WHERE job_id = ? AND finished_at = ''`,
 		status, rawOr(result, ""), ts, ts, jobID)
-	return affected(res, err)
+	return s.unfinished(jobID, res, err)
 }
 
 // GetJob returns the job with jobID.

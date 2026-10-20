@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -75,8 +76,8 @@ var journaledOps = map[string]bool{
 	"clipboard.set": true, "win.action": true, "ui.act": true,
 }
 
-// Journaled reports whether op changes state on the PC, so that its
-// requests carry a rid and are never sent twice.
+// Journaled reports whether op changes state on the PC; requests of such
+// an op carry a rid and are never sent twice.
 func Journaled(op string) bool { return journaledOps[op] }
 
 // NewRID returns a new request id: "r-" and a ULID.
@@ -475,6 +476,7 @@ func (h *Host) loop(ctx context.Context, done chan struct{}) {
 		if errors.As(err, &be) {
 			h.change(func() *Event {
 				if h.loopDone == done {
+					h.cancel()
 					h.cancel, h.loopDone = nil, nil
 				}
 				h.blockKind = BlockRejected
@@ -511,6 +513,7 @@ func (h *Host) loop(ctx context.Context, done chan struct{}) {
 func (h *Host) endLoop(done chan struct{}) {
 	h.mu.Lock()
 	if h.loopDone == done {
+		h.cancel()
 		h.cancel, h.loopDone = nil, nil
 	}
 	h.mu.Unlock()
@@ -582,11 +585,12 @@ func (h *Host) establish(ctx context.Context) (*rpcClient, Hello, error) {
 		return nil, Hello{}, cerr
 	}
 	rpc := newRPCClient(st, r, h.onAgentEvent, func() { _ = sess.Close("rpc stream closed") })
-	go rpc.run()
 	return rpc, parseHello(msg), nil
 }
 
-// becomeReady makes rpc the host's connection with a new generation.
+// becomeReady makes rpc the host's connection with a new generation and
+// then starts reading it: the agent's events of the connection come after
+// its ready event and apply to its hello.
 func (h *Host) becomeReady(rpc *rpcClient, hello Hello) {
 	var gen uint64
 	h.change(func() *Event {
@@ -595,6 +599,7 @@ func (h *Host) becomeReady(rpc *rpcClient, hello Hello) {
 		h.rpc, h.hello, h.session, h.lastSeen = rpc, hello, nil, time.Now()
 		return h.setStateLocked(StateReady, nil)
 	})
+	go rpc.run()
 	if h.m.opt.OnReady != nil {
 		h.m.opt.OnReady(h.id, gen)
 	}
@@ -708,7 +713,9 @@ func (h *Host) onAgentEvent(m proto.Message) {
 }
 
 // waitReady returns the connection once the host is ready or degraded,
-// waiting at most ReadyWait while it connects.
+// waiting at most ReadyWait while it connects. A connection that has ended
+// is not returned; the wait goes on until the state changes. The end of
+// ctx or of ReadyWait is an *apierr.Error that names the next step.
 func (h *Host) waitReady(ctx context.Context) (*rpcClient, uint64, error) {
 	wctx, cancel := context.WithTimeout(ctx, h.m.opt.ReadyWait)
 	defer cancel()
@@ -718,7 +725,7 @@ func (h *Host) waitReady(ctx context.Context) (*rpcClient, uint64, error) {
 		h.mu.Unlock()
 		switch st {
 		case StateReady, StateDegraded:
-			if rpc != nil {
+			if rpc != nil && !rpc.closed() {
 				return rpc, gen, nil
 			}
 		case StateBlocked:
@@ -729,9 +736,6 @@ func (h *Host) waitReady(ctx context.Context) (*rpcClient, uint64, error) {
 		select {
 		case <-ch:
 		case <-wctx.Done():
-			if ctx.Err() != nil {
-				return nil, 0, ctx.Err()
-			}
 			if lastErr != nil {
 				return nil, 0, lastErr
 			}
@@ -776,21 +780,15 @@ func (h *Host) Call(ctx context.Context, op string, params proto.Message, opts C
 	if rid == "" && Journaled(op) {
 		rid = NewRID()
 	}
-	req := proto.Message{}
-	for k, v := range params {
-		req[k] = v
-	}
-	req["t"], req["op"] = "req", op
-	delete(req, "id")
-	delete(req, "rid")
-	if rid != "" {
-		req["rid"] = rid
-	}
+	req := buildRequest(op, params, rid)
 	info := opts.Info
 	if info == nil {
 		info = &CallInfo{}
 	}
 	info.RID = rid
+	if _, err := encodeRequest(req, math.MaxInt64); err != nil {
+		return nil, err
+	}
 	log := h.m.opt.Requests
 	recorded := false
 	retried := false
@@ -823,6 +821,12 @@ func (h *Host) Call(ctx context.Context, op string, params proto.Message, opts C
 		case errors.Is(err, errNotSent):
 			info.Sent = sentBefore
 			continue
+		case IsRequestError(err):
+			info.Sent = sentBefore
+			if recorded && log != nil {
+				_ = log.SetRequestState(rid, RequestNotSent, nil)
+			}
+			return nil, err
 		case errors.Is(err, errConnLost):
 			if rid == "" {
 				if retried {
@@ -851,6 +855,30 @@ func (h *Host) Call(ctx context.Context, op string, params proto.Message, opts C
 	}
 }
 
+// buildRequest returns the req message of op with params and rid; params
+// cannot set t, id, op or rid.
+func buildRequest(op string, params proto.Message, rid string) proto.Message {
+	req := proto.Message{}
+	for k, v := range params {
+		req[k] = v
+	}
+	req["t"], req["op"] = "req", op
+	delete(req, "id")
+	delete(req, "rid")
+	if rid != "" {
+		req["rid"] = rid
+	}
+	return req
+}
+
+// CheckRequest returns the *requestError of the request that Call would
+// send for op, params and rid when it cannot be encoded or is too long, and
+// nil otherwise.
+func CheckRequest(op string, params proto.Message, rid string) error {
+	_, err := encodeRequest(buildRequest(op, params, rid), math.MaxInt64)
+	return err
+}
+
 func (h *Host) touch() {
 	h.mu.Lock()
 	h.lastSeen = time.Now()
@@ -858,15 +886,22 @@ func (h *Host) touch() {
 }
 
 // resolve settles the outcome of rid with req.status on the next
-// connections within ResolveWait.
+// connections, waiting through connection failures until ResolveWait ends.
 func (h *Host) resolve(ctx context.Context, rid string, info *CallInfo) (proto.Message, error) {
 	rctx, cancel := context.WithTimeout(ctx, h.m.opt.ResolveWait)
 	defer cancel()
 	log := h.m.opt.Requests
-	for {
+	for rctx.Err() == nil {
+		h.mu.Lock()
+		changed := h.changed
+		h.mu.Unlock()
 		rpc, _, err := h.waitReady(rctx)
 		if err != nil {
-			break
+			select {
+			case <-changed:
+			case <-rctx.Done():
+			}
+			continue
 		}
 		res, err := rpc.call(rctx, proto.Message{"t": "req", "op": "req.status", "rid": rid}, false)
 		if errors.Is(err, errNotSent) || errors.Is(err, errConnLost) {
@@ -884,7 +919,7 @@ func (h *Host) resolve(ctx context.Context, rid string, info *CallInfo) (proto.M
 			}
 			return answer(res)
 		case "running":
-			if sleepCtx(rctx, 250*time.Millisecond) != nil {
+			if sleepCtx(rctx, resolvePoll) != nil {
 				return nil, outcomeUnknown(rid)
 			}
 			continue
@@ -893,6 +928,10 @@ func (h *Host) resolve(ctx context.Context, rid string, info *CallInfo) (proto.M
 	}
 	return nil, outcomeUnknown(rid)
 }
+
+// resolvePoll is the time between two req.status calls while the request
+// still runs.
+const resolvePoll = 250 * time.Millisecond
 
 func outcomeUnknown(rid string) *apierr.Error {
 	return apierr.New(wire.CodeExecutionOutcomeUnknown,

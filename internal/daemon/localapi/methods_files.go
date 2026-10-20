@@ -216,6 +216,9 @@ func (s *Server) fileChange(ctx context.Context, sess *session, hostRef, op stri
 	defer cancel()
 	info := conn.CallInfo{}
 	res, err := h.Call(cctx, op, params, conn.CallOpts{Info: &info})
+	if pe := requestProblem(err); pe != nil {
+		return nil, pe
+	}
 	o := outcomeOf(info, err)
 	fields := map[string]any{}
 	if err == nil {
