@@ -165,7 +165,7 @@ func exited(code int, stdout, stderr string) map[string]any {
 	if code != 0 {
 		status = "failed"
 	}
-	return map[string]any{"chunks": chunks, "next_cursor": "1:1", "state": "exited", "status": status, "code": code}
+	return map[string]any{"chunks": chunks, "next_cursor": "end", "state": "exited", "status": status, "code": code}
 }
 
 func runCtx(t *testing.T, ctx context.Context, args ...string) result {
@@ -417,7 +417,7 @@ func TestJobsWatchFollowsCursor(t *testing.T) {
 			return map[string]any{"chunks": []any{map[string]any{"stream": "stdout", "data": "a"}}, "next_cursor": "1:0", "state": "running", "status": "running"}, nil
 		case "1:0":
 			return map[string]any{"chunks": []any{map[string]any{"stream": "stderr", "data": "e"}, map[string]any{"stream": "stdout", "data": "b"}},
-				"next_cursor": "2:1", "state": "exited", "status": "failed", "code": 3}, nil
+				"next_cursor": "end", "state": "exited", "status": "failed", "code": 3}, nil
 		}
 		return nil, &rpcFail{"INTERNAL", "unexpected cursor " + c}
 	}})
@@ -614,6 +614,29 @@ func TestDroppedConnectionDuringMutationExitsFour(t *testing.T) {
 	r := runCLI(t, false, "", "files", "mkdir", `pc1:C:\new`)
 	if r.code != exitUnknown || !strings.Contains(r.err, "jobs list --host pc1") {
 		t.Fatalf("code %d stderr %q", r.code, r.err)
+	}
+}
+
+func TestFollowReadsPastTheExitUntilTheEndCursor(t *testing.T) {
+	pages := map[string]map[string]any{
+		"":    {"chunks": []any{map[string]any{"stream": "stdout", "data": "first "}}, "next_cursor": "6:0", "state": "exited", "status": "succeeded", "code": 0},
+		"6:0": {"chunks": []any{map[string]any{"stream": "stdout", "data": "second "}}, "next_cursor": "13:0", "state": "exited", "status": "succeeded", "code": 0},
+		"13:0": {"chunks": []any{map[string]any{"stream": "stdout", "data": "last"}, map[string]any{"stream": "stderr", "data": "e"}},
+			"next_cursor": "end", "state": "exited", "status": "succeeded", "code": 0},
+	}
+	output := func(p map[string]any, _ func(any)) (any, *rpcFail) {
+		c, _ := p["cursor"].(string)
+		if page, ok := pages[c]; ok {
+			return page, nil
+		}
+		return nil, &rpcFail{"INTERNAL", "unexpected cursor " + c}
+	}
+	startFake(t, execFake(nil, map[string]handler{"jobs.output": output}))
+	for _, args := range [][]string{{"exec", "h1", "--", "x"}, {"jobs", "watch", "j-1"}} {
+		r := runCLI(t, false, "", args...)
+		if r.code != 0 || r.stdout != "first second last" || r.err != "e" {
+			t.Fatalf("%v: code %d stdout %q stderr %q", args, r.code, r.stdout, r.err)
+		}
 	}
 }
 

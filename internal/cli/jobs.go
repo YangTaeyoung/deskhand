@@ -286,19 +286,10 @@ func (r *run) interrupted(id string) int {
 	return exitUnknown
 }
 
+// watchDone reports whether following a job stops: its output ended
+// (cursor "end"), or the job waits for a person.
 func watchDone(res obj, cursor string) bool {
-	switch res.str("state") {
-	case "exited", "lost", "end":
-		return true
-	}
-	if cursor == "end" {
-		return true
-	}
-	switch res.str("status") {
-	case model.StatusSucceeded, model.StatusFailed, model.StatusCancelled, model.StatusUnknown, model.StatusWaitingForUser:
-		return true
-	}
-	return false
+	return cursor == "end" || res.str("status") == model.StatusWaitingForUser
 }
 
 func (r *run) watchExit(id string, res obj) int {

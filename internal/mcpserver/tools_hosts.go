@@ -33,7 +33,7 @@ func (s *Server) registerHosts(srv *mcp.Server) {
 		"Get a job by id: kind, status (running/succeeded/failed/waiting_for_user/unknown/cancelled), summary and result. Use it to follow exec_start and to check what happened when an outcome is unknown.",
 		spec{Method: "jobs.get"}, nil)
 	add[jobOutputInput](s, srv, "job_output",
-		"Read the stdout/stderr chunks of a job. Pass the returned next_cursor to read on; next_cursor \"end\" means the output is complete.",
+		"Read the stdout/stderr chunks of a job. Pass the returned next_cursor to read on and keep reading until next_cursor is \"end\", which means the output is complete; a job that has exited can still have output left (state exited with a numeric cursor).",
 		spec{Method: "jobs.output"}, func(s *jsonschema.Schema) {
 			one, max := 1.0, float64(maxReadBytes)
 			s.Properties["max"].Minimum = &one

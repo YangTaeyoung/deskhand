@@ -20,6 +20,7 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/store"
 	"github.com/YangTaeyoung/deskhand/internal/proto"
+	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
 // Job kinds.
@@ -292,8 +293,10 @@ func (r *Registry) refresh(ctx context.Context, h *conn.Host, j store.Job) (mode
 }
 
 // Output returns the output of a job from cursor: chunks of
-// {stream, data}, next_cursor and state. A remote exec job is read from
-// its agent; an exec.run job returns its recorded output once.
+// {stream, data}, next_cursor, state and status. A remote exec job is read
+// from its agent and its next_cursor is "end" once the agent has given every
+// byte of its output; an exec.run job returns its recorded output once its
+// call finished. Any other job has no output and ends when it finished.
 func (r *Registry) Output(ctx context.Context, jobID, cursor string, max int) (map[string]any, error) {
 	j, err := r.load(jobID)
 	if err != nil {
@@ -304,24 +307,22 @@ func (r *Registry) Output(ctx context.Context, jobID, cursor string, max int) (m
 	}
 	chunks := []map[string]any{}
 	next := cursor
-	state := j.Status
-	if j.Kind == KindExec {
-		res := mergeResult(j, nil)
-		if cursor != "end" && j.FinishedAt != nil {
+	res := mergeResult(j, nil)
+	if j.FinishedAt != nil {
+		if j.Kind == KindExec && cursor != "end" {
 			for _, s := range []struct{ key, stream string }{{"stdout", "stdout"}, {"stderr", "stderr"}} {
 				if d, _ := res[s.key].(string); d != "" {
 					chunks = append(chunks, map[string]any{"stream": s.stream, "data": d})
 				}
 			}
-			next = "end"
 		}
-		out := map[string]any{"chunks": chunks, "next_cursor": next, "state": state, "status": j.Status}
-		if code, ok := res["code"]; ok {
-			out["code"] = code
-		}
-		return out, nil
+		next = "end"
 	}
-	return map[string]any{"chunks": chunks, "next_cursor": next, "state": state, "status": j.Status}, nil
+	out := map[string]any{"chunks": chunks, "next_cursor": next, "state": j.Status, "status": j.Status}
+	if code, ok := res["code"]; ok && j.Kind == KindExec {
+		out["code"] = code
+	}
+	return out, nil
 }
 
 // parseCursor reads "out:err" byte offsets; "" is 0:0.
@@ -338,7 +339,27 @@ func parseCursor(c string) (int, int, error) {
 	return out, errOff, nil
 }
 
+// endOutput is the jobs.output result of a job whose output has ended.
+func endOutput(j store.Job) map[string]any {
+	out := map[string]any{"chunks": []map[string]any{}, "next_cursor": "end", "state": j.Status, "status": j.Status}
+	res := mergeResult(j, nil)
+	if s, ok := res["state"].(string); ok {
+		out["state"] = s
+	}
+	if code, ok := res["code"]; ok {
+		out["code"] = code
+	}
+	return out
+}
+
+// remoteOutput reads the output of j's remote job from cursor with
+// exec.read. The answer's eof ends the output: next_cursor becomes "end"
+// and a job still running is finished by the agent's state. A finished job
+// whose remote job the agent no longer has ends without output.
 func (r *Registry) remoteOutput(ctx context.Context, j store.Job, cursor string, max int) (map[string]any, error) {
+	if cursor == "end" {
+		return endOutput(j), nil
+	}
 	outOff, errOff, err := parseCursor(cursor)
 	if err != nil {
 		return nil, err
@@ -353,6 +374,9 @@ func (r *Registry) remoteOutput(ctx context.Context, j store.Job, cursor string,
 	}
 	res, err := h.Call(ctx, "exec.read", params, conn.CallOpts{})
 	if err != nil {
+		if j.FinishedAt != nil && apierr.CodeOf(err) == wire.CodeNotFound {
+			return endOutput(j), nil
+		}
 		return nil, err
 	}
 	chunks := []map[string]any{}
@@ -363,13 +387,17 @@ func (r *Registry) remoteOutput(ctx context.Context, j store.Job, cursor string,
 		chunks = append(chunks, map[string]any{"stream": "stderr", "data": d})
 	}
 	state := res.String("state")
-	out := map[string]any{"chunks": chunks, "next_cursor": fmt.Sprintf("%d:%d", res.Int("out_next"), res.Int("err_next")),
-		"state": state, "dropped": res.Bool("dropped")}
+	eof := res.Bool("eof")
+	next := fmt.Sprintf("%d:%d", res.Int("out_next"), res.Int("err_next"))
+	if eof {
+		next = "end"
+	}
+	out := map[string]any{"chunks": chunks, "next_cursor": next, "state": state, "dropped": res.Bool("dropped")}
 	if res.Has("code") {
 		out["code"] = res.Int("code")
 	}
 	status := j.Status
-	if j.FinishedAt == nil {
+	if eof && j.FinishedAt == nil {
 		switch state {
 		case "exited":
 			if mj, err := r.finishExit(j, res.Int("code")); err == nil {

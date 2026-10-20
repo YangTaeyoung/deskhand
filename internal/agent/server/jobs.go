@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/YangTaeyoung/deskhand/internal/proto"
+	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
 var (
@@ -213,7 +214,7 @@ func (t *jobTable) get(id string) (*job, error) {
 	defer t.mu.Unlock()
 	j := t.jobs[id]
 	if j == nil || !j.isStarted() {
-		return nil, fmt.Errorf("no job '%s'; call exec.list", id)
+		return nil, coded(wire.CodeNotFound, fmt.Sprintf("no job '%s'; call exec.list", id), false)
 	}
 	return j, nil
 }
@@ -335,6 +336,9 @@ func (s *Server) execStart(_ context.Context, req proto.Message) (proto.Message,
 	return proto.Message{"job": j.id, "pid": j.processID()}, nil
 }
 
+// execRead returns the output of a job from out_offset and err_offset, at
+// most max bytes of each stream. eof is set when the job has exited and the
+// read reached the end of both streams.
 func (s *Server) execRead(_ context.Context, req proto.Message) (proto.Message, error) {
 	j, err := s.jobs.get(req.String("job"))
 	if err != nil {
@@ -366,6 +370,7 @@ func (s *Server) execRead(_ context.Context, req proto.Message) (proto.Message, 
 		"out_next": outNext,
 		"err_next": errNext,
 		"dropped":  outDropped || errDropped,
+		"eof":      finished,
 	}
 	if state == "exited" {
 		res["code"] = code

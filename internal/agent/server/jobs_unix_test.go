@@ -138,3 +138,54 @@ func TestExecReadWithASmallMaxAdvancesOverMultibyteCharacters(t *testing.T) {
 		t.Fatalf("read %q up to %d", got, next)
 	}
 }
+
+func TestExecReadReportsEOFOnlyAfterTheLastByteOfAnExitedJob(t *testing.T) {
+	c, _ := newRPCClient(t, Options{})
+	const total = 600 * 1024
+	job := c.ok("exec.start", proto.Message{"cmd": "head -c 614400 /dev/zero | tr '\\000' a; echo e >&2"}).String("job")
+	deadline := time.Now().Add(8 * time.Second)
+	for c.ok("exec.read", proto.Message{"job": job, "out_offset": total, "err_offset": 2}).String("state") != "exited" {
+		if time.Now().After(deadline) {
+			t.Fatal("the job did not exit")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	outOff, errOff, got, reads := 0, 0, 0, 0
+	for {
+		res := c.ok("exec.read", proto.Message{"job": job, "out_offset": outOff, "err_offset": errOff})
+		reads++
+		got += len(res.String("out"))
+		outOff, errOff = res.Int("out_next"), res.Int("err_next")
+		if res["eof"] == true {
+			break
+		}
+		if res["eof"] != false {
+			t.Fatalf("read %d has no eof: %v", reads, res)
+		}
+		if reads > 10 {
+			t.Fatal("no eof after 10 reads")
+		}
+	}
+	if got != total || errOff != 2 || reads != 3 {
+		t.Fatalf("read %d bytes and err_next %d in %d reads", got, errOff, reads)
+	}
+	if again := c.ok("exec.read", proto.Message{"job": job, "out_offset": 0, "err_offset": 2}); again["eof"] != false {
+		t.Fatalf("a read from 0 reports eof: %v", again["eof"])
+	}
+}
+
+func TestExecReadOfARunningJobIsNotEOF(t *testing.T) {
+	c, _ := newRPCClient(t, Options{})
+	job := c.ok("exec.start", proto.Message{"cmd": "sleep 30"}).String("job")
+	t.Cleanup(func() { c.call("exec.kill", proto.Message{"job": job}) })
+	if res := c.ok("exec.read", proto.Message{"job": job}); res["eof"] != false || res.String("state") != "running" {
+		t.Fatalf("read %v", res)
+	}
+}
+
+func TestExecReadOfAnUnknownJobIsNotFound(t *testing.T) {
+	c, _ := newRPCClient(t, Options{})
+	if res := c.call("exec.read", proto.Message{"job": "j99"}); res["ok"] != false || res.String("code") != "NOT_FOUND" {
+		t.Fatalf("read %v", res)
+	}
+}

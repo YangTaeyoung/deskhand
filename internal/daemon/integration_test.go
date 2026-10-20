@@ -19,6 +19,7 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/agent/config"
 	"github.com/YangTaeyoung/deskhand/internal/agent/quicserve"
 	"github.com/YangTaeyoung/deskhand/internal/agent/server"
+	"github.com/YangTaeyoung/deskhand/internal/cli"
 	"github.com/YangTaeyoung/deskhand/internal/client"
 	"github.com/YangTaeyoung/deskhand/internal/daemon"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/flock"
@@ -634,5 +635,54 @@ func TestSettlementAcrossAgentRestartWithSameDataDir(t *testing.T) {
 	}
 	if h := e.waitState(t, "ready"); h.Gen != 2 {
 		t.Fatalf("generation %v", h.Gen)
+	}
+}
+
+// bigOutputCmd writes bigOutputBytes bytes of 'a' to stdout.
+const (
+	bigOutputBytes = 700000
+	bigOutputCmd   = "head -c 700000 /dev/zero | tr '\\000' a"
+)
+
+func TestBigExecStartOutputIsReadToTheEnd(t *testing.T) {
+	e := setup(t, setupOpts{trustDaemon: true})
+	e.waitState(t, "ready")
+	res := e.call(t, "exec.start", map[string]any{"host_id": "pc", "cmd": bigOutputCmd, "shell": "sh"})
+	jobID := res["job_id"].(string)
+	got, cursor := 0, ""
+	for deadline := time.Now().Add(20 * time.Second); cursor != "end"; {
+		out := e.call(t, "jobs.output", map[string]any{"job_id": jobID, "cursor": cursor})
+		for _, c := range out["chunks"].([]any) {
+			got += len(c.(map[string]any)["data"].(string))
+		}
+		cursor = out["next_cursor"].(string)
+		if time.Now().After(deadline) {
+			t.Fatalf("no end cursor; read %d bytes, cursor %s", got, cursor)
+		}
+		if cursor != "end" && len(out["chunks"].([]any)) == 0 {
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	if got != bigOutputBytes {
+		t.Fatalf("read %d bytes, want %d", got, bigOutputBytes)
+	}
+	if job := e.call(t, "jobs.get", map[string]any{"job_id": jobID}); job["status"] != "succeeded" {
+		t.Fatalf("job %v", job)
+	}
+}
+
+// TestCLIExecFollowsBigOutputToTheEnd polls slower than the command runs, so
+// that the job has exited before its output is read.
+func TestCLIExecFollowsBigOutputToTheEnd(t *testing.T) {
+	e := setup(t, setupOpts{trustDaemon: true})
+	e.waitState(t, "ready")
+	var stdout, stderr strings.Builder
+	app := cli.New("test")
+	app.Stdin, app.Stdout, app.Stderr = strings.NewReader(""), &stdout, &stderr
+	app.Interactive = func() bool { return false }
+	app.PollInterval = 300 * time.Millisecond
+	code := app.Run(context.Background(), []string{"exec", "pc", "--shell", "none", "--", "sh", "-c", "sleep 0.1; " + bigOutputCmd})
+	if code != 0 || stdout.Len() != bigOutputBytes || strings.Trim(stdout.String(), "a") != "" {
+		t.Fatalf("exit %d, %d bytes on stdout, stderr %q", code, stdout.Len(), stderr.String())
 	}
 }
