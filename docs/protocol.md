@@ -28,10 +28,10 @@
 | `input` | 데몬 | `gen`(writer generation) | 프레임(§6) |
 | `pty` | 데몬 | `job`(재부착) 또는 `new`: {`shell`, `cwd`, `cols`, `rows`, `env`} | 프레임(§7) |
 | `tunnel` | 데몬 | `port`(1–65535, 루프백만) | 원시 바이트 |
-| `put` | 데몬 | `transfer_id`, `path`(최종 경로), `offset`, `size`(전체), `mtime` | 원시 바이트 후 FIN, 에이전트가 결과 JSON 한 줄 응답 |
-| `get` | 데몬 | `path`, `offset`, `length`(0=끝까지) | 에이전트가 원시 바이트를 쓰고 FIN |
+| `put` | 데몬 | `transfer_id`, `path`(최종 경로), `offset`(임시 파일 크기), `size`(전체), `mtime`(RFC 3339), `roots` | 수락 줄 `{"ok":true,"part_size":…}` 뒤 데몬이 원시 바이트를 쓰고 FIN, 에이전트가 결과 줄 `{"ok":true,"received":n,"part_size":…}`(실패면 `ok:false`·`code`·`error`·`retryable`에 같은 두 필드)을 쓰고 FIN |
+| `get` | 데몬 | `path`, `offset`, `length`(0=끝까지), `roots` | 수락 줄 `{"ok":true,"size":…,"offset":…,"length":n,"mtime":…}` 뒤 에이전트가 원시 바이트 n개를 쓰고 FIN. 다 쓰기 전에 실패하면 FIN 대신 스트림을 리셋한다 |
 
-에이전트가 헤더를 거절하면 `{"ok":false,"code":"…","error":"…"}` 한 줄을 쓰고 스트림을 닫는다. 처리기가 없는 `s`는 `CAPABILITY_UNSUPPORTED`다. 수락하면 `{"ok":true, …}` 한 줄을 먼저 쓴다(`video`는 `info` 프레임으로 대신한다). `rpc` 스트림은 수락 줄 없이 바로 `hello`로 시작한다.
+에이전트가 헤더를 거절하면 `{"ok":false,"code":"…","error":"…"}` 한 줄(`put`·`get`은 `retryable`도)을 쓰고 스트림을 닫는다. 처리기가 없는 `s`는 `CAPABILITY_UNSUPPORTED`다. 수락하면 `{"ok":true, …}` 한 줄을 먼저 쓴다(`video`는 `info` 프레임으로 대신한다). `rpc` 스트림은 수락 줄 없이 바로 `hello`로 시작한다.
 
 ## 3. `rpc` 스트림
 
@@ -77,9 +77,9 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 | `fs.copy` | `from`, `to`(복사본의 전체 경로, 그 폴더는 있어야 한다), `on_conflict`(`fail` 기본/`replace`/`skip`/`rename`), `recursive`(폴더일 때), `roots` | `path`(복사본의 실제 경로), `copied`(복사한 파일 수), `outcome`(`written`/`skipped`/`renamed`) |
 | `fs.trash` | `path`, `roots` | `trashed`(없는 경로면 false) |
 | `fs.hash` | `path`, `offset`, `length`(0=끝까지), `roots` | `sha256`, `offset`, `length`(읽은 바이트 수), `size`(파일 크기) |
-| `xfer.prepare` | `transfer_id`, `path`, `size`, `mtime`, `sha256`(전체, push일 때), `on_conflict`(`fail`/`replace`/`skip`/`rename`) | `part_size`(이미 받은 바이트), `part_sha256`, `free_bytes`, `dest_exists` |
-| `xfer.commit` | `transfer_id`, `path`, `sha256`, `on_conflict` | `path`(실제 반영 경로), `outcome`(`written`/`skipped`/`renamed`) |
-| `xfer.abort` | `transfer_id`, `path` | `removed` — 임시 파일만 지운다 |
+| `xfer.prepare` | `transfer_id`, `path`, `size`, `mtime`, `sha256`(전체, push일 때), `on_conflict`(`fail`/`replace`/`skip`/`rename`), `roots` | `part_size`(이미 받은 바이트), `part_sha256`, `free_bytes`, `dest_exists` |
+| `xfer.commit` | `transfer_id`, `path`, `sha256`, `on_conflict`, `roots` | `path`(실제 반영 경로), `outcome`(`written`/`skipped`/`renamed`) |
+| `xfer.abort` | `transfer_id`, `path`, `roots` | `removed` — 임시 파일만 지운다 |
 | `pty.list` | — | `ptys`: [{`job`, `pid`, `cols`, `rows`, `state`}] |
 | `debug.ports` | `count` | `ports` — 루프백 빈 포트 |
 | `diag.system` | — | OS, 빌드, CPU, 메모리, 디스크, GPU, 가동 시간 |
@@ -96,6 +96,16 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 - `fs.copy`: 복사본을 `to`의 폴더에 임시 이름(`.deskhand-copy-<임의>`)으로 끝까지 쓰고 디스크에 내린 뒤 `to`로 옮긴다(덮어쓰지 않는 이름 바꾸기, `replace`일 때만 파일 교체). 실패하면 임시 항목을 지운다. 내용·수정 시각·권한 비트(Windows는 읽기 전용 여부)를 복사하고, 숨김 같은 다른 속성·ACL·대체 데이터 스트림은 복사하지 않는다. 폴더는 `recursive`가 있어야 하고 안의 링크·junction·특수 파일은 `INVALID_ARGUMENT`다. 링크인 `from`도 거절한다. 폴더를 그 안으로(대소문자·링크로 달리 쓴 같은 폴더 포함, 파일 ID로 비교) 복사하면 `INVALID_ARGUMENT`이고, 대상 쪽 폴더를 읽지 못해 그걸 가릴 수 없을 때도 `INVALID_ARGUMENT`다. 배포 루트 안 대상은 `fs.write`처럼 루트를 잠근 채로 먼저 만든다. `to`가 있으면 `fail`은 `TRANSFER_CONFLICT`, `skip`은 복사하지 않고 `outcome:"skipped"`(`path`는 있는 항목), `replace`는 파일을 파일로만 바꾸고(폴더가 끼면 `TRANSFER_CONFLICT`), `rename`은 `이름 (1).확장자`부터 비어 있는 이름에 쓴다(`outcome:"renamed"`). 대소문자만 다른 이름이 있으면 `fail`·`replace`는 그 이름을 밝힌 `TRANSFER_CONFLICT`다. Windows 밖 에이전트가 데스크톱 세션 사용자의 홈 안으로 복사하는 것은 `CAPABILITY_UNSUPPORTED`다.
 - `fs.trash`: 현재 사용자의 휴지통으로 옮긴다(`SHFileOperationW` `FO_DELETE`, `FOF_ALLOWUNDO|FOF_NOCONFIRMATION|FOF_SILENT|FOF_NOERRORUI|FOF_NO_CONNECTED_ELEMENTS`, 창을 띄우지 않는다). 검사와 셸 호출은 경로의 정규형으로 한다: 폴더 부분은 링크·junction·짧은 이름·대소문자를 해석하고 마지막 이름은 폴더에 있는 긴 이름 그대로여서 링크는 링크 자체를 옮긴다. 정규형이 드라이브 문자 경로(`X:\…`)가 아니면(공유로 이어지는 링크 등) `CAPABILITY_UNSUPPORTED`. 휴지통이 받지 않고 바로 지울 항목도 옮기지 않고 `CAPABILITY_UNSUPPORTED`다: 고정 로컬 드라이브가 아니거나(네트워크·이동식·subst 등) 휴지통이 없는 볼륨, HKLM·HKCU 어느 쪽이든 켜진 "삭제된 파일을 휴지통으로 이동하지 않음" 정책이나 볼륨의 즉시 삭제 설정, 정규형 경로나 폴더 안 경로가 250자(UTF-16) 이상, 볼륨 휴지통 최대 크기(`MaxCapacity`와 HKLM·HKCU `RecycleBinSize` 정책 중 가장 작은 값)보다 큰 항목, 그 크기를 읽지 못할 때, 이미 휴지통에 있는 항목. 셸은 260자 이상 경로를 성공으로 보고하며 영구 삭제한다(실측). 셸이 성공을 보고하면 그 볼륨의 사용자 휴지통에서 원래 정규형 경로와 호출 시각 이후 삭제 시각을 가진 `$I` 기록을 찾아 확인하고, 없으면 `trashed:true` 대신 `INTERNAL`("…was deleted permanently instead of being moved to the Recycle Bin…")로 답한다. 검사와 셸 호출 사이(그동안 폴더가 커지거나 긴 경로가 생기는 경우)는 막지 못하며 그 결과는 이 사후 확인으로만 드러난다. 영구 삭제로 대신하지 않는다(영구 삭제는 `fs.delete`). Windows 밖의 에이전트는 항상 `CAPABILITY_UNSUPPORTED`.
 - `fs.hash`: 일반 파일의 `offset`부터 `length`바이트(0이면 끝까지)의 SHA-256. `offset`이 파일 크기보다 크면 `INVALID_ARGUMENT`.
+
+전송(`put`·`get` 스트림, `xfer.*`)의 규칙:
+
+- 임시 파일은 대상과 같은 폴더의 `<대상 이름>.deskhand-part-<transfer_id>`이고 Windows에서는 숨김 속성을 갖는다. `transfer_id`는 영문자·숫자·`-`·`_` 1–64자이고, 임시 파일 이름이 255자(Windows는 UTF-16, 그 밖은 바이트)를 넘게 되는 대상 이름은 `INVALID_ARGUMENT`다.
+- 경로 검사와 `roots`는 파일 op와 같다. 쓰는 쪽(`put`, `xfer.prepare`, `xfer.commit`)은 대상 폴더가 있어야 하고(`NOT_FOUND`), Windows 밖 에이전트는 데스크톱 세션 사용자의 홈 안에 쓰지 않는다(`CAPABILITY_UNSUPPORTED`).
+- 한 임시 파일에는 한 번에 한 작업(`put`, `xfer.prepare`, `xfer.commit`, `xfer.abort`)만 돈다. 다른 작업 중이면 `IN_PROGRESS`(`retryable:true`).
+- `xfer.prepare`: `on_conflict`를 commit처럼 미리 적용해 `fail`과 대소문자만 다른 이름(`fail`·`replace`)은 여기서 `TRANSFER_CONFLICT`다. 남은 바이트(`size` − `part_size`)가 볼륨 여유(`free_bytes`)보다 크면 아무것도 만들지 않고 `DISK_FULL`(`skip`이고 대상이 있을 때 제외). 임시 파일이 없으면 빈 파일로 만들고, `mtime`이 있으면 임시 파일에 준다. `part_sha256`은 임시 파일 전체의 SHA-256이다. 데몬은 원본 앞 `part_size`바이트의 SHA-256과 다르면 `xfer.abort` 뒤 0부터 보낸다.
+- `put`: 헤더 `offset`이 임시 파일 크기(없으면 0)와 다르면 쓰지 않고 두 수를 밝힌 `INVALID_ARGUMENT`다. 받은 바이트는 스트림이 끊겨도 남고(`INTERNAL`·`TIMEOUT` retryable, 결과 줄 `part_size`), 다음 put은 그 크기부터다. `size`를 넘는 바이트가 오면 그 put으로 쓴 바이트를 버리고 `INVALID_ARGUMENT`. 볼륨이 차면 임시 파일을 지우고 `DISK_FULL`. 끝나면 임시 파일의 수정 시각을 헤더 `mtime`으로(없으면 그대로) 둔다.
+- `xfer.commit`: 임시 파일 전체의 SHA-256이 `sha256`과 다르면 `HASH_MISMATCH`이고 대상과 임시 파일은 그대로다. 같으면 디스크에 내리고 `on_conflict`를 `fs.copy`와 같이 적용한다: `skip`은 임시 파일을 지우고 `outcome:"skipped"`(`path`는 있는 항목), `rename`은 `이름 (1).확장자`부터 비어 있는 이름, `replace`는 파일만 교체(Windows `MoveFileExW(MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)`), 대상이 없으면 덮어쓰지 않는 이름 바꾸기. 반영된 파일의 수정 시각은 prepare·put의 `mtime`이다. 다른 프로그램이 삭제 공유 없이 연 대상은 `PERMISSION_DENIED`(`retryable:true`), 읽기 전용이거나 ACL이 막는 대상은 `PERMISSION_DENIED`이고, 어느 쪽이든 대상은 바뀌지 않고 임시 파일이 남아 같은 commit을 다시 보낼 수 있다. 임시 파일이 없으면 `NOT_FOUND`.
+- `xfer.abort`: 임시 파일만 지운다. 없으면 `removed:false`이고, 그 이름의 폴더·링크는 건드리지 않고 `INVALID_ARGUMENT`다.
 
 이벤트(`ev`): Alcove의 `job.exited`, `process.exited`, 창 이벤트, `events.dropped`에 더해 `clipboard.changed`(`text`: 에이전트가 쓰지 않은 PC 클립보드 변경, 700000바이트까지), `session.changed`, `display.changed`, `caps.changed`, `input.preempted`.
 

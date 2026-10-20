@@ -19,22 +19,23 @@ type PTYNew struct {
 
 // StreamHeader is the first line of every non-rpc stream.
 type StreamHeader struct {
-	S          string  `json:"s"`
-	Display    int     `json:"display,omitempty"`
-	MaxFPS     int     `json:"max_fps,omitempty"`
-	Bitrate    int     `json:"bitrate,omitempty"`
-	MaxWidth   int     `json:"max_width,omitempty"`
-	Codec      string  `json:"codec,omitempty"`
-	Gen        uint64  `json:"gen,omitempty"`
-	Job        string  `json:"job,omitempty"`
-	New        *PTYNew `json:"new,omitempty"`
-	Port       int     `json:"port,omitempty"`
-	TransferID string  `json:"transfer_id,omitempty"`
-	Path       string  `json:"path,omitempty"`
-	Offset     int64   `json:"offset,omitempty"`
-	Size       int64   `json:"size,omitempty"`
-	Length     int64   `json:"length,omitempty"`
-	MTime      string  `json:"mtime,omitempty"`
+	S          string   `json:"s"`
+	Display    int      `json:"display,omitempty"`
+	MaxFPS     int      `json:"max_fps,omitempty"`
+	Bitrate    int      `json:"bitrate,omitempty"`
+	MaxWidth   int      `json:"max_width,omitempty"`
+	Codec      string   `json:"codec,omitempty"`
+	Gen        uint64   `json:"gen,omitempty"`
+	Job        string   `json:"job,omitempty"`
+	New        *PTYNew  `json:"new,omitempty"`
+	Port       int      `json:"port,omitempty"`
+	TransferID string   `json:"transfer_id,omitempty"`
+	Path       string   `json:"path,omitempty"`
+	Offset     int64    `json:"offset,omitempty"`
+	Size       int64    `json:"size,omitempty"`
+	Length     int64    `json:"length,omitempty"`
+	MTime      string   `json:"mtime,omitempty"`
+	Roots      []string `json:"roots,omitempty"`
 }
 
 // WriteHeader writes v as one JSON line.

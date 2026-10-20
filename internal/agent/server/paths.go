@@ -196,7 +196,20 @@ func rootsArg(req proto.Message) ([]string, error) {
 	var roots []string
 	for _, e := range list {
 		r, ok := e.(string)
-		if !ok || r == "" {
+		if !ok {
+			return nil, invalidArgument("roots must be an array of absolute folder paths")
+		}
+		roots = append(roots, r)
+	}
+	return cleanRoots(roots)
+}
+
+// cleanRoots returns the absolute folder paths list cleaned, on Windows
+// without a \\?\ prefix (normalizeWindowsPath); nil for an empty list.
+func cleanRoots(list []string) ([]string, error) {
+	var roots []string
+	for _, r := range list {
+		if r == "" {
 			return nil, invalidArgument("roots must be an array of absolute folder paths")
 		}
 		r = filepath.Clean(r)

@@ -44,9 +44,18 @@ type agentUnderTest struct {
 	addr   string
 	agent  transport.Identity
 	daemon transport.Identity
+	// home is the home folder of the agent's server.
+	home string
 }
 
 func startAgent(t *testing.T) agentUnderTest {
+	t.Helper()
+	return startAgentWith(t, nil)
+}
+
+// startAgentWith serves an agent whose later streams go to the handlers
+// streams returns for its server; nil streams serves none.
+func startAgentWith(t *testing.T, streams func(*server.Server) StreamHandlers) agentUnderTest {
 	t.Helper()
 	t.Setenv("DESKHAND_HOME", t.TempDir())
 	agentID, err := transport.NewIdentity("agent")
@@ -59,11 +68,16 @@ func startAgent(t *testing.T) agentUnderTest {
 	}
 	cfg := config.Agent{Listen: fmt.Sprintf("127.0.0.1:%d", freeUDPPort(t)), ControllerFingerprints: []string{daemonID.Fingerprint},
 		DataDir: t.TempDir(), Name: "pc"}
-	srv := server.New(server.Options{Clipboard: fakeClipboard{}, HomeDir: t.TempDir(), AllowExec: true, DataDir: cfg.DataDir, Version: "test",
+	home := t.TempDir()
+	srv := server.New(server.Options{Clipboard: fakeClipboard{}, HomeDir: home, AllowExec: true, DataDir: cfg.DataDir, Version: "test",
 		Logger: quiet})
+	var handlers StreamHandlers
+	if streams != nil {
+		handlers = streams(srv)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- Run(ctx, cfg, agentID, srv, nil) }()
+	go func() { done <- Run(ctx, cfg, agentID, srv, handlers) }()
 	t.Cleanup(func() {
 		cancel()
 		select {
@@ -76,7 +90,7 @@ func startAgent(t *testing.T) agentUnderTest {
 		}
 		srv.Close()
 	})
-	return agentUnderTest{addr: cfg.Listen, agent: agentID, daemon: daemonID}
+	return agentUnderTest{addr: cfg.Listen, agent: agentID, daemon: daemonID, home: home}
 }
 
 func (a agentUnderTest) dial(t *testing.T) *quic.Conn {

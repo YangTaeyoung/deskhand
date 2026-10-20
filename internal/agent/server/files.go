@@ -159,6 +159,7 @@ func (s *Server) registerFiles() {
 	s.register("fs.copy", true, s.fsCopy)
 	s.register("fs.trash", true, s.fsTrash)
 	s.register("fs.hash", true, s.fsHash)
+	s.registerXfer()
 }
 
 // isLink reports whether mode, read without following links, is that of a

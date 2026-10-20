@@ -31,10 +31,10 @@ func peerFingerprint(rawCerts [][]byte) (string, error) {
 	return Fingerprint(rawCerts[0]), nil
 }
 
-// Listen accepts QUIC connections from peers whose certificate fingerprint
-// allowedPeers approves. Session tickets are off, so allowedPeers runs on
-// every handshake.
-func Listen(addr string, id Identity, allowedPeers func(fp string) bool) (*quic.Listener, error) {
+// serverTLS returns the TLS configuration of a listener that keeps the
+// peers whose certificate fingerprint allowedPeers approves. Session tickets
+// are off, so allowedPeers runs on every handshake.
+func serverTLS(id Identity, allowedPeers func(fp string) bool) (*tls.Config, error) {
 	if allowedPeers == nil {
 		return nil, errors.New("listen: no allowed peers given; pass the paired controller fingerprints")
 	}
@@ -42,7 +42,7 @@ func Listen(addr string, id Identity, allowedPeers func(fp string) bool) (*quic.
 	if err != nil {
 		return nil, err
 	}
-	tlsConf := &tls.Config{
+	return &tls.Config{
 		Certificates:           []tls.Certificate{cert},
 		ClientAuth:             tls.RequireAnyClientCert,
 		InsecureSkipVerify:     true,
@@ -59,6 +59,16 @@ func Listen(addr string, id Identity, allowedPeers func(fp string) bool) (*quic.
 			}
 			return nil
 		},
+	}, nil
+}
+
+// Listen accepts QUIC connections on the UDP address addr from peers whose
+// certificate fingerprint allowedPeers approves. Session tickets are off,
+// so allowedPeers runs on every handshake.
+func Listen(addr string, id Identity, allowedPeers func(fp string) bool) (*quic.Listener, error) {
+	tlsConf, err := serverTLS(id, allowedPeers)
+	if err != nil {
+		return nil, err
 	}
 	ln, err := quic.ListenAddr(addr, tlsConf, quicConfig())
 	if err != nil {
@@ -67,14 +77,25 @@ func Listen(addr string, id Identity, allowedPeers func(fp string) bool) (*quic.
 	return ln, nil
 }
 
-// Dial connects to addr and keeps the connection only if the server certificate fingerprint equals expectedPeer.
-func Dial(ctx context.Context, addr string, id Identity, expectedPeer string) (*quic.Conn, error) {
+// ListenPacket is Listen on the packet connection conn, which the caller
+// closes after the listener.
+func ListenPacket(conn net.PacketConn, id Identity, allowedPeers func(fp string) bool) (*quic.Listener, error) {
+	tlsConf, err := serverTLS(id, allowedPeers)
+	if err != nil {
+		return nil, err
+	}
+	return quic.Listen(conn, tlsConf, quicConfig())
+}
+
+// clientTLS returns the TLS configuration of a connection that keeps the
+// server only if its certificate fingerprint equals expectedPeer; a server
+// with another one stores its error in mismatch.
+func clientTLS(id Identity, expectedPeer string, mismatch *error) (*tls.Config, error) {
 	cert, err := id.TLSCertificate()
 	if err != nil {
 		return nil, err
 	}
-	var mismatch error
-	tlsConf := &tls.Config{
+	return &tls.Config{
 		Certificates:       []tls.Certificate{cert},
 		InsecureSkipVerify: true,
 		NextProtos:         []string{wire.ALPN},
@@ -85,11 +106,20 @@ func Dial(ctx context.Context, addr string, id Identity, expectedPeer string) (*
 				return err
 			}
 			if fp != expectedPeer {
-				mismatch = fmt.Errorf("%w (got %s)", ErrPeerMismatch, fp)
-				return mismatch
+				*mismatch = fmt.Errorf("%w (got %s)", ErrPeerMismatch, fp)
+				return *mismatch
 			}
 			return nil
 		},
+	}, nil
+}
+
+// Dial connects to addr and keeps the connection only if the server certificate fingerprint equals expectedPeer.
+func Dial(ctx context.Context, addr string, id Identity, expectedPeer string) (*quic.Conn, error) {
+	var mismatch error
+	tlsConf, err := clientTLS(id, expectedPeer, &mismatch)
+	if err != nil {
+		return nil, err
 	}
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
@@ -115,4 +145,26 @@ func Dial(ctx context.Context, addr string, id Identity, expectedPeer string) (*
 		udp.Close()
 	}()
 	return conn, nil
+}
+
+// DialPacket is Dial over the packet connection conn, which the caller
+// closes after the connection.
+func DialPacket(ctx context.Context, conn net.PacketConn, addr string, id Identity, expectedPeer string) (*quic.Conn, error) {
+	var mismatch error
+	tlsConf, err := clientTLS(id, expectedPeer, &mismatch)
+	if err != nil {
+		return nil, err
+	}
+	udpAddr, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("resolve %s: %w", addr, err)
+	}
+	c, err := quic.Dial(ctx, conn, udpAddr, tlsConf, quicConfig())
+	if err != nil {
+		if mismatch != nil {
+			return nil, mismatch
+		}
+		return nil, fmt.Errorf("dial %s: %w", addr, err)
+	}
+	return c, nil
 }

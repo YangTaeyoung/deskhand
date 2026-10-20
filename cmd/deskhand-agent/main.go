@@ -232,9 +232,10 @@ func cmdRun(args []string, stderr io.Writer) int {
 	defer stop()
 	logger.Printf("deskhand-agent %s listening on udp %s for %d controller(s), name %q, key %s", version, cfg.Listen,
 		len(cfg.ControllerFingerprints), cfg.Name, id.Fingerprint)
+	streams := quicserve.TransferStreams(s)
 	pause := serveFirstPause
 	for {
-		err := quicserve.Run(ctx, cfg, id, s, nil)
+		err := quicserve.Run(ctx, cfg, id, s, streams)
 		if ctx.Err() != nil {
 			return 0
 		}

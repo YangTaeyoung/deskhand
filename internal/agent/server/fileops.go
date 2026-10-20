@@ -269,26 +269,12 @@ func (s *Server) fsCopy(ctx context.Context, req proto.Message) (proto.Message, 
 	} else if err != nil {
 		return nil, fsFailure(fmt.Sprintf("cannot read '%s'", dir), err)
 	}
-	if dst, err := os.Lstat(to); err == nil {
-		name, err := actualName(to)
-		if err != nil {
-			name = filepath.Base(to)
-		}
-		existing := filepath.Join(dir, name)
-		caseOnly := name != filepath.Base(to)
-		conflict := func(msg string) error { return coded(wire.CodeTransferConflict, msg, false) }
-		switch {
-		case policy == "skip":
-			return proto.Message{"path": existing, "copied": 0, "outcome": "skipped"}, nil
-		case caseOnly && policy != "rename":
-			return nil, conflict(fmt.Sprintf("'%s' exists as '%s', a name that differs only in letter case, which Windows takes for the same name; pass that name, another name, or on_conflict skip or rename", to, name))
-		case policy == "fail":
-			return nil, conflict(fmt.Sprintf("'%s' exists; pass on_conflict replace, skip or rename to copy anyway", to))
-		case policy == "replace" && (dst.IsDir() || src.IsDir()):
-			return nil, conflict(fmt.Sprintf("'%s' or '%s' is a folder, and on_conflict replace replaces a file with a file; trash the folder with fs.trash first, or pass on_conflict rename", from, to))
-		}
-	} else if !missing(err) {
-		return nil, fsFailure(fmt.Sprintf("cannot read '%s'", to), err)
+	exists, existing, err := applyConflictPolicy(from, to, src.IsDir(), policy, "copy")
+	if err != nil {
+		return nil, err
+	}
+	if exists && policy == "skip" {
+		return proto.Message{"path": existing, "copied": 0, "outcome": "skipped"}, nil
 	}
 	tmp := tempName(dir)
 	defer os.RemoveAll(tmp)
@@ -323,6 +309,44 @@ func (s *Server) fsCopy(ctx context.Context, req proto.Message) (proto.Message, 
 		outcome = "renamed"
 	}
 	return proto.Message{"path": dest, "copied": copied, "outcome": outcome}, nil
+}
+
+// applyConflictPolicy applies the on_conflict policy to the path to before
+// the file or folder from (folder says which; from is "" for a file that is
+// not on this PC) is put there by the operation what ("copy", "transfer").
+// It reports whether to exists and the path of the existing entry under the
+// name its folder holds. With to there, fail, a name that differs only in
+// letter case under fail or replace, and replace with a folder on either
+// side are TRANSFER_CONFLICT errors; skip, replace and rename are not.
+func applyConflictPolicy(from, to string, folder bool, policy, what string) (bool, string, error) {
+	dst, err := os.Lstat(to)
+	if missing(err) {
+		return false, "", nil
+	}
+	if err != nil {
+		return false, "", fsFailure(fmt.Sprintf("cannot read '%s'", to), err)
+	}
+	name, err := actualName(to)
+	if err != nil {
+		name = filepath.Base(to)
+	}
+	existing := filepath.Join(filepath.Dir(to), name)
+	conflict := func(msg string) (bool, string, error) {
+		return true, existing, coded(wire.CodeTransferConflict, msg, false)
+	}
+	switch {
+	case policy == "skip":
+	case name != filepath.Base(to) && policy != "rename":
+		return conflict(fmt.Sprintf("'%s' exists as '%s', a name that differs only in letter case, which Windows takes for the same name; pass that name, another name, or on_conflict skip or rename", to, name))
+	case policy == "fail":
+		return conflict(fmt.Sprintf("'%s' exists; pass on_conflict replace, skip or rename to %s anyway", to, what))
+	case policy == "replace" && (dst.IsDir() || folder):
+		if from == "" {
+			return conflict(fmt.Sprintf("'%s' is a folder, and on_conflict replace replaces a file with a file; trash the folder with fs.trash first, or pass on_conflict rename", to))
+		}
+		return conflict(fmt.Sprintf("'%s' or '%s' is a folder, and on_conflict replace replaces a file with a file; trash the folder with fs.trash first, or pass on_conflict rename", from, to))
+	}
+	return true, existing, nil
 }
 
 // renameToFreeName renames tmp to to, or to the first numbered name of to

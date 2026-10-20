@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -181,5 +182,56 @@ func TestQUICKeepAliveAndIdleTimeout(t *testing.T) {
 	c := quicConfig()
 	if c.KeepAlivePeriod != 2*time.Second || c.MaxIdleTimeout != 8*time.Second {
 		t.Fatalf("keep-alive %s, idle timeout %s", c.KeepAlivePeriod, c.MaxIdleTimeout)
+	}
+}
+
+func TestListenPacketAndDialPacketPinTheirPeers(t *testing.T) {
+	srvID, cliID, other := newID(t, "agent"), newID(t, "daemon"), newID(t, "other")
+	loopback := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)}
+	srvConn, err := net.ListenUDP("udp", loopback)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srvConn.Close()
+	ln, err := ListenPacket(srvConn, srvID, func(fp string) bool { return fp == cliID.Fingerprint })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		conn, err := ln.Accept(context.Background())
+		if err != nil {
+			return
+		}
+		if st, err := conn.AcceptStream(context.Background()); err == nil {
+			io.Copy(st, st)
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	cliConn, err := net.ListenUDP("udp", loopback)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cliConn.Close()
+	if _, err := DialPacket(ctx, cliConn, srvConn.LocalAddr().String(), cliID, other.Fingerprint); !errors.Is(err, ErrPeerMismatch) {
+		t.Fatalf("want ErrPeerMismatch, got %v", err)
+	}
+	conn, err := DialPacket(ctx, cliConn, srvConn.LocalAddr().String(), cliID, srvID.Fingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseWithError(0, "")
+	st, err := conn.OpenStreamSync(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Write([]byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 4)
+	if _, err := io.ReadFull(st, buf); err != nil || string(buf) != "ping" {
+		t.Fatalf("echo %q %v", buf, err)
 	}
 }
