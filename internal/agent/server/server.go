@@ -216,13 +216,13 @@ func (s *Server) helloCaps() capStates {
 	return s.caps()
 }
 
-// greet writes the hello with caps and reads the host's first message, which
-// has to be its welcome within welcomeTimeout. It reports whether the welcome
-// arrived and returns the controller name it carries.
-func (s *Server) greet(rw io.ReadWriteCloser, r *proto.Reader, caps capStates, peer string) (string, bool) {
+// greet writes hello and reads the host's first message, which has to be
+// its welcome within welcomeTimeout. It reports whether the welcome arrived
+// and returns the controller name it carries.
+func (s *Server) greet(rw io.ReadWriteCloser, r *proto.Reader, hello proto.Message, peer string) (string, bool) {
 	lg := s.opt.Logger
 	setWriteDeadline(rw, connWriteTimeout)
-	if err := proto.NewWriter(rw).Send(s.helloMessage(caps)); err != nil {
+	if err := proto.NewWriter(rw).Send(hello); err != nil {
 		lg.Printf("hello to %s: %v", peer, err)
 		return "", false
 	}
@@ -258,7 +258,8 @@ func (s *Server) ServeConn(ctx context.Context, rw io.ReadWriteCloser, peer stri
 
 	r := proto.NewReader(rw)
 	sentCaps := s.helloCaps()
-	controller, ok := s.greet(rw, r, sentCaps, peer)
+	hello := s.helloMessage(sentCaps)
+	controller, ok := s.greet(rw, r, hello, peer)
 	if !ok {
 		return
 	}
@@ -269,6 +270,7 @@ func (s *Server) ServeConn(ctx context.Context, rw io.ReadWriteCloser, peer stri
 	send := cn.send
 
 	cn.setCaps(sentCaps)
+	cn.setDesktop(jsonOf(hello["session"]), jsonOf(hello["displays"]))
 	s.sendCapsUpdate(cn)
 	s.addConn(cn)
 	defer s.removeConn(cn)
@@ -350,15 +352,30 @@ func (s *Server) sendCapsUpdate(c *conn) {
 // watchCaps checks the capabilities every capsCheckInterval, also while no
 // stream is open, so that a hello carries a check at most one interval old,
 // and sends caps.changed to each open stream that sendCapsUpdate has
-// followed and whose last capabilities differ.
+// followed and whose last capabilities differ. To those streams it also
+// sends display.changed and session.changed when the displays or the
+// session differ from the ones sent on the stream last, starting with the
+// hello's.
 func (s *Server) watchCaps() {
 	for {
 		time.Sleep(s.timing.caps)
 		caps := s.caps()
+		var followed []*conn
 		for _, c := range s.openConns() {
-			if c.capsFollowedYet() && c.replaceCaps(caps) {
+			if c.capsFollowedYet() {
+				followed = append(followed, c)
+			}
+		}
+		if len(followed) == 0 {
+			continue
+		}
+		displays, displaysOK := s.displaysNow()
+		sess, sessOK := s.sessionNow()
+		for _, c := range followed {
+			if c.replaceCaps(caps) {
 				c.send(capsChanged(caps))
 			}
+			sendDesktopChanges(c, displays, displaysOK, sess, sessOK)
 		}
 	}
 }

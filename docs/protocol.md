@@ -44,7 +44,7 @@ Alcove 에이전트 프로토콜 2층과 같은 NDJSON(`t`로 구분). 한 줄 �
 데몬 → 에이전트  {"t":"req","id":7,"op":"exec.run","rid":"r-01J…","argv":["hostname"]}
 에이전트 → 데몬  {"t":"res","id":7,"ok":true,"code":0,"stdout":"…"}
 에이전트 → 데몬  {"t":"res","id":8,"ok":false,"code":"STALE_TARGET","error":"element e12 no longer exists; call ui.tree again","retryable":false}
-에이전트 → 데몬  {"t":"ev","name":"session.changed","locked":true}
+에이전트 → 데몬  {"t":"ev","name":"session.changed","session_id":1,"user":"PC\\me","connect_state":"active","protocol":"console","locked":true,"input_desktop":"Winlogon",…}
 ```
 
 - 데몬은 헤더 `{"s":"rpc"}` 말고는 아무것도 쓰지 않고 기다린다. 헤더를 받으면 에이전트가 `{"t":"hello","v":1,"agent":"<버전>","os":"windows","arch":"amd64","host":"<컴퓨터 이름>","caps":{…},"session":{…},"displays":[…],"boot_id":"…"}`를 보낸다. 데몬은 `{"t":"welcome","v":1,"controller":"<이름>"}`으로 답하고 그 뒤에 요청을 보낸다.
@@ -99,6 +99,10 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 - caps `input`: 에이전트 세션의 입력 데스크톱이 입력을 받으면 `ready`, PC가 잠겼으면 `needs_user`·`session_locked`, 보안 데스크톱(UAC 등)이면 `needs_user`·`secure_desktop`, Session 0이면 `unavailable`·`session0`, 연결이 끊긴 세션이면 `unavailable`·`session_disconnected`, 세션을 읽지 못하면 `unavailable`(사유는 읽기 오류), Windows가 아니면 `unsupported`.
 
 이벤트(`ev`): Alcove의 `job.exited`, `process.exited`, 창 이벤트, `events.dropped`에 더해 `clipboard.changed`(`text`: 에이전트가 쓰지 않은 PC 클립보드 변경, 700000바이트까지), `session.changed`, `display.changed`, `caps.changed`, `input.preempted`.
+
+- `session.changed`: hello의 `session`과 같은 필드(Windows는 `session.info` 결과의 필드)를 이벤트에 바로 담는다 — `{"t":"ev","name":"session.changed","session_id":…,"user":…,"sid":…,"connect_state":…,"protocol":…,"locked":…,"input_desktop":…,"integrity":…}`(빈 `sid`·`integrity`와 알 수 없는 `locked`는 빠진다).
+- `display.changed`: `{"t":"ev","name":"display.changed","displays":[…]}`, `displays`는 `display.list`의 `displays`.
+- 둘 다 에이전트가 `caps`와 같이 5초마다 읽어, welcome이 온 연결마다 그 연결에 마지막으로 보낸 값(처음은 그 연결의 hello가 담은 값)과 다를 때만 보낸다. 그래서 hello 뒤 첫 확인은 hello 이후 바뀐 것만 보낸다. 세션이나 디스플레이 목록을 읽지 못한 확인(Session 0의 디스플레이 등)에서는 그 이벤트를 보내지 않는다.
 
 ## 4. `video` 프레임
 

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -74,18 +75,71 @@ func (s *Server) displayListOp(context.Context, proto.Message) (proto.Message, e
 // helloSession is the hello's session: the session.info fields of the
 // Windows session, else the desktop session of Options.Session.
 func (s *Server) helloSession() map[string]any {
-	if info, err := s.opt.SessionInfo(); err == nil {
-		return sessionFields(info)
+	if m, ok := s.sessionNow(); ok {
+		return m
 	}
 	return s.desktopSession()
+}
+
+// sessionNow is the hello's session as it is now: the session.info fields
+// of the Windows session, the desktop session of Options.Session on a
+// system without one, and false when the Windows session cannot be read.
+func (s *Server) sessionNow() (map[string]any, bool) {
+	info, err := s.opt.SessionInfo()
+	switch {
+	case err == nil:
+		return sessionFields(info), true
+	case errors.Is(err, session.ErrUnsupported):
+		return s.desktopSession(), true
+	}
+	return nil, false
 }
 
 // helloDisplays is the hello's displays: the display.list displays, or
 // none when they cannot be read.
 func (s *Server) helloDisplays() any {
-	list, err := s.opt.Displays()
-	if err != nil || list == nil {
-		return []any{}
+	if list, ok := s.displaysNow(); ok {
+		return list
 	}
-	return list
+	return []any{}
+}
+
+// displaysNow is the display.list displays as they are now, false when
+// they cannot be read.
+func (s *Server) displaysNow() ([]display.Info, bool) {
+	list, err := s.opt.Displays()
+	if err != nil {
+		return nil, false
+	}
+	if list == nil {
+		list = []display.Info{}
+	}
+	return list, true
+}
+
+// sendDesktopChanges sends to c display.changed{displays} when displays,
+// read when displaysOK, differ from the displays sent on c last, and
+// session.changed with the fields of sess, read when sessOK, when it
+// differs from the session sent last.
+func sendDesktopChanges(c *conn, displays []display.Info, displaysOK bool, sess map[string]any, sessOK bool) {
+	if displaysOK && c.replaceDisplays(jsonOf(displays)) {
+		c.send(proto.Message{"t": "ev", "name": "display.changed", "displays": displays})
+	}
+	if sessOK && c.replaceSession(jsonOf(sess)) {
+		ev := proto.Message{}
+		for k, v := range sess {
+			ev[k] = v
+		}
+		ev["t"], ev["name"] = "ev", "session.changed"
+		c.send(ev)
+	}
+}
+
+// jsonOf is the JSON of v, nil when it has none.
+func jsonOf(v any) []byte {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil
+	}
+	return b
 }

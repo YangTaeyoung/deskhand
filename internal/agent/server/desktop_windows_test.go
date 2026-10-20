@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/proto"
 	"github.com/YangTaeyoung/deskhand/internal/wire"
@@ -119,4 +120,19 @@ func TestScreenCaptureOverSSHReportsSession0(t *testing.T) {
 	if got.String("code") != wire.CodeDisplayUnavailable || !strings.Contains(got.String("error"), "session0") || got["retryable"] != false {
 		t.Fatalf("screen.capture %v", got)
 	}
+}
+
+func TestTheUserSessionSendsNoDesktopEventWhileNothingChanges(t *testing.T) {
+	if os.Getenv("DESKHAND_WINTEST") == "" {
+		t.Skip("needs the signed-in user's session; run through scripts/wintest.sh")
+	}
+	old := capsCheckInterval
+	capsCheckInterval = 20 * time.Millisecond
+	t.Cleanup(func() { capsCheckInterval = old })
+	_, r, _, _ := startServerS(t, Options{Clipboard: &fakeClipboard{}, HomeDir: t.TempDir()})
+	hello := expect(t, r, "hello")
+	if d, _ := hello["displays"].([]any); len(d) == 0 {
+		t.Fatalf("hello displays %v", hello["displays"])
+	}
+	noDesktopEvent(t, feed(r), time.Second, "while the session and the displays stayed as in the hello")
 }

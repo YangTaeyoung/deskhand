@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -58,10 +59,45 @@ type conn struct {
 	stop chan struct{} // closed to ask the writer to stop
 
 	// caps holds the capabilities sent last on the stream; capsFollowed is
-	// set once the host's welcome has arrived.
-	capsMu       sync.Mutex
-	caps         capStates
-	capsFollowed bool
+	// set once the host's welcome has arrived. session and displays are the
+	// JSON of the session and the displays sent last.
+	capsMu            sync.Mutex
+	caps              capStates
+	capsFollowed      bool
+	session, displays []byte
+}
+
+// setDesktop records the JSON of the session and the displays the hello
+// sent.
+func (c *conn) setDesktop(session, displays []byte) {
+	c.capsMu.Lock()
+	c.session, c.displays = session, displays
+	c.capsMu.Unlock()
+}
+
+// replaceSession records session, JSON, and reports whether it differs
+// from the session sent last.
+func (c *conn) replaceSession(session []byte) bool {
+	c.capsMu.Lock()
+	defer c.capsMu.Unlock()
+	return replaceJSON(&c.session, session)
+}
+
+// replaceDisplays records displays, JSON, and reports whether they differ
+// from the displays sent last.
+func (c *conn) replaceDisplays(displays []byte) bool {
+	c.capsMu.Lock()
+	defer c.capsMu.Unlock()
+	return replaceJSON(&c.displays, displays)
+}
+
+// replaceJSON sets *last to b and reports whether they differed.
+func replaceJSON(last *[]byte, b []byte) bool {
+	if bytes.Equal(*last, b) {
+		return false
+	}
+	*last = b
+	return true
 }
 
 // setCaps records caps as the capabilities sent on the stream.
