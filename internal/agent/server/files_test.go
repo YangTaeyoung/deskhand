@@ -16,6 +16,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/YangTaeyoung/deskhand/internal/proto"
+	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
 func b64(b []byte) string { return base64.StdEncoding.EncodeToString(b) }
@@ -816,4 +817,9 @@ func TestPathContains(t *testing.T) {
 			t.Errorf("pathContains(%q, %q) = %v, want %v", tc.dir, tc.target, got, tc.want)
 		}
 	}
+}
+
+func TestListOfAMissingFolderIsNotFound(t *testing.T) {
+	c, home := opsHome(t)
+	failsWith(t, c.call("fs.list", proto.Message{"path": filepath.Join(home, "gone")}), wire.CodeNotFound, "does not exist")
 }

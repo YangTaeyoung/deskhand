@@ -791,3 +791,27 @@ func within(t *testing.T, limit time.Duration, what string, fn func() (model.Tra
 	}
 	return model.Transfer{}, nil
 }
+
+func TestAMovePullWhoseSourceIsGoneCountsItRemoved(t *testing.T) {
+	var remove func()
+	h := newHarness(t, xfer.Hooks{Step: func(_ context.Context, _, step string) {
+		if step == "remove" && remove != nil {
+			remove()
+		}
+	}})
+	for _, folder := range []bool{false, true} {
+		src, dst := filepath.Join(h.agent.home, fmt.Sprint("gone-", folder)), filepath.Join(h.mac, fmt.Sprint("gone-", folder))
+		if folder {
+			writeFile(t, filepath.Join(src, "in", "f.txt"), []byte("f"))
+		} else {
+			writeFile(t, src, []byte("f"))
+		}
+		remove = func() {
+			if err := os.RemoveAll(src); err != nil {
+				t.Error(err)
+			}
+		}
+		tr := h.waitFinished(h.start("move_pull", dst, src, "").TransferID)
+		checkDone(t, tr, "written")
+	}
+}

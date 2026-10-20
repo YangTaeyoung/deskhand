@@ -251,7 +251,7 @@ func (s *Server) fsList(_ context.Context, req proto.Message) (proto.Message, er
 	}
 	fi, err := os.Stat(root)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("'%s' does not exist", root)
+		return nil, coded(wire.CodeNotFound, fmt.Sprintf("'%s' does not exist; check the path with fs.stat", root), false)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("cannot list '%s': %v", root, err)
