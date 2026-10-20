@@ -47,16 +47,6 @@ type duplDesc struct {
 	DesktopImageInSystemMemory                                               int32
 }
 
-// frameInfo is DXGI_OUTDUPL_FRAME_INFO.
-type frameInfo struct {
-	LastPresentTime, LastMouseUpdateTime            int64
-	AccumulatedFrames                               uint32
-	RectsCoalesced, ProtectedContentMaskedOut       int32
-	PointerX, PointerY                              int32
-	PointerVisible                                  int32
-	TotalMetadataBufferSize, PointerShapeBufferSize uint32
-}
-
 // shapeInfo is DXGI_OUTDUPL_POINTER_SHAPE_INFO.
 type shapeInfo struct {
 	Type, Width, Height, Pitch uint32
@@ -79,9 +69,10 @@ type ddSource struct {
 	stage     func(w, h int) (uintptr, error)
 	w, h      int
 	haveImage bool
-	// fresh reports that no frame was acquired since the duplication was
-	// made; the first one holds the whole desktop image.
-	fresh bool
+	// awaiting reports that the source has taken no image since the
+	// duplication was made at dupAt.
+	awaiting bool
+	dupAt    time.Time
 	// ptr is the last pointer position and visibility.
 	ptr      PointerInfo
 	shapeBuf []byte
@@ -122,7 +113,7 @@ func (s *ddSource) duplicate() (com.HRESULT, error) {
 		}
 		s.tex, s.w, s.h, s.haveImage = tex, w, h, false
 	}
-	s.dup, s.fresh = dup, true
+	s.dup, s.awaiting, s.dupAt = dup, true, time.Now()
 	return hr, nil
 }
 
@@ -142,10 +133,13 @@ func (s *ddSource) Close() {
 	s.reg.close()
 }
 
-// Next acquires the next frame. A frame carries an image or a pointer
-// update, and only comes once the texture holds an image. Access lost or
-// denied, or a desktop image of another size, starts an outage in which
-// Next duplicates the output again on the outage's schedule.
+// Next acquires the next frame. A frame carries an image the compositor
+// presented or a pointer update, and only comes once the texture holds an
+// image. A duplication that presents no image within firstImageWait of
+// being made takes its first image with GDI when the texture is the
+// source's own. Access lost or denied, or a desktop image of another size,
+// starts an outage in which Next duplicates the output again on the
+// outage's schedule.
 func (s *ddSource) Next(ctx context.Context, timeout time.Duration) (Frame, error) {
 	deadline := time.Now().Add(timeout)
 	for {
@@ -155,13 +149,18 @@ func (s *ddSource) Next(ctx context.Context, timeout time.Duration) (Frame, erro
 		if s.dup == 0 {
 			return s.recover(ctx, deadline)
 		}
+		wait := min(time.Until(deadline), acquireSlice)
+		if s.awaiting && s.gdiAllowed() {
+			wait = min(wait, time.Until(s.dupAt.Add(firstImageWait)))
+		}
 		ms := uint32(0)
-		if wait := min(time.Until(deadline), acquireSlice); wait > 0 {
+		if wait > 0 {
 			ms = uint32((wait + time.Millisecond - 1) / time.Millisecond)
 		}
 		var fi frameInfo
 		var res uintptr
 		hr := com.Call(s.dup, duplAcquireNextFrame, uintptr(ms), uintptr(unsafe.Pointer(&fi)), uintptr(unsafe.Pointer(&res)))
+		var acquired *frameInfo
 		switch {
 		case hr == com.DXGI_ERROR_WAIT_TIMEOUT:
 		case accessDenied(hr):
@@ -170,14 +169,23 @@ func (s *ddSource) Next(ctx context.Context, timeout time.Duration) (Frame, erro
 		case hr.Failed():
 			return Frame{}, fmt.Errorf("IDXGIOutputDuplication::AcquireNextFrame of %s: %w", s.disp.Name, hr)
 		default:
-			f, ok, err := s.take(&fi, res)
+			acquired = &fi
+		}
+		step := imageStep(acquired, s.waiting(), s.gdiAllowed())
+		if acquired != nil {
+			f, ok, err := s.take(&fi, res, step == stepCopy)
 			switch {
 			case errors.Is(err, errModeChanged):
 				s.lose(com.DXGI_ERROR_ACCESS_LOST)
 				continue
 			case err != nil:
 				return Frame{}, err
-			case ok:
+			case ok && step != stepGDI:
+				return f, nil
+			}
+		}
+		if step == stepGDI {
+			if f, ok := s.gdiImage(); ok {
 				return f, nil
 			}
 		}
@@ -200,9 +208,9 @@ func (s *ddSource) lose(hr com.HRESULT) {
 // deadline. It returns ErrReset once the duplication is back, the error
 // of the outage at the deadline once it reports one, and ErrNoNewFrame
 // before; a display that cannot be duplicated any more, rotated for
-// example, is an error at the deadline. The outage goes on until take
-// copies an image, so a duplication lost again before one waits for the
-// next retry. The registry entry records each error reported.
+// example, is an error at the deadline. The outage goes on until the
+// source takes an image, so a duplication lost again before one waits for
+// the next retry. The registry entry records each error reported.
 func (s *ddSource) recover(ctx context.Context, deadline time.Time) (Frame, error) {
 	for {
 		now := time.Now()
@@ -236,10 +244,10 @@ func (s *ddSource) recover(ctx context.Context, deadline time.Time) (Frame, erro
 	}
 }
 
-// take copies the acquired desktop image into the texture when the frame
-// has one, reads the pointer and releases the frame. It reports whether
-// the frame is one for Next to return.
-func (s *ddSource) take(fi *frameInfo, res uintptr) (Frame, bool, error) {
+// take copies the acquired desktop image into the texture when image is
+// set, reads the pointer and releases the frame. It reports whether the
+// frame is one for Next to return.
+func (s *ddSource) take(fi *frameInfo, res uintptr, image bool) (Frame, bool, error) {
 	defer func() {
 		com.Release(res)
 		com.Call(s.dup, duplReleaseFrame)
@@ -254,7 +262,6 @@ func (s *ddSource) take(fi *frameInfo, res uintptr) (Frame, bool, error) {
 			ptr.ShapeChanged, ptr.Shape = true, shape
 		}
 	}
-	image := s.fresh || (fi.LastPresentTime != 0 && fi.AccumulatedFrames > 0)
 	if image {
 		tex, hr := com.QueryInterface(res, &d3d.IID_ID3D11Texture2D)
 		if hr.Failed() {
@@ -271,11 +278,8 @@ func (s *ddSource) take(fi *frameInfo, res uintptr) (Frame, bool, error) {
 		}
 		s.dev.CopyResource(s.tex, tex)
 		com.Release(tex)
-		s.fresh, s.haveImage = false, true
-		if s.out.active() {
-			s.out = outage{}
-			s.reg.set(nil)
-		}
+		s.awaiting, s.haveImage = false, true
+		s.endOutage()
 	}
 	if !s.haveImage || (!image && !moved && !ptr.ShapeChanged) {
 		return Frame{}, false, nil
@@ -285,6 +289,47 @@ func (s *ddSource) take(fi *frameInfo, res uintptr) (Frame, bool, error) {
 		mono = qpcMono(fi.LastPresentTime)
 	}
 	return Frame{Texture: s.tex, Width: s.w, Height: s.h, MonoUS: mono, Dirty: image, Pointer: ptr}, true, nil
+}
+
+// gdiImage copies the display into the texture with GDI and returns it as
+// a frame of an image taken now; ok is false when GDI fails, which leaves
+// the texture as it was. Either way the source stops waiting for the
+// first image of its duplication.
+func (s *ddSource) gdiImage() (f Frame, ok bool) {
+	s.awaiting = false
+	g, err := openGDI(nil, s.disp, 1)
+	if err != nil {
+		return Frame{}, false
+	}
+	defer g.Close()
+	s.dev.UpdateSubresource(s.tex, g.bufs[0].pix, s.w*4)
+	s.haveImage = true
+	s.endOutage()
+	return Frame{Texture: s.tex, Width: s.w, Height: s.h, MonoUS: g.pendingMono, Dirty: true,
+		Pointer: PointerInfo{X: s.ptr.X, Y: s.ptr.Y, Visible: s.ptr.Visible}}, true
+}
+
+// endOutage ends the outage once the source has an image again.
+func (s *ddSource) endOutage() {
+	if s.out.active() {
+		s.out = outage{}
+		s.reg.set(nil)
+	}
+}
+
+// waiting is how long the source has waited for the first image of its
+// duplication, -1 once it took one.
+func (s *ddSource) waiting() time.Duration {
+	if !s.awaiting {
+		return -1
+	}
+	return time.Since(s.dupAt)
+}
+
+// gdiAllowed reports whether the source can take an image with GDI: one
+// that copies into a texture of its own of the display's size.
+func (s *ddSource) gdiAllowed() bool {
+	return s.stage == nil && s.disp.Width == s.w && s.disp.Height == s.h
 }
 
 // pointerShape reads the new pointer shape of the acquired frame.

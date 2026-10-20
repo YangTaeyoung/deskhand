@@ -5,6 +5,7 @@
 ## 결정
 
 - 캡처: DXGI Desktop Duplication(사용자 세션에서만 동작). 데스크톱 텍스처를 자체 BGRA 텍스처로 `CopyResource`한 뒤 처리한다.
+- 이미지로 쓰는 프레임은 합성기가 present한 프레임(`LastPresentTime` ≠ 0, `AccumulatedFrames` > 0)뿐이다. 새 복제의 첫 `AcquireNextFrame`은 포인터만 담고(`LastPresentTime` 0) 그 텍스처는 검다. 정지 화면에서도 복제 뒤 첫 present가 온다(M6 실측 10–40 ms). 복제 뒤 500 ms 안에 present가 없으면 GDI로 찍어 텍스처를 채운다.
 - 색 변환·축소: D3D11 VideoProcessorBlt(BGRA 전체 범위 → NV12 BT.709 제한 범위). CPU 변환은 대체 경로로만 둔다.
 - 인코딩: Media Foundation H.264. 하드웨어 MFT(비동기, D3D11 인식) 우선, 소프트웨어 "H264 Encoder MFT"(동기, 호출자 출력 버퍼 할당) 대체. 저지연 모드, CBR, GOP 0(주기 IDR 없음) + 요청 키프레임(`CODECAPI_AVEncVideoForceKeyFrame`) + 데몬 측 주기 요청.
 - 스레드: 캡처·변환 생산자와 비동기 MFT 이벤트 루프를 분리한다(직렬 처리 시 4K 30fps로 떨어짐).

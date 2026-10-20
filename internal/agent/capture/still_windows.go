@@ -17,9 +17,6 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/agent/win/d3d"
 )
 
-// firstImageWait bounds the wait for the first image of a duplication.
-const firstImageWait = 500 * time.Millisecond
-
 // deviceIdle is how long the still worker keeps a device it did not use.
 const deviceIdle = time.Minute
 

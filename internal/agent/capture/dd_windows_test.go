@@ -9,11 +9,14 @@ import (
 	"runtime"
 	"testing"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 
 	"github.com/YangTaeyoung/deskhand/internal/agent/display"
 	"github.com/YangTaeyoung/deskhand/internal/agent/session"
+	"github.com/YangTaeyoung/deskhand/internal/agent/win/com"
+	"github.com/YangTaeyoung/deskhand/internal/agent/win/d3d"
 )
 
 // openOrSkip opens a source of display index and skips the test, naming
@@ -47,6 +50,106 @@ func firstImage(t *testing.T, src Source) Frame {
 		if time.Now().After(deadline) {
 			t.Fatal("no image within 500 ms of Open")
 		}
+	}
+}
+
+// litShare copies the texture of f to a staging texture and returns the
+// share of every seventh pixel of every seventh row brighter than
+// near-black.
+func litShare(t *testing.T, dev *d3d.Device, f Frame) float64 {
+	t.Helper()
+	stage, err := dev.NewTexture(f.Width, f.Height, d3d.FormatBGRA, d3d.UsageStaging, 0, d3d.CPUAccessRead)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer com.Release(stage)
+	dev.CopyResource(stage, f.Texture)
+	m, err := dev.Map(stage, d3d.MapRead)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dev.Unmap(stage)
+	pitch := int(m.RowPitch)
+	pix := unsafe.Slice((*byte)(m.Data), pitch*(f.Height-1)+f.Width*4)
+	n, lit := 0, 0
+	for y := 0; y < f.Height; y += 7 {
+		for x := 0; x < f.Width; x += 7 {
+			i := y*pitch + x*4
+			n++
+			if pix[i] > 8 || pix[i+1] > 8 || pix[i+2] > 8 {
+				lit++
+			}
+		}
+	}
+	return float64(lit) / float64(n)
+}
+
+func TestFirstImageOfEachDuplicationIsTheDesktop(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	reference := 0.0
+	for i := range 6 {
+		src := openOrSkip(t, 0)
+		if _, ok := src.(*ddSource); !ok {
+			src.Close()
+			t.Skipf("the source is %T, not Desktop Duplication", src)
+		}
+		start := time.Now()
+		f := firstImage(t, src)
+		share := litShare(t, src.Device(), f)
+		t.Logf("duplication %d: first image after %v, %.4f lit", i, time.Since(start), share)
+		if i == 0 {
+			g, err := openGDI(nil, src.(*ddSource).disp, 1)
+			if err != nil {
+				t.Fatalf("openGDI: %v", err)
+			}
+			n, lit := 0, 0
+			for y := 0; y < f.Height; y += 7 {
+				for x := 0; x < f.Width; x += 7 {
+					p := g.bufs[0].pix[(y*f.Width+x)*4:]
+					n++
+					if p[0] > 8 || p[1] > 8 || p[2] > 8 {
+						lit++
+					}
+				}
+			}
+			g.Close()
+			reference = float64(lit) / float64(n)
+			t.Logf("GDI: %.4f lit", reference)
+			if reference < 0.01 {
+				src.Close()
+				t.Skipf("display 0 is black to GDI as well (%.4f lit)", reference)
+			}
+		}
+		src.Close()
+		if share < reference/2 {
+			t.Fatalf("duplication %d: the first image has %.4f lit pixels, GDI %.4f", i, share, reference)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+func TestGDIImageFillsTheDuplicationTexture(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	src := openOrSkip(t, 0)
+	defer src.Close()
+	s, ok := src.(*ddSource)
+	if !ok {
+		t.Skipf("the source is %T, not Desktop Duplication", src)
+	}
+	if !s.gdiAllowed() {
+		t.Fatalf("a source of display %+v with %dx%d textures cannot take a GDI image", s.disp, s.w, s.h)
+	}
+	f, ok := s.gdiImage()
+	if !ok {
+		t.Fatal("gdiImage failed")
+	}
+	if !f.Dirty || f.Texture != s.tex || f.Width != s.w || f.Height != s.h || f.MonoUS == 0 || s.awaiting || !s.haveImage {
+		t.Fatalf("frame %+v, awaiting %v, have image %v", f, s.awaiting, s.haveImage)
+	}
+	if share := litShare(t, s.dev, f); share < 0.01 {
+		t.Fatalf("the GDI image in the texture has %.4f lit pixels", share)
 	}
 }
 
