@@ -891,25 +891,38 @@ final class DebuggerModelTests: XCTestCase {
     func testCommandAlternatesActOnTheSelectedSessionUnlessTheConsoleHasTheKeyboard() async throws {
         let backend = FakeDebuggerBackend()
         let model = try await started(backend, sessions: [session()])
-        let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.command], timestamp: 0, windowNumber: 0,
-                                                   context: nil, characters: "\\", charactersIgnoringModifiers: "\\", isARepeat: false, keyCode: 42))
+        let window = NSWindow(contentRect: CGRect(x: -32_000, y: -32_000, width: 10, height: 10), styleMask: [.borderless],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let other = NSWindow(contentRect: CGRect(x: -32_000, y: -32_000, width: 10, height: 10), styleMask: [.borderless],
+                             backing: .buffered, defer: false)
+        other.isReleasedWhenClosed = false
+        XCTAssertGreaterThan(window.windowNumber, 0)
+        func key(_ characters: String, _ flags: NSEvent.ModifierFlags, code: UInt16, in target: NSWindow) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: target.windowNumber,
+                                           context: nil, characters: characters, charactersIgnoringModifiers: characters, isARepeat: false,
+                                           keyCode: code))
+        }
+        let event = try key("\\", [.command], code: 42, in: window)
         model.consoleFocused = true
-        XCTAssertFalse(DebuggerKeyHandler.handle(event, model: model, enabled: true, window: nil))
+        XCTAssertFalse(DebuggerKeyHandler.handle(event, model: model, enabled: true, window: window, keyWindow: window))
         model.consoleFocused = false
-        XCTAssertTrue(DebuggerKeyHandler.handle(event, model: model, enabled: true, window: nil))
-        try await waitUntil { backend.calls.contains("pause \(page)") }
-        XCTAssertTrue(DebuggerKeyHandler.handle(event, model: model, enabled: false, window: nil))
+        XCTAssertTrue(DebuggerKeyHandler.handle(event, model: model, enabled: true, window: window, keyWindow: window))
+        try await waitUntil { backend.calls.contains("pause \(self.page)") }
+        XCTAssertTrue(DebuggerKeyHandler.handle(event, model: model, enabled: false, window: window, keyWindow: window))
+        XCTAssertFalse(DebuggerKeyHandler.handle(event, model: model, enabled: true, window: nil, keyWindow: window), "no debugger window")
+        XCTAssertFalse(DebuggerKeyHandler.handle(event, model: model, enabled: true, window: window, keyWindow: nil), "no key window")
+        XCTAssertFalse(DebuggerKeyHandler.handle(event, model: model, enabled: true, window: window, keyWindow: other), "another window is key")
+        XCTAssertFalse(DebuggerKeyHandler.handle(try key("\\", [.command], code: 42, in: other), model: model, enabled: true, window: window,
+                                                 keyWindow: window), "keys of another window pass through")
         model.showsScriptNavigator = true
-        XCTAssertFalse(DebuggerKeyHandler.handle(event, model: model, enabled: true, window: nil))
+        XCTAssertFalse(DebuggerKeyHandler.handle(event, model: model, enabled: true, window: window, keyWindow: window))
         model.showsScriptNavigator = false
-        let other = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: true)
-        XCTAssertFalse(DebuggerKeyHandler.handle(event, model: model, enabled: true, window: other), "keys of another window pass through")
-        let escape = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
-                                                    characters: "\u{1B}", charactersIgnoringModifiers: "\u{1B}", isARepeat: false, keyCode: 53))
-        XCTAssertFalse(DebuggerKeyHandler.handle(escape, model: model, enabled: true, window: nil))
+        let escape = try key("\u{1B}", [], code: 53, in: window)
+        XCTAssertFalse(DebuggerKeyHandler.handle(escape, model: model, enabled: true, window: window, keyWindow: window))
         model.navigatorShown = true
         model.navigatorOverlay = true
-        XCTAssertTrue(DebuggerKeyHandler.handle(escape, model: model, enabled: true, window: nil))
+        XCTAssertTrue(DebuggerKeyHandler.handle(escape, model: model, enabled: true, window: window, keyWindow: window))
         XCTAssertEqual(model.navigatorShown, false)
     }
 

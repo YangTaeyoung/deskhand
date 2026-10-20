@@ -91,8 +91,8 @@ private struct SessionRow: View {
                 if let reason = session.info.rendererUnavailable {
                     UnavailableLine(text: DebugFormat.rendererUnavailableShort(reason), detail: DebugFormat.rendererUnavailable(reason))
                 }
-            } else {
-                Text(DebugFormat.closedShort(session.info.closeKind, exitCode: session.info.exitCode, kind: session.info.sessionKind))
+            } else if let detail = DebugFormat.closedDetail(session.info.closeKind, exitCode: session.info.exitCode) {
+                Text(detail)
                     .help(DebugFormat.closed(session.info.closeKind, exitCode: session.info.exitCode, kind: session.info.sessionKind))
                     .font(DS.Font.caption)
                     .foregroundStyle(.secondary)
@@ -302,7 +302,7 @@ private struct TargetRow: View {
                     .accessibilityLabel(String.ui("debugger.target.attach.a11y", "\(DebugFormat.targetTitle(target))에 연결"))
             }
         }
-        .padding(.leading, SessionRow.iconSize + DS.Space.s)
+        .padding(.leading, DS.Space.m)
         .padding(.trailing, DS.Space.xs)
         .onHover { hovering = $0 }
     }

@@ -189,7 +189,7 @@ private struct DebuggerContent: View {
     private var workspace: some View {
         GeometryReader { proxy in
             let width = proxy.size.width
-            let navigatorWidth = min(max(width * 0.2, 224), 280)
+            let navigatorWidth = min(max(width * 0.22, 240), 320)
             let inspectorWidth = narrow ? 248 : min(max(width * 0.24, 248), 320)
             let inspectorHeight = proxy.size.height
             HStack(spacing: 0) {
@@ -243,7 +243,7 @@ private struct DebuggerContent: View {
                 if let session = model.selected, let notice = session.notice {
                     DiagnosticsNoticeToast(notice: notice) { session.dismissNotice() }
                         .padding(.horizontal, DS.Space.l)
-                        .padding(.bottom, DS.Space.m)
+                        .padding(.bottom, DebugConsoleView.inputBarHeight + DS.Space.s)
                         .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                 }
             }

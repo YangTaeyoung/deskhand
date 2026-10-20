@@ -9,6 +9,8 @@ import SwiftUI
 /// go under the text and the key hint hides.
 struct DebugConsoleView: View {
     static let narrowWidth: CGFloat = 560
+    /// The height of the one-line expression bar under the console.
+    static let inputBarHeight: CGFloat = ConsoleInput.height(lines: 1) + DS.Space.xs * 2 + 1
 
     let model: DebuggerModel
     let session: DebugSessionModel?

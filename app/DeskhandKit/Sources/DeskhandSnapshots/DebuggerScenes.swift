@@ -194,7 +194,8 @@ enum DebuggerScenes {
 
     /// The tray app that turns remote debugging off: only main is attached, paused on its first line.
     static func mainOnly() -> Seeded {
-        let target = Program.mainTarget(gen: 1, paused: true)
+        var target = Program.mainTarget(gen: 1, paused: true)
+        target.title = "Shop Sync — main"
         let info = DebugSession(debugID: "d-sync", hostID: dev, kind: .launch, name: "Shop Sync", path: Program.syncPath, pauseOnStart: true,
                                 pid: 11904, ports: DebugPorts(inspect: 52031), state: .paused, targets: [target],
                                 rendererUnavailable: .remoteDebuggingDisabled, createdAt: Timestamp(date: launched))

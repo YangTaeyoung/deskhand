@@ -50,30 +50,116 @@ final class TokensTests: XCTestCase {
             ("keyword", DS.Code.keywordNS), ("string", DS.Code.stringNS), ("number", DS.Code.numberNS),
             ("link", DS.Code.linkNS), ("error", DS.Code.errorTextNS),
         ]
-        let tints: [(String, DS.Code.Tint)] = [
-            ("current line", DS.Code.currentLineTint), ("caller line", DS.Code.callerLineTint),
-            ("exception line", DS.Code.exceptionLineTint), ("focus line", DS.Code.focusLineTint),
-            ("selection", DS.Code.selectionTint), ("error row", DS.Code.errorRowTint), ("warning row", DS.Code.warningRowTint),
-        ]
-        XCTAssertEqual(DS.Code.tints.count, tints.count)
+        XCTAssertEqual(DS.Code.tints.count, 7)
         for name in [NSAppearance.Name.aqua, .darkAqua] {
             let appearance = try XCTUnwrap(NSAppearance(named: name))
-            let plain = DS.Code.backgrounds(in: appearance, tints: [])
-            XCTAssertEqual(plain.count, 2)
-            var backgrounds = [("text", plain[0]), ("window", plain[1])]
-            for (label, tint) in tints {
-                let tinted = DS.Code.backgrounds(in: appearance, tints: [tint])
-                backgrounds.append((label, tinted[2]))
-            }
+            let backgrounds = DS.Code.backgrounds(in: appearance, tints: DS.Code.tints)
+            XCTAssertEqual(backgrounds.count, 2 + DS.Code.tints.count * 2)
             for (label, color) in colors {
                 var resolved = NSColor.black
                 appearance.performAsCurrentDrawingAppearance { resolved = color.usingColorSpace(.sRGB) ?? color }
-                for (place, background) in backgrounds {
+                for (index, background) in backgrounds.enumerated() {
                     let ratio = DS.Terminal.contrast(resolved, background)
-                    XCTAssertGreaterThanOrEqual(ratio, 4.5, "\(label) on \(place) in \(name.rawValue): \(ratio)")
+                    XCTAssertGreaterThanOrEqual(ratio, 4.5, "\(label) on background \(index) in \(name.rawValue): \(ratio)")
                 }
             }
         }
+    }
+
+    /// Draws every code color as a swatch on the text and window backgrounds, bare and under each
+    /// tint, and the keyword of a highlighted line on the current and exception lines, in an
+    /// offscreen sRGB window as the snapshots draw; the drawn pixels reach 4.5:1.
+    @MainActor
+    func testDrawnCodeColorsReachFourAndAHalfToOneOnTheirDrawnBackgrounds() throws {
+        let colors: [(String, Color)] = [
+            ("keyword", DS.Code.keyword), ("string", DS.Code.string), ("number", DS.Code.number),
+            ("link", DS.Code.link), ("error", DS.Code.errorText),
+        ]
+        let tints: [(String, Color?)] = [("bare", nil)] + [
+            ("current line", DS.Code.currentLine), ("caller line", DS.Code.callerLine), ("exception line", DS.Code.exceptionLine),
+            ("focus line", DS.Code.focusLine), ("selection", DS.Code.selection), ("error row", DS.Code.errorRow),
+            ("warning row", DS.Code.warningRow),
+        ]
+        let bases: [(String, Color)] = [("text", DS.Code.background), ("window", DS.Color.surface)]
+        let cell: CGFloat = 24
+        let swatches = VStack(spacing: 0) {
+            ForEach(Array(bases.enumerated()), id: \.offset) { _, base in
+                ForEach(Array(tints.enumerated()), id: \.offset) { _, tint in
+                    HStack(spacing: 0) {
+                        ForEach(Array(colors.enumerated()), id: \.offset) { _, color in
+                            ZStack {
+                                Rectangle().fill(color.1).frame(width: cell / 2, height: cell / 2)
+                            }
+                            .frame(width: cell, height: cell)
+                            .background(tint.1 ?? .clear)
+                            .background(base.1)
+                        }
+                    }
+                }
+            }
+        }
+        let size = CGSize(width: cell * CGFloat(colors.count), height: cell * CGFloat(tints.count * bases.count))
+        for name in [NSAppearance.Name.aqua, .darkAqua] {
+            let bitmap = try Self.draw(swatches, size: size, appearance: name)
+            let scale = CGFloat(bitmap.pixelsWide) / size.width
+            for (b, base) in bases.enumerated() {
+                for (t, tint) in tints.enumerated() {
+                    for (c, color) in colors.enumerated() {
+                        let row = CGFloat(b * tints.count + t)
+                        let origin = CGPoint(x: CGFloat(c) * cell * scale, y: row * cell * scale)
+                        let swatch = Self.pixel(bitmap, x: Int(origin.x + cell * scale / 2), y: Int(origin.y + cell * scale / 2))
+                        let ground = Self.pixel(bitmap, x: Int(origin.x + 2), y: Int(origin.y + 2))
+                        let ratio = DS.Terminal.contrast(swatch, ground)
+                        XCTAssertGreaterThanOrEqual(ratio, 4.5, "\(color.0) on \(tint.0) over \(base.0) in \(name.rawValue): \(ratio)")
+                    }
+                }
+            }
+
+            for tint in [DS.Code.currentLine, DS.Code.exceptionLine] {
+                let line = Text(JavaScriptHighlighter.highlight("const"))
+                    .font(.system(size: 48, weight: .heavy, design: .monospaced))
+                    .frame(width: 200, height: 64)
+                    .background(tint)
+                    .background(DS.Code.background)
+                let drawn = try Self.draw(line, size: CGSize(width: 200, height: 64), appearance: name)
+                let ground = Self.pixel(drawn, x: 2, y: 2)
+                var best = 0.0
+                for y in stride(from: 0, to: drawn.pixelsHigh, by: 2) {
+                    for x in stride(from: 0, to: drawn.pixelsWide, by: 2) {
+                        best = max(best, DS.Terminal.contrast(Self.pixel(drawn, x: x, y: y), ground))
+                    }
+                }
+                XCTAssertGreaterThanOrEqual(best, 4.5, "drawn keyword in \(name.rawValue)")
+            }
+        }
+    }
+
+    /// The pixel at `x`, `y` of an sRGB bitmap as an sRGB color, read from its stored components.
+    static func pixel(_ bitmap: NSBitmapImageRep, x: Int, y: Int) -> NSColor {
+        var components = [Int](repeating: 0, count: max(4, bitmap.samplesPerPixel))
+        bitmap.getPixel(&components, atX: x, y: y)
+        return NSColor(srgbRed: CGFloat(components[0]) / 255, green: CGFloat(components[1]) / 255, blue: CGFloat(components[2]) / 255, alpha: 1)
+    }
+
+    /// `view` drawn at `size` in an offscreen sRGB window of `appearance`, as sRGB pixels.
+    @MainActor
+    static func draw(_ view: some View, size: CGSize, appearance: NSAppearance.Name) throws -> NSBitmapImageRep {
+        NSApplication.shared.setActivationPolicy(.accessory)
+        let window = NSWindow(contentRect: CGRect(origin: CGPoint(x: -32_000, y: -32_000), size: size), styleMask: [.borderless],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.colorSpace = .sRGB
+        window.appearance = NSAppearance(named: appearance)
+        defer { window.contentView = nil }
+        let host = NSHostingView(rootView: view.frame(width: size.width, height: size.height))
+        host.frame = CGRect(origin: .zero, size: size)
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        host.layoutSubtreeIfNeeded()
+        let cached = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: cached)
+        return try XCTUnwrap(cached.converting(to: .sRGB, renderingIntent: .default))
     }
 }
 

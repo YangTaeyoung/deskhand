@@ -51,8 +51,8 @@ public enum DS {
     }
 
     /// Colors of script source, values and console text in the debugger. The text colors are system
-    /// hues blended toward black (light) or white (dark) until they reach 4.5:1 against the text and
-    /// window backgrounds of the appearance and the text background under every tint in `tints`.
+    /// hues blended toward black (light) or white (dark) until they reach `ratio` against the text
+    /// and window backgrounds of the appearance and both of them under every tint in `tints`.
     public enum Code {
         /// A color laid over the text background at an opacity.
         public struct Tint: Sendable {
@@ -118,8 +118,11 @@ public enum DS {
         public static let linkNS = readable(.systemIndigo, tints: tints)
         public static let errorTextNS = readable(.systemRed, tints: tints)
 
-        /// The backgrounds code text sits on in `appearance`: the text and window backgrounds, and
-        /// the text background under each of `tints`.
+        /// The contrast the text colors reach, above 4.5:1 by the rounding of 8-bit pixels.
+        public static let ratio = 4.6
+
+        /// The backgrounds code text sits on in `appearance`: the text and window backgrounds, then
+        /// each of `tints` laid over each of them as an sRGB window composites it.
         static func backgrounds(in appearance: NSAppearance, tints: [Tint]) -> [NSColor] {
             var colors: [NSColor] = []
             appearance.performAsCurrentDrawingAppearance {
@@ -128,14 +131,16 @@ public enum DS {
                 colors = [text, window]
                 for tint in tints {
                     guard let shade = tint.color.usingColorSpace(.sRGB) else { continue }
-                    colors.append(text.blended(withFraction: tint.opacity, of: shade) ?? text)
+                    for base in [text, window] {
+                        colors.append(base.blended(withFraction: tint.opacity, of: shade) ?? base)
+                    }
                 }
             }
             return colors
         }
 
-        /// `base` blended toward black (light) or white (dark) until it reaches 4.5:1 against every background.
-        static func readable(_ base: NSColor, tints: [Tint] = [], ratio: Double = 4.5) -> NSColor {
+        /// `base` blended toward black (light) or white (dark) until it reaches `ratio` against every background.
+        static func readable(_ base: NSColor, tints: [Tint] = [], ratio: Double = Code.ratio) -> NSColor {
             NSColor(name: nil) { appearance in
                 let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
                 var resolved = base

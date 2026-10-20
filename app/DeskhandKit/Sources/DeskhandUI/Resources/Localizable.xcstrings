@@ -2646,13 +2646,13 @@
         }
       }
     },
-    "debugger.closedShort.connection": {
+    "debugger.closedDetail.exitCode": {
       "extractionState": "manual",
       "localizations": {
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "연결이 끊겨 닫혔습니다"
+            "value": "종료 코드 %@"
           }
         }
       }
@@ -4842,6 +4842,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "선택한 호출 프레임의 위치를 다시 봅니다"
+          }
+        }
+      }
+    },
+    "debugger.source.closed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "닫힌 세션입니다"
           }
         }
       }

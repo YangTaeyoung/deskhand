@@ -32,8 +32,9 @@ enum SnapshotError: Error, CustomStringConvertible {
     }
 }
 
-/// Renders scenes offscreen: an `NSHostingView` in a borderless window placed off every display,
-/// drawn with `cacheDisplay(in:to:)`. Nothing is read back from the screen.
+/// Renders scenes offscreen: an `NSHostingView` in a borderless sRGB window placed off every
+/// display, drawn with `cacheDisplay(in:to:)` and written as sRGB, whatever the displays' color
+/// spaces. Nothing is read back from the screen.
 @MainActor
 enum SnapshotRenderer {
     private static let offscreenOrigin = CGPoint(x: -32_000, y: -32_000)
@@ -48,6 +49,7 @@ enum SnapshotRenderer {
             defer: false
         )
         window.isReleasedWhenClosed = false
+        window.colorSpace = .sRGB
         window.appearance = NSAppearance(named: appearance.name)
         defer { window.contentView = nil }
 
@@ -58,10 +60,13 @@ enum SnapshotRenderer {
         RunLoop.main.run(until: Date(timeIntervalSinceNow: settleInterval))
         host.layoutSubtreeIfNeeded()
 
-        guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
+        guard let cached = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
             throw SnapshotError.noBitmap(scene: scene.name)
         }
-        host.cacheDisplay(in: host.bounds, to: bitmap)
+        host.cacheDisplay(in: host.bounds, to: cached)
+        guard let bitmap = cached.converting(to: .sRGB, renderingIntent: .default) else {
+            throw SnapshotError.noBitmap(scene: scene.name)
+        }
 
         let coverage = opaqueCoverage(of: bitmap)
         guard coverage >= requiredCoverage else {

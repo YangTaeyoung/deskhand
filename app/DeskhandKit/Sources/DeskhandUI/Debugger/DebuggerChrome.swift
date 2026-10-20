@@ -55,12 +55,16 @@ enum DebugFormat {
         }
     }
 
-    /// The closed text of the session list: shorter, the remote PC left out.
-    static func closedShort(_ reason: DebugCloseReason?, exitCode: Int?, kind: DebugSessionKind?) -> String {
+    /// What the session list adds under a closed session's badge: the exit code, or that the
+    /// daemon no longer has it; nothing when the badge says it all.
+    static func closedDetail(_ reason: DebugCloseReason?, exitCode: Int?) -> String? {
         switch reason {
-        case .connectionLost: .ui("debugger.closedShort.connection", "연결이 끊겨 닫혔습니다")
-        case nil: .ui("debugger.closedShort.unknown", "데몬에 없는 세션입니다")
-        default: closed(reason, exitCode: exitCode, kind: kind)
+        case .processExited:
+            guard let exitCode else { return nil }
+            let code = String(exitCode)
+            return .ui("debugger.closedDetail.exitCode", "종료 코드 \(code)")
+        case nil: return .ui("debugger.closedShort.unknown", "데몬에 없는 세션입니다")
+        default: return nil
         }
     }
 

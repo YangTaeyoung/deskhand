@@ -88,8 +88,7 @@ struct SourcePanel: View {
                 SourceSkeleton()
             }
         } else if let session, session.isClosed {
-            DebugPanePlaceholder(symbol: "stop.circle",
-                                 title: DebugFormat.closed(session.info.closeKind, exitCode: session.info.exitCode, kind: session.info.sessionKind),
+            DebugPanePlaceholder(symbol: "stop.circle", title: String.ui("debugger.source.closed", "닫힌 세션입니다"),
                                  message: String.ui("debugger.source.closed.hint", "콘솔 기록은 남아 있습니다. 다시 디버그하려면 새 세션을 시작하세요."))
         } else if let session, session.awaitingState {
             if let targetID = session.selectedTargetID, let failure = session.stateFailures[targetID] {

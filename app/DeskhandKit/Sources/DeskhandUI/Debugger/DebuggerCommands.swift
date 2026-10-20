@@ -30,13 +30,15 @@ struct DebuggerCommandContext {
 enum DebuggerKeyHandler {
     static let escapeKeyCode: UInt16 = 53
 
-    /// Handles a key press in `window`, the window of the debugger tab, while it is key and shows
-    /// no sheet and the script navigator is closed: Esc hides the navigator laid over a narrow tab,
-    /// and the ⌘ alternates run their execution control. Returns true for an event it consumed;
-    /// an alternate is consumed even when its control does not apply now.
-    static func handle(_ event: NSEvent, model: DebuggerModel, enabled: Bool, window: NSWindow?) -> Bool {
-        guard event.window === window, window?.isKeyWindow ?? true, window?.attachedSheet == nil, !model.showsScriptNavigator,
-              model.sheet == nil else { return false }
+    /// Handles a key press in `window`, the window of the debugger tab, while it is the key window
+    /// (`keyWindow`) and shows no sheet and the script navigator is closed: Esc hides the navigator
+    /// laid over a narrow tab, and the ⌘ alternates run their execution control. Returns true for
+    /// an event it consumed; an alternate is consumed even when its control does not apply now. A
+    /// missing window consumes nothing.
+    static func handle(_ event: NSEvent, model: DebuggerModel, enabled: Bool, window: NSWindow?,
+                       keyWindow: NSWindow? = NSApp.keyWindow) -> Bool {
+        guard let window, let keyWindow, keyWindow === window, window.windowNumber > 0, event.windowNumber == window.windowNumber,
+              window.attachedSheet == nil, !model.showsScriptNavigator, model.sheet == nil else { return false }
         if event.keyCode == escapeKeyCode, model.navigatorOverlay {
             model.navigatorShown = false
             return true
