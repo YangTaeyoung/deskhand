@@ -72,6 +72,9 @@ type PairResult struct {
 type PairOptions struct {
 	// Force replaces the key of an agent that is already paired.
 	Force bool
+	// Port is the UDP port the agent listens on and its firewall rule
+	// opens; 0 means DefaultPort.
+	Port int
 }
 
 // ErrAlreadyPaired is returned when the PC already has an agent key and
@@ -114,6 +117,13 @@ func Pair(ctx context.Context, s SSH, name string, controller transport.Identity
 	if !validFingerprint(controller.Fingerprint) {
 		return PairResult{}, errors.New("컨트롤러 지문이 올바르지 않습니다. deskhand 데몬의 인증서를 다시 만드세요")
 	}
+	port := opt.Port
+	if port == 0 {
+		port = DefaultPort
+	}
+	if port < 1 || port > 65535 {
+		return PairResult{}, errors.New("port는 1~65535여야 합니다. 포트를 고쳐서 다시 실행하세요")
+	}
 
 	progress(StepProbe)
 	arch, err := probe(ctx, s)
@@ -131,7 +141,7 @@ func Pair(ctx context.Context, s SSH, name string, controller transport.Identity
 	}
 
 	progress(StepInit)
-	agentFP, err := initAgent(ctx, s, name, controller.Fingerprint, opt.Force)
+	agentFP, err := initAgent(ctx, s, name, controller.Fingerprint, port, opt.Force)
 	if err != nil {
 		return PairResult{}, err
 	}
@@ -151,7 +161,7 @@ func Pair(ctx context.Context, s SSH, name string, controller transport.Identity
 	if err != nil {
 		return PairResult{}, err
 	}
-	return PairResult{Name: name, Address: addr, Port: DefaultPort, AgentFingerprint: agentFP, OS: osName, Arch: remoteArch}, nil
+	return PairResult{Name: name, Address: addr, Port: port, AgentFingerprint: agentFP, OS: osName, Arch: remoteArch}, nil
 }
 
 func validFingerprint(fp string) bool {
@@ -229,9 +239,9 @@ func copyAgent(ctx context.Context, s SSH, local AgentFiles) error {
 	return s.Copy(ctx, local.Window, dir+`\`+windowName)
 }
 
-// initAgent runs `deskhand-agent init` and returns the agent fingerprint.
-// controllerFP must be 64 lowercase hex digits.
-func initAgent(ctx context.Context, s SSH, name, controllerFP string, force bool) (string, error) {
+// initAgent runs `deskhand-agent init` with --listen :port and returns the
+// agent fingerprint. controllerFP must be 64 lowercase hex digits.
+func initAgent(ctx context.Context, s SSH, name, controllerFP string, port int, force bool) (string, error) {
 	if !validFingerprint(controllerFP) {
 		return "", errors.New("컨트롤러 지문이 올바르지 않습니다. deskhand 데몬의 인증서를 다시 만드세요")
 	}
@@ -240,7 +250,7 @@ func initAgent(ctx context.Context, s SSH, name, controllerFP string, force bool
 	b.WriteString(tempDirSetup + tempExe)
 	b.WriteString("$ErrorActionPreference = 'Continue'\n")
 	fmt.Fprintf(&b, "$name = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(%s))\n", psQuote(nameB64))
-	fmt.Fprintf(&b, "& $exe init --name $name --controller-fp %s", psQuote(controllerFP))
+	fmt.Fprintf(&b, "& $exe init --name $name --controller-fp %s --listen %s", psQuote(controllerFP), psQuote(fmt.Sprintf(":%d", port)))
 	if force {
 		b.WriteString(" --force")
 	}

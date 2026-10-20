@@ -308,14 +308,15 @@ func pairError(err error, started bool, name, alias string) *apierr.Error {
 }
 
 // pair runs install.Pair for the host with progress events and an install
-// job; the job is finished with the outcome.
-func (r *Registry) pair(ctx context.Context, hostID, name, alias, summary string, force bool, c model.Caller) (install.PairResult, model.Job, error) {
-	job, err := r.opt.Jobs.Create(hostID, jobs.KindInstall, "", summary, map[string]any{"name": name, "ssh": alias, "force": force})
+// job, with the agent listening on port (0 means install.DefaultPort); the
+// job is finished with the outcome.
+func (r *Registry) pair(ctx context.Context, hostID, name, alias, summary string, port int, force bool, c model.Caller) (install.PairResult, model.Job, error) {
+	job, err := r.opt.Jobs.Create(hostID, jobs.KindInstall, "", summary, map[string]any{"name": name, "ssh": alias, "force": force, "port": port})
 	if err != nil {
 		return install.PairResult{}, model.Job{}, err
 	}
 	p := &progress{bus: r.opt.Bus, hostID: hostID, jobID: job.JobID, name: name}
-	res, err := install.Pair(ctx, r.ssh(alias), name, r.opt.Identity, r.opt.AgentFiles, p.step, install.PairOptions{Force: force})
+	res, err := install.Pair(ctx, r.ssh(alias), name, r.opt.Identity, r.opt.AgentFiles, p.step, install.PairOptions{Force: force, Port: port})
 	if err != nil {
 		e := pairError(err, p.current != "", name, alias)
 		p.fail(e)
@@ -358,7 +359,7 @@ func (r *Registry) Add(ctx context.Context, p AddParams, c model.Caller) (model.
 	}
 	hostID := r.hostID(p.Name)
 	summary := "PC 추가: " + p.Name
-	res, job, err := r.pair(ctx, hostID, p.Name, p.SSH, summary, p.Force, c)
+	res, job, err := r.pair(ctx, hostID, p.Name, p.SSH, summary, p.Port, p.Force, c)
 	if err != nil {
 		return model.Host{}, job, err
 	}
@@ -366,9 +367,6 @@ func (r *Registry) Add(ctx context.Context, p AddParams, c model.Caller) (model.
 		OS: res.OS, Arch: res.Arch, SSHAlias: p.SSH, CreatedAt: time.Now()}
 	if p.Address != "" {
 		row.Address = p.Address
-	}
-	if p.Port > 0 {
-		row.Port = p.Port
 	}
 	if err := r.opt.Store.PutHost(row); err != nil {
 		e := apierr.Internal(fmt.Sprintf("페어링한 PC를 저장하지 못했습니다(%v). 데몬 로그를 확인하고 deskhand host repair %s을 실행하세요", err, p.Name))
@@ -399,7 +397,7 @@ func (r *Registry) Repair(ctx context.Context, ref string, c model.Caller) (mode
 	r.pairMu.Lock()
 	defer r.pairMu.Unlock()
 	summary := "PC 다시 페어링: " + row.Name
-	res, job, err := r.pair(ctx, row.HostID, row.Name, row.SSHAlias, summary, true, c)
+	res, job, err := r.pair(ctx, row.HostID, row.Name, row.SSHAlias, summary, row.Port, true, c)
 	if err != nil {
 		return model.Host{}, job, err
 	}

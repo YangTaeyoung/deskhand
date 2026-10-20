@@ -3,6 +3,7 @@ package install
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -206,6 +207,33 @@ func TestPairForcePassesForceToInit(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("init did not receive --force")
+	}
+}
+
+func TestPairListensOnTheRequestedPort(t *testing.T) {
+	for _, tc := range []struct {
+		port, want int
+	}{{0, 47600}, {47611, 47611}} {
+		f := newFake()
+		res, _, _, err := pair(t, f, PairOptions{Port: tc.port})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Port != tc.want {
+			t.Fatalf("port %d: result port %d", tc.port, res.Port)
+		}
+		found := false
+		for _, c := range f.calls {
+			if strings.Contains(c.stdin, "& $exe init ") && strings.Contains(c.stdin, fmt.Sprintf(" --listen ':%d'", tc.want)) {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("port %d: init did not get --listen :%d", tc.port, tc.want)
+		}
+	}
+	if _, _, _, err := pair(t, newFake(), PairOptions{Port: 70000}); err == nil {
+		t.Fatal("port 70000 was accepted")
 	}
 }
 
@@ -413,7 +441,7 @@ func TestInitPassesTheNameAsOneArgument(t *testing.T) {
 	if _, _, _, err := pair(t, f); err != nil {
 		t.Fatal(err)
 	}
-	want := "& $exe init --name $name --controller-fp '" + testFP + "'\nexit $LASTEXITCODE"
+	want := "& $exe init --name $name --controller-fp '" + testFP + "' --listen ':47600'\nexit $LASTEXITCODE"
 	for _, c := range f.calls {
 		if strings.Contains(c.stdin, want) {
 			return
@@ -425,7 +453,7 @@ func TestInitPassesTheNameAsOneArgument(t *testing.T) {
 func TestInitAgentRejectsABadControllerFingerprint(t *testing.T) {
 	for _, fp := range []string{strings.Repeat("A", 64), strings.Repeat("a", 63), strings.Repeat("a", 62) + "' ", ""} {
 		f := newFake()
-		if _, err := initAgent(context.Background(), f.ssh(), "pc", fp, false); err == nil || len(f.calls) != 0 {
+		if _, err := initAgent(context.Background(), f.ssh(), "pc", fp, DefaultPort, false); err == nil || len(f.calls) != 0 {
 			t.Fatalf("fingerprint %q: err = %v, calls = %d", fp, err, len(f.calls))
 		}
 	}

@@ -33,6 +33,7 @@ type fakeSSH struct {
 	sshDown    bool
 	forcedInit bool
 	uninstalls []string
+	inits      []string
 }
 
 // exitCode is an error with an exit code, like *exec.ExitError.
@@ -61,6 +62,7 @@ func (f *fakeSSH) run(_ context.Context, name string, args []string, stdin strin
 	case strings.Contains(stdin, "deskhand-short="):
 		return "deskhand-short=C:\\Temp\\deskhand-install\n", "", nil
 	case strings.Contains(stdin, "& $exe init "):
+		f.inits = append(f.inits, stdin)
 		if f.paired && !strings.Contains(stdin, "--force") {
 			return "", "key exists\n", exitCode(4)
 		}
@@ -190,6 +192,32 @@ func TestAddPairsStoresAndConnects(t *testing.T) {
 	_, _, err = fx.r.Add(context.Background(), AddParams{Name: "Windows Dev", SSH: "windows"}, model.System)
 	if e := apierr.As(err); e == nil || e.Code != wire.CodeInvalidArgument {
 		t.Fatalf("second add with the same name: %v", err)
+	}
+}
+
+func TestAddAndRepairPairOnTheHostPort(t *testing.T) {
+	fx := newFixture(t, nil)
+	h, _, err := fx.r.Add(context.Background(), AddParams{Name: "pc", SSH: "windows", Port: 47611}, model.System)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, _ := fx.st.GetHost("pc")
+	if h.Port != 47611 || row.Port != 47611 {
+		t.Fatalf("host port %d, stored %d", h.Port, row.Port)
+	}
+	if _, _, err := fx.r.Repair(context.Background(), "pc", model.System); err != nil {
+		t.Fatal(err)
+	}
+	if len(fx.ssh.inits) != 2 {
+		t.Fatalf("%d init scripts", len(fx.ssh.inits))
+	}
+	for i, script := range fx.ssh.inits {
+		if !strings.Contains(script, " --listen ':47611'") {
+			t.Fatalf("init %d does not listen on 47611: %q", i, script)
+		}
+	}
+	if row, _ := fx.st.GetHost("pc"); row.Port != 47611 {
+		t.Fatalf("stored port after repair %d", row.Port)
 	}
 }
 
@@ -323,6 +351,28 @@ func TestDoctorReportsEveryCheck(t *testing.T) {
 	checks, _ = fx.r.Doctor(context.Background(), "pc")
 	if checks[0].Status != "fail" || checks[5].Status != "skip" {
 		t.Fatalf("checks without SSH %+v", checks)
+	}
+}
+
+func TestDoctorWarnsWhenTheFirewallRuleOpensAnotherPort(t *testing.T) {
+	fx := newFixture(t, nil)
+	if err := fx.st.PutHost(store.Host{HostID: "pc", Name: "pc", Address: "192.168.0.20", Port: 47611, AgentFP: agentFP,
+		SSHAlias: "windows", CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ rule, want string }{
+		{"deskhand-fw enabled=True port=47611", model.CheckPass},
+		{"deskhand-fw enabled=True port=47600", model.CheckWarn},
+	} {
+		fx.ssh.firewall = tc.rule
+		checks, err := fx.r.Doctor(context.Background(), "pc")
+		if err != nil {
+			t.Fatal(err)
+		}
+		fw := checks[len(checks)-1]
+		if fw.ID != CheckFirewall || fw.Status != tc.want || (tc.want == model.CheckWarn && (!strings.Contains(fw.Detail, "47600") || fw.Fix == "")) {
+			t.Fatalf("rule %q: check %+v", tc.rule, fw)
+		}
 	}
 }
 

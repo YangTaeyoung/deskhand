@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,7 +31,7 @@ const sshCheckTimeout = 20 * time.Second
 
 const (
 	sshProbeScript   = "Write-Output 'deskhand-ok'"
-	firewallScript   = "$r = Get-NetFirewallRule -DisplayName 'Deskhand Agent' -ErrorAction SilentlyContinue | Select-Object -First 1\nif ($r) { Write-Output ('deskhand-fw enabled=' + $r.Enabled) } else { Write-Output 'deskhand-fw none' }"
+	firewallScript   = "$r = Get-NetFirewallRule -DisplayName 'Deskhand Agent' -ErrorAction SilentlyContinue | Select-Object -First 1\nif ($r) { Write-Output ('deskhand-fw enabled=' + $r.Enabled + ' port=' + ($r | Get-NetFirewallPortFilter).LocalPort) } else { Write-Output 'deskhand-fw none' }"
 	firewallRuleName = "Deskhand Agent"
 )
 
@@ -110,7 +111,7 @@ func (r *Registry) Doctor(ctx context.Context, ref string) ([]model.Check, error
 	}
 
 	r.sessionCheck(ctx, h, connected, add)
-	r.firewallCheck(ctx, row.SSHAlias, sshOK, repair, add)
+	r.firewallCheck(ctx, row.SSHAlias, row.Port, sshOK, repair, add)
 	return checks, nil
 }
 
@@ -198,7 +199,10 @@ func (r *Registry) sessionCheck(ctx context.Context, h *conn.Host, connected boo
 	}
 }
 
-func (r *Registry) firewallCheck(ctx context.Context, alias string, sshOK bool, repair string, add func(id, status, detail, fix string)) {
+// firewallCheck reads the agent's firewall rule over SSH: it passes when the
+// rule is enabled and opens port, and warns when it is disabled or opens
+// another port.
+func (r *Registry) firewallCheck(ctx context.Context, alias string, port int, sshOK bool, repair string, add func(id, status, detail, fix string)) {
 	if !sshOK {
 		add(CheckFirewall, model.CheckSkip, "SSH가 되지 않아 방화벽 규칙을 확인하지 못했습니다", "ssh_reachable 항목을 먼저 해결하세요")
 		return
@@ -210,10 +214,30 @@ func (r *Registry) firewallCheck(ctx context.Context, alias string, sshOK bool, 
 	case err != nil:
 		add(CheckFirewall, model.CheckFail, "방화벽 규칙을 읽지 못했습니다: "+firstLine(stderr, err), "PC에서 PowerShell Get-NetFirewallRule이 되는지 확인하세요")
 	case strings.Contains(out, "deskhand-fw enabled=True"):
+		if rp := ruleField(out, "port"); rp != "" && port > 0 && rp != strconv.Itoa(port) {
+			add(CheckFirewall, model.CheckWarn, fmt.Sprintf("방화벽 규칙 '%s'이 UDP %s를 열지만 에이전트 포트는 %d입니다", firewallRuleName, rp, port), repair)
+			return
+		}
 		add(CheckFirewall, model.CheckPass, fmt.Sprintf("방화벽 규칙 '%s'이 켜져 있습니다", firewallRuleName), "")
 	case strings.Contains(out, "deskhand-fw enabled="):
 		add(CheckFirewall, model.CheckWarn, fmt.Sprintf("방화벽 규칙 '%s'이 꺼져 있습니다", firewallRuleName), repair)
 	default:
 		add(CheckFirewall, model.CheckFail, fmt.Sprintf("방화벽 규칙 '%s'이 없습니다", firewallRuleName), repair)
 	}
+}
+
+// ruleField returns the value of key in the deskhand-fw line of out.
+func ruleField(out, key string) string {
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "deskhand-fw ") {
+			continue
+		}
+		for _, f := range strings.Fields(line) {
+			if v, ok := strings.CutPrefix(f, key+"="); ok {
+				return v
+			}
+		}
+	}
+	return ""
 }

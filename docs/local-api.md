@@ -36,7 +36,8 @@
 | 메서드 | 파라미터 | 결과 |
 |---|---|---|
 | `host.list` | — | `hosts`: [{`host_id`, `name`, `os`, `arch`, `address`, `state`(연결 상태), `caps`, `session`, `owner`, `last_seen`}] |
-| `host.add` | `name`, `ssh`(별칭), `address`(선택), `port`, `force`(선택) | 설치·페어링 job(진행 이벤트 `host.install.progress`) |
+| `host.add` | `name`, `ssh`(별칭), `address`(선택), `port`(선택, 기본 47600: 에이전트가 듣는 UDP 포트이자 방화벽 규칙이 여는 포트), `force`(선택) | 설치·페어링 job(진행 이벤트 `host.install.progress`) |
+| `host.repair` | `host_id` | 저장된 `port`로 다시 설치·페어링하는 job |
 | `host.remove` | `host_id`, `uninstall`(bool) | — |
 | `host.doctor` | `host_id` | 항목별 `checks`: [{`id`, `status`(`pass`/`fail`/`warn`/`skip`), `detail`, `fix`}] |
 | `host.connect` / `host.disconnect` | `host_id` | 연결 상태 |
@@ -172,7 +173,7 @@
 | `transfer.updated` | `transfer`(Transfer) |
 
 - `timeline.list{host_id, since?, limit?}` 결과: `{entries: [TimelineEntry], next_cursor?}`(최신순).
-- `host.doctor` 항목 `id`: `ssh_reachable`, `agent_version`, `quic_connect`, `fingerprint`, `session`, `firewall_rule`.
+- `host.doctor` 항목 `id`: `ssh_reachable`, `agent_version`, `quic_connect`, `fingerprint`, `session`, `firewall_rule`(규칙이 꺼져 있거나 호스트 `port`가 아닌 포트를 열면 `warn`).
 
 ## 7. 오류와 결과 규칙
 
