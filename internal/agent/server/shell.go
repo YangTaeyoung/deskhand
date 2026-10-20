@@ -237,7 +237,8 @@ func (s *Server) execRun(ctx context.Context, req proto.Message) (proto.Message,
 		return nil, err
 	}
 	stdout, stderr := newRing(runStreamBytes), newRing(runStreamBytes)
-	c.Stdout, c.Stderr = stdout, stderr
+	var flushOutput func()
+	c.Stdout, c.Stderr, flushOutput = consoleOutput(consoleDecoder(), stdout, stderr)
 	// The child reads the stdin text from a pipe that ends after it; without
 	// the field the pipe is at end-of-file from the start.
 	c.Stdin = strings.NewReader(req.String("stdin"))
@@ -256,6 +257,7 @@ func (s *Server) execRun(ctx context.Context, req proto.Message) (proto.Message,
 	})
 	stopOnClose := context.AfterFunc(ctx, func() { _ = killTree(pid) })
 	_ = c.Wait()
+	flushOutput()
 	timer.Stop()
 	stopOnClose()
 

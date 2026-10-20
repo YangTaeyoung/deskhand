@@ -294,7 +294,8 @@ func (s *Server) execStart(_ context.Context, req proto.Message) (proto.Message,
 		err:     newRing(jobBufferBytes),
 		done:    make(chan struct{}),
 	}
-	c.Stdout, c.Stderr = j.out, j.err
+	var flushOutput func()
+	c.Stdout, c.Stderr, flushOutput = consoleOutput(consoleDecoder(), j.out, j.err)
 	if err := s.jobs.reserve(j); err != nil {
 		return nil, err
 	}
@@ -319,6 +320,7 @@ func (s *Server) execStart(_ context.Context, req proto.Message) (proto.Message,
 	go s.flushJob(j)
 	go func() {
 		_ = c.Wait()
+		flushOutput()
 		code := -1
 		if c.ProcessState != nil {
 			code = c.ProcessState.ExitCode()
