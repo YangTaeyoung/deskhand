@@ -53,7 +53,8 @@ Playbook:
 3. Every result keeps the daemon envelope: status, action.executed, action.outcome, error, next_action, job_id.
 4. status "unknown" or action.outcome "unknown" means the PC may or may not have done it. Never resend blindly: check with job_get (job_id) or session_inspect, then files_stat / proc_list, and only then retry.
 5. Long commands: exec_start, then job_output (use next_cursor) and job_get; job_cancel stops it.
-6. files_read returns at most 256 KiB of base64 per call; page with offset and length.
+6. files_read returns at most 256 KiB of base64 per call; page with offset and length. files_list returns one page; pass next_cursor back as cursor for the next page.
+   Copying between this Mac and the PC is files_push / files_pull / files_move; they return at once with transfer_id and job_id, then poll transfer_get until state is done, failed or cancelled. For a move, transfer_get's source field says whether the source was trashed (PC), deleted (Mac) or retained.
 7. Failures come back as tool errors (IsError) whose structured content always has top-level code, message, retryable and next_action; failed envelopes keep their full envelope as well. CONTROL_HELD_BY_HUMAN means a person is using the PC: wait for them, do not retry in a loop.
 8. Screen and input control tools arrive in a later version.`
 
@@ -72,6 +73,7 @@ func New(version string, dial Dialer) *mcp.Server {
 	s.registerHosts(srv)
 	s.registerExec(srv)
 	s.registerFiles(srv)
+	s.registerTransfer(srv)
 	s.registerProc(srv)
 	return srv
 }
@@ -123,6 +125,8 @@ type spec struct {
 	Extra map[string]any
 	// Timeout returns the call timeout for the params.
 	Timeout func(params map[string]any) time.Duration
+	// Prepare rewrites the params after Extra is added.
+	Prepare func(params map[string]any)
 }
 
 // add registers a tool whose input is In and whose call is described by sp.
@@ -142,6 +146,9 @@ func add[In any](s *Server, srv *mcp.Server, name, desc string, sp spec, tweak f
 			}
 			for k, v := range sp.Extra {
 				params[k] = v
+			}
+			if sp.Prepare != nil {
+				sp.Prepare(params)
 			}
 			return s.invoke(ctx, req, name, sp, params), nil, nil
 		})

@@ -442,7 +442,7 @@ func TestJobsWatchFollowsCursor(t *testing.T) {
 }
 
 func TestFilesRmTrashesByDefault(t *testing.T) {
-	f := startFake(t, map[string]handler{"files.trash": ok(envelope("succeeded", nil)), "files.delete": ok(envelope("succeeded", nil))})
+	f := startFake(t, map[string]handler{"files.trash": ok(envelope("succeeded", map[string]any{"trashed": true})), "files.delete": ok(envelope("succeeded", map[string]any{"deleted": true}))})
 	r := runCLI(t, false, "", "files", "rm", `pc1:C:\old\a b.txt`)
 	if r.code != 0 || len(f.called("files.trash")) != 1 || len(f.called("files.delete")) != 0 {
 		t.Fatalf("code %d trash %v delete %v", r.code, f.called("files.trash"), f.called("files.delete"))
@@ -453,7 +453,7 @@ func TestFilesRmTrashesByDefault(t *testing.T) {
 }
 
 func TestFilesRmPermanentNeedsConfirmation(t *testing.T) {
-	f := startFake(t, map[string]handler{"files.delete": ok(envelope("succeeded", nil))})
+	f := startFake(t, map[string]handler{"files.delete": ok(envelope("succeeded", map[string]any{"deleted": true}))})
 	r := runCLI(t, false, "", "files", "rm", "--permanent", "pc1:C:\\x")
 	if r.code != exitUsage || len(f.called("files.delete")) != 0 || !strings.Contains(r.err, "--yes") {
 		t.Fatalf("non-interactive: code %d stderr %q", r.code, r.err)

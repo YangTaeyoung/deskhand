@@ -8,12 +8,23 @@ import (
 // maxReadBytes is the most files_read returns per call.
 const maxReadBytes = 262144
 
+// maxListLimit is the most entries files_list returns per page.
+const maxListLimit = 5000
+
 // maxWriteBase64 is the longest base64 data of one files_write call.
 const maxWriteBase64 = 1048576
 
 type pathInput struct {
 	Host string `json:"host" jsonschema:"Host: host_id or name from hosts_list."`
 	Path string `json:"path" jsonschema:"Absolute Windows path, for example C:\\Users\\me\\notes.txt."`
+}
+
+type listInput struct {
+	Host      string `json:"host" jsonschema:"Host: host_id or name from hosts_list."`
+	Path      string `json:"path" jsonschema:"Absolute Windows path of the folder, for example C:\\Users\\me."`
+	Recursive bool   `json:"recursive,omitempty" jsonschema:"Also list the contents of subfolders; names are then relative paths."`
+	Cursor    string `json:"cursor,omitempty" jsonschema:"next_cursor of the previous page; leave empty for the first page."`
+	Limit     int    `json:"limit,omitempty" jsonschema:"Entries per page; default 500, maximum 5000."`
 }
 
 type statInput struct {
@@ -53,8 +64,12 @@ type deleteInput struct {
 }
 
 func (s *Server) registerFiles(srv *mcp.Server) {
-	add[pathInput](s, srv, "files_list", "List the entries of a folder on the PC (name, path, dir, size, mtime). Example path: C:\\Users\\me.",
-		spec{Method: "files.list"}, nil)
+	add[listInput](s, srv, "files_list", "List one page of the entries of a folder on the PC (name, path, dir, size, mtime), folders first and then by name without regard to case. Returns up to limit entries (default 500, maximum 5000), total, and next_cursor when more entries follow; pass next_cursor back as cursor for the next page. Example path: C:\\Users\\me.",
+		spec{Method: "files.list"}, func(s *jsonschema.Schema) {
+			one, max := 1.0, float64(maxListLimit)
+			s.Properties["limit"].Minimum = &one
+			s.Properties["limit"].Maximum = &max
+		})
 	add[statInput](s, srv, "files_stat", "Tell whether a path exists and whether it is a file or folder, with size and optional SHA-256. Use it to verify the result of a write, move or delete, especially after an unknown outcome.",
 		spec{Method: "files.stat"}, nil)
 	add[readInput](s, srv, "files_read",
@@ -75,7 +90,7 @@ func (s *Server) registerFiles(srv *mcp.Server) {
 		})
 	add[pathInput](s, srv, "files_mkdir", "Create a folder (and missing parents) on the PC.",
 		spec{Method: "files.mkdir", Mutating: true}, nil)
-	add[moveInput](s, srv, "files_move", "Move or rename a file or folder on the PC.",
+	add[moveInput](s, srv, "files_rename", "Rename or move a file or folder inside the PC (same host, full paths). To move between this Mac and the PC use files_move.",
 		spec{Method: "files.rename", Mutating: true}, nil)
 	add[deleteInput](s, srv, "files_delete", "Permanently delete a file or folder on the PC. This cannot be undone; there is no recycle bin.",
 		spec{Method: "files.delete", Mutating: true, Extra: map[string]any{"permanent": true}}, nil)

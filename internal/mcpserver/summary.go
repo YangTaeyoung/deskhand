@@ -22,6 +22,7 @@ var nextActionHints = map[string]string{
 	"host_add_force": "the PC's agent is paired with another controller; ask the user to run `deskhand host add <name> --ssh <alias> --force`",
 	"host_connect":   "the PC is unreachable; run host_doctor and ask the user to check it is on",
 	"host_doctor":    "run host_doctor to find the cause",
+	"transfer_get":   "the transfer runs in the background; call transfer_get with its transfer_id until state is done, failed or cancelled",
 	"retry":          "retry the same call shortly",
 	"fix_params":     "fix the arguments and call again",
 	"human_release":  "a person controls the PC; wait for them to release control and do not retry in a loop",
@@ -90,6 +91,7 @@ func success(tool string, sp spec, params map[string]any, res any) *mcp.CallTool
 		}
 		out.StructuredContent = m
 	}
+	annotate(tool, m)
 	var lines []string
 	status := str(m, "status")
 	errObj, _ := m["error"].(map[string]any)
@@ -232,6 +234,30 @@ func detail(tool string, params, m map[string]any) string {
 			s += "\noutput:\n" + clip(b.String())
 		}
 		return s
+	case "files_push", "files_pull", "files_move":
+		if id := str(m, "transfer_id"); id != "" {
+			return "transfer_id: " + id + " (started; copy runs in the background)"
+		}
+		return "the transfer was not started; nothing was copied"
+	case "transfer_get", "transfer_pause", "transfer_resume", "transfer_cancel":
+		return transferText(m)
+	case "transfer_list":
+		ts, _ := m["transfers"].([]any)
+		var parts []string
+		for _, t := range ts {
+			tm, _ := t.(map[string]any)
+			parts = append(parts, fmt.Sprintf("%v %v %v", tm["transfer_id"], tm["direction"], tm["state"]))
+		}
+		return fmt.Sprintf("%d transfers: %s", len(ts), strings.Join(parts, "; "))
+	case "files_copy":
+		return fmt.Sprintf("outcome=%v copied=%v path=%v", m["outcome"], m["copied"], m["path"])
+	case "files_trash":
+		if t, _ := m["trashed"].(bool); t {
+			return "trashed=true: the item is in the Recycle Bin"
+		}
+		return "trashed=false: nothing was removed"
+	case "files_hash":
+		return fmt.Sprintf("sha256=%v size=%v", m["sha256"], m["size"])
 	case "files_list":
 		entries, _ := m["entries"].([]any)
 		var names []string
@@ -247,7 +273,11 @@ func detail(tool string, params, m map[string]any) string {
 			}
 			names = append(names, n)
 		}
-		return fmt.Sprintf("%d entries in %v: %s", len(entries), m["path"], strings.Join(names, ", "))
+		out := fmt.Sprintf("%d entries in %v: %s", len(entries), m["path"], strings.Join(names, ", "))
+		if c := str(m, "next_cursor"); c != "" {
+			out += fmt.Sprintf("; total %v, more follow: pass next_cursor as cursor", m["total"])
+		}
+		return out
 	case "files_stat":
 		return fmt.Sprintf("exists=%v dir=%v size=%v", m["exists"], m["dir"], m["size"])
 	case "files_read":

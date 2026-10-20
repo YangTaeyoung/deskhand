@@ -31,14 +31,19 @@ type App struct {
 	Version string
 	// Interactive reports whether a person can answer a prompt on stdin.
 	Interactive func() bool
-	// PollInterval is the wait between two polls of `jobs watch`.
+	// PollInterval is the wait between two polls of `jobs watch` and of a
+	// followed transfer.
 	PollInterval time.Duration
+	// Progress reports whether stderr is a terminal that can show a
+	// progress bar.
+	Progress func() bool
 }
 
 // New returns an App on the process's standard streams.
 func New(version string) *App {
 	return &App{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Version: version,
-		Interactive: stdinIsTerminal, PollInterval: 500 * time.Millisecond}
+		Interactive: stdinIsTerminal, PollInterval: 500 * time.Millisecond,
+		Progress: func() bool { return fileIsTerminal(os.Stderr) }}
 }
 
 // run is the state of one invocation: the App and the global flags.
@@ -62,7 +67,11 @@ const usageText = `사용법: deskhand [--json] [--quiet] <명령> ...
   host add|list|remove|doctor|repair   PC 등록과 점검
   exec <호스트> [옵션] -- <명령...>      원격 명령 실행
   jobs list|watch|cancel               작업 조회
-  files ls|stat|cat|mkdir|mv|rm        원격 파일 (<호스트>:<경로>)
+  files ls|stat|cat|mkdir|mv|rm|cp|trash|hash
+                                       원격 파일 (<호스트>:<경로>)
+  files push|pull|move                 Mac과 PC 사이 파일 전송
+  transfer list|get|watch|pause|resume|cancel
+                                       전송 조회와 제어
   proc ls|kill                         원격 프로세스
   daemon run|start|stop|status         데몬 관리
   mcp                                  MCP 서버(표준 입출력, AI 에이전트용)
@@ -90,6 +99,8 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		code = r.jobs(ctx, args[1:])
 	case "files":
 		code = r.files(ctx, args[1:])
+	case "transfer":
+		code = r.transfer(ctx, args[1:])
 	case "proc":
 		code = r.proc(ctx, args[1:])
 	case "daemon":

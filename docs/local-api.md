@@ -90,7 +90,7 @@
 | `files.copy{host_id, from, to, on_conflict?, recursive?}` | 봉투 + `path`(복사본의 실제 경로), `copied`(파일 수), `outcome`(`written`/`skipped`/`renamed`). `on_conflict`는 `fail`(기본)/`replace`/`skip`/`rename`, 규칙은 [protocol.md §3.1](protocol.md#31-op-목록) `fs.copy` |
 | `files.trash{host_id, path}` | 봉투 + `trashed`(없는 경로면 false). 휴지통이 받지 않는 항목은 옮기지 않고 `failed` + `CAPABILITY_UNSUPPORTED`(영구 삭제로 대신하지 않는다. 영구 삭제는 `files.delete{permanent:true}`). 셸이 성공을 보고했는데 휴지통에 항목이 없으면 `failed` + `INTERNAL` |
 | `files.hash{host_id, path, offset?, length?}` | 봉투 + `sha256`, `offset`, `length`(읽은 바이트 수), `size`(파일 크기). `length` 0이면 끝까지 |
-| `files.move` / `files.rename` / `files.mkdir` / `files.delete{permanent:true}` | 봉투 |
+| `files.rename` / `files.mkdir` / `files.delete{permanent:true}` | 봉투. `files.delete` 결과는 `deleted`. Mac과 PC 사이 이동은 `transfer.start{direction:"move_push"/"move_pull"}`(§8)다 |
 | `transfer.start{direction:"push"|"pull"|"move_push"|"move_pull", host_id, local, remote, on_conflict}` | `transfer_id` |
 | `transfer.list` / `transfer.get{transfer_id}` | 전송 목록(파일 수·바이트 합계) / TransferDetail(파일별 상태) — §8 |
 | `transfer.pause` / `transfer.resume` / `transfer.cancel` | TransferDetail(§8) |
@@ -215,6 +215,7 @@
 - 원본 지문은 계획 때 잡은 크기·수정 시각(push는 sha256도)이다. 전송 중에 원본이 바뀌면 그 파일만 `TRANSFER_CONFLICT`로 실패하고 대상은 그대로다. `transfer.resume`은 실패한 파일의 지문을 다시 잡는다.
 - 전송 `outcome`: 파일이 모두 같은 결과면 그 값, 섞이면 `written`. 일부 파일이 실패하면 `state:"failed"` + `partial`, 모두 실패하면 `failed`. `transfer.resume`은 끝난 파일을 다시 보내지 않는다.
 - 이동(`move_*`)은 모든 파일이 반영·검증된 뒤에만 원본을 지운다: PC의 원본은 휴지통(`fs.trash`)으로, 이 Mac의 원본은 지운다. 폴더는 원본 폴더의 항목이 계획 때와 같을 때만 통째로 지운다. 원본을 남기면(삭제 실패, 바뀌거나 새로 생긴 항목, 건너뛴 파일) `state:"done"` + `outcome:"copied_source_retained"` + `error`(남긴 이유)다.
+- 이동의 원본 행방은 전송 상태에서 정해진다: `done`이고 `outcome`이 `copied_source_retained`가 아니면 원본이 정리됐고(`move_pull` 휴지통, `move_push` 삭제), 그 밖의 끝난 상태(`failed`·`cancelled`·`copied_source_retained`)는 원본이 남아 있다. CLI `--json`과 MCP 구조화 결과는 이를 `source`(`trashed`/`deleted`/`retained`, 진행 중은 `pending`, 이동이 아니면 없음)로 덧붙인다. 데몬 응답에는 이 필드가 없다.
 - 취소하면 끝난 파일은 남고 나머지 파일은 `cancelled`이며 임시 파일은 지운다(PC가 연결돼 있지 않으면 다음 연결 때). `transfer.pause`는 끝난 전송에, `transfer.resume`·`transfer.cancel`은 `done` 전송에 JSON-RPC `INVALID_ARGUMENT`이고(멈추는 사이에 그렇게 끝난 전송도 같다), 이미 그 상태인 전송은 그대로 돌려준다. 이동이 받은 쪽 검증을 마치고 원본을 정리하기 시작하면 `transfer.pause`·`transfer.cancel`은 `INVALID_ARGUMENT`("원본 정리 중")이고 그 이동은 끝까지 간다.
 - 끝난(`done`·`failed`·`cancelled`) 지 30일이 지났고 PC에 임시 파일이 남지 않은 전송은 데몬이 시작할 때와 24시간마다 파일 기록·job과 함께 지운다.
 - pull은 이 Mac의 `<대상>.deskhand-part-<transfer_id>`(숨김 플래그)에 받아 PC가 계산한 sha256과 맞춘 뒤 이름을 바꾼다. 충돌 정책과 `이름 (1).확장자` 규칙은 PC 쪽(protocol.md §3.1)과 같다. 옮기는 메타데이터는 내용과 수정 시각뿐이다. 폴더 안의 링크·특수 파일은 옮기지 않고 그 항목만 `INVALID_ARGUMENT`로 실패한다. 폴더 안 이름에 빈 원소·`.`·`..`·`\`가 있거나, Windows로 보낼 때 Windows가 받지 못하는 이름(`< > : " | ? *`·제어 문자, 점이나 공백으로 끝남, `CON`·`NUL`·`COM1` 같은 장치 이름 — 확장자가 붙어도)이면 그 항목만 `INVALID_ARGUMENT`이고, Windows로 보낼 때와 대소문자를 가리지 않는 Mac 볼륨으로 받을 때 대소문자만 다른 두 이름은 뒤의 것이 `TRANSFER_CONFLICT`다. PC가 읽지 못한 항목이 있는 폴더의 pull은 `PERMISSION_DENIED`로 실패한다.
