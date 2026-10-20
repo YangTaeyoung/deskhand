@@ -327,7 +327,7 @@ var errClosed = apierr.New(wire.CodeOffline, "데몬과의 연결이 끊겼습�
 
 // IsConnectionLost reports whether err is the loss of the daemon connection
 // during a call.
-func IsConnectionLost(err error) bool { return err == errClosed }
+func IsConnectionLost(err error) bool { return errors.Is(err, errClosed) }
 
 // Call sends method with params and decodes the result into out (when not
 // nil). A daemon error is an *Error.

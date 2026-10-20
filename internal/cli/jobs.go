@@ -2,10 +2,13 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/client"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/apierr"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
 )
 
@@ -74,10 +77,12 @@ func (r *run) jobsCancel(ctx context.Context, args []string) int {
 	if err != nil {
 		return r.failMut(err, "")
 	}
-	code := r.settle(res, "작업 취소")
-	if code == exitOK || res.str("status") == model.StatusCancelled {
+	if r.asJSON {
+		writeJSON(r.Stdout, res)
+	}
+	code := r.statusExit(res, "작업 취소", allowCancelled)
+	if code == exitOK {
 		r.say("작업 %s를 취소했습니다", pos[0])
-		return exitOK
 	}
 	return code
 }
@@ -98,7 +103,8 @@ func (r *run) jobsWatch(ctx context.Context, args []string) int {
 		return r.fail(err)
 	}
 	defer c.Close()
-	return r.follow(ctx, c, pos[0], *jsonl || r.asJSON)
+	f := r.follow(ctx, c, pos[0], followOpts{lines: *jsonl || r.asJSON, stdout: r.Stdout, stderr: r.Stderr})
+	return f.exit
 }
 
 func (r *run) jobsGet(ctx context.Context, args []string) int {
@@ -122,50 +128,115 @@ func (r *run) jobsGet(ctx context.Context, args []string) int {
 	return exitOK
 }
 
+// followOpts tune follow.
+type followOpts struct {
+	// lines prints one JSON object per chunk and state change.
+	lines          bool
+	stdout, stderr io.Writer
+	// timeout cancels the job once it has run that long; 0 waits for the end.
+	timeout time.Duration
+}
+
+// followResult is how a followed job ended.
+type followResult struct {
+	exit     int
+	status   string
+	code     int64
+	hasCode  bool
+	timedOut bool
+	// printed is set when the failure was already reported as JSON.
+	printed bool
+}
+
 // follow polls jobs.output of id with the cursor until the output ends.
-func (r *run) follow(ctx context.Context, c *client.Client, id string, lines bool) int {
+func (r *run) follow(ctx context.Context, c *client.Client, id string, o followOpts) followResult {
+	r.jobID = id
+	var deadline time.Time
+	if o.timeout > 0 {
+		deadline = time.Now().Add(o.timeout)
+	}
 	cursor, lastState := "", ""
+	res := followResult{}
 	for {
-		res, err := r.call(ctx, c, "jobs.output", map[string]any{"job_id": id, "cursor": cursor}, callTimeout)
+		out, err := r.call(ctx, c, "jobs.output", map[string]any{"job_id": id, "cursor": cursor}, callTimeout)
 		if err != nil {
 			if ctx.Err() != nil {
-				return r.interrupted(id)
-			}
-			return r.fail(err)
-		}
-		for _, ch := range res.list("chunks") {
-			stream, data := ch.str("stream"), ch.str("data")
-			if lines {
-				writeJSON(r.Stdout, obj{"type": "chunk", "job_id": id, "stream": stream, "data": data})
-			} else if stream == "stderr" {
-				fmt.Fprint(r.Stderr, data)
+				res.exit = r.interrupted(id)
 			} else {
-				fmt.Fprint(r.Stdout, data)
+				res.exit = r.failMut(err, "")
+				res.printed = r.asJSON
 			}
+			return res
 		}
-		state, status := res.str("state"), res.str("status")
-		if next := res.str("next_cursor"); next != "" {
+		r.emit(out, id, &lastState, o)
+		if next := out.str("next_cursor"); next != "" {
 			cursor = next
 		}
-		if state != lastState {
-			lastState = state
-			if lines {
-				ev := obj{"type": "state", "job_id": id, "state": state, "status": status}
-				if code, ok := res.num("code"); ok {
-					ev["code"] = code
-				}
-				writeJSON(r.Stdout, ev)
-			}
+		res.status = out.str("status")
+		res.code, res.hasCode = out.num("code")
+		if watchDone(out, cursor) {
+			res.exit = r.watchExit(id, out)
+			return res
 		}
-		if watchDone(res, cursor) {
-			return r.watchExit(id, res)
+		if !deadline.IsZero() && time.Now().After(deadline) {
+			res.timedOut = true
+			res.exit = r.timeoutJob(ctx, c, id, o, &cursor, &lastState)
+			return res
 		}
 		select {
 		case <-ctx.Done():
-			return r.interrupted(id)
+			res.exit = r.interrupted(id)
+			return res
 		case <-time.After(r.PollInterval):
 		}
 	}
+}
+
+// emit prints the chunks and the state change of one jobs.output result.
+func (r *run) emit(out obj, id string, lastState *string, o followOpts) {
+	for _, ch := range out.list("chunks") {
+		stream, data := ch.str("stream"), ch.str("data")
+		switch {
+		case o.lines:
+			writeJSON(o.stdout, obj{"type": "chunk", "job_id": id, "stream": stream, "data": data})
+		case stream == "stderr":
+			fmt.Fprint(o.stderr, data)
+		default:
+			fmt.Fprint(o.stdout, data)
+		}
+	}
+	state := out.str("state")
+	if state != *lastState {
+		*lastState = state
+		if o.lines {
+			ev := obj{"type": "state", "job_id": id, "state": state, "status": out.str("status")}
+			if code, ok := out.num("code"); ok {
+				ev["code"] = code
+			}
+			writeJSON(o.stdout, ev)
+		}
+	}
+}
+
+// timeoutJob cancels a job that ran past its time limit, prints the output
+// that arrived until then and returns the timeout exit code.
+func (r *run) timeoutJob(ctx context.Context, c *client.Client, id string, o followOpts, cursor, lastState *string) int {
+	if _, err := r.call(ctx, c, "jobs.cancel", map[string]any{"job_id": id}, callTimeout); err != nil {
+		fmt.Fprintf(r.Stderr, "시간 초과 뒤 작업 %s를 취소하지 못했습니다(%s). deskhand jobs cancel %s 로 끝내세요\n", id, apierrMessage(err), id)
+	}
+	if out, err := r.call(ctx, c, "jobs.output", map[string]any{"job_id": id, "cursor": *cursor}, callTimeout); err == nil {
+		r.emit(out, id, lastState, o)
+	}
+	fmt.Fprintf(r.Stderr, "명령 실행: 명령이 %s 안에 끝나지 않아 종료했습니다. --timeout을 늘리거나 --timeout 0으로 다시 실행하세요\n", o.timeout)
+	return exitTimeout
+}
+
+func apierrMessage(err error) string {
+	var ae *apierr.Error
+	if errors.As(err, &ae) {
+		return ae.Message
+	}
+	return err.Error()
 }
 
 func (r *run) interrupted(id string) int {
@@ -200,7 +271,10 @@ func (r *run) watchExit(id string, res obj) int {
 		return exitUnknown
 	case hasCode && code != 0:
 		return remoteExitCode(code)
-	case status == model.StatusFailed || status == model.StatusCancelled:
+	case status == model.StatusCancelled:
+		fmt.Fprintf(r.Stderr, "작업 %s가 취소됐습니다\n", id)
+		return exitFailure
+	case status == model.StatusFailed:
 		return exitFailure
 	}
 	return exitOK

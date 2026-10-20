@@ -46,6 +46,8 @@ type run struct {
 	*App
 	asJSON bool
 	quiet  bool
+	// reqID and jobID are the ids of the operation in progress, once known.
+	reqID, jobID string
 }
 
 const usageText = `사용법: deskhand [--json] [--quiet] <명령> ...
@@ -212,17 +214,31 @@ func (r *run) failCall(err error, mutating bool, host string) int {
 	}
 	fmt.Fprintln(r.Stderr, "오류: "+ae.Message)
 	if code == exitUnknown {
-		list := "deskhand jobs list"
-		if host != "" {
-			list += " --host " + host
+		if r.jobID != "" {
+			fmt.Fprintf(r.Stderr, "작업 %s의 결과를 알 수 없습니다. deskhand jobs get %s 로 상태를 확인한 뒤 필요하면 다시 실행하세요\n", r.jobID, r.jobID)
+		} else {
+			list := "deskhand jobs list"
+			if host != "" {
+				list += " --host " + host
+			}
+			fmt.Fprintf(r.Stderr, "결과를 알 수 없습니다. %s 로 작업 기록을 확인하고 PC 상태를 직접 살핀 뒤 필요하면 다시 실행하세요\n", list)
 		}
-		fmt.Fprintf(r.Stderr, "결과를 알 수 없습니다. %s 로 작업을 확인하고 deskhand jobs get <job-id> 로 상태를 본 뒤 필요하면 다시 실행하세요\n", list)
 	} else if n := nextStep(ae.NextAction); n != "" {
 		fmt.Fprintln(r.Stderr, "다음 단계: "+n)
 	}
 	if r.asJSON {
-		writeJSON(r.Stdout, obj{"status": model.StatusFailed, "error": obj{"code": ae.Code, "message": ae.Message,
-			"retryable": ae.Retryable, "next_action": ae.NextAction}})
+		o := obj{"status": model.StatusFailed, "error": obj{"code": ae.Code, "message": ae.Message,
+			"retryable": ae.Retryable, "next_action": ae.NextAction}}
+		if r.reqID != "" {
+			o["request_id"] = r.reqID
+		}
+		if r.jobID != "" {
+			o["job_id"] = r.jobID
+		}
+		if code == exitUnknown {
+			o["status"] = model.StatusUnknown
+		}
+		writeJSON(r.Stdout, o)
 	}
 	return code
 }
@@ -233,10 +249,19 @@ func (r *run) settle(res obj, what string) int {
 	if r.asJSON {
 		writeJSON(r.Stdout, res)
 	}
-	return r.statusExit(res, what)
+	return r.statusExit(res, what, 0)
 }
 
-func (r *run) statusExit(res obj, what string) int {
+// Statuses a caller accepts besides succeeded.
+const (
+	allowRunning = 1 << iota
+	allowCancelled
+)
+
+// statusExit returns the exit code of an envelope status. A status that is
+// not final for the call (running unless allowed) or not known is an
+// unknown outcome.
+func (r *run) statusExit(res obj, what string, allow int) int {
 	e := res.sub("error")
 	next := nextStep(firstNonEmpty(res.str("next_action"), e.str("next_action")))
 	hint := func() {
@@ -267,8 +292,20 @@ func (r *run) statusExit(res obj, what string) int {
 		fmt.Fprintf(r.Stderr, "%s: %s\n", what, e.str("message"))
 		hint()
 		return exitFailure
+	case model.StatusCancelled:
+		if allow&allowCancelled != 0 {
+			return exitOK
+		}
+		fmt.Fprintf(r.Stderr, "%s: 작업이 취소됐습니다. 필요하면 같은 명령을 다시 실행하세요\n", what)
+		return exitFailure
+	case model.StatusRunning:
+		if allow&allowRunning != 0 {
+			return exitOK
+		}
+	case model.StatusSucceeded:
+		return exitOK
 	}
-	return exitOK
+	return r.unknownExitWhy(res, what, fmt.Sprintf("예상하지 못한 상태(%s)입니다", dash(res.str("status"))))
 }
 
 func firstNonEmpty(a, b string) string {
@@ -280,13 +317,17 @@ func firstNonEmpty(a, b string) string {
 
 // unknownExit explains an unknown outcome with its ids and the next step.
 func (r *run) unknownExit(res obj, what string) int {
+	return r.unknownExitWhy(res, what, "결과를 알 수 없습니다")
+}
+
+func (r *run) unknownExitWhy(res obj, what, why string) int {
 	ids := "요청 " + dash(res.str("request_id"))
 	step := "같은 명령을 다시 실행하기 전에 deskhand files stat 등으로 대상 상태를 먼저 확인하세요"
 	if j := res.str("job_id"); j != "" {
 		ids += ", 작업 " + j
 		step = fmt.Sprintf("deskhand jobs get %s 로 상태를 확인한 뒤 필요하면 다시 실행하세요", j)
 	}
-	fmt.Fprintf(r.Stderr, "%s: 결과를 알 수 없습니다(%s). %s\n", what, ids, step)
+	fmt.Fprintf(r.Stderr, "%s: %s(%s). %s\n", what, why, ids, step)
 	return exitUnknown
 }
 

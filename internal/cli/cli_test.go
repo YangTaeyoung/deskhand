@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -12,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/YangTaeyoung/deskhand/internal/client"
 )
 
 type rpcFail struct {
@@ -137,6 +140,45 @@ func envelope(status string, extra map[string]any) map[string]any {
 	return m
 }
 
+// execFake answers exec.start with a running job and jobs.output with the
+// given final output.
+func execFake(final map[string]any, extra map[string]handler) map[string]handler {
+	h := map[string]handler{
+		"exec.start":  ok(envelope("running", map[string]any{"pid": 1})),
+		"jobs.output": ok(final),
+	}
+	for k, v := range extra {
+		h[k] = v
+	}
+	return h
+}
+
+func exited(code int, stdout, stderr string) map[string]any {
+	chunks := []any{}
+	if stdout != "" {
+		chunks = append(chunks, map[string]any{"stream": "stdout", "data": stdout})
+	}
+	if stderr != "" {
+		chunks = append(chunks, map[string]any{"stream": "stderr", "data": stderr})
+	}
+	status := "succeeded"
+	if code != 0 {
+		status = "failed"
+	}
+	return map[string]any{"chunks": chunks, "next_cursor": "1:1", "state": "exited", "status": status, "code": code}
+}
+
+func runCtx(t *testing.T, ctx context.Context, args ...string) result {
+	t.Helper()
+	var out, errb bytes.Buffer
+	app := New("test")
+	app.Stdin, app.Stdout, app.Stderr = strings.NewReader(""), &out, &errb
+	app.Interactive = func() bool { return false }
+	app.PollInterval = time.Millisecond
+	code := app.Run(ctx, args)
+	return result{code, out.String(), errb.String()}
+}
+
 type result struct {
 	code        int
 	stdout, err string
@@ -156,7 +198,7 @@ func runCLI(t *testing.T, interactive bool, stdin string, args ...string) result
 }
 
 func TestExecExitCodePassthrough(t *testing.T) {
-	f := startFake(t, map[string]handler{"exec.run": ok(envelope("failed", map[string]any{"code": 7, "stdout": "out", "stderr": "err", "timed_out": false}))})
+	f := startFake(t, execFake(exited(7, "out", "err"), nil))
 	r := runCLI(t, false, "", "exec", "windows-dev", "--cwd", `C:\w`, "--", "tool.exe", "--json", "a b")
 	if r.code != 7 {
 		t.Fatalf("exit code = %d, want 7 (stderr %q)", r.code, r.err)
@@ -164,7 +206,7 @@ func TestExecExitCodePassthrough(t *testing.T) {
 	if r.stdout != "out" || r.err != "err" {
 		t.Fatalf("stdout %q stderr %q, want exact outputs", r.stdout, r.err)
 	}
-	p := f.called("exec.run")[0]
+	p := f.called("exec.start")[0]
 	argv, _ := p["argv"].([]any)
 	if len(argv) != 3 || argv[1] != "--json" || argv[2] != "a b" || p["cwd"] != `C:\w` || p["host_id"] != "windows-dev" {
 		t.Fatalf("exec.run params = %v", p)
@@ -172,30 +214,16 @@ func TestExecExitCodePassthrough(t *testing.T) {
 }
 
 func TestExecShellTakesOneCommandString(t *testing.T) {
-	f := startFake(t, map[string]handler{"exec.run": ok(envelope("succeeded", map[string]any{"code": 0, "stdout": "", "stderr": ""}))})
+	f := startFake(t, execFake(exited(0, "", ""), nil))
 	if r := runCLI(t, false, "", "exec", "h1", "--shell", "powershell", "--timeout", "5s", "--", "Get-Date -Format o"); r.code != 0 {
 		t.Fatalf("exit %d: %s", r.code, r.err)
 	}
-	p := f.called("exec.run")[0]
+	p := f.called("exec.start")[0]
 	if p["cmd"] != "Get-Date -Format o" || p["shell"] != "powershell" || p["timeout_ms"] != float64(5000) || p["argv"] != nil {
 		t.Fatalf("params = %v", p)
 	}
 	if r := runCLI(t, false, "", "exec", "h1", "--shell", "cmd", "--", "dir", "C:\\"); r.code != exitUsage {
 		t.Fatalf("several args with --shell: exit %d, want 2", r.code)
-	}
-}
-
-func TestExecReadsStdoutArtifact(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "stdout.txt")
-	if err := os.WriteFile(path, []byte("큰 출력\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	startFake(t, map[string]handler{"exec.run": ok(envelope("succeeded", map[string]any{"code": 0, "stderr": "",
-		"artifacts": []any{map[string]any{"name": "stdout.txt", "path": path}}}))})
-	r := runCLI(t, false, "", "exec", "h1", "--", "big")
-	if r.code != 0 || r.stdout != "큰 출력\n" {
-		t.Fatalf("code %d stdout %q", r.code, r.stdout)
 	}
 }
 
@@ -239,8 +267,9 @@ func TestStatusExitCodes(t *testing.T) {
 
 func TestJSONHasSchemaVersion(t *testing.T) {
 	startFake(t, map[string]handler{
-		"host.list": ok(map[string]any{"hosts": []any{map[string]any{"host_id": "windows-dev", "name": "windows-dev"}}}),
-		"exec.run":  ok(envelope("succeeded", map[string]any{"code": 0, "stdout": "hi", "stderr": ""})),
+		"host.list":   ok(map[string]any{"hosts": []any{map[string]any{"host_id": "windows-dev", "name": "windows-dev"}}}),
+		"exec.start":  ok(envelope("running", nil)),
+		"jobs.output": ok(exited(0, "hi", "")),
 	})
 	for _, args := range [][]string{{"--json", "host", "list"}, {"exec", "h1", "--json", "--", "echo"}} {
 		r := runCLI(t, false, "", args...)
@@ -402,7 +431,7 @@ func TestUsageErrorsExitTwo(t *testing.T) {
 }
 
 func TestExecWaitingForUserExitsThree(t *testing.T) {
-	startFake(t, map[string]handler{"exec.run": ok(envelope("waiting_for_user", map[string]any{
+	startFake(t, map[string]handler{"exec.start": ok(envelope("waiting_for_user", map[string]any{
 		"error": map[string]any{"code": "ELEVATION_REQUIRED", "message": "UAC 승인이 필요합니다"}}))})
 	r := runCLI(t, false, "", "exec", "h1", "--", "installer.exe")
 	if r.code != exitNeedsUser || r.stdout != "" || !strings.Contains(r.err, "사람의 확인") {
@@ -415,12 +444,15 @@ func TestExecWaitingForUserExitsThree(t *testing.T) {
 	}
 }
 
-func TestExecTimeoutPrintsPartialOutputAndExits124(t *testing.T) {
-	startFake(t, map[string]handler{"exec.run": ok(envelope("failed", map[string]any{"code": -1, "stdout": "partial", "stderr": "warn",
-		"timed_out": true, "error": map[string]any{"code": "TIMEOUT", "message": "명령이 2s 안에 끝나지 않아 종료했습니다"}}))})
-	r := runCLI(t, false, "", "exec", "h1", "--timeout", "2s", "--", "slow")
-	if r.code != 124 || r.stdout != "partial" || !strings.HasPrefix(r.err, "warn") || !strings.Contains(r.err, "종료했습니다") {
+func TestExecTimeoutCancelsJobPrintsPartialAndExits124(t *testing.T) {
+	f := startFake(t, execFake(map[string]any{"chunks": []any{map[string]any{"stream": "stdout", "data": "partial"}},
+		"next_cursor": "7:0", "state": "running", "status": "running"}, map[string]handler{"jobs.cancel": ok(envelope("cancelled", nil))}))
+	r := runCLI(t, false, "", "exec", "h1", "--timeout", "30ms", "--", "slow")
+	if r.code != 124 || !strings.HasPrefix(r.stdout, "partial") || !strings.Contains(r.err, "종료했습니다") {
 		t.Fatalf("code %d stdout %q stderr %q", r.code, r.stdout, r.err)
+	}
+	if len(f.called("jobs.cancel")) != 1 || f.called("exec.start")[0]["timeout_ms"] != float64(30) {
+		t.Fatalf("cancel %v start %v", f.called("jobs.cancel"), f.called("exec.start"))
 	}
 }
 
@@ -430,15 +462,74 @@ func TestExecDetachRejectsTimeout(t *testing.T) {
 	}
 }
 
-func TestExecTimeoutZeroFollowsJob(t *testing.T) {
-	f := startFake(t, map[string]handler{
-		"exec.start": ok(envelope("running", map[string]any{"pid": 1})),
-		"jobs.output": ok(map[string]any{"chunks": []any{map[string]any{"stream": "stdout", "data": "done"}},
-			"next_cursor": "4:0", "state": "exited", "status": "failed", "code": 9}),
-	})
+func TestExecTimeoutZeroNeverTimesOut(t *testing.T) {
+	var mu sync.Mutex
+	n := 0
+	f := startFake(t, execFake(nil, map[string]handler{"jobs.output": func(map[string]any, func(any)) (any, *rpcFail) {
+		mu.Lock()
+		defer mu.Unlock()
+		n++
+		if n < 5 {
+			time.Sleep(10 * time.Millisecond)
+			return map[string]any{"chunks": []any{}, "next_cursor": "0:0", "state": "running", "status": "running"}, nil
+		}
+		return exited(9, "done", ""), nil
+	}}))
 	r := runCLI(t, false, "", "exec", "h1", "--timeout", "0", "--", "x")
-	if r.code != 9 || r.stdout != "done" || len(f.called("exec.run")) != 0 {
+	if r.code != 9 || r.stdout != "done" || len(f.called("jobs.cancel")) != 0 {
 		t.Fatalf("code %d stdout %q stderr %q", r.code, r.stdout, r.err)
+	}
+	if p := f.called("exec.start")[0]; p["timeout_ms"] != nil {
+		t.Fatalf("params = %v", p)
+	}
+}
+
+func TestExecCtrlCExitsFourWithJobID(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	startFake(t, execFake(nil, map[string]handler{"jobs.output": func(map[string]any, func(any)) (any, *rpcFail) {
+		cancel()
+		return map[string]any{"chunks": []any{}, "next_cursor": "0:0", "state": "running", "status": "running"}, nil
+	}}))
+	r := runCtx(t, ctx, "exec", "h1", "--", "x")
+	if r.code != exitUnknown || !strings.Contains(r.err, "deskhand jobs get j-1") || strings.Contains(r.err, "<job-id>") {
+		t.Fatalf("code %d stderr %q", r.code, r.err)
+	}
+}
+
+func TestExecLostConnectionDuringFollowExitsFourWithJobID(t *testing.T) {
+	startFake(t, execFake(nil, map[string]handler{"jobs.output": func(map[string]any, func(any)) (any, *rpcFail) { return nil, &rpcFail{"DROP", ""} }}))
+	r := runCLI(t, false, "", "exec", "h1", "--json", "--", "x")
+	if r.code != exitUnknown || !strings.Contains(r.err, "deskhand jobs get j-1") {
+		t.Fatalf("code %d stderr %q", r.code, r.err)
+	}
+	var m map[string]any
+	if json.Unmarshal([]byte(strings.TrimSpace(r.stdout)), &m) != nil || m["job_id"] != "j-1" || m["request_id"] != "r-1" {
+		t.Fatalf("stdout %q lacks ids", r.stdout)
+	}
+}
+
+func TestStartedExecWithUnexpectedStatusExitsFour(t *testing.T) {
+	for _, st := range []string{"cancelled", "bogus"} {
+		startFake(t, map[string]handler{"exec.start": ok(envelope(st, nil))})
+		r := runCLI(t, false, "", "exec", "h1", "--", "x")
+		want := exitUnknown
+		if st == "cancelled" {
+			want = exitFailure
+		}
+		if r.code != want {
+			t.Errorf("%s: code %d stderr %q, want %d", st, r.code, r.err, want)
+		}
+	}
+}
+
+func TestFinalCallWithRunningOrCancelledStatus(t *testing.T) {
+	startFake(t, map[string]handler{"proc.kill": ok(envelope("running", nil)), "files.mkdir": ok(envelope("cancelled", nil))})
+	if r := runCLI(t, false, "", "proc", "kill", "h1", "5"); r.code != exitUnknown || !strings.Contains(r.err, "예상하지 못한 상태") {
+		t.Errorf("running: code %d stderr %q", r.code, r.err)
+	}
+	if r := runCLI(t, false, "", "files", "mkdir", "h1:/x"); r.code != exitFailure || !strings.Contains(r.err, "취소") {
+		t.Errorf("cancelled: code %d stderr %q", r.code, r.err)
 	}
 }
 
@@ -447,7 +538,7 @@ func TestLostConnectionDuringMutationExitsFour(t *testing.T) {
 		return nil, &rpcFail{"EXECUTION_OUTCOME_UNKNOWN", "응답을 잃었습니다"}
 	}})
 	r := runCLI(t, false, "", "proc", "kill", "h1", "5")
-	if r.code != exitUnknown || !strings.Contains(r.err, "jobs get") {
+	if r.code != exitUnknown || !strings.Contains(r.err, "jobs list --host h1") || strings.Contains(r.err, "<job-id>") {
 		t.Fatalf("code %d stderr %q", r.code, r.err)
 	}
 }
@@ -486,9 +577,29 @@ func TestExecHelpDocumentsExitCodes(t *testing.T) {
 func TestErrorShowsNextAction(t *testing.T) {
 	startFake(t, map[string]handler{"jobs.get": func(map[string]any, func(any)) (any, *rpcFail) {
 		return nil, &rpcFail{"NOT_FOUND", "job을 찾을 수 없습니다"}
-	}})
+	},
+		"host.list": ok(map[string]any{"hosts": []any{}}),
+		"proc.kill": ok(envelope("failed", map[string]any{"next_action": "host_repair",
+			"error": map[string]any{"code": "INVALID_ARGUMENT", "message": "이미 페어링됐습니다", "next_action": "host_repair"}}))})
 	r := runCLI(t, false, "", "jobs", "get", "j-x")
 	if r.code != 1 || !strings.Contains(r.err, "job을 찾을 수 없습니다") {
 		t.Fatalf("code %d stderr %q", r.code, r.err)
+	}
+	r = runCLI(t, false, "", "proc", "kill", "h1", "5")
+	if r.code != 1 || !strings.Contains(r.err, "다음 단계: deskhand host repair <이름> 을 실행하세요") {
+		t.Fatalf("code %d stderr %q", r.code, r.err)
+	}
+}
+
+func TestConnectionLostIsDetectedThroughWrapping(t *testing.T) {
+	startFake(t, map[string]handler{"files.mkdir": func(map[string]any, func(any)) (any, *rpcFail) { return nil, &rpcFail{"DROP", ""} }})
+	c, err := client.DialOptions(context.Background(), "cli", "t", client.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	err = c.Call(context.Background(), "files.mkdir", map[string]any{}, nil)
+	if !client.IsConnectionLost(err) || !client.IsConnectionLost(fmt.Errorf("wrapped: %w", err)) {
+		t.Fatalf("IsConnectionLost(%v) = false", err)
 	}
 }

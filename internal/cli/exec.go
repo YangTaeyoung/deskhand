@@ -1,11 +1,10 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
-	"io"
-	"os"
 	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
@@ -24,15 +23,15 @@ const execHelp = `사용법: deskhand exec <호스트> [옵션] -- <명령...>
   --shell powershell|cmd|none
                            none(기본): -- 뒤의 인수를 그대로 argv로 실행합니다.
                            powershell|cmd: 명령 전체를 따옴표 하나로 묶은 문자열 하나를 셸로 실행합니다.
-  --timeout 120s           명령 제한 시간. 0이면 제한 없이 끝날 때까지 기다립니다
-                           (출력을 실시간으로 보여 주고, Ctrl-C는 종료 코드 4와 job id를 남깁니다).
-                           --detach와는 함께 쓸 수 없습니다.
+  --timeout 120s           명령 제한 시간. 넘으면 작업을 취소하고 종료 코드 124로 끝납니다.
+                           0이면 제한 없이 끝날 때까지 기다립니다. --detach와는 함께 쓸 수 없습니다.
+                           출력은 실시간으로 보여 주며, Ctrl-C는 종료 코드 4와 job id를 남깁니다.
   --detach                 시작만 하고 job id를 출력합니다.
 
 종료 코드: 원격 명령의 종료 코드 1-255는 그대로 돌려줍니다. 범위 밖의 코드(0 아님)는 1입니다.
 시간 초과는 124입니다. deskhand 자체 오류는 2(사용법), 3(사람 확인), 4(결과 불명), 5(오프라인)이고
 원격 코드와 겹칠 수 있으므로 스크립트는 --json의 status와 code로 구분하세요.
---json 출력은 결과 객체 한 줄입니다(--timeout 0에서는 JSON 줄 스트림).
+--json 출력은 시작 봉투에 status, code, stdout, stderr를 더한 결과 객체 한 줄입니다.
 `
 
 // exitTimeout is the exit code of a command that hit its time limit.
@@ -97,71 +96,69 @@ func (r *run) exec(ctx context.Context, args []string) int {
 		return r.fail(err)
 	}
 	defer c.Close()
-	if *detach || (*timeout == 0) {
-		res, err := r.call(ctx, c, "exec.start", params, callTimeout)
-		if err != nil {
-			return r.failMut(err, host)
-		}
-		code := r.settle(res, "명령 시작")
-		id := res.str("job_id")
-		if code != exitOK || id == "" {
-			return code
-		}
-		if *detach {
-			if !r.asJSON {
-				fmt.Fprintln(r.Stdout, id)
-				r.info("작업을 시작했습니다. deskhand jobs watch %s 로 출력을 따라가세요", id)
-			}
-			return code
-		}
-		return r.follow(ctx, c, id, r.asJSON)
+	if !*detach && *timeout > 0 {
+		params["timeout_ms"] = timeout.Milliseconds()
 	}
-	params["timeout_ms"] = timeout.Milliseconds()
-	res, err := r.call(ctx, c, "exec.run", params, *timeout+execCallMargin)
+	start, err := r.call(ctx, c, "exec.start", params, callTimeout)
 	if err != nil {
 		return r.failMut(err, host)
 	}
-	return r.finishExec(res)
-}
-
-// finishExec prints the outputs of an exec.run result and returns the
-// remote command's exit code, or the exit code of an envelope that carries
-// no exit code.
-func (r *run) finishExec(res obj) int {
+	r.reqID, r.jobID = start.str("request_id"), start.str("job_id")
+	if *detach {
+		if r.asJSON {
+			writeJSON(r.Stdout, start)
+		}
+		code := r.statusExit(start, "명령 시작", allowRunning)
+		if code == exitOK && r.jobID != "" && !r.asJSON {
+			fmt.Fprintln(r.Stdout, r.jobID)
+			r.info("작업을 시작했습니다. deskhand jobs watch %s 로 출력을 따라가세요", r.jobID)
+		}
+		return code
+	}
+	if code := r.statusExit(start, "명령 시작", allowRunning); code != exitOK {
+		if r.asJSON {
+			writeJSON(r.Stdout, start)
+		}
+		return code
+	}
+	if r.jobID == "" {
+		return r.unknownExitWhy(start, "명령 시작", "작업 id를 받지 못했습니다")
+	}
+	opts := followOpts{stdout: r.Stdout, stderr: r.Stderr, timeout: *timeout}
+	var outBuf, errBuf bytes.Buffer
 	if r.asJSON {
-		writeJSON(r.Stdout, res)
+		opts.stdout, opts.stderr = &outBuf, &errBuf
 	}
-	status := res.str("status")
-	code, hasCode := res.num("code")
-	e := res.sub("error")
-	timedOut := status == model.StatusFailed && e.str("code") == wire.CodeTimeout
-	if !timedOut && !(status == model.StatusSucceeded || (status == model.StatusFailed && e == nil && hasCode)) {
-		return r.statusExit(res, "명령 실행")
+	f := r.follow(ctx, c, r.jobID, opts)
+	if r.asJSON && !f.printed {
+		r.writeExecJSON(start, f, outBuf.String(), errBuf.String())
 	}
-	if !r.asJSON {
-		r.writeOutput(res, "stdout", "stdout.txt", r.Stdout)
-		r.writeOutput(res, "stderr", "stderr.txt", r.Stderr)
-	}
-	if timedOut {
-		fmt.Fprintf(r.Stderr, "명령 실행: %s\n", e.str("message"))
-		return exitTimeout
-	}
-	return remoteExitCode(code)
+	return f.exit
 }
 
-// writeOutput prints the stream's text: the artifact file when the result
-// lists one for it, else the inline field.
-func (r *run) writeOutput(res obj, field, artifact string, w io.Writer) {
-	for _, a := range res.list("artifacts") {
-		if a.str("name") != artifact || a.str("path") == "" {
-			continue
-		}
-		if b, err := os.ReadFile(a.str("path")); err == nil {
-			_, _ = w.Write(b)
-			return
-		}
+// writeExecJSON prints the start envelope completed with the end of the
+// command: its status, exit code and collected output.
+func (r *run) writeExecJSON(start obj, f followResult, stdout, stderr string) {
+	res := start
+	if f.status != "" {
+		res["status"] = f.status
 	}
-	_, _ = io.WriteString(w, res.str(field))
+	if f.hasCode {
+		res["code"] = f.code
+	}
+	res["stdout"], res["stderr"], res["timed_out"] = stdout, stderr, f.timedOut
+	if f.timedOut {
+		res["status"] = model.StatusFailed
+		res["error"] = obj{"code": wire.CodeTimeout, "message": "명령이 제한 시간 안에 끝나지 않아 종료했습니다"}
+	}
+	switch f.exit {
+	case exitUnknown:
+		res["status"] = model.StatusUnknown
+		res["next_action"] = "check_state"
+	case exitNeedsUser:
+		res["status"] = model.StatusWaitingForUser
+	}
+	writeJSON(r.Stdout, res)
 }
 
 // remoteExitCode maps a remote exit code to a process exit code: 0 stays
