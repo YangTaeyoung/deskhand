@@ -35,7 +35,7 @@
 
 ## 3. `rpc` 스트림
 
-Alcove 에이전트 프로토콜 2층과 같은 NDJSON(`t`로 구분, 한 줄 최대 8 MiB).
+Alcove 에이전트 프로토콜 2층과 같은 NDJSON(`t`로 구분). 한 줄 최대 길이는 데몬→에이전트 1 MiB, 에이전트→데몬 8 MiB.
 
 ```
 데몬 → 에이전트  {"t":"req","id":7,"op":"exec.run","rid":"r-01J…","argv":["hostname"]}
