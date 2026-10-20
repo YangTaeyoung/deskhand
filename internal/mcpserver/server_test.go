@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -14,6 +15,9 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/YangTaeyoung/deskhand/internal/daemon/apierr"
+	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
 type rpcFail struct {
@@ -99,6 +103,9 @@ func (f *fakeAPI) serve(nc net.Conn) {
 			continue
 		}
 		res, fail := h(req.Params)
+		if fail != nil && fail.code == "DROP" {
+			return
+		}
 		if fail != nil {
 			send(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32000, "message": fail.msg,
 				"data": map[string]any{"code": fail.code, "retryable": fail.retryable, "next_action": fail.next}}})
@@ -109,10 +116,14 @@ func (f *fakeAPI) serve(nc net.Conn) {
 }
 
 func connect(t *testing.T) *mcp.ClientSession {
+	return connectWith(t, DefaultDialer("test"))
+}
+
+func connectWith(t *testing.T, dial Dialer) *mcp.ClientSession {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	t.Cleanup(cancel)
-	srv := New("test", DefaultDialer("test"))
+	srv := New("test", dial)
 	st, ct := mcp.NewInMemoryTransports()
 	ss, err := srv.Connect(ctx, st, nil)
 	if err != nil {
@@ -276,7 +287,7 @@ func TestExecUnknownTellsToCheckBeforeRetry(t *testing.T) {
 		t.Fatal("unknown outcome is not a tool error")
 	}
 	m := structured(t, res)
-	if m["status"] != "unknown" || m["job_id"] != "j-9" {
+	if m["status"] != "unknown" || m["job_id"] != "j-9" || m["code"] != "EXECUTION_OUTCOME_UNKNOWN" || m["retryable"] != false || m["message"] != "응답을 잃었습니다" {
 		t.Fatalf("structured = %v", m)
 	}
 	tx := text(res)
@@ -316,7 +327,8 @@ func TestFailedEnvelopeIsToolErrorWithEnvelopeIntact(t *testing.T) {
 	}
 	m := structured(t, res)
 	e, _ := m["error"].(map[string]any)
-	if m["status"] != "failed" || e["code"] != "OFFLINE" || m["next_action"] != "host_connect" {
+	if m["status"] != "failed" || e["code"] != "OFFLINE" || m["next_action"] != "host_connect" ||
+		m["code"] != "OFFLINE" || m["retryable"] != true || m["message"] != "PC에 연결할 수 없습니다" {
 		t.Fatalf("structured = %v", m)
 	}
 }
@@ -381,7 +393,7 @@ func TestParamMapping(t *testing.T) {
 			"exec.run", map[string]any{"host_id": "win", "cmd": "Get-Date", "shell": "powershell", "cwd": `C:\`, "env": map[string]any{"A": "1"}, "stdin": "x", "timeout_ms": float64(5000)}},
 		{"exec_start", map[string]any{"host": "win", "argv": []any{"a", "b"}}, "exec.start", map[string]any{"host_id": "win", "argv": []any{"a", "b"}}},
 		{"job_get", map[string]any{"job_id": "j-1"}, "jobs.get", map[string]any{"job_id": "j-1"}},
-		{"job_output", map[string]any{"job_id": "j-1", "cursor": "0:0"}, "jobs.output", map[string]any{"job_id": "j-1", "cursor": "0:0"}},
+		{"job_output", map[string]any{"job_id": "j-1", "cursor": "0:0"}, "jobs.output", map[string]any{"job_id": "j-1", "cursor": "0:0", "max": float64(262144)}},
 		{"job_cancel", map[string]any{"job_id": "j-1"}, "jobs.cancel", map[string]any{"job_id": "j-1"}},
 		{"files_list", map[string]any{"host": "win", "path": `C:\`}, "files.list", map[string]any{"host_id": "win", "path": `C:\`}},
 		{"files_stat", map[string]any{"host": "win", "path": `C:\a`, "sha256": true}, "files.stat", map[string]any{"host_id": "win", "path": `C:\a`, "sha256": true}},
@@ -413,5 +425,169 @@ func TestParamMapping(t *testing.T) {
 		if string(gj) != string(wj) {
 			t.Errorf("%s params = %s, want %s", c.tool, gj, wj)
 		}
+	}
+}
+
+func TestExecTimeoutEnvelopeCodeIsErrorCode(t *testing.T) {
+	startFakeAPI(t, map[string]handler{"exec.run": func(map[string]any) (any, *rpcFail) {
+		return envelope(map[string]any{"status": "failed", "code": 124, "stdout": "",
+			"error": map[string]any{"code": "TIMEOUT", "message": "time limit", "retryable": true, "next_action": "retry"}, "next_action": "retry"}), nil
+	}})
+	res := callTool(t, connect(t), "exec_run", map[string]any{"host": "h", "argv": []any{"x"}})
+	m := structured(t, res)
+	if !res.IsError || m["code"] != "TIMEOUT" || m["exit_code"] != float64(124) || m["retryable"] != true {
+		t.Fatalf("structured = %v", m)
+	}
+}
+
+func TestMutatingConnectionLossIsUnknownAndNotResent(t *testing.T) {
+	f := startFakeAPI(t, map[string]handler{
+		"files.write": func(map[string]any) (any, *rpcFail) { return nil, &rpcFail{code: "DROP"} },
+		"host.list":   func(map[string]any) (any, *rpcFail) { return map[string]any{"hosts": []any{}}, nil },
+	})
+	cs := connect(t)
+	res := callTool(t, cs, "files_write", map[string]any{"host": "h", "path": `C:\x`, "data": "aGk="})
+	m := structured(t, res)
+	if !res.IsError || m["status"] != "unknown" || m["retryable"] != false || m["next_action"] != "check_state" || m["code"] != "EXECUTION_OUTCOME_UNKNOWN" {
+		t.Fatalf("structured = %v", m)
+	}
+	for _, want := range []string{"unknown", "job_get", "session_inspect", "files_stat", "proc_list", "before any retry"} {
+		if !strings.Contains(text(res), want) || !strings.Contains(m["message"].(string)+text(res), want) {
+			t.Errorf("text lacks %q: %s", want, text(res))
+		}
+	}
+	time.Sleep(200 * time.Millisecond)
+	if n := len(f.called("files.write")); n != 1 {
+		t.Fatalf("files.write requests = %d, want 1", n)
+	}
+	if res := callTool(t, cs, "hosts_list", nil); res.IsError {
+		t.Fatalf("call after reconnect failed: %s", text(res))
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.hellos) != 2 {
+		t.Fatalf("hellos = %d, want 2 (redial)", len(f.hellos))
+	}
+}
+
+func TestReadToolConnectionLossIsRetryableOffline(t *testing.T) {
+	startFakeAPI(t, map[string]handler{"files.list": func(map[string]any) (any, *rpcFail) { return nil, &rpcFail{code: "DROP"} }})
+	res := callTool(t, connect(t), "files_list", map[string]any{"host": "h", "path": `C:\`})
+	m := structured(t, res)
+	if !res.IsError || m["code"] != "OFFLINE" || m["retryable"] != true || m["next_action"] != "retry" || m["status"] != nil {
+		t.Fatalf("structured = %v", m)
+	}
+}
+
+func TestMutatingTimeoutMapsToUnknown(t *testing.T) {
+	res := failure(spec{Mutating: true}, apierr.New(wire.CodeTimeout, "응답 시간 초과", false, "check_state"))
+	m, _ := res.StructuredContent.(map[string]any)
+	if !res.IsError || m["status"] != "unknown" || m["retryable"] != false || m["next_action"] != "check_state" || m["code"] != "EXECUTION_OUTCOME_UNKNOWN" {
+		t.Fatalf("structured = %v", m)
+	}
+	read := failure(spec{}, apierr.New(wire.CodeTimeout, "timeout", false, "check_state"))
+	if rm, _ := read.StructuredContent.(map[string]any); rm["code"] != "TIMEOUT" || rm["status"] != nil {
+		t.Fatalf("read timeout = %v", rm)
+	}
+}
+
+func TestJobToolsReportUnknownWithoutToolError(t *testing.T) {
+	startFakeAPI(t, map[string]handler{
+		"jobs.get": func(map[string]any) (any, *rpcFail) {
+			return map[string]any{"job_id": "j-1", "kind": "exec", "status": "unknown", "summary": "s"}, nil
+		},
+		"jobs.output": func(map[string]any) (any, *rpcFail) {
+			return map[string]any{"chunks": []any{}, "next_cursor": "0:0", "state": "unknown", "status": "unknown"}, nil
+		},
+	})
+	cs := connect(t)
+	for tool, name := range map[string]string{"job_get": "job_get", "job_output": "job_output"} {
+		res := callTool(t, cs, tool, map[string]any{"job_id": "j-1"})
+		if res.IsError {
+			t.Errorf("%s: IsError for job state: %s", tool, text(res))
+		}
+		if m := structured(t, res); m["code"] != nil || m["status"] != "unknown" {
+			t.Errorf("%s: structured = %v", tool, m)
+		}
+		tx := text(res)
+		if !strings.Contains(tx, "unknown") || !strings.Contains(tx, "files_stat") || strings.Contains(tx, name) {
+			t.Errorf("%s text = %q", tool, tx)
+		}
+	}
+}
+
+func TestDialFailureIsEnglishWithCause(t *testing.T) {
+	cs := connectWith(t, func(context.Context, string) (Caller, error) { return nil, errors.New("socket refused") })
+	res := callTool(t, cs, "hosts_list", nil)
+	m := structured(t, res)
+	if !res.IsError || m["code"] != "OFFLINE" || m["retryable"] != true || !strings.Contains(m["message"].(string), "socket refused") {
+		t.Fatalf("structured = %v", m)
+	}
+}
+
+func TestSchemasRenderSingleBackslashPaths(t *testing.T) {
+	res, err := connect(t).ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, tool := range res.Tools {
+		b, _ := json.Marshal(tool.InputSchema)
+		var walk func(v any)
+		walk = func(v any) {
+			switch x := v.(type) {
+			case map[string]any:
+				for k, e := range x {
+					if k == "description" {
+						d, _ := e.(string)
+						if strings.Contains(d, `\\`) {
+							t.Errorf("%s: double backslash in %q", tool.Name, d)
+						}
+						if strings.Contains(d, `C:\`) {
+							found = true
+						}
+					}
+					walk(e)
+				}
+			case []any:
+				for _, e := range x {
+					walk(e)
+				}
+			}
+		}
+		var v any
+		json.Unmarshal(b, &v)
+		walk(v)
+		if strings.Contains(tool.Description, `\\`) {
+			t.Errorf("%s: double backslash in description", tool.Name)
+		}
+	}
+	if !found {
+		t.Fatal("no Windows path example found")
+	}
+}
+
+func TestExclusiveAndSizeLimitsAreSchemaValidated(t *testing.T) {
+	f := startFakeAPI(t, nil)
+	cs := connect(t)
+	bad := []struct {
+		tool string
+		args map[string]any
+	}{
+		{"exec_run", map[string]any{"host": "h"}},
+		{"exec_run", map[string]any{"host": "h", "argv": []any{"a"}, "cmd": "b", "shell": "cmd"}},
+		{"exec_start", map[string]any{"host": "h", "argv": []any{"a"}, "cmd": "b"}},
+		{"proc_kill", map[string]any{"host": "h"}},
+		{"proc_kill", map[string]any{"host": "h", "pid": 1, "name": "a.exe"}},
+		{"files_write", map[string]any{"host": "h", "path": `C:\x`, "data": strings.Repeat("A", 1048577)}},
+		{"job_output", map[string]any{"job_id": "j", "max": 262145}},
+	}
+	for _, c := range bad {
+		if res := callTool(t, cs, c.tool, c.args); !res.IsError {
+			t.Errorf("%s %v accepted", c.tool, c.args)
+		}
+	}
+	if len(f.calls) != 0 {
+		t.Fatalf("daemon called: %v", f.calls)
 	}
 }

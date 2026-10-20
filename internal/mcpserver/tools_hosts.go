@@ -1,6 +1,9 @@
 package mcpserver
 
-import "github.com/modelcontextprotocol/go-sdk/mcp"
+import (
+	"github.com/google/jsonschema-go/jsonschema"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
 
 type hostInput struct {
 	Host string `json:"host" jsonschema:"Host to operate on: the host_id or the name from hosts_list, for example windows-dev."`
@@ -13,7 +16,7 @@ type jobInput struct {
 type jobOutputInput struct {
 	JobID  string `json:"job_id" jsonschema:"Job id of a command started with exec_start or exec_run."`
 	Cursor string `json:"cursor,omitempty" jsonschema:"The next_cursor of the previous job_output call; omit to read from the start."`
-	Max    int    `json:"max,omitempty" jsonschema:"Maximum bytes to return in this call."`
+	Max    int    `json:"max,omitempty" jsonschema:"Maximum bytes to return in this call; default and maximum 262144 (256 KiB)."`
 }
 
 func (s *Server) registerHosts(srv *mcp.Server) {
@@ -31,7 +34,12 @@ func (s *Server) registerHosts(srv *mcp.Server) {
 		spec{Method: "jobs.get"}, nil)
 	add[jobOutputInput](s, srv, "job_output",
 		"Read the stdout/stderr chunks of a job. Pass the returned next_cursor to read on; next_cursor \"end\" means the output is complete.",
-		spec{Method: "jobs.output"}, nil)
+		spec{Method: "jobs.output"}, func(s *jsonschema.Schema) {
+			one, max := 1.0, float64(maxReadBytes)
+			s.Properties["max"].Minimum = &one
+			s.Properties["max"].Maximum = &max
+			s.Properties["max"].Default = []byte("262144")
+		})
 	add[jobInput](s, srv, "job_cancel",
 		"Cancel a running job. The result envelope tells whether the cancel took effect.",
 		spec{Method: "jobs.cancel", Mutating: true}, nil)

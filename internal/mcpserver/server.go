@@ -24,6 +24,8 @@ const (
 	callTimeout = 60 * time.Second
 	// execMargin is added to an exec timeout for the round trip.
 	execMargin = 45 * time.Second
+	// dialTimeout bounds the connection to (and start of) the daemon.
+	dialTimeout = 15 * time.Second
 )
 
 // Caller is a connection to the daemon.
@@ -52,7 +54,7 @@ Playbook:
 4. status "unknown" or action.outcome "unknown" means the PC may or may not have done it. Never resend blindly: check with job_get (job_id) or session_inspect, then files_stat / proc_list, and only then retry.
 5. Long commands: exec_start, then job_output (use next_cursor) and job_get; job_cancel stops it.
 6. files_read returns at most 256 KiB of base64 per call; page with offset and length.
-7. Errors come back as tool errors with code, message, retryable and next_action. CONTROL_HELD_BY_HUMAN means a person is using the PC: wait for them, do not retry in a loop.
+7. Failures come back as tool errors (IsError) whose structured content always has top-level code, message, retryable and next_action; failed envelopes keep their full envelope as well. CONTROL_HELD_BY_HUMAN means a person is using the PC: wait for them, do not retry in a loop.
 8. Screen and input control tools arrive in a later version.`
 
 // Server holds the lazily opened daemon connection shared by the tools.
@@ -63,7 +65,7 @@ type Server struct {
 }
 
 // New returns the MCP server with all tools registered. The daemon is
-// contacted on the first tool call.
+// contacted on the first tool call and the connection outlives that call.
 func New(version string, dial Dialer) *mcp.Server {
 	s := &Server{dial: dial}
 	srv := mcp.NewServer(&mcp.Implementation{Name: "deskhand", Version: version}, &mcp.ServerOptions{Instructions: instructions})
@@ -79,7 +81,7 @@ func Run(ctx context.Context, version string) error {
 	return New(version, DefaultDialer(version)).Run(ctx, &mcp.StdioTransport{})
 }
 
-func (s *Server) conn(ctx context.Context, req *mcp.CallToolRequest) (Caller, error) {
+func (s *Server) conn(req *mcp.CallToolRequest) (Caller, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.c != nil {
@@ -91,9 +93,12 @@ func (s *Server) conn(ctx context.Context, req *mcp.CallToolRequest) (Caller, er
 			name += "/" + ip.ClientInfo.Name
 		}
 	}
-	c, err := s.dial(ctx, name)
+	dctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
+	defer cancel()
+	c, err := s.dial(dctx, name)
 	if err != nil {
-		return nil, err
+		return nil, apierr.New(wire.CodeOffline, "Cannot reach the Deskhand daemon: "+err.Error()+
+			" Ask the user to run `deskhand daemon start` and check the daemon log.", true, apierr.NextRetry)
 	}
 	s.c = c
 	return c, nil
@@ -121,19 +126,19 @@ type spec struct {
 }
 
 // add registers a tool whose input is In and whose call is described by sp.
-func add[In any](s *Server, srv *mcp.Server, name, desc string, sp spec, tweak func(props map[string]*jsonschema.Schema)) {
+func add[In any](s *Server, srv *mcp.Server, name, desc string, sp spec, tweak func(schema *jsonschema.Schema)) {
 	schema, err := jsonschema.For[In](nil)
 	if err != nil {
 		panic("mcpserver: schema of " + name + ": " + err.Error())
 	}
 	if tweak != nil {
-		tweak(schema.Properties)
+		tweak(schema)
 	}
 	mcp.AddTool(srv, &mcp.Tool{Name: name, Description: desc, InputSchema: schema},
 		func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
 			params, err := toParams(in)
 			if err != nil {
-				return failure(name, sp, apierr.Invalid("입력을 JSON으로 읽지 못했습니다. 값을 확인하세요")), nil, nil
+				return failure(sp, apierr.Invalid("The input could not be converted to JSON; check the argument values.")), nil, nil
 			}
 			for k, v := range sp.Extra {
 				params[k] = v
@@ -163,9 +168,9 @@ func toParams(in any) (map[string]any, error) {
 }
 
 func (s *Server) invoke(ctx context.Context, req *mcp.CallToolRequest, tool string, sp spec, params map[string]any) *mcp.CallToolResult {
-	c, err := s.conn(ctx, req)
+	c, err := s.conn(req)
 	if err != nil {
-		return failure(tool, sp, err)
+		return failure(sp, err)
 	}
 	timeout := callTimeout
 	if sp.Timeout != nil {
@@ -178,30 +183,36 @@ func (s *Server) invoke(ctx context.Context, req *mcp.CallToolRequest, tool stri
 		if client.IsConnectionLost(err) {
 			s.drop(c)
 		}
-		return failure(tool, sp, err)
+		return failure(sp, err)
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
 	var res any
 	if err := dec.Decode(&res); err != nil {
-		return failure(tool, sp, apierr.Internal("데몬 결과를 읽지 못했습니다. deskhand와 데몬 버전을 확인하세요"))
+		return failure(sp, apierr.Internal("The daemon result could not be read; check that deskhand and the daemon are the same version."))
 	}
-	return success(tool, params, res)
+	return success(tool, sp, params, res)
 }
 
 // failure turns a call error into a tool error result.
-func failure(tool string, sp spec, err error) *mcp.CallToolResult {
+func failure(sp spec, err error) *mcp.CallToolResult {
+	lost := client.IsConnectionLost(err)
 	ae := apierr.As(err)
 	if ae == nil {
-		ae = apierr.Internal("알 수 없는 오류입니다")
+		ae = apierr.Internal("Unknown error; check the daemon log.")
 	}
-	unknown := sp.Mutating && (client.IsConnectionLost(err) || ae.Code == wire.CodeTimeout)
-	structuredErr := map[string]any{"code": ae.Code, "message": ae.Message, "retryable": ae.Retryable, "next_action": ae.NextAction}
-	if unknown {
-		structuredErr["status"] = "unknown"
-		structuredErr["next_action"] = apierr.NextCheckState
+	var e map[string]any
+	switch {
+	case sp.Mutating && (lost || ae.Code == wire.CodeTimeout):
+		e = map[string]any{"status": "unknown", "code": wire.CodeExecutionOutcomeUnknown, "retryable": false, "next_action": apierr.NextCheckState,
+			"message": "The connection to the daemon ended or timed out before the result arrived, so the outcome is unknown: the PC may have done it. " +
+				"Check with job_get, session_inspect, files_stat or proc_list before any retry; do not resend blindly."}
+		e["error"] = map[string]any{"code": e["code"], "message": e["message"], "retryable": false, "next_action": apierr.NextCheckState}
+	case lost:
+		e = map[string]any{"code": wire.CodeOffline, "retryable": true, "next_action": apierr.NextRetry,
+			"message": "The connection to the daemon ended before the call ran. Call the tool again; it reconnects."}
+	default:
+		e = map[string]any{"code": ae.Code, "message": ae.Message, "retryable": ae.Retryable, "next_action": ae.NextAction}
 	}
-	res := &mcp.CallToolResult{IsError: true, StructuredContent: structuredErr}
-	res.Content = []mcp.Content{&mcp.TextContent{Text: errorText(structuredErr, unknown)}}
-	return res
+	return &mcp.CallToolResult{IsError: true, StructuredContent: e, Content: []mcp.Content{&mcp.TextContent{Text: errorText(e)}}}
 }

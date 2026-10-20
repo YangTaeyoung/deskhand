@@ -7,6 +7,9 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/YangTaeyoung/deskhand/internal/daemon/apierr"
+	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
 // textLimit bounds command output echoed in the text summary.
@@ -23,24 +26,26 @@ var nextActionHints = map[string]string{
 	"human_release": "a person controls the PC; wait for them to release control and do not retry in a loop",
 }
 
-func hint(action string) string {
+// hint explains a next_action; for job tools "check_state" must not send
+// the agent back to the tool it just called.
+func hint(action, tool string) string {
+	if action == "check_state" && (tool == "job_get" || tool == "job_output") {
+		return "check the target state directly (session_inspect, files_stat, proc_list) before retrying"
+	}
 	if h, ok := nextActionHints[action]; ok {
 		return h
 	}
 	return action
 }
 
-func errorText(e map[string]any, unknown bool) string {
+func errorText(e map[string]any) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Error %v: %v", e["code"], e["message"])
 	if r, _ := e["retryable"].(bool); r {
 		b.WriteString(" (retryable)")
 	}
 	if na, _ := e["next_action"].(string); na != "" {
-		fmt.Fprintf(&b, "\nnext_action: %s - %s", na, hint(na))
-	}
-	if unknown {
-		b.WriteString("\nOutcome unknown: the PC may have done it. Do not resend blindly; check with job_get or session_inspect first.")
+		fmt.Fprintf(&b, "\nnext_action: %s - %s", na, hint(na, ""))
 	}
 	return b.String()
 }
@@ -69,8 +74,10 @@ func clip(s string) string {
 }
 
 // success wraps a daemon result: structured content unchanged, a short text
-// summary, and IsError when the envelope reports a failed or unknown action.
-func success(tool string, params map[string]any, res any) *mcp.CallToolResult {
+// summary. For envelope tools (sp.Mutating) a failed or unknown envelope is a
+// tool error and gets top-level code, message and retryable copied from its
+// error. Job tools report job state without IsError.
+func success(tool string, sp spec, params map[string]any, res any) *mcp.CallToolResult {
 	out := &mcp.CallToolResult{StructuredContent: res}
 	m, ok := res.(map[string]any)
 	if !ok {
@@ -85,6 +92,7 @@ func success(tool string, params map[string]any, res any) *mcp.CallToolResult {
 	var lines []string
 	status := str(m, "status")
 	errObj, _ := m["error"].(map[string]any)
+	isUnknown := status == "unknown" || str2(m, "action", "outcome") == "unknown"
 	if status != "" {
 		line := "status: " + status
 		if act, ok := m["action"].(map[string]any); ok {
@@ -95,8 +103,8 @@ func success(tool string, params map[string]any, res any) *mcp.CallToolResult {
 		}
 		lines = append(lines, line)
 	}
-	if detail := detail(tool, params, m); detail != "" {
-		lines = append(lines, detail)
+	if d := detail(tool, params, m); d != "" {
+		lines = append(lines, d)
 	}
 	if errObj != nil {
 		lines = append(lines, fmt.Sprintf("error %v: %v", errObj["code"], errObj["message"]))
@@ -106,18 +114,53 @@ func success(tool string, params map[string]any, res any) *mcp.CallToolResult {
 		na, _ = errObj["next_action"].(string)
 	}
 	if na != "" {
-		lines = append(lines, fmt.Sprintf("next_action: %s - %s", na, hint(na)))
+		lines = append(lines, fmt.Sprintf("next_action: %s - %s", na, hint(na, tool)))
 	}
-	if status == "unknown" || str2(m, "action", "outcome") == "unknown" {
-		ref := "job_get"
-		if id := str(m, "job_id"); id != "" {
-			ref = "job_get (job_id " + id + ")"
+	if isUnknown {
+		if sp.Mutating {
+			ref := "job_get"
+			if id := str(m, "job_id"); id != "" {
+				ref = "job_get (job_id " + id + ")"
+			}
+			lines = append(lines, "Outcome unknown: the PC may have done it. Call "+ref+" or session_inspect and check the target state before any retry; do not resend blindly.")
+		} else {
+			lines = append(lines, "The job outcome is unknown. Check the target state directly (session_inspect, files_stat, proc_list) before any retry; do not resend blindly.")
 		}
-		lines = append(lines, "Outcome unknown: the PC may have done it. Call "+ref+" or session_inspect and check the target state before any retry; do not resend blindly.")
 	}
-	out.IsError = (status == "failed" && errObj != nil) || status == "unknown"
+	if sp.Mutating && ((status == "failed" && errObj != nil) || status == "unknown") {
+		out.IsError = true
+		if prev, ok := m["code"]; ok {
+			if _, isStr := prev.(string); !isStr {
+				m["exit_code"] = prev
+				delete(m, "code")
+			}
+		}
+		if errObj != nil {
+			setDefault(m, "code", errObj["code"])
+			setDefault(m, "message", errObj["message"])
+			setDefault(m, "retryable", errObj["retryable"])
+		} else {
+			setDefault(m, "code", wire.CodeExecutionOutcomeUnknown)
+			setDefault(m, "message", "The outcome of the action is unknown.")
+			setDefault(m, "retryable", false)
+		}
+		if _, ok := m["next_action"]; !ok || m["next_action"] == nil {
+			if status == "unknown" {
+				m["next_action"] = apierr.NextCheckState
+			}
+		}
+	}
 	out.Content = []mcp.Content{&mcp.TextContent{Text: strings.Join(lines, "\n")}}
 	return out
+}
+
+func setDefault(m map[string]any, k string, v any) {
+	if v == nil {
+		return
+	}
+	if _, ok := m[k]; !ok {
+		m[k] = v
+	}
 }
 
 func str2(m map[string]any, k1, k2 string) string {
