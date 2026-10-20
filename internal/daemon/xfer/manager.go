@@ -71,6 +71,10 @@ type Hooks struct {
 	// Wrote runs after a chunk of the file rel went to the put stream or
 	// into the part file of a pull; done bytes of the file are written.
 	Wrote func(transferID, rel string, done int64)
+	// Step runs when a transfer whose files are all finished reaches step:
+	// "remove" before a move removes its source, "finish" before the
+	// transfer ends. ctx is the context of its run.
+	Step func(ctx context.Context, transferID, step string)
 }
 
 // StartParams are the parameters of transfer.start: Local and Remote are
@@ -366,7 +370,8 @@ func (m *Manager) List(hostID string) ([]model.Transfer, error) {
 
 // Pause stops a queued or running transfer and keeps it paused, also across
 // daemon restarts, until Resume. A paused transfer is returned as it is; a
-// finished one is an error.
+// finished one, one that finished while its run stopped and a move that
+// removes its source are errors.
 func (m *Manager) Pause(transferID string, c model.Caller) (model.Transfer, error) {
 	t, err := m.acquire(transferID)
 	if err != nil {
@@ -376,18 +381,28 @@ func (m *Manager) Pause(transferID string, c model.Caller) (model.Transfer, erro
 	t.opMu.Lock()
 	defer t.opMu.Unlock()
 	t.mu.Lock()
-	switch t.row.State {
-	case StatePaused:
+	switch {
+	case t.removing:
+		defer t.mu.Unlock()
+		return model.Transfer{}, removingRefusal(transferID, "일시정지")
+	case t.row.State == StatePaused:
 		defer t.mu.Unlock()
 		return t.snapshotLocked(), nil
-	case StateDone, StateFailed, StateCancelled:
+	case finishedState(t.row.State):
 		defer t.mu.Unlock()
-		return model.Transfer{}, apierr.Invalid(fmt.Sprintf("전송 %s는 이미 %s 상태로 끝나 일시정지할 수 없습니다. 다시 보내려면 transfer.resume이나 transfer.start를 쓰세요", transferID, t.row.State))
+		return model.Transfer{}, pauseRefusal(transferID, t.row.State)
 	}
 	t.mu.Unlock()
 	t.stopRun(errPaused)
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	switch {
+	case t.removing:
+		t.launchLocked()
+		return model.Transfer{}, removingRefusal(transferID, "일시정지")
+	case finishedState(t.row.State):
+		return model.Transfer{}, pauseRefusal(transferID, t.row.State)
+	}
 	for i := range t.files {
 		if f := &t.files[i]; f.State == StateRunning || f.State == StateVerifying {
 			f.State = StatePaused
@@ -451,7 +466,9 @@ func (m *Manager) Resume(transferID string, c model.Caller) (model.Transfer, err
 
 // Cancel stops a transfer for good: its finished files stay, its other
 // files are cancelled and their part files removed (on the host once it is
-// ready). A cancelled transfer is returned as it is; a done one is an error.
+// ready). A cancelled transfer is returned as it is; a done one, one that
+// ended done while its run stopped and a move that removes its source are
+// errors.
 func (m *Manager) Cancel(transferID string, c model.Caller) (model.Transfer, error) {
 	t, err := m.acquire(transferID)
 	if err != nil {
@@ -461,16 +478,30 @@ func (m *Manager) Cancel(transferID string, c model.Caller) (model.Transfer, err
 	t.opMu.Lock()
 	defer t.opMu.Unlock()
 	t.mu.Lock()
-	switch t.row.State {
-	case StateCancelled:
+	switch {
+	case t.removing:
+		defer t.mu.Unlock()
+		return model.Transfer{}, removingRefusal(transferID, "취소")
+	case t.row.State == StateCancelled:
 		defer t.mu.Unlock()
 		return t.snapshotLocked(), nil
-	case StateDone:
+	case t.row.State == StateDone:
 		defer t.mu.Unlock()
-		return model.Transfer{}, apierr.Invalid(fmt.Sprintf("전송 %s는 이미 끝나 취소할 것이 없습니다. 받은 파일을 지우려면 files.trash를 쓰세요", transferID))
+		return model.Transfer{}, cancelRefusal(transferID)
 	}
 	t.mu.Unlock()
 	t.stopRun(errCancelled)
+	t.mu.Lock()
+	switch {
+	case t.removing:
+		t.launchLocked()
+		defer t.mu.Unlock()
+		return model.Transfer{}, removingRefusal(transferID, "취소")
+	case t.row.State == StateDone:
+		defer t.mu.Unlock()
+		return model.Transfer{}, cancelRefusal(transferID)
+	}
+	t.mu.Unlock()
 	t.cancelFiles()
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -482,6 +513,25 @@ func (m *Manager) Cancel(transferID string, c model.Caller) (model.Transfer, err
 		t.launchLocked()
 	}
 	return t.snapshotLocked(), nil
+}
+
+// finishedState reports whether state is that of a transfer that ended.
+func finishedState(state string) bool {
+	return state == StateDone || state == StateFailed || state == StateCancelled
+}
+
+func pauseRefusal(transferID, state string) *apierr.Error {
+	return apierr.Invalid(fmt.Sprintf("전송 %s는 이미 %s 상태로 끝나 일시정지할 수 없습니다. 다시 보내려면 transfer.resume이나 transfer.start를 쓰세요", transferID, state))
+}
+
+func cancelRefusal(transferID string) *apierr.Error {
+	return apierr.Invalid(fmt.Sprintf("전송 %s는 이미 끝나 취소할 것이 없습니다. 받은 파일을 지우려면 files.trash를 쓰세요", transferID))
+}
+
+// removingRefusal is the error of what (일시정지, 취소) asked of a move that
+// removes its source.
+func removingRefusal(transferID, what string) *apierr.Error {
+	return apierr.Invalid(fmt.Sprintf("전송 %s는 받은 쪽 검증을 마치고 원본 정리 중이라 %s할 수 없습니다. 정리가 끝날 때까지 기다리세요", transferID, what))
 }
 
 // Causes that end a run.

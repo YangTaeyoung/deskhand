@@ -359,6 +359,12 @@ func (t *transfer) opened(rel string, offset int64) {
 	}
 }
 
+func (t *transfer) step(ctx context.Context, name string) {
+	if fn := t.m.opt.Hooks.Step; fn != nil {
+		fn(ctx, t.row.TransferID, name)
+	}
+}
+
 func (t *transfer) wrote(rel string, done int64) {
 	if fn := t.m.opt.Hooks.Wrote; fn != nil {
 		fn(t.row.TransferID, rel, done)

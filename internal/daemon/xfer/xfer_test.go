@@ -2,14 +2,17 @@ package xfer_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/YangTaeyoung/deskhand/internal/daemon/apierr"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/conn"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/xfer"
@@ -696,4 +699,95 @@ func TestPushRefusesNamesThatLeaveTheFolderAndKeepsTheMoveSource(t *testing.T) {
 			t.Fatalf("the transfers wrote %s outside their destination", rel)
 		}
 	}
+}
+
+func TestAMoveRemovingItsSourceRefusesPauseAndCancel(t *testing.T) {
+	for _, direction := range []string{"move_push", "move_pull"} {
+		t.Run(direction, func(t *testing.T) {
+			g := newGate()
+			h := newHarness(t, xfer.Hooks{Step: func(_ context.Context, _, step string) {
+				if step == "remove" {
+					g.wait()
+				}
+			}})
+			t.Cleanup(g.release)
+			local, remote := filepath.Join(h.mac, "m.txt"), filepath.Join(h.agent.home, "m.txt")
+			src := local
+			if direction == "move_pull" {
+				src = remote
+			}
+			writeFile(t, src, []byte("moving"))
+			id := h.start(direction, local, remote, "").TransferID
+			<-g.reached
+			for name, op := range map[string]func(string, model.Caller) (model.Transfer, error){"pause": h.manager().Pause, "cancel": h.manager().Cancel} {
+				tr, err := within(t, 5*time.Second, name, func() (model.Transfer, error) { return op(id, human) })
+				var e *apierr.Error
+				if !errors.As(err, &e) || e.Code != wire.CodeInvalidArgument || !strings.Contains(e.Message, "원본 정리 중") {
+					t.Fatalf("%s while the source is removed: %s, %v", name, describe(tr), err)
+				}
+			}
+			g.release()
+			tr := h.waitFinished(id)
+			switch direction {
+			case "move_push":
+				checkDone(t, tr, "written")
+				if _, err := os.Lstat(src); !os.IsNotExist(err) {
+					t.Fatalf("the source of the move is still there: %v", err)
+				}
+			default:
+				if tr.State != "done" || tr.Outcome != "copied_source_retained" {
+					t.Fatalf("move_pull: %s", describe(tr))
+				}
+			}
+		})
+	}
+}
+
+func TestPauseOrCancelRacingTheEndLeavesTheTransferDone(t *testing.T) {
+	var armed atomic.Bool
+	reached := make(chan struct{}, 1)
+	h := newHarness(t, xfer.Hooks{Step: func(ctx context.Context, _, step string) {
+		if step == "finish" && armed.CompareAndSwap(true, false) {
+			reached <- struct{}{}
+			<-ctx.Done()
+		}
+	}})
+	for i, op := range []func(string, model.Caller) (model.Transfer, error){h.manager().Pause, h.manager().Cancel} {
+		src, dst := filepath.Join(h.mac, fmt.Sprintf("e%d.txt", i)), filepath.Join(h.agent.home, fmt.Sprintf("e%d.txt", i))
+		writeFile(t, src, []byte("end"))
+		armed.Store(true)
+		id := h.start("push", src, dst, "").TransferID
+		<-reached
+		tr, err := within(t, 10*time.Second, fmt.Sprint("op ", i), func() (model.Transfer, error) { return op(id, human) })
+		var e *apierr.Error
+		if !errors.As(err, &e) || e.Code != wire.CodeInvalidArgument {
+			t.Fatalf("op %d racing the end: %s, %v", i, describe(tr), err)
+		}
+		checkDone(t, h.waitFinished(id), "written")
+		if got := string(readFile(t, dst)); got != "end" {
+			t.Fatalf("destination %q", got)
+		}
+	}
+}
+
+// within returns what fn returns, failing the test when it takes longer
+// than limit.
+func within(t *testing.T, limit time.Duration, what string, fn func() (model.Transfer, error)) (model.Transfer, error) {
+	t.Helper()
+	type answer struct {
+		tr  model.Transfer
+		err error
+	}
+	ch := make(chan answer, 1)
+	go func() {
+		tr, err := fn()
+		ch <- answer{tr, err}
+	}()
+	select {
+	case a := <-ch:
+		return a.tr, a.err
+	case <-time.After(limit):
+		t.Fatalf("%s did not answer within %s", what, limit)
+	}
+	return model.Transfer{}, nil
 }

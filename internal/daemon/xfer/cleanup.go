@@ -16,7 +16,10 @@ import (
 )
 
 // complete finishes a transfer whose files are all finished; a move whose
-// files all moved removes its source first.
+// files all moved removes its source first. Once it starts removing the
+// source the transfer refuses Pause and Cancel, and from there it runs to
+// its end whatever happens to ctx: the removal on the host runs under the
+// manager's context.
 func (t *transfer) complete(ctx context.Context, h *conn.Host) result {
 	t.mu.Lock()
 	var files []store.TransferFile
@@ -34,6 +37,16 @@ func (t *transfer) complete(ctx context.Context, h *conn.Host) result {
 	}
 	t.mu.Unlock()
 	var retained *apierr.Error
+	removing := func() {
+		t.mu.Lock()
+		t.removing = true
+		if t.row.State != StateVerifying {
+			t.row.State = StateVerifying
+			t.publishLocked()
+		}
+		t.mu.Unlock()
+		t.step(ctx, "remove")
+	}
 	switch {
 	case !moving(t.row.Direction) || failed:
 	case len(files) > 0 && skipped == len(files):
@@ -41,19 +54,17 @@ func (t *transfer) complete(ctx context.Context, h *conn.Host) result {
 		retained = apierr.New(wire.CodeTransferConflict, fmt.Sprintf("건너뛴 파일 %d개가 있어 원본을 지우지 않고 남겼습니다. 건너뛴 파일을 확인한 뒤 원본을 직접 정리하세요", skipped),
 			false, apierr.NextCheckState)
 	case pushing(t.row.Direction):
-		t.setState(StateVerifying)
+		removing()
 		retained = t.removeLocalSource(files)
 	default:
-		t.setState(StateVerifying)
-		r, e := t.removeRemoteSource(ctx, h, files)
+		removing()
+		r, e := t.removeRemoteSource(t.m.base, h, files)
 		if r != resDone {
 			return r
 		}
 		retained = e
 	}
-	if ctx.Err() != nil {
-		return resStopped
-	}
+	t.step(ctx, "finish")
 	t.mu.Lock()
 	t.finishLocked(retained)
 	t.mu.Unlock()

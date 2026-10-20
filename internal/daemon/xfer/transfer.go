@@ -78,6 +78,9 @@ type transfer struct {
 	// after its check failed.
 	strikes  map[int]int
 	restarts map[int]int
+	// removing is set while a move removes its source, until the transfer
+	// ends.
+	removing bool
 }
 
 func newTransfer(m *Manager, row store.Transfer, files []store.TransferFile) *transfer {
@@ -554,6 +557,7 @@ func (t *transfer) finishLocked(retained *apierr.Error) {
 	}
 	now := time.Now()
 	t.row.FinishedAt = &now
+	t.removing = false
 	summary, outcome := t.routeLocked(), model.TimelineOK
 	switch {
 	case len(failed) > 0 || dirFailed != nil:
