@@ -153,7 +153,7 @@ func (r *run) debugLaunch(ctx context.Context, args []string) int {
 		return r.failMut(err, pos[0])
 	}
 	r.printSession(res.sub("session"))
-	return r.settle(res, "디버그 실행")
+	return r.settleOpen(res, "디버그 실행")
 }
 
 func (r *run) debugAttach(ctx context.Context, args []string) int {
@@ -199,7 +199,7 @@ func (r *run) debugAttach(ctx context.Context, args []string) int {
 		return r.failMut(err, pos[0])
 	}
 	r.printSession(res.sub("session"))
-	return r.settle(res, "디버그 부착")
+	return r.settleOpen(res, "디버그 부착")
 }
 
 func (r *run) debugList(ctx context.Context, args []string) int {
@@ -245,6 +245,15 @@ func (r *run) debugGet(ctx context.Context, args []string) int {
 	}
 	r.printSession(res)
 	return exitOK
+}
+
+// settleOpen prints res in --json mode and returns its exit code, taking
+// running (the debug session is open) as success.
+func (r *run) settleOpen(res obj, what string) int {
+	if r.asJSON {
+		writeJSON(r.Stdout, res)
+	}
+	return r.statusExit(res, what, allowRunning)
 }
 
 func (r *run) printSession(s obj) {

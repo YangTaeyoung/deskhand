@@ -36,6 +36,25 @@ func TestDebugLaunchSendsInspectorRequest(t *testing.T) {
 	}
 }
 
+func TestDebugLaunchAndAttachOfAnOpenSessionExitZero(t *testing.T) {
+	session := map[string]any{"debug_id": "d-1", "host_id": "windows-dev", "name": "App", "state": "paused",
+		"targets": []any{map[string]any{"id": "node-1", "role": "main", "type": "node", "url": "file:///app/main.js", "paused": true}}}
+	startFake(t, map[string]handler{
+		"debug.electron.launch": ok(envelope("running", map[string]any{"session": session})),
+		"debug.attach":          ok(envelope("running", map[string]any{"session": session})),
+	})
+	for _, args := range [][]string{
+		{"debug", "launch", "windows-dev", `C:\app\App.exe`, "--break"},
+		{"--json", "debug", "launch", "windows-dev", `C:\app\App.exe`},
+		{"debug", "attach", "windows-dev", "--port", "9229"},
+	} {
+		r := runCLI(t, false, "", args...)
+		if r.code != 0 || r.err != "" {
+			t.Fatalf("%v: exit %d stderr %q", args, r.code, r.err)
+		}
+	}
+}
+
 func TestDebugLaunchBreakSpecParsesURLWithColonsFromTheRight(t *testing.T) {
 	session := map[string]any{"debug_id": "d-1", "host_id": "windows-dev", "name": "App", "state": "running", "targets": []any{}}
 	f := startFake(t, map[string]handler{
