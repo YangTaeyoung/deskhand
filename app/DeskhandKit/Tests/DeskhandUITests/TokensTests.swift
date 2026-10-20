@@ -66,4 +66,23 @@ struct SRGB {
     func distance(to other: SRGB) -> Double {
         ((r - other.r) * (r - other.r) + (g - other.g) * (g - other.g) + (b - other.b) * (b - other.b)).squareRoot()
     }
+
+    func testCodePaletteReachesFourAndAHalfToOneInBothAppearances() throws {
+        let colors: [(String, NSColor, (NSColor, CGFloat)?)] = [
+            ("keyword", DS.Code.keywordNS, nil), ("string", DS.Code.stringNS, nil), ("number", DS.Code.numberNS, nil),
+            ("link", DS.Code.linkNS, nil), ("error", DS.Code.errorTextNS, (.systemRed, DS.Code.errorRowOpacity)),
+        ]
+        for name in [NSAppearance.Name.aqua, .darkAqua] {
+            let appearance = try XCTUnwrap(NSAppearance(named: name))
+            for (label, color, tint) in colors {
+                var resolved = NSColor.black
+                appearance.performAsCurrentDrawingAppearance { resolved = color.usingColorSpace(.sRGB) ?? color }
+                let backgrounds = DS.Code.backgrounds(in: appearance, tint: tint)
+                XCTAssertEqual(backgrounds.count, tint == nil ? 2 : 3)
+                for background in backgrounds {
+                    XCTAssertGreaterThanOrEqual(DS.Terminal.contrast(resolved, background), 4.5, "\(label) in \(name.rawValue)")
+                }
+            }
+        }
+    }
 }

@@ -397,17 +397,21 @@ extension GatedBackend {
     func debugTargetAttach(debugID: String, targetID: String) async throws -> DebugTarget {
         try await base.debugTargetAttach(debugID: debugID, targetID: targetID)
     }
-    func debugBreakpointSet(_ request: BreakpointRequest) async throws -> DebugBreakpoint { try await base.debugBreakpointSet(request) }
-    func debugBreakpointEnable(debugID: String, breakpointID: String, enabled: Bool) async throws -> DebugBreakpoint {
-        try await base.debugBreakpointEnable(debugID: debugID, breakpointID: breakpointID, enabled: enabled)
+    func debugBreakpointSet(debugID: String, spec: BreakpointSpec) async throws -> DebugBreakpoint {
+        try await base.debugBreakpointSet(debugID: debugID, spec: spec)
     }
-    func debugBreakpointRemove(debugID: String, breakpointID: String) async throws {
+    func debugBreakpointUpdate(debugID: String, breakpointID: String, enabled: Bool?, condition: String?) async throws -> DebugBreakpoint {
+        try await base.debugBreakpointUpdate(debugID: debugID, breakpointID: breakpointID, enabled: enabled, condition: condition)
+    }
+    func debugBreakpointRemove(debugID: String, breakpointID: String) async throws -> DebugBreakpoint? {
         try await base.debugBreakpointRemove(debugID: debugID, breakpointID: breakpointID)
     }
-    func debugBreakpointsActivate(debugID: String, active: Bool) async throws {
+    func debugBreakpointsActivate(debugID: String, active: Bool) async throws -> DebugSession? {
         try await base.debugBreakpointsActivate(debugID: debugID, active: active)
     }
-    func debugExceptions(debugID: String, mode: ExceptionPauseMode) async throws { try await base.debugExceptions(debugID: debugID, mode: mode) }
+    func debugExceptions(debugID: String, mode: ExceptionPauseMode) async throws -> DebugSession? {
+        try await base.debugExceptions(debugID: debugID, mode: mode)
+    }
     func debugPause(debugID: String, targetID: String) async throws -> DebugTarget? { try await base.debugPause(debugID: debugID, targetID: targetID) }
     func debugResume(debugID: String, targetID: String) async throws -> DebugTarget? { try await base.debugResume(debugID: debugID, targetID: targetID) }
     func debugStep(debugID: String, targetID: String, kind: DebugStepKind) async throws -> DebugTarget? {
@@ -427,5 +431,6 @@ extension GatedBackend {
         try await base.debugSource(debugID: debugID, targetID: targetID, scriptID: scriptID)
     }
     func debugConsole(_ query: ConsoleQuery) async throws -> ConsolePage { try await base.debugConsole(query) }
+    func debugConsoleClear(debugID: String) async throws -> Int { try await base.debugConsoleClear(debugID: debugID) }
     func debugClose(debugID: String, keepProcess: Bool) async throws { try await base.debugClose(debugID: debugID, keepProcess: keepProcess) }
 }

@@ -1,14 +1,26 @@
 import DeskhandClient
 import SwiftUI
 
-/// The paused target's call stack, innermost first; selecting a frame shows its source and scopes.
+/// The paused target's call stack, innermost first; selecting a frame shows its source and
+/// scopes, and ↑ and ↓ move the selection while the list has the keyboard.
 struct CallStackView: View {
+    static let rowHeight: CGFloat = 24
+    /// Rows the pane is tall at least.
+    static let minimumRows = 3
+
     let session: DebugSessionModel?
+    @FocusState private var focused: Bool
+
+    /// The pane's height for `frames` frames: the header and at least `minimumRows` rows.
+    static func idealHeight(frames: Int) -> CGFloat {
+        DebugPaneHeader<EmptyView>.height + CGFloat(max(minimumRows, frames)) * rowHeight + DS.Space.xs * 2
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             DebugPaneHeader(title: String.ui("debugger.callStack", "호출 스택"), detail: detail)
             content
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .accessibilityElement(children: .contain)
     }
@@ -26,22 +38,36 @@ struct CallStackView: View {
     private var content: some View {
         if let session, let state = session.pauseState {
             ScrollView {
-                VStack(spacing: 1) {
+                VStack(spacing: 0) {
                     ForEach(Array(state.callFrames.enumerated()), id: \.element.frameID) { index, frame in
                         FrameRow(index: index, frame: frame, selected: index == session.selectedFrameIndex,
                                  exception: index == 0 && Self.isException(state.pauseReason)) {
+                            focused = true
                             session.selectFrame(index)
                         }
                     }
                 }
                 .padding(DS.Space.xs)
             }
+            .focusable()
+            .focusEffectDisabled()
+            .focused($focused)
+            .onKeyPress(.upArrow) {
+                session.moveFrameSelection(by: -1)
+                return .handled
+            }
+            .onKeyPress(.downArrow) {
+                session.moveFrameSelection(by: 1)
+                return .handled
+            }
         } else if let session, session.isClosed {
-            DebugPanePlaceholder(symbol: "stop.circle", title: String.ui("debugger.callStack.closed", "세션이 닫혔습니다"))
+            DebugPaneHint(text: String.ui("debugger.callStack.closed", "세션이 닫혔습니다."))
+        } else if let session, session.stateFailure != nil {
+            DebugPaneHint(text: String.ui("debugger.callStack.failed", "호출 스택을 불러오지 못했습니다."))
+        } else if let session, session.awaitingState {
+            DebugPaneHint(text: String.ui("debugger.callStack.loading", "호출 스택을 불러오는 중…"))
         } else {
-            DebugPanePlaceholder(symbol: "list.bullet.indent",
-                                 title: String.ui("debugger.callStack.running", "실행 중"),
-                                 message: String.ui("debugger.callStack.hint", "멈추면 호출 스택이 여기에 나타납니다."))
+            DebugPaneHint(text: String.ui("debugger.callStack.hint", "멈추면 호출 스택이 여기에 나타납니다."))
         }
     }
 }
@@ -78,13 +104,13 @@ private struct FrameRow: View {
     private var label: some View {
         HStack(spacing: DS.Space.s) {
             marker
-                .frame(width: 14)
+                .frame(width: 16)
             name
             Spacer(minLength: DS.Space.s)
             locationText
         }
         .padding(.horizontal, DS.Space.s)
-        .frame(height: 26)
+        .frame(height: CallStackView.rowHeight)
         .background(background, in: RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
         .contentShape(Rectangle())
     }
@@ -127,7 +153,7 @@ private struct FrameRow: View {
         } else {
             Text(String(index))
                 .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill.opacity(0.85)) : AnyShapeStyle(.tertiary))
+                .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill.opacity(0.85)) : AnyShapeStyle(.secondary))
         }
     }
 }

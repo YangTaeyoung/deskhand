@@ -2,18 +2,38 @@ import DeskhandClient
 import SwiftUI
 import struct DeskhandClient.Host
 
-/// What the launch sheet holds before it launches.
+/// What the launch sheet holds before it launches; a recent launch also brings its breakpoints
+/// and exception setting.
 public struct LaunchDraft: Equatable, Sendable {
     public var path: String
     public var arguments: String
     public var cwd: String
     public var pauseOnStart: Bool
+    public var breakpoints: [BreakpointSpec]
+    public var pauseOnExceptions: ExceptionPauseMode?
 
-    public init(path: String = "", arguments: String = "", cwd: String = "", pauseOnStart: Bool = false) {
+    public init(path: String = "", arguments: String = "", cwd: String = "", pauseOnStart: Bool = false, breakpoints: [BreakpointSpec] = [],
+                pauseOnExceptions: ExceptionPauseMode? = nil) {
         self.path = path
         self.arguments = arguments
         self.cwd = cwd
         self.pauseOnStart = pauseOnStart
+        self.breakpoints = breakpoints
+        self.pauseOnExceptions = pauseOnExceptions
+    }
+
+    /// The draft of a recent launch.
+    public init(_ recent: RecentLaunch) {
+        self.init(path: recent.path, arguments: ArgumentSplitter.join(recent.args), cwd: recent.cwd ?? "", pauseOnStart: recent.pauseOnStart,
+                  breakpoints: recent.breakpoints, pauseOnExceptions: recent.pauseOnExceptions)
+    }
+
+    /// The launch request for `hostID`.
+    public func request(hostID: String) -> DebugLaunchRequest {
+        let path = path.trimmingCharacters(in: .whitespaces)
+        let folder = cwd.trimmingCharacters(in: .whitespaces)
+        return DebugLaunchRequest(hostID: hostID, path: path, args: ArgumentSplitter.split(arguments), cwd: folder.isEmpty ? nil : folder,
+                                  pauseOnStart: pauseOnStart, breakpoints: breakpoints, pauseOnExceptions: pauseOnExceptions)
     }
 }
 
@@ -81,7 +101,7 @@ public struct LaunchSheet: View {
                     .font(DS.Font.title)
                     .accessibilityAddTraits(.isHeader)
                 Text(browser == nil
-                     ? String.ui("debugger.launch.subtitle", "\(host.name)에서 앱을 디버그 포트를 연 채로 실행하고 메인과 렌더러에 붙습니다.")
+                     ? String.ui("debugger.launch.subtitle", "\(host.name)에서 디버그 포트를 연 채로 앱을 실행합니다.\n메인 프로세스와 렌더러에 자동으로 연결합니다.")
                      : String.ui("debugger.picker.subtitle", "\(host.name)의 폴더에서 Electron 앱의 .exe 파일을 고르세요."))
                     .font(DS.Font.body)
                     .foregroundStyle(.secondary)
@@ -107,9 +127,7 @@ public struct LaunchSheet: View {
                                 Menu {
                                     ForEach(model.recentLaunches) { recent in
                                         Button(FilePath.lastComponent(recent.path, style: .windows) + "  " + recent.path) {
-                                            draft.path = recent.path
-                                            draft.arguments = ArgumentSplitter.join(recent.args)
-                                            draft.cwd = recent.cwd ?? ""
+                                            draft = LaunchDraft(recent)
                                         }
                                     }
                                 } label: {
@@ -144,13 +162,29 @@ public struct LaunchSheet: View {
                 }
                 GridRow {
                     Color.clear.frame(width: 1, height: 1)
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: DS.Space.xs) {
                         Toggle(String.ui("debugger.launch.pauseOnStart", "메인 프로세스 첫 줄에서 멈춤"), isOn: $draft.pauseOnStart)
                         Text(String.ui("debugger.launch.pauseOnStart.hint", "--inspect-brk로 실행해 main.js가 시작하기 전에 멈춥니다. 앱 시작 코드를 디버그할 때 켜세요."))
                             .font(DS.Font.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
-                            .padding(.leading, 20)
+                            .padding(.leading, DS.Space.l + DS.Space.xs)
+                    }
+                }
+                if !draft.breakpoints.isEmpty {
+                    GridRow {
+                        label(String.ui("debugger.breakpoints", "중단점"))
+                        HStack(spacing: DS.Space.s) {
+                            BreakpointMarker(enabled: true, resolved: true, width: 20, height: 14)
+                            let count = String(draft.breakpoints.count)
+                            Text(String.ui("debugger.launch.breakpoints", "최근 실행의 중단점 \(count)개를 앱이 시작하기 전에 겁니다"))
+                                .font(DS.Font.body)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: DS.Space.s)
+                            Button(String.ui("debugger.launch.breakpoints.clear", "빼기")) { draft.breakpoints = [] }
+                                .controlSize(.small)
+                        }
+                        .help(draft.breakpoints.map { ScriptURL.fileName($0.pattern) + ":" + String($0.line) }.joined(separator: "\n"))
                     }
                 }
             }
@@ -183,7 +217,8 @@ public struct LaunchSheet: View {
     /// What to do after a failed launch.
     static func fix(_ error: OperationError) -> String? {
         switch error.code {
-        case "TIMEOUT": .ui("debugger.fix.timeout", "Electron이나 Node로 만든 앱인지, 실행 직후 종료되지 않는지 확인하세요. WebView2 앱은 이 방법으로 디버그할 수 없습니다.")
+        case "EXITED_EARLY": .ui("debugger.fix.exitedEarly", "이미 실행 중인 같은 앱이 있으면 새로 띄운 프로세스가 기존 창에 넘기고 바로 끝납니다. 같은 앱을 모두 닫고 다시 실행하거나 ‘실행 중인 앱에 연결…’을 쓰세요.")
+        case "TIMEOUT": .ui("debugger.fix.timeout", "Electron이나 Node로 만든 앱인지 확인하세요. WebView2 앱은 이 방법으로 디버그할 수 없습니다.")
         case "NOT_FOUND": .ui("debugger.fix.notFound", "경로를 확인하거나 ‘찾아보기…’로 실행 파일을 고르세요.")
         default: error.fix
         }
@@ -233,9 +268,7 @@ public struct LaunchSheet: View {
     }
 
     private func launch() {
-        let request = DebugLaunchRequest(hostID: host.hostID, path: trimmedPath, args: ArgumentSplitter.split(draft.arguments),
-                                         cwd: draft.cwd.trimmingCharacters(in: .whitespaces).isEmpty ? nil : draft.cwd,
-                                         pauseOnStart: draft.pauseOnStart)
+        let request = draft.request(hostID: host.hostID)
         error = nil
         Task {
             if let failure = await model.launch(request) {
@@ -346,12 +379,6 @@ struct RemoteFilePicker: View {
                                 } else if Self.isExecutable(item) {
                                     chosen = item.path
                                 }
-                            } open: {
-                                if item.isFolder {
-                                    Task { await browser.open(item.path) }
-                                } else if Self.isExecutable(item) {
-                                    select(item.path)
-                                }
                             }
                         }
                     }
@@ -366,46 +393,48 @@ struct RemoteFilePicker: View {
     }
 }
 
+/// A folder or file of the picker: a click opens a folder or chooses an executable; other files
+/// are dimmed and do nothing.
 private struct PickerRow: View {
     let item: FileItem
     let chosen: Bool
     let click: () -> Void
-    let open: () -> Void
     @State private var hovering = false
 
     var body: some View {
         let usable = item.isFolder || RemoteFilePicker.isExecutable(item)
-        HStack(spacing: DS.Space.s) {
-            Image(systemName: item.isFolder ? "folder.fill" : (RemoteFilePicker.isExecutable(item) ? "macwindow" : "doc"))
-                .foregroundStyle(item.isFolder ? AnyShapeStyle(DS.Color.accent.opacity(0.8)) : AnyShapeStyle(.secondary))
-                .frame(width: 18)
-                .accessibilityHidden(true)
-            Text(item.name)
-                .font(DS.Font.body)
-                .foregroundStyle(chosen ? AnyShapeStyle(DS.Color.onFill) : (usable ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary)))
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer(minLength: DS.Space.s)
-            if !item.isFolder {
-                Text(item.sizeText)
-                    .font(DS.Font.caption)
-                    .monospacedDigit()
-                    .foregroundStyle(chosen ? AnyShapeStyle(DS.Color.onFill.opacity(0.85)) : AnyShapeStyle(.tertiary))
-            } else {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.tertiary)
+        Button(action: click) {
+            HStack(spacing: DS.Space.s) {
+                Image(systemName: item.isFolder ? "folder.fill" : (RemoteFilePicker.isExecutable(item) ? "macwindow" : "doc"))
+                    .foregroundStyle(item.isFolder ? AnyShapeStyle(DS.Color.accent.opacity(0.8)) : AnyShapeStyle(.secondary))
+                    .frame(width: 20)
+                    .accessibilityHidden(true)
+                Text(item.name)
+                    .font(DS.Font.body)
+                    .foregroundStyle(chosen ? AnyShapeStyle(DS.Color.onFill) : (usable ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary)))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: DS.Space.s)
+                if !item.isFolder {
+                    Text(item.sizeText)
+                        .font(DS.Font.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(chosen ? AnyShapeStyle(DS.Color.onFill.opacity(0.85)) : AnyShapeStyle(.secondary))
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
             }
+            .padding(.horizontal, DS.Space.m)
+            .frame(height: 28)
+            .background(chosen ? AnyShapeStyle(DS.Color.accent) : (hovering && usable ? AnyShapeStyle(DS.Color.neutral.opacity(0.1)) : AnyShapeStyle(.clear)))
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, DS.Space.m)
-        .frame(height: 26)
-        .background(chosen ? AnyShapeStyle(DS.Color.accent) : (hovering && usable ? AnyShapeStyle(DS.Color.neutral.opacity(0.1)) : AnyShapeStyle(.clear)))
-        .contentShape(Rectangle())
-        .onTapGesture(count: 2, perform: open)
-        .onTapGesture(perform: click)
+        .buttonStyle(.plain)
+        .disabled(!usable)
         .onHover { hovering = $0 }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(chosen ? [.isSelected, .isButton] : [.isButton])
-        .accessibilityAction(.default, open)
+        .accessibilityAddTraits(chosen ? [.isSelected] : [])
+        .accessibilityHint(item.isFolder ? String.ui("debugger.picker.openFolder", "폴더 열기") : "")
     }
 }

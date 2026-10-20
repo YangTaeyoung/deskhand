@@ -15,6 +15,12 @@ enum DebugFormat {
         return name + ":" + number
     }
 
+    /// `at applyDiscount (api.js:34)`, as V8 prints stack frames.
+    static func stackLine(_ frame: StackFrameInfo) -> String {
+        let name = frame.function.isEmpty ? "<anonymous>" : frame.function
+        return "at " + name + " (" + location(url: frame.url, line: frame.line) + ")"
+    }
+
     static func reason(_ reason: DebugPauseReason) -> String {
         switch reason {
         case .breakpoint: .ui("debugger.reason.breakpoint", "중단점")
@@ -22,13 +28,15 @@ enum DebugFormat {
         case .promiseRejection: .ui("debugger.reason.promise", "처리되지 않은 Promise 거부")
         case .pauseRequest: .ui("debugger.reason.pause", "일시정지 요청")
         case .step: .ui("debugger.reason.step", "한 단계 실행")
+        case .start: .ui("debugger.reason.start", "첫 줄")
         case .other: .ui("debugger.reason.other", "debugger 문 또는 기타")
         }
     }
 
-    static func closed(_ reason: DebugCloseReason?, exitCode: Int?) -> String {
+    static func closed(_ reason: DebugCloseReason?, exitCode: Int?, kind: DebugSessionKind?) -> String {
         switch reason {
-        case .requested: return .ui("debugger.closed.requested", "세션을 닫았습니다")
+        case .requested:
+            return kind == .attach ? .ui("debugger.closed.detached", "연결을 해제했습니다") : .ui("debugger.closed.requested", "세션을 닫았습니다")
         case .processExited:
             if let exitCode {
                 let code = String(exitCode)
@@ -37,6 +45,15 @@ enum DebugFormat {
             return .ui("debugger.closed.exited", "앱이 종료되었습니다")
         case .connectionLost: return .ui("debugger.closed.connection", "원격 PC와 연결이 끊겨 세션이 닫혔습니다")
         case nil: return .ui("debugger.closed.unknown", "데몬이 더 이상 이 세션을 알지 못합니다")
+        }
+    }
+
+    /// The closed text of the session list: shorter, the remote PC left out.
+    static func closedShort(_ reason: DebugCloseReason?, exitCode: Int?, kind: DebugSessionKind?) -> String {
+        switch reason {
+        case .connectionLost: .ui("debugger.closedShort.connection", "연결이 끊겨 닫혔습니다")
+        case nil: .ui("debugger.closedShort.unknown", "데몬에 없는 세션입니다")
+        default: closed(reason, exitCode: exitCode, kind: kind)
         }
     }
 
@@ -60,8 +77,27 @@ enum DebugFormat {
     static func exceptionMode(_ mode: ExceptionPauseMode) -> String {
         switch mode {
         case .none: .ui("debugger.exceptions.none", "멈추지 않음")
-        case .uncaught: .ui("debugger.exceptions.uncaught", "잡히지 않은 예외")
-        case .all: .ui("debugger.exceptions.all", "모든 예외")
+        case .uncaught: .ui("debugger.exceptions.uncaught", "잡히지 않은 것만")
+        case .all: .ui("debugger.exceptions.all", "모두")
+        }
+    }
+
+    /// `Claude Code` for an AI client, the client name or 사람 for others.
+    static func actor(_ actor: DebugActor) -> String {
+        if let name = actor.clientName, !name.isEmpty { return name }
+        switch actor.actor {
+        case "ai": return .ui("debugger.actor.ai", "AI")
+        case "system": return .ui("debugger.actor.system", "Deskhand")
+        default: return .ui("debugger.actor.human", "사람")
+        }
+    }
+
+    static func mainUnavailable(_ reason: MainUnavailableReason) -> String {
+        switch reason {
+        case .inspectorDisabled:
+            .ui("debugger.main.disabled", "이 앱은 --inspect를 무시하도록 빌드되어 메인 프로세스를 디버그할 수 없습니다. 렌더러만 연결했습니다.")
+        case .inspectorNotResponding:
+            .ui("debugger.main.notResponding", "메인 프로세스의 검사기가 응답하지 않아 렌더러만 연결했습니다.")
         }
     }
 
@@ -102,6 +138,7 @@ enum DebugFormat {
         case "boolean", "symbol": DS.Code.keyword
         case "undefined": DS.Code.comment
         case "object" where value.subtype == "null": DS.Code.comment
+        case "object" where value.subtype == "error": DS.Code.errorText
         case "function": .secondary
         default: .primary
         }
@@ -116,11 +153,12 @@ enum DebugFormat {
 
     static let monoSize: CGFloat = 12
     static var mono: Font { .system(size: monoSize, design: .monospaced) }
+    static var smallMono: Font { .system(size: 11, design: .monospaced) }
 }
 
 /// A pane title bar: a title, an optional detail, and trailing controls.
 struct DebugPaneHeader<Trailing: View>: View {
-    static var height: CGFloat { 30 }
+    static var height: CGFloat { 32 }
 
     let title: String
     var detail: String?
@@ -132,10 +170,11 @@ struct DebugPaneHeader<Trailing: View>: View {
                 .font(DS.Font.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .accessibilityAddTraits(.isHeader)
+                .fixedSize()
             if let detail {
                 Text(detail)
                     .font(DS.Font.caption)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
@@ -200,12 +239,9 @@ struct DebugSplit<First: View, Second: View>: View {
             .frame(width: axis == .horizontal ? 1 : nil, height: axis == .vertical ? 1 : nil)
             .overlay {
                 Color.clear
-                    .frame(width: axis == .horizontal ? 9 : nil, height: axis == .vertical ? 9 : nil)
+                    .frame(width: axis == .horizontal ? 8 : nil, height: axis == .vertical ? 8 : nil)
                     .contentShape(Rectangle())
-                    .onHover { inside in
-                        let cursor: NSCursor = axis == .horizontal ? .resizeLeftRight : .resizeUpDown
-                        if inside { cursor.push() } else { NSCursor.pop() }
-                    }
+                    .pointerStyle(.frameResize(position: axis == .horizontal ? .trailing : .bottom))
                     .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
                         .onChanged { value in
                             guard length > 0 else { return }
@@ -222,16 +258,22 @@ struct DebugSplit<First: View, Second: View>: View {
 
 /// The role of a target as a small capsule: 메인, 렌더러, 워커 or 프레임.
 struct RoleBadge: View {
+    /// A width every role fits, for aligned columns.
+    static let width: CGFloat = 48
+
     let target: DebugTarget
     /// Drawn on an accent selection.
     var inverted = false
+    /// Takes `width` so a column of badges lines up.
+    var fixedWidth = false
 
     var body: some View {
         let main = target.targetRole == .main
         Text(DebugFormat.role(target))
             .font(.system(size: NSFont.smallSystemFontSize - 1, weight: .semibold))
             .foregroundStyle(foreground(main: main))
-            .padding(.horizontal, 6)
+            .padding(.horizontal, DS.Space.s)
+            .frame(minWidth: fixedWidth ? Self.width : nil)
             .frame(height: 16)
             .background(background(main: main), in: Capsule())
             .fixedSize()
@@ -267,18 +309,20 @@ struct BreakpointMarkerShape: Shape {
     }
 }
 
-/// A breakpoint marker: filled while it will stop, faded when it is off or all breakpoints are
-/// off, outlined while it has not bound to a script.
+/// A breakpoint marker: filled while it will stop, faded when it is off, all breakpoints are off
+/// or the session closed, outlined while it has not bound to a script; a conditional breakpoint
+/// carries a `?` at its leading end.
 struct BreakpointMarker: View {
     let enabled: Bool
     let resolved: Bool
     var active = true
-    var width: CGFloat = 22
+    var conditional = false
+    var width: CGFloat = 20
     var height: CGFloat = 14
 
     var body: some View {
         let live = enabled && active
-        ZStack {
+        ZStack(alignment: .leading) {
             if resolved {
                 BreakpointMarkerShape()
                     .fill(DS.Code.breakpoint.opacity(live ? 1 : 0.35))
@@ -288,23 +332,68 @@ struct BreakpointMarker: View {
                 BreakpointMarkerShape()
                     .stroke(DS.Code.breakpoint.opacity(live ? 0.9 : 0.4), lineWidth: 1.25)
             }
+            if conditional {
+                Text("?")
+                    .font(.system(size: height * 0.7, weight: .heavy, design: .rounded))
+                    .foregroundStyle(resolved ? AnyShapeStyle(DS.Color.onFill.opacity(live ? 1 : 0.8)) : AnyShapeStyle(DS.Code.breakpoint))
+                    .padding(.leading, min(DS.Space.xs, width / 6))
+            }
         }
         .frame(width: width, height: height)
         .accessibilityHidden(true)
     }
 }
 
-/// A value preview in its type's color, one line, monospaced.
+/// A value preview in its type's color on one line: the longest form that fits, ending at a
+/// property boundary, so a narrow column never shows a cut property or a doubled `…`.
 struct ValuePreviewText: View {
     let value: RemoteValue
 
     var body: some View {
-        Text(value.valuePreview)
+        let forms = ValuePreview.candidates(value.valuePreview)
+        ViewThatFits(in: .horizontal) {
+            ForEach(Array(forms.dropLast().enumerated()), id: \.offset) { _, form in
+                text(form).fixedSize()
+            }
+            text(forms.last ?? value.valuePreview)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .help(value.valuePreview)
+    }
+
+    private func text(_ form: String) -> some View {
+        Text(form)
             .font(DebugFormat.mono)
             .italic(value.type == "function")
             .foregroundStyle(DebugFormat.valueColor(value))
             .lineLimit(1)
-            .truncationMode(.tail)
+    }
+}
+
+/// A name and a value side by side: the name takes what it needs, up to what the value leaves
+/// when it fits whole and at least 45% of the width; the value takes the rest.
+struct NameValueLayout: Layout {
+    var spacing: CGFloat = DS.Space.xs
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard subviews.count == 2 else { return .zero }
+        let name = subviews[0].sizeThatFits(.unspecified)
+        let value = subviews[1].sizeThatFits(.unspecified)
+        let width = proposal.width ?? (name.width + spacing + value.width)
+        return CGSize(width: width, height: max(name.height, value.height))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count == 2 else { return }
+        let ideal = subviews[0].sizeThatFits(.unspecified).width
+        let value = subviews[1].sizeThatFits(.unspecified).width
+        let nameWidth = min(ideal, max((bounds.width - spacing) * 0.45, bounds.width - spacing - value))
+        subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading,
+                          proposal: ProposedViewSize(width: nameWidth, height: bounds.height))
+        let valueX = bounds.minX + nameWidth + spacing
+        subviews[1].place(at: CGPoint(x: valueX, y: bounds.midY), anchor: .leading,
+                          proposal: ProposedViewSize(width: max(0, bounds.maxX - valueX), height: bounds.height))
     }
 }
 
@@ -333,7 +422,7 @@ struct DebugPanePlaceholder: View {
         VStack(spacing: DS.Space.s) {
             Image(systemName: symbol)
                 .font(.system(size: 22, weight: .regular))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             Text(title)
                 .font(DS.Font.body.weight(.semibold))
@@ -351,5 +440,20 @@ struct DebugPanePlaceholder: View {
         .padding(DS.Space.l)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// A one-line hint at the top of a pane that has nothing to show yet.
+struct DebugPaneHint: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(DS.Font.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, DS.Space.m)
+            .padding(.vertical, DS.Space.s)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }

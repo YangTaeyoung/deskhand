@@ -131,12 +131,14 @@ public protocol DebuggerBackend: Sendable {
     func debugAttach(_ request: DebugAttachRequest) async throws -> DebugSession
     /// Attaches to a listed target the daemon did not attach to on its own.
     func debugTargetAttach(debugID: String, targetID: String) async throws -> DebugTarget
-    func debugBreakpointSet(_ request: BreakpointRequest) async throws -> DebugBreakpoint
-    func debugBreakpointEnable(debugID: String, breakpointID: String, enabled: Bool) async throws -> DebugBreakpoint
-    func debugBreakpointRemove(debugID: String, breakpointID: String) async throws
-    /// Turns every breakpoint of the session on or off without changing them.
-    func debugBreakpointsActivate(debugID: String, active: Bool) async throws
-    func debugExceptions(debugID: String, mode: ExceptionPauseMode) async throws
+    func debugBreakpointSet(debugID: String, spec: BreakpointSpec) async throws -> DebugBreakpoint
+    /// Turns a breakpoint on or off, or changes its condition (`""` removes it).
+    func debugBreakpointUpdate(debugID: String, breakpointID: String, enabled: Bool?, condition: String?) async throws -> DebugBreakpoint
+    /// Returns the breakpoint with the `rev` of its removal, when the result carries it.
+    func debugBreakpointRemove(debugID: String, breakpointID: String) async throws -> DebugBreakpoint?
+    /// Turns every breakpoint of the session on or off without changing them; returns the session when the result carries it.
+    func debugBreakpointsActivate(debugID: String, active: Bool) async throws -> DebugSession?
+    func debugExceptions(debugID: String, mode: ExceptionPauseMode) async throws -> DebugSession?
     /// Returns the target as the daemon knew it when it replied, when the result carries it.
     func debugPause(debugID: String, targetID: String) async throws -> DebugTarget?
     func debugResume(debugID: String, targetID: String) async throws -> DebugTarget?
@@ -150,6 +152,9 @@ public protocol DebuggerBackend: Sendable {
     func debugScripts(debugID: String, targetID: String?) async throws -> [DebugScript]
     func debugSource(debugID: String, targetID: String, scriptID: String) async throws -> DebugSource
     func debugConsole(_ query: ConsoleQuery) async throws -> ConsolePage
+    /// Removes the session's console entries so far for every client and releases its console
+    /// objects; returns the last `seq` removed.
+    func debugConsoleClear(debugID: String) async throws -> Int
     /// Ends the session; a launched app ends with it unless `keepProcess`.
     func debugClose(debugID: String, keepProcess: Bool) async throws
 }
@@ -160,15 +165,21 @@ public struct DebugLaunchRequest: Sendable, Equatable {
     public var path: String
     public var args: [String]
     public var cwd: String?
-    /// Stops on the first line of the main process (`--inspect-brk`).
+    /// Stays stopped on the first line of the main process.
     public var pauseOnStart: Bool
+    /// Set before any code runs.
+    public var breakpoints: [BreakpointSpec]
+    public var pauseOnExceptions: ExceptionPauseMode?
 
-    public init(hostID: String, path: String, args: [String] = [], cwd: String? = nil, pauseOnStart: Bool = false) {
+    public init(hostID: String, path: String, args: [String] = [], cwd: String? = nil, pauseOnStart: Bool = false,
+                breakpoints: [BreakpointSpec] = [], pauseOnExceptions: ExceptionPauseMode? = nil) {
         self.hostID = hostID
         self.path = path
         self.args = args
         self.cwd = cwd
         self.pauseOnStart = pauseOnStart
+        self.breakpoints = breakpoints
+        self.pauseOnExceptions = pauseOnExceptions
     }
 }
 
@@ -182,32 +193,15 @@ public struct DebugAttachRequest: Sendable, Equatable {
 
     public var hostID: String
     public var target: Target
+    /// Set as soon as the debugger attaches.
+    public var breakpoints: [BreakpointSpec]
+    public var pauseOnExceptions: ExceptionPauseMode?
 
-    public init(hostID: String, target: Target) {
+    public init(hostID: String, target: Target, breakpoints: [BreakpointSpec] = [], pauseOnExceptions: ExceptionPauseMode? = nil) {
         self.hostID = hostID
         self.target = target
-    }
-}
-
-/// Parameters of `debug.breakpoint.set`: an exact `url` or a `url_regex`, and a line from 1.
-public struct BreakpointRequest: Sendable, Equatable {
-    public enum Match: Sendable, Equatable {
-        case url(String)
-        case regex(String)
-    }
-
-    public var debugID: String
-    public var match: Match
-    public var line: Int
-    public var column: Int?
-    public var condition: String?
-
-    public init(debugID: String, match: Match, line: Int, column: Int? = nil, condition: String? = nil) {
-        self.debugID = debugID
-        self.match = match
-        self.line = line
-        self.column = column
-        self.condition = condition
+        self.breakpoints = breakpoints
+        self.pauseOnExceptions = pauseOnExceptions
     }
 }
 
@@ -335,6 +329,16 @@ extension StreamConnection: ScreenStream {}
 public protocol EventsBackend: Sendable {
     /// Events matching the filters; `nil` matches everything. The stream outlives reconnects.
     func events(kinds: [String]?, hostID: String?) -> AsyncThrowingStream<DaemonEvent, Error>
+    /// Yields each time the daemon connection comes back after a drop; events sent while it was
+    /// down were missed.
+    func reconnects() -> AsyncStream<Void>
+}
+
+extension EventsBackend {
+    /// A connection that never drops.
+    public func reconnects() -> AsyncStream<Void> {
+        AsyncStream { _ in }
+    }
 }
 
 /// Event kinds the app reacts to, with their payload fields (local-api.md §6).
@@ -365,22 +369,25 @@ public enum EventKind {
     public static let jobUpdated = "job.updated"
     /// `debug_id`, `session` (DebugSession).
     public static let debugSessionChanged = "debug.session_changed"
-    /// `debug_id`, `target` (DebugTarget), `removed`.
+    /// `debug_id`, `target` (DebugTarget), `removed`, `rev`.
     public static let debugTargetChanged = "debug.target_changed"
-    /// `debug_id`, `breakpoint` (Breakpoint), `removed`.
+    /// `debug_id`, `breakpoint` (Breakpoint), `removed`, `error?`.
     public static let debugBreakpointChanged = "debug.breakpoint_changed"
     /// `debug_id`, `state` (PauseState).
     public static let debugPaused = "debug.paused"
-    /// `debug_id`, `target_id`, `gen`.
+    /// `debug_id`, `target_id`, `gen`, `by?`.
     public static let debugResumed = "debug.resumed"
     /// `debug_id`, `entry` (ConsoleEntry).
     public static let debugConsole = "debug.console"
-    /// `debug_id`, `reason`, `exit_code?`.
+    /// `debug_id`, `through_seq`.
+    public static let debugConsoleCleared = "debug.console_cleared"
+    /// `debug_id`, `reason`, `exit_code?`, `rev`.
     public static let debugClosed = "debug.closed"
 
     /// Every kind the debugger tab follows.
     public static let debuggerKinds = [
-        debugSessionChanged, debugTargetChanged, debugBreakpointChanged, debugPaused, debugResumed, debugConsole, debugClosed,
+        debugSessionChanged, debugTargetChanged, debugBreakpointChanged, debugPaused, debugResumed, debugConsole, debugConsoleCleared,
+        debugClosed,
     ]
 
     /// Every kind `AppStore` subscribes to.

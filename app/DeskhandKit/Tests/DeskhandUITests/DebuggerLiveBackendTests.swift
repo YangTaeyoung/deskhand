@@ -33,7 +33,9 @@ final class DebuggerLiveBackendTests: XCTestCase {
         let (backend, client) = try await backend(daemon)
 
         let launched = try await backend.debugLaunch(DebugLaunchRequest(
-            hostID: dev, path: "C:\\Shop\\desktop\\Shop Admin.exe", args: ["--env=staging"], cwd: nil, pauseOnStart: true))
+            hostID: dev, path: "C:\\Shop\\desktop\\Shop Admin.exe", args: ["--env=staging"], cwd: nil, pauseOnStart: true,
+            breakpoints: [BreakpointSpec(match: .fileName, pattern: "checkout.js", line: 31, condition: "order.total > 0")],
+            pauseOnExceptions: .all))
         XCTAssertEqual(launched.debugID, "d-1")
         XCTAssertEqual(launched.targets.first?.targetRole, .main)
         let launch = try XCTUnwrap(daemon.requests(method: "debug.electron.launch").first)
@@ -42,6 +44,12 @@ final class DebuggerLiveBackendTests: XCTestCase {
         XCTAssertEqual(launch.params["args"] as? [String], ["--env=staging"])
         XCTAssertEqual(launch.params["pause_on_start"] as? Bool, true)
         XCTAssertNil(launch.params["cwd"])
+        XCTAssertEqual(launch.params["pause_on_exceptions"] as? String, "all")
+        let specs = try XCTUnwrap(launch.params["breakpoints"] as? [[String: Any]])
+        XCTAssertEqual(specs.first?["match"] as? String, "file_name")
+        XCTAssertEqual(specs.first?["pattern"] as? String, "checkout.js")
+        XCTAssertEqual(specs.first?["line"] as? Int, 31)
+        XCTAssertEqual(specs.first?["condition"] as? String, "order.total > 0")
 
         _ = try await backend.debugAttach(DebugAttachRequest(hostID: dev, target: .port(9229, role: .main)))
         _ = try await backend.debugAttach(DebugAttachRequest(hostID: dev, target: .pid(7000)))
@@ -106,15 +114,19 @@ final class DebuggerLiveBackendTests: XCTestCase {
                 return .result(#"{\#(ok),"target":{"id":"t-page","role":"renderer","type":"page","url":"u","title":"결제","attached":true,"paused":false,"gen":8}}"#)
             case "debug.pause":
                 return .result(#"{\#(ok)}"#)
-            case "debug.breakpoint.set":
-                return .result(#"{\#(ok),"breakpoint":{"breakpoint_id":"bp-1","url_regex":"checkout\\.js$","line":42,"enabled":true,"resolved":false,"locations":[]}}"#)
+            case "debug.breakpoint.set", "debug.breakpoint.update":
+                return .result(#"{\#(ok),"breakpoint":{"breakpoint_id":"bp-1","match":"url_regex","pattern":"checkout\\.js$","line":42,"enabled":true,"resolved":false,"locations":[],"rev":3}}"#)
+            case "debug.breakpoint.remove":
+                return .result(#"{\#(ok),"breakpoint":{"breakpoint_id":"bp-1","match":"url_regex","pattern":"checkout\\.js$","line":42,"enabled":true,"resolved":false,"locations":[],"rev":4}}"#)
+            case "debug.console.clear":
+                return .result(#"{\#(ok),"cleared_through":30}"#)
             case "debug.evaluate":
                 return .result(#"{\#(ok),"type":"number","value_preview":"46800","has_children":false}"#)
             case "debug.console":
                 return .result(#"{"entries":[],"next_cursor":30,"has_more":false,"has_earlier":false,"dropped":0}"#)
             case "debug.state":
                 return .result(#"{"target_id":"t-page","gen":7,"paused":true,"reason":"breakpoint","hit_breakpoints":["bp-1"],"call_frames":[]}"#)
-            case "debug.close", "debug.breakpoint.remove", "debug.exceptions", "debug.breakpoints.activate":
+            case "debug.close", "debug.exceptions", "debug.breakpoints.activate":
                 return .result(#"{\#(ok)}"#)
             case "debug.list":
                 return .result(#"{"sessions":[\#(Self.session)]}"#)
@@ -131,14 +143,28 @@ final class DebuggerLiveBackendTests: XCTestCase {
         XCTAssertNil(paused)
         XCTAssertEqual(daemon.requests(method: "debug.pause").first?.params["target_id"] as? String, "t-page")
 
-        let breakpoint = try await backend.debugBreakpointSet(BreakpointRequest(
-            debugID: "d-1", match: .regex(#"checkout\.js$"#), line: 42, condition: "order.total > 0"))
+        let breakpoint = try await backend.debugBreakpointSet(debugID: "d-1", spec: BreakpointSpec(
+            match: .urlRegex, pattern: #"checkout\.js$"#, line: 42, condition: "order.total > 0"))
         XCTAssertEqual(breakpoint.breakpointID, "bp-1")
+        XCTAssertEqual(breakpoint.matchKind, .urlRegex)
+        XCTAssertEqual(breakpoint.rev, 3)
         let set = try XCTUnwrap(daemon.requests(method: "debug.breakpoint.set").first)
-        XCTAssertEqual(set.params["url_regex"] as? String, #"checkout\.js$"#)
+        XCTAssertEqual(set.params["match"] as? String, "url_regex")
+        XCTAssertEqual(set.params["pattern"] as? String, #"checkout\.js$"#)
         XCTAssertNil(set.params["url"])
         XCTAssertEqual(set.params["line"] as? Int, 42)
         XCTAssertEqual(set.params["condition"] as? String, "order.total > 0")
+
+        _ = try await backend.debugBreakpointUpdate(debugID: "d-1", breakpointID: "bp-1", enabled: false, condition: nil)
+        let update = try XCTUnwrap(daemon.requests(method: "debug.breakpoint.update").first)
+        XCTAssertEqual(update.params["breakpoint_id"] as? String, "bp-1")
+        XCTAssertEqual(update.params["enabled"] as? Bool, false)
+        XCTAssertNil(update.params["condition"])
+        let removed = try await backend.debugBreakpointRemove(debugID: "d-1", breakpointID: "bp-1")
+        XCTAssertEqual(removed?.rev, 4)
+        let cleared = try await backend.debugConsoleClear(debugID: "d-1")
+        XCTAssertEqual(cleared, 30)
+        XCTAssertEqual(daemon.requests(method: "debug.console.clear").first?.params["debug_id"] as? String, "d-1")
 
         let value = try await backend.debugEvaluate(debugID: "d-1", targetID: "t-page", expression: "order.total", frameID: "cf-0")
         XCTAssertEqual(value.value.valuePreview, "46800")
@@ -154,9 +180,9 @@ final class DebuggerLiveBackendTests: XCTestCase {
         let state = try await backend.debugState(debugID: "d-1", targetID: "t-page")
         XCTAssertEqual(state.hitBreakpoints, ["bp-1"])
 
-        try await backend.debugExceptions(debugID: "d-1", mode: .all)
+        _ = try await backend.debugExceptions(debugID: "d-1", mode: .all)
         XCTAssertEqual(daemon.requests(method: "debug.exceptions").first?.params["mode"] as? String, "all")
-        try await backend.debugBreakpointsActivate(debugID: "d-1", active: false)
+        _ = try await backend.debugBreakpointsActivate(debugID: "d-1", active: false)
         XCTAssertEqual(daemon.requests(method: "debug.breakpoints.activate").first?.params["active"] as? Bool, false)
         try await backend.debugClose(debugID: "d-1", keepProcess: true)
         XCTAssertEqual(daemon.requests(method: "debug.close").first?.params["keep_process"] as? Bool, true)

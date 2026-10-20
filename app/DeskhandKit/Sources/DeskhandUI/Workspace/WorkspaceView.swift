@@ -32,6 +32,7 @@ public struct WorkspaceView: View {
     public var body: some View {
         framed
             .task(id: host.hostID) {
+                store.debugger(for: host).start()
                 await store.loadControl(for: host.hostID)
                 await store.loadTimeline(for: host.hostID)
             }
@@ -68,16 +69,29 @@ public struct WorkspaceView: View {
     /// tab content region below them reports a zero minimum size to the split view and is
     /// clipped to its frame, whatever the tab draws.
     private var main: some View {
-        VStack(spacing: 0) {
-            WorkspaceTabBar(layout: store.layout)
+        let debugger = store.debugger(for: host)
+        let pausedElsewhere = store.layout.tab == .debugger ? nil : debugger.pausedElsewhere
+        return VStack(spacing: 0) {
+            WorkspaceTabBar(layout: store.layout, badges: debugger.openSessions.contains { !$0.pausedTargets.isEmpty } ? [.debugger] : [])
                 .layoutPriority(1)
             ControlBanner(store: store, host: host)
                 .layoutPriority(1)
+            if let pausedElsewhere {
+                DebuggerPausedBanner(pause: pausedElsewhere) {
+                    debugger.reveal(pausedElsewhere)
+                    store.layout.tab = .debugger
+                } dismiss: {
+                    debugger.dismiss(pausedElsewhere)
+                }
+                .layoutPriority(1)
+                .transition(.opacity)
+            }
             tabContent
                 .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
                 .clipped()
         }
         .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: bannerKind)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: pausedElsewhere)
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
     }
 
@@ -114,12 +128,13 @@ public struct WorkspaceView: View {
 }
 
 /// Leading row of the seven workspace tabs (⌘1–⌘7): symbol and title, or symbols only when
-/// the column is narrow.
+/// the column is narrow; tabs in `badges` carry a paused badge.
 struct WorkspaceTabBar: View {
     /// Height of the tab bar, shared with the inspector header beside it.
     static let height: CGFloat = 44
 
     @Bindable var layout: WorkspaceLayout
+    var badges: Set<WorkspaceTab> = []
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -141,10 +156,13 @@ struct WorkspaceTabBar: View {
     private func tabs(iconsOnly: Bool) -> some View {
         HStack(spacing: DS.Space.xs) {
             ForEach(WorkspaceTab.allCases) { tab in
-                TabButton(title: tab.title, symbol: tab.symbol, iconOnly: iconsOnly, isSelected: layout.tab == tab) {
+                TabButton(title: tab.title, symbol: tab.symbol, iconOnly: iconsOnly, isSelected: layout.tab == tab,
+                          badge: badges.contains(tab) && layout.tab != tab) {
                     layout.tab = tab
                 }
-                .help(String.ui("tab.help", "\(tab.title) (⌘\(tab.number))"))
+                .help(badges.contains(tab) && tab == .debugger
+                      ? String.ui("tab.help.debuggerPaused", "\(tab.title) (⌘\(String(tab.number))) · 일시정지된 앱이 있습니다")
+                      : String.ui("tab.help", "\(tab.title) (⌘\(tab.number))"))
             }
         }
         .fixedSize()
@@ -152,12 +170,13 @@ struct WorkspaceTabBar: View {
 }
 
 /// One tab of a tab row: the selected tab is drawn in the accent color on a tinted capsule,
-/// others in the secondary color with a hover wash.
+/// others in the secondary color with a hover wash; `badge` adds an orange pause dot.
 struct TabButton: View {
     let title: String
     var symbol: String?
     var iconOnly = false
     let isSelected: Bool
+    var badge = false
     let action: () -> Void
     @State private var hovering = false
 
@@ -167,11 +186,15 @@ struct TabButton: View {
                 if let symbol {
                     Image(systemName: symbol)
                         .imageScale(.medium)
+                        .overlay(alignment: .topTrailing) {
+                            if badge, iconOnly { PausedDot().offset(x: DS.Space.xs, y: -DS.Space.xs) }
+                        }
                 }
                 if !iconOnly {
                     Text(title)
                         .lineLimit(1)
                 }
+                if badge, !iconOnly { PausedDot() }
             }
             .font(isSelected ? DS.Font.body.weight(.semibold) : DS.Font.body)
             .foregroundStyle(isSelected ? AnyShapeStyle(DS.Color.accent) : AnyShapeStyle(.secondary))
@@ -183,6 +206,7 @@ struct TabButton: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .accessibilityLabel(title)
+        .accessibilityValue(badge ? String.ui("tab.debuggerPaused.a11y", "일시정지된 앱 있음") : "")
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 
@@ -208,5 +232,71 @@ struct TabPlaceholderView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// An orange circle with a pause symbol, marking a tab whose app is paused.
+struct PausedDot: View {
+    var body: some View {
+        Image(systemName: "pause.fill")
+            .font(.system(size: 6, weight: .heavy))
+            .foregroundStyle(DS.Color.onFill)
+            .frame(width: 12, height: 12)
+            .background(DS.Color.warning, in: Circle())
+            .accessibilityHidden(true)
+    }
+}
+
+/// A pause of a debugged app while another tab is in front: the app, where it stopped, a button
+/// to the debugger tab and one to dismiss it until the next pause.
+struct DebuggerPausedBanner: View {
+    let pause: PausedElsewhere
+    let show: () -> Void
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: DS.Space.s) {
+            Image(systemName: "pause.circle.fill")
+                .font(.system(size: 14))
+                .foregroundStyle(DS.Color.warning)
+                .accessibilityHidden(true)
+            Text(message)
+                .font(DS.Font.body)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Text("·")
+                .font(DS.Font.body)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Button(String.ui("debugger.pausedBanner.show", "디버거 보기"), action: show)
+                .buttonStyle(.link)
+                .tint(DS.Color.accent)
+            Spacer(minLength: DS.Space.s)
+            Button(action: dismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(String.ui("debugger.pausedBanner.dismiss", "이 알림 닫기"))
+            .accessibilityLabel(String.ui("debugger.pausedBanner.dismiss", "이 알림 닫기"))
+        }
+        .padding(.horizontal, DS.Space.l)
+        .padding(.vertical, DS.Space.s)
+        .background(DS.Color.warning.opacity(0.1))
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(DS.Color.separator).frame(height: 1)
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var message: String {
+        let name = pause.appName
+        if let location = pause.location {
+            return .ui("debugger.pausedBanner", "‘\(name)’ 앱이 \(location)에서 멈췄습니다")
+        }
+        return .ui("debugger.pausedBanner.noLocation", "‘\(name)’ 앱이 멈췄습니다")
     }
 }

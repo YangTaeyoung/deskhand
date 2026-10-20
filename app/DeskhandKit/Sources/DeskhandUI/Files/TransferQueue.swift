@@ -29,6 +29,7 @@ public final class TransferQueue {
     @ObservationIgnored var onFinish: ((Transfer) -> Void)?
     @ObservationIgnored private let backend: any Backend
     @ObservationIgnored private var eventsTask: Task<Void, Never>?
+    @ObservationIgnored private var reconnectsTask: Task<Void, Never>?
     /// The last applied `rev` per transfer ID.
     @ObservationIgnored private var revs: [String: Int] = [:]
     nonisolated static let log = Logger(subsystem: "io.github.yangtaeyoung.Deskhand", category: "files")
@@ -50,11 +51,19 @@ public final class TransferQueue {
     // MARK: Lifecycle
 
     /// Subscribes to `transfer.updated`, then loads the host's transfers, and follows the events
-    /// until `stop()`. After the stream ends it subscribes and loads again.
+    /// until `stop()`. After the stream ends it subscribes and loads again; whenever the daemon
+    /// connection comes back it loads again.
     func start() {
         guard eventsTask == nil else { return }
         let backend = self.backend
         let hostID = self.hostID
+        let reconnects = backend.reconnects()
+        reconnectsTask = Task { [weak self] in
+            for await _ in reconnects {
+                guard !Task.isCancelled else { return }
+                await self?.reload()
+            }
+        }
         eventsTask = Task { [weak self] in
             while !Task.isCancelled {
                 let stream = backend.events(kinds: [EventKind.transferUpdated], hostID: hostID)
@@ -86,6 +95,8 @@ public final class TransferQueue {
     func stop() {
         eventsTask?.cancel()
         eventsTask = nil
+        reconnectsTask?.cancel()
+        reconnectsTask = nil
     }
 
     public func reload() async {

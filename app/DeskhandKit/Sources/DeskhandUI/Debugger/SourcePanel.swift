@@ -4,8 +4,11 @@ import SwiftUI
 
 /// The location the session stopped at, or the one the person opened: the script's name and URL,
 /// the exception it threw, and the source around the line with the current line highlighted and
-/// breakpoints in the gutter. Clicking a line number sets or removes a breakpoint there.
+/// breakpoints in a gutter that stays put while the code scrolls sideways. Clicking a line number
+/// sets or removes a breakpoint there. Without a location it says why: running, a pause still
+/// being read or not read, a pause waiting for code to run, a detached target or a closed session.
 struct SourcePanel: View {
+    let model: DebuggerModel
     let session: DebugSessionModel?
 
     var body: some View {
@@ -19,7 +22,6 @@ struct SourcePanel: View {
                 .background(DS.Code.background)
         }
         .accessibilityElement(children: .contain)
-        .task(id: session?.id) { await session?.loadScripts() }
     }
 
     private var location: SourceFocus? { session?.shownLocation }
@@ -31,7 +33,7 @@ struct SourcePanel: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
-                HStack(alignment: .firstTextBaseline, spacing: 1) {
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
                     Text(ScriptURL.fileName(location.url))
                         .font(DS.Font.body.weight(.semibold))
                         .lineLimit(1)
@@ -39,9 +41,10 @@ struct SourcePanel: View {
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(.secondary)
                 }
+                .fixedSize()
                 Text(ScriptURL.display(location.url))
                     .font(DS.Font.caption)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.head)
                     .help(location.url)
@@ -55,9 +58,6 @@ struct SourcePanel: View {
                 Button(String.ui("debugger.source.backToPause", "멈춘 위치로")) { session.selectFrame(session.selectedFrameIndex) }
                     .controlSize(.small)
                     .help(String.ui("debugger.source.backToPause.help", "선택한 호출 프레임의 위치를 다시 봅니다"))
-            }
-            if let session, !session.scripts.isEmpty, !session.isClosed {
-                ScriptMenu(session: session)
             }
         }
         .padding(.horizontal, DS.Space.m)
@@ -79,57 +79,69 @@ struct SourcePanel: View {
         if let session, let location {
             switch session.sourceState(targetID: location.targetID, scriptID: location.scriptID) {
             case .loaded(let source):
-                SourceLines(session: session, source: source, location: location, highlight: highlight(session, location))
+                SourceLines(model: model, session: session, source: source, location: location, highlight: highlight(session))
                     .id(location)
             case .failed(let error):
-                DebugPanePlaceholder(symbol: "doc.questionmark", title: String.ui("debugger.source.failed", "소스를 불러오지 못했습니다"),
-                                     message: [error.message.asSentence, error.code.map { String.ui("error.codeInline", "오류 코드 \($0)") }]
-                                        .compactMap { $0 }.joined(separator: "\n"))
+                RetryPanel(symbol: "doc.questionmark", title: String.ui("debugger.source.failed", "소스를 불러오지 못했습니다"),
+                           error: error) { session.retrySource() }
             case .loading, nil:
                 SourceSkeleton()
             }
         } else if let session, session.isClosed {
-            DebugPanePlaceholder(symbol: "stop.circle", title: DebugFormat.closed(session.info.closeKind, exitCode: session.info.exitCode),
+            DebugPanePlaceholder(symbol: "stop.circle",
+                                 title: DebugFormat.closed(session.info.closeKind, exitCode: session.info.exitCode, kind: session.info.sessionKind),
                                  message: String.ui("debugger.source.closed.hint", "콘솔 기록은 남아 있습니다. 다시 디버그하려면 새 세션을 시작하세요."))
+        } else if let session, session.awaitingState {
+            if let targetID = session.selectedTargetID, let failure = session.stateFailures[targetID] {
+                RetryPanel(symbol: "pause.circle", title: String.ui("debugger.source.stateFailed", "멈춘 위치를 불러오지 못했습니다"),
+                           error: failure) { session.retryState() }
+            } else {
+                DebugLoadingLine(text: String.ui("debugger.source.stateLoading", "멈춘 위치를 불러오는 중…"))
+            }
+        } else if let session, session.pausePending {
+            DebugPanePlaceholder(symbol: "pause.circle",
+                                 title: String.ui("debugger.source.pausePending", "일시정지를 기다리는 중입니다"),
+                                 message: String.ui("debugger.source.pausePending.hint", "대상이 지금은 코드를 실행하지 않습니다. 다음 코드가 실행되는 순간 멈춥니다. 창을 클릭하거나 앱을 조작해 보세요."))
+        } else if let session, let target = session.selectedTarget, !target.attached {
+            VStack(spacing: DS.Space.m) {
+                DebugPanePlaceholder(symbol: "cable.connector",
+                                     title: String.ui("debugger.source.detached", "이 대상에는 연결되어 있지 않습니다"),
+                                     message: String.ui("debugger.source.detached.hint", "연결하면 이 대상의 중단점과 콘솔을 받습니다."))
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(String.ui("debugger.target.attach", "연결")) { session.attachTarget(target.id) }
+                    .controlSize(.small)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             DebugPanePlaceholder(symbol: "play.circle", title: String.ui("debugger.source.running", "실행 중입니다"),
-                                 message: String.ui("debugger.source.running.hint", "중단점에 닿거나 일시정지(F8)하면 멈춘 위치가 여기에 나타납니다. ‘스크립트’에서 파일을 열어 줄 번호를 누르면 중단점이 걸립니다."))
+                                 message: String.ui("debugger.source.running.hint", "중단점에 닿거나 일시정지(F8)하면 멈춘 위치와 호출 스택, 변수가 나타납니다. 스크립트(⇧⌘O)를 열어 줄 번호를 누르면 중단점이 걸립니다."))
         }
     }
 
-    private func highlight(_ session: DebugSessionModel, _ location: SourceFocus) -> SourceLines.Highlight {
+    private func highlight(_ session: DebugSessionModel) -> SourceLines.Highlight {
         guard session.focus == nil, let state = session.pauseState else { return .focus }
         if session.selectedFrameIndex > 0 { return .caller }
         return CallStackView.isException(state.pauseReason) ? .exception : .current
     }
 }
 
-/// Loaded scripts of the session by target, to open one in the source panel.
-private struct ScriptMenu: View {
-    let session: DebugSessionModel
+/// A pane message for a read that failed: what failed, the daemon's reason and code, and 다시 시도.
+struct RetryPanel: View {
+    let symbol: String
+    let title: String
+    let error: OperationError
+    let retry: () -> Void
 
     var body: some View {
-        Menu {
-            ForEach(session.info.targets) { target in
-                let scripts = session.scripts.filter { $0.targetID == target.id }
-                if !scripts.isEmpty {
-                    Section(DebugFormat.role(target) + " · " + DebugFormat.targetTitle(target)) {
-                        ForEach(scripts) { script in
-                            Button(ScriptURL.fileName(script.url)) {
-                                session.open(SourceFocus(targetID: script.targetID, scriptID: script.scriptID, url: script.url, line: 1))
-                            }
-                        }
-                    }
-                }
-            }
-        } label: {
-            Label(String.ui("debugger.source.scripts", "스크립트"), systemImage: "doc.text.magnifyingglass")
-                .font(DS.Font.caption)
+        VStack(spacing: DS.Space.m) {
+            DebugPanePlaceholder(symbol: symbol, title: title,
+                                 message: [error.message.asSentence, error.code.map { String.ui("error.codeInline", "오류 코드 \($0)") }]
+                                    .compactMap { $0 }.joined(separator: "\n"))
+                .fixedSize(horizontal: false, vertical: true)
+            Button(String.ui("action.retry", "다시 시도"), action: retry)
+                .controlSize(.small)
         }
-        .menuStyle(.button)
-        .buttonStyle(.borderless)
-        .fixedSize()
-        .help(String.ui("debugger.source.scripts.help", "로드된 스크립트를 열어 중단점을 겁니다"))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -143,16 +155,15 @@ private struct ExceptionBanner: View {
             Image(systemName: "exclamationmark.octagon.fill")
                 .font(.system(size: 15))
                 .foregroundStyle(DS.Color.danger)
-                .padding(.top, 1)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
                 Text(state.pauseReason == .promiseRejection
                      ? String.ui("debugger.exception.promise", "처리되지 않은 Promise 거부로 멈췄습니다")
-                     : String.ui("debugger.exception.title", "잡히지 않은 예외로 멈췄습니다"))
+                     : String.ui("debugger.exception.title", "예외로 멈췄습니다"))
                     .font(DS.Font.body.weight(.semibold))
                 Text(state.exception?.valuePreview ?? String.ui("debugger.exception.unknown", "던져진 값을 읽지 못했습니다"))
                     .font(DebugFormat.mono)
-                    .foregroundStyle(DS.Color.danger)
+                    .foregroundStyle(DS.Code.errorText)
                     .textSelection(.enabled)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -165,11 +176,11 @@ private struct ExceptionBanner: View {
             }
             .controlSize(.small)
             .disabled(session.command != nil)
-            .help(String.ui("debugger.resume.help", "재개 (F8)"))
+            .help(String.ui("debugger.resume.help", "재개 (F8 · ⌘\\)"))
         }
         .padding(.horizontal, DS.Space.m)
         .padding(.vertical, DS.Space.s)
-        .background(DS.Color.danger.opacity(0.09))
+        .background(DS.Color.danger.opacity(DS.Code.errorRowOpacity))
         .overlay(alignment: .bottom) {
             Rectangle().fill(DS.Color.danger.opacity(0.25)).frame(height: 1)
         }
@@ -177,8 +188,10 @@ private struct ExceptionBanner: View {
     }
 }
 
-/// Source lines around a location with line numbers, breakpoint markers and a highlighted line.
-/// It opens with the location a third of the way down.
+/// Source lines around a location with a pinned gutter of line numbers and breakpoint markers, and
+/// a highlighted line. Lines longer than `SourceText.windowWidth` show a window around the
+/// location's column between elision markers. It opens with the location's line a third of the
+/// way down on a row boundary and, for a far column, the column a third of the way across.
 struct SourceLines: View {
     enum Highlight {
         case current
@@ -187,39 +200,32 @@ struct SourceLines: View {
         case focus
     }
 
-    static let lineHeight: CGFloat = 18
+    static let lineHeight: CGFloat = 20
+    /// Lines shown on each side of the location.
     static let window = 400
+    static let codeLeading = DS.Space.s
+    static let codeTrailing = DS.Space.l
 
+    let model: DebuggerModel
     let session: DebugSessionModel
-    let source: DebugSource
+    let source: LoadedSource
     let location: SourceFocus
     let highlight: Highlight
 
     var body: some View {
-        let lines = source.lines
+        let lines = source.text.lines
         let first = max(1, location.line - Self.window)
         let last = min(lines.count, location.line + Self.window)
         let numbers = first <= last ? Array(first...last) : []
-        let digits = max(3, String(last).count)
+        let gutter = Self.gutterWidth(digits: String(last).count)
+        let column = location.column ?? 1
         GeometryReader { proxy in
-            let content = CGFloat(numbers.count) * Self.lineHeight + DS.Space.s * 2
-            let target = CGFloat(location.line - first) * Self.lineHeight + DS.Space.s
-            let anchor = Self.anchor(target: target, content: content, viewport: proxy.size.height)
-            ScrollView([.vertical, .horizontal]) {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(numbers, id: \.self) { number in
-                        SourceLineRow(session: session, url: location.url, number: number, text: lines[number - 1], digits: digits,
-                                      tint: number == location.line ? tint : nil, isLocation: number == location.line && highlight != .focus)
-                            .frame(minWidth: proxy.size.width, alignment: .leading)
-                    }
-                }
-                .padding(.vertical, DS.Space.s)
-                .frame(minWidth: proxy.size.width, alignment: .leading)
-            }
-            .defaultScrollAnchor(UnitPoint(x: 0, y: anchor))
+            SourceScroll(model: model, session: session, source: source.text, url: location.url, numbers: numbers,
+                         locationLine: location.line, column: column, gutter: gutter, tint: tint, highlight: highlight,
+                         viewport: proxy.size)
         }
-        .overlay(alignment: .bottomLeading) {
-            if source.truncated {
+        .overlay(alignment: .bottomTrailing) {
+            if source.source.truncated {
                 Text(String.ui("debugger.source.truncated", "소스가 2 MiB를 넘어 앞부분만 보입니다"))
                     .font(DS.Font.caption)
                     .foregroundStyle(.secondary)
@@ -231,11 +237,26 @@ struct SourceLines: View {
         }
     }
 
-    /// The scroll anchor that puts `target` a third of the way down a viewport of `viewport` points.
-    static func anchor(target: CGFloat, content: CGFloat, viewport: CGFloat) -> CGFloat {
-        guard content > viewport, viewport > 0 else { return 0 }
-        let offset = min(max(0, target - viewport / 3), content - viewport)
-        return offset / (content - viewport)
+    /// The width of a gutter for line numbers of `digits` digits, on the 4-pt grid.
+    static func gutterWidth(digits: Int) -> CGFloat {
+        let raw = CGFloat(max(3, digits)) * 7 + 24
+        return (raw / 4).rounded(.up) * 4
+    }
+
+    /// The vertical scroll offset that puts `target` a third of the way down a viewport of
+    /// `viewport` points, on a boundary of rows `row` points tall, within the content.
+    static func offset(target: CGFloat, content: CGFloat, viewport: CGFloat, row: CGFloat) -> CGFloat {
+        guard content > viewport, viewport > 0, row > 0 else { return 0 }
+        let raw = max(0, target - viewport / 3)
+        let snapped = (raw / row).rounded(.down) * row
+        return min(snapped, content - viewport)
+    }
+
+    /// The horizontal offset that shows a point `x` points into the content a third of the way
+    /// across, or 0 when it already shows in the first two thirds.
+    static func horizontalOffset(x: CGFloat, viewport: CGFloat) -> CGFloat {
+        guard viewport > 0, x > viewport * 2 / 3 else { return 0 }
+        return (x - viewport / 3).rounded(.down)
     }
 
     private var tint: Color {
@@ -248,82 +269,227 @@ struct SourceLines: View {
     }
 }
 
+/// The scroll view of `SourceLines`, positioned at the location when it appears and again when
+/// the viewport changes before the person scrolls.
+private struct SourceScroll: View {
+    let model: DebuggerModel
+    let session: DebugSessionModel
+    let source: SourceText
+    let url: String
+    let numbers: [Int]
+    let locationLine: Int
+    let column: Int
+    let gutter: CGFloat
+    let tint: Color
+    let highlight: SourceLines.Highlight
+    let viewport: CGSize
+    @State private var position: ScrollPosition
+    @State private var scrollX: CGFloat = 0
+    @State private var positioned: CGSize
+
+    init(model: DebuggerModel, session: DebugSessionModel, source: SourceText, url: String, numbers: [Int], locationLine: Int, column: Int,
+         gutter: CGFloat, tint: Color, highlight: SourceLines.Highlight, viewport: CGSize) {
+        self.model = model
+        self.session = session
+        self.source = source
+        self.url = url
+        self.numbers = numbers
+        self.locationLine = locationLine
+        self.column = column
+        self.gutter = gutter
+        self.tint = tint
+        self.highlight = highlight
+        self.viewport = viewport
+        let point = Self.start(source: source, numbers: numbers, line: locationLine, column: column, gutter: gutter, viewport: viewport)
+        _position = State(initialValue: ScrollPosition(point: point))
+        _positioned = State(initialValue: viewport)
+    }
+
+    /// The scroll offset that shows the location's line and column.
+    static func start(source: SourceText, numbers: [Int], line: Int, column: Int, gutter: CGFloat, viewport: CGSize) -> CGPoint {
+        let row = SourceLines.lineHeight
+        let index = CGFloat((numbers.firstIndex(of: line) ?? 0))
+        let content = CGFloat(numbers.count) * row + DS.Space.s
+        let y = SourceLines.offset(target: index * row, content: content, viewport: viewport.height, row: row)
+        let highlighted = source.highlightedWindow(line: line, around: column)
+        let prefix = String(highlighted.window.text.utf16.prefix(max(0, highlighted.window.column - 1))) ?? ""
+        let font = NSFont.monospacedSystemFont(ofSize: DebugFormat.monoSize, weight: .regular)
+        let prefixWidth = NSAttributedString(string: prefix, attributes: [.font: font]).size().width
+        let elision = highlighted.window.hiddenBefore > 0 ? ElisionMarker.width + DS.Space.xs : 0
+        let x = SourceLines.codeLeading + elision + prefixWidth
+        return CGPoint(x: SourceLines.horizontalOffset(x: x, viewport: viewport.width - gutter), y: y)
+    }
+
+    var body: some View {
+        let digits = String(numbers.last ?? 1).count
+        ScrollView([.vertical, .horizontal]) {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(numbers, id: \.self) { number in
+                    SourceLineRow(model: model, session: session, url: url, number: number,
+                                  line: source.highlightedWindow(line: number, around: column), digits: digits, gutter: gutter,
+                                  scrollX: scrollX, tint: number == locationLine ? tint : nil,
+                                  isLocation: number == locationLine && highlight != .focus, locationTint: locationTint)
+                        .frame(minWidth: viewport.width, alignment: .leading)
+                }
+            }
+            .padding(.bottom, DS.Space.s)
+            .frame(minWidth: viewport.width, minHeight: viewport.height, alignment: .topLeading)
+        }
+        .scrollPosition($position)
+        .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { _, x in
+            scrollX = max(0, x)
+        }
+        .onAppear {
+            let point = Self.start(source: source, numbers: numbers, line: locationLine, column: column, gutter: gutter, viewport: viewport)
+            position.scrollTo(point: point)
+        }
+        .onChange(of: viewport) { _, size in
+            guard !position.isPositionedByUser, abs(size.height - positioned.height) > 1 || abs(size.width - positioned.width) > 1 else { return }
+            positioned = size
+            position.scrollTo(point: Self.start(source: source, numbers: numbers, line: locationLine, column: column, gutter: gutter, viewport: size))
+        }
+    }
+
+    private var locationTint: Color {
+        switch highlight {
+        case .exception: DS.Color.danger
+        case .caller: DS.Color.neutral
+        default: DS.Color.success
+        }
+    }
+}
+
+/// `앞 9,001자` before a window of a long line, or `뒤 9,004자` after it.
+struct ElisionMarker: View {
+    static let width: CGFloat = 88
+
+    let count: Int
+    let leading: Bool
+
+    var body: some View {
+        let number = FileFormat.count(count)
+        Text(leading ? String.ui("debugger.source.hiddenBefore", "‹ 앞 \(number)자") : String.ui("debugger.source.hiddenAfter", "뒤 \(number)자 ›"))
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .padding(.horizontal, DS.Space.xs)
+            .frame(width: leading ? Self.width : nil, height: 16)
+            .background(DS.Color.neutral.opacity(0.16), in: Capsule())
+            .help(String.ui("debugger.source.window.help", "긴 줄은 멈춘 열 주변 \(FileFormat.count(SourceText.windowWidth))자만 보입니다"))
+    }
+}
+
 private struct SourceLineRow: View {
+    let model: DebuggerModel
     let session: DebugSessionModel
     let url: String
     let number: Int
-    let text: String
+    let line: HighlightedLine
     let digits: Int
+    let gutter: CGFloat
+    let scrollX: CGFloat
     let tint: Color?
     let isLocation: Bool
-    @State private var hovering = false
+    let locationTint: Color
 
     var body: some View {
-        let breakpoints = session.breakpoints(url: url, line: number)
         HStack(spacing: 0) {
-            gutter(breakpoints)
-            Text(JavaScriptHighlighter.highlight(text))
-                .font(DebugFormat.mono)
-                .lineLimit(1)
-                .fixedSize()
-                .padding(.leading, DS.Space.s)
-                .padding(.trailing, DS.Space.l)
+            SourceGutterCell(model: model, session: session, url: url, number: number, width: gutter, isLocation: isLocation,
+                             locationTint: tint == nil ? nil : locationTint)
+                .offset(x: scrollX)
+                .zIndex(1)
+            HStack(spacing: DS.Space.xs) {
+                if line.window.hiddenBefore > 0 { ElisionMarker(count: line.window.hiddenBefore, leading: true) }
+                Text(line.text)
+                    .font(DebugFormat.mono)
+                    .lineLimit(1)
+                    .fixedSize()
+                if line.window.hiddenAfter > 0 { ElisionMarker(count: line.window.hiddenAfter, leading: false) }
+            }
+            .padding(.leading, SourceLines.codeLeading)
+            .padding(.trailing, SourceLines.codeTrailing)
             Spacer(minLength: 0)
         }
         .frame(height: SourceLines.lineHeight)
         .background(tint ?? .clear)
-        .overlay(alignment: .leading) {
-            if isLocation, tint != nil {
-                Rectangle()
-                    .fill(locationColor)
-                    .frame(width: 2)
-                    .offset(x: gutterWidth)
-            }
-        }
     }
+}
 
-    private var locationColor: Color {
-        tint == DS.Code.exceptionLine ? DS.Color.danger : (tint == DS.Code.callerLine ? DS.Color.neutral : DS.Color.success)
-    }
+/// A line number with its breakpoint markers; clicking sets or removes the line's breakpoint,
+/// and the context menu turns it on or off, edits its condition or removes it.
+private struct SourceGutterCell: View {
+    let model: DebuggerModel
+    let session: DebugSessionModel
+    let url: String
+    let number: Int
+    let width: CGFloat
+    let isLocation: Bool
+    /// The color of the location bar at the trailing edge, on the location line.
+    let locationTint: Color?
+    @State private var hovering = false
 
-    private var gutterWidth: CGFloat { CGFloat(digits) * 7.5 + 22 }
-
-    private func gutter(_ breakpoints: [DebugBreakpoint]) -> some View {
+    var body: some View {
+        let breakpoints = session.breakpoints(url: url, line: number)
         let marked = !breakpoints.isEmpty
         let enabled = breakpoints.contains { $0.enabled }
-        return Button {
+        let conditional = breakpoints.contains { !($0.condition ?? "").isEmpty }
+        let pending = session.pendingLines.contains(url + ":" + String(number))
+        Button {
             session.toggleBreakpoint(url: url, line: number)
         } label: {
             ZStack(alignment: .trailing) {
                 if marked {
-                    BreakpointMarker(enabled: enabled, resolved: true, active: session.info.breakpointsActive,
-                                     width: gutterWidth - 4, height: 15)
+                    BreakpointMarker(enabled: enabled, resolved: true, active: session.info.breakpointsActive && !session.isClosed,
+                                     conditional: conditional, width: width - DS.Space.xs, height: 16)
                 } else if hovering, !session.isClosed {
-                    BreakpointMarker(enabled: true, resolved: false, active: true, width: gutterWidth - 4, height: 15)
+                    BreakpointMarker(enabled: true, resolved: false, active: true, width: width - DS.Space.xs, height: 16)
                         .opacity(0.5)
                 }
                 Text(String(number))
                     .font(.system(size: 11, design: .monospaced))
                     .monospacedDigit()
                     .foregroundStyle(numberStyle(marked: marked, enabled: enabled))
-                    .padding(.trailing, 9)
+                    .padding(.trailing, DS.Space.s)
             }
-            .frame(width: gutterWidth, height: SourceLines.lineHeight, alignment: .trailing)
+            .frame(width: width, height: SourceLines.lineHeight, alignment: .trailing)
             .background(DS.Code.gutter)
+            .background(DS.Code.background)
+            .overlay(alignment: .trailing) {
+                if let locationTint {
+                    Rectangle().fill(locationTint).frame(width: 2)
+                } else {
+                    Rectangle().fill(DS.Color.separator.opacity(0.6)).frame(width: 1)
+                }
+            }
+            .opacity(pending ? 0.6 : 1)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(session.isClosed)
         .onHover { hovering = $0 }
+        .contextMenu {
+            if let breakpoint = breakpoints.first, !session.isClosed {
+                Button(breakpoint.enabled ? String.ui("debugger.breakpoint.disable", "중단점 끄기") : String.ui("debugger.breakpoint.enable", "중단점 켜기")) {
+                    session.setBreakpointEnabled(breakpoint.breakpointID, !breakpoint.enabled)
+                }
+                Button(String.ui("debugger.breakpoint.editCondition", "조건 편집…")) { model.sheet = .condition(breakpoint.breakpointID) }
+                Divider()
+                Button(String.ui("debugger.breakpoint.remove", "중단점 지우기"), role: .destructive) {
+                    for bp in breakpoints { session.removeBreakpoint(bp.breakpointID) }
+                }
+            } else if !session.isClosed {
+                Button(String.ui("debugger.gutter.add", "이 줄에 중단점 걸기")) { session.toggleBreakpoint(url: url, line: number) }
+            }
+        }
         .help(marked ? String.ui("debugger.gutter.remove", "이 줄의 중단점 지우기") : String.ui("debugger.gutter.add", "이 줄에 중단점 걸기"))
         .accessibilityLabel(marked ? String.ui("debugger.gutter.remove.a11y", "\(String(number))번 줄 중단점 지우기")
                                    : String.ui("debugger.gutter.add.a11y", "\(String(number))번 줄에 중단점 걸기"))
     }
 
     private func numberStyle(marked: Bool, enabled: Bool) -> AnyShapeStyle {
-        if marked, enabled, session.info.breakpointsActive { return AnyShapeStyle(DS.Color.onFill) }
+        if marked, enabled, session.info.breakpointsActive, !session.isClosed { return AnyShapeStyle(DS.Color.onFill) }
         if isLocation { return AnyShapeStyle(.primary) }
-        return AnyShapeStyle(.tertiary)
+        return AnyShapeStyle(.secondary)
     }
 }
 
@@ -337,7 +503,7 @@ private struct SourceSkeleton: View {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(0..<rows, id: \.self) { index in
                     HStack(spacing: DS.Space.m) {
-                        RoundedRectangle(cornerRadius: 3).fill(DS.Color.neutral.opacity(0.14)).frame(width: 22, height: 8)
+                        RoundedRectangle(cornerRadius: 3).fill(DS.Color.neutral.opacity(0.14)).frame(width: 24, height: 8)
                         RoundedRectangle(cornerRadius: 3).fill(DS.Color.neutral.opacity(0.14))
                             .frame(width: max(40, proxy.size.width * 0.7 * Self.widths[index % Self.widths.count]), height: 8)
                     }
@@ -349,95 +515,5 @@ private struct SourceSkeleton: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String.ui("debugger.source.loading", "소스를 불러오는 중…"))
-    }
-}
-
-/// Colors JavaScript keywords, strings, numbers and comments of one line.
-enum JavaScriptHighlighter {
-    static let keywords: Set<String> = [
-        "async", "await", "break", "case", "catch", "class", "const", "continue", "debugger", "default", "delete", "do", "else",
-        "export", "extends", "false", "finally", "for", "from", "function", "if", "import", "in", "instanceof", "let", "new", "null",
-        "of", "return", "static", "super", "switch", "this", "throw", "true", "try", "typeof", "undefined", "var", "void", "while",
-        "with", "yield",
-    ]
-
-    enum Token: Equatable {
-        case plain
-        case keyword
-        case string
-        case number
-        case comment
-    }
-
-    /// The line split into runs and their token kinds.
-    static func tokens(_ line: String) -> [(text: String, token: Token)] {
-        var runs: [(text: String, token: Token)] = []
-        var plain = ""
-        let chars = Array(line)
-        var i = 0
-        func flush() {
-            if !plain.isEmpty { runs.append((plain, .plain)); plain = "" }
-        }
-        while i < chars.count {
-            let c = chars[i]
-            if c == "/", i + 1 < chars.count, chars[i + 1] == "/" {
-                flush()
-                runs.append((String(chars[i...]), .comment))
-                return runs
-            }
-            if c == "\"" || c == "'" || c == "`" {
-                flush()
-                var j = i + 1
-                while j < chars.count, chars[j] != c {
-                    if chars[j] == "\\" { j += 1 }
-                    j += 1
-                }
-                let end = min(j, chars.count - 1)
-                runs.append((String(chars[i...end]), .string))
-                i = end + 1
-                continue
-            }
-            if c.isNumber, (i == 0 || !(chars[i - 1].isLetter || chars[i - 1] == "_" || chars[i - 1] == "$")) {
-                flush()
-                var j = i
-                while j < chars.count, chars[j].isNumber || chars[j] == "." || chars[j] == "_" { j += 1 }
-                runs.append((String(chars[i..<j]), .number))
-                i = j
-                continue
-            }
-            if c.isLetter || c == "_" || c == "$" {
-                var j = i
-                while j < chars.count, chars[j].isLetter || chars[j].isNumber || chars[j] == "_" || chars[j] == "$" { j += 1 }
-                let word = String(chars[i..<j])
-                if keywords.contains(word), i == 0 || chars[i - 1] != "." {
-                    flush()
-                    runs.append((word, .keyword))
-                } else {
-                    plain += word
-                }
-                i = j
-                continue
-            }
-            plain.append(c)
-            i += 1
-        }
-        flush()
-        return runs
-    }
-
-    static func highlight(_ line: String) -> AttributedString {
-        var result = AttributedString()
-        for run in tokens(line) {
-            var piece = AttributedString(run.text)
-            switch run.token {
-            case .plain: piece.foregroundColor = .primary
-            case .keyword: piece.foregroundColor = DS.Code.keyword
-            case .string: piece.foregroundColor = DS.Code.string
-            case .number: piece.foregroundColor = DS.Code.number
-            case .comment: piece.foregroundColor = DS.Code.comment
-            }
-            result += piece
-        }
-        return result
     }
 }

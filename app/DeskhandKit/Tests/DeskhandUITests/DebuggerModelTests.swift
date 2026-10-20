@@ -4,24 +4,34 @@ import Foundation
 import XCTest
 @testable import DeskhandUI
 
-/// Records debugger calls as short strings, answers from configurable replies, can hold launch
-/// and step replies, and lets the test push `debug.*` events or end the event stream.
+/// Records debugger calls as short strings, answers from configurable replies, can hold launch,
+/// step and variables replies, and lets the test push `debug.*` events, end the event stream or
+/// report a reconnect.
 final class FakeDebuggerBackend: DebuggerBackend, EventsBackend, @unchecked Sendable {
     struct State {
         var calls: [String] = []
         var sessions: [DebugSession] = []
         var launchResult: Result<DebugSession, OperationError>?
+        var launches: [DebugLaunchRequest] = []
         var holdLaunch = false
         var heldLaunches: [CheckedContinuation<Void, Never>] = []
         var holdStep = false
         var heldSteps: [CheckedContinuation<Void, Never>] = []
         var stepReply: DebugTarget?
         var properties: [String: DebugPropertyPage] = [:]
+        /// Objects whose `debug.variables` reply waits for `releaseVariables`.
+        var holdVariables: Set<String> = []
+        var heldVariables: [CheckedContinuation<Void, Never>] = []
         var states: [String: DebugPauseState] = [:]
+        /// Failures `debug.state` answers first, per target.
+        var stateFailures: [String: Int] = [:]
         var breakpointReply: DebugBreakpoint?
+        var removeReply: DebugBreakpoint?
         var consolePages: [ConsolePage] = []
+        var clearedThrough = 0
         var evaluation = DebugEvaluation(value: RemoteValue(type: "number", valuePreview: "2"))
         var events: AsyncThrowingStream<DaemonEvent, Error>.Continuation?
+        var reconnects: AsyncStream<Void>.Continuation?
         var subscriptions = 0
         var seq = 0
     }
@@ -39,27 +49,39 @@ final class FakeDebuggerBackend: DebuggerBackend, EventsBackend, @unchecked Send
     var subscriptions: Int { withLock { $0.subscriptions } }
     var heldLaunchCount: Int { withLock { $0.heldLaunches.count } }
     var heldStepCount: Int { withLock { $0.heldSteps.count } }
+    var heldVariablesCount: Int { withLock { $0.heldVariables.count } }
+    var launches: [DebugLaunchRequest] { withLock { $0.launches } }
 
     func configure(_ body: (inout State) -> Void) { withLock(body) }
 
     private func record(_ call: String) { withLock { $0.calls.append(call) } }
 
+    private func release(_ take: (inout State) -> [CheckedContinuation<Void, Never>]) {
+        for continuation in withLock(take) { continuation.resume() }
+    }
+
     func releaseLaunches() {
-        let held = withLock { s -> [CheckedContinuation<Void, Never>] in
+        release { s in
             s.holdLaunch = false
             defer { s.heldLaunches = [] }
             return s.heldLaunches
         }
-        for continuation in held { continuation.resume() }
     }
 
     func releaseSteps() {
-        let held = withLock { s -> [CheckedContinuation<Void, Never>] in
+        release { s in
             s.holdStep = false
             defer { s.heldSteps = [] }
             return s.heldSteps
         }
-        for continuation in held { continuation.resume() }
+    }
+
+    func releaseVariables() {
+        release { s in
+            s.holdVariables = []
+            defer { s.heldVariables = [] }
+            return s.heldVariables
+        }
     }
 
     func send(_ kind: String, _ payload: [String: JSONValue], hostID: String = PreviewFixtures.devPCID) {
@@ -81,12 +103,23 @@ final class FakeDebuggerBackend: DebuggerBackend, EventsBackend, @unchecked Send
         continuation?.finish()
     }
 
+    /// Reports that the daemon connection came back.
+    func reconnect() {
+        _ = withLock { $0.reconnects }?.yield()
+    }
+
     func events(kinds: [String]?, hostID: String?) -> AsyncThrowingStream<DaemonEvent, Error> {
         let (stream, continuation) = AsyncThrowingStream.makeStream(of: DaemonEvent.self)
         withLock {
             $0.events = continuation
             $0.subscriptions += 1
         }
+        return stream
+    }
+
+    func reconnects() -> AsyncStream<Void> {
+        let (stream, continuation) = AsyncStream.makeStream(of: Void.self)
+        withLock { $0.reconnects = continuation }
         return stream
     }
 
@@ -105,6 +138,7 @@ final class FakeDebuggerBackend: DebuggerBackend, EventsBackend, @unchecked Send
 
     func debugLaunch(_ request: DebugLaunchRequest) async throws -> DebugSession {
         record("launch \(request.path)")
+        withLock { $0.launches.append(request) }
         let hold = withLock { $0.holdLaunch }
         if hold { await withCheckedContinuation { c in withLock { $0.heldLaunches.append(c) } } }
         guard let result = withLock({ $0.launchResult }) else { throw OperationError(code: "INTERNAL", message: "설정 안 됨") }
@@ -124,25 +158,36 @@ final class FakeDebuggerBackend: DebuggerBackend, EventsBackend, @unchecked Send
         throw OperationError(code: "INTERNAL", message: "없음")
     }
 
-    func debugBreakpointSet(_ request: BreakpointRequest) async throws -> DebugBreakpoint {
-        switch request.match {
-        case .url(let url): record("bp.set url \(url):\(request.line)")
-        case .regex(let regex): record("bp.set regex \(regex):\(request.line)")
-        }
+    func debugBreakpointSet(debugID: String, spec: BreakpointSpec) async throws -> DebugBreakpoint {
+        record("bp.set \(spec.match) \(spec.pattern):\(spec.line)")
         guard let reply = withLock({ $0.breakpointReply }) else { throw OperationError(code: "INVALID_ARGUMENT", message: "거부") }
         return reply
     }
 
-    func debugBreakpointEnable(debugID: String, breakpointID: String, enabled: Bool) async throws -> DebugBreakpoint {
-        record("bp.enable \(breakpointID) \(enabled)")
+    func debugBreakpointUpdate(debugID: String, breakpointID: String, enabled: Bool?, condition: String?) async throws -> DebugBreakpoint {
+        record("bp.update \(breakpointID) enabled=\(enabled.map(String.init) ?? "-") condition=\(condition ?? "-")")
         guard var reply = withLock({ $0.breakpointReply }) else { throw OperationError(code: "NOT_FOUND", message: "없음") }
-        reply.enabled = enabled
+        if let enabled { reply.enabled = enabled }
+        if let condition { reply.condition = condition.isEmpty ? nil : condition }
+        reply.rev += 1
+        withLock { $0.breakpointReply = reply }
         return reply
     }
 
-    func debugBreakpointRemove(debugID: String, breakpointID: String) async throws { record("bp.remove \(breakpointID)") }
-    func debugBreakpointsActivate(debugID: String, active: Bool) async throws { record("bp.activate \(active)") }
-    func debugExceptions(debugID: String, mode: ExceptionPauseMode) async throws { record("exceptions \(mode.rawValue)") }
+    func debugBreakpointRemove(debugID: String, breakpointID: String) async throws -> DebugBreakpoint? {
+        record("bp.remove \(breakpointID)")
+        return withLock { $0.removeReply }
+    }
+
+    func debugBreakpointsActivate(debugID: String, active: Bool) async throws -> DebugSession? {
+        record("bp.activate \(active)")
+        return nil
+    }
+
+    func debugExceptions(debugID: String, mode: ExceptionPauseMode) async throws -> DebugSession? {
+        record("exceptions \(mode.rawValue)")
+        return nil
+    }
 
     func debugPause(debugID: String, targetID: String) async throws -> DebugTarget? {
         record("pause \(targetID)")
@@ -163,12 +208,20 @@ final class FakeDebuggerBackend: DebuggerBackend, EventsBackend, @unchecked Send
 
     func debugState(debugID: String, targetID: String) async throws -> DebugPauseState {
         record("state \(targetID)")
+        let failing = withLock { s -> Bool in
+            guard let left = s.stateFailures[targetID], left > 0 else { return false }
+            s.stateFailures[targetID] = left - 1
+            return true
+        }
+        if failing { throw OperationError(code: "TIMEOUT", message: "응답 없음") }
         guard let state = withLock({ $0.states[targetID] }) else { throw OperationError(code: "NOT_FOUND", message: "없음") }
         return state
     }
 
     func debugVariables(debugID: String, targetID: String, objectID: String, offset: Int, limit: Int) async throws -> DebugPropertyPage {
-        record("variables \(objectID)" + (offset > 0 ? " @\(offset)" : ""))
+        record("variables \(objectID)" + (offset > 0 ? " @\(offset)" : "") + " in \(targetID)")
+        let hold = withLock { $0.holdVariables.contains(objectID) }
+        if hold { await withCheckedContinuation { c in withLock { $0.heldVariables.append(c) } } }
         return withLock { $0.properties[objectID] } ?? DebugPropertyPage(properties: [])
     }
 
@@ -177,7 +230,10 @@ final class FakeDebuggerBackend: DebuggerBackend, EventsBackend, @unchecked Send
         return withLock { $0.evaluation }
     }
 
-    func debugScripts(debugID: String, targetID: String?) async throws -> [DebugScript] { [] }
+    func debugScripts(debugID: String, targetID: String?) async throws -> [DebugScript] {
+        record("scripts")
+        throw OperationError(code: "STALE_TARGET", message: "대상이 다시 로드되었습니다")
+    }
 
     func debugSource(debugID: String, targetID: String, scriptID: String) async throws -> DebugSource {
         record("source \(scriptID)")
@@ -190,6 +246,11 @@ final class FakeDebuggerBackend: DebuggerBackend, EventsBackend, @unchecked Send
         return withLock { s in s.consolePages.isEmpty ? ConsolePage(entries: [], nextCursor: query.cursor ?? 0) : s.consolePages.removeFirst() }
     }
 
+    func debugConsoleClear(debugID: String) async throws -> Int {
+        record("console.clear")
+        return withLock { $0.clearedThrough }
+    }
+
     func debugClose(debugID: String, keepProcess: Bool) async throws { record("close \(debugID) keep=\(keepProcess)") }
 }
 
@@ -199,12 +260,14 @@ final class DebuggerModelTests: XCTestCase {
     private let main = "t-main"
     private let page = "t-page"
 
-    private func session(_ id: String = "d-1", state: DebugSessionState = .running, targets: [DebugTarget]? = nil) -> DebugSession {
-        DebugSession(debugID: id, hostID: dev, kind: .launch, name: "Shop Admin", path: "C:\\Shop\\desktop\\Shop Admin.exe", pid: 10244,
+    private func session(_ id: String = "d-1", state: DebugSessionState = .running, targets: [DebugTarget]? = nil,
+                         breakpoints: [DebugBreakpoint] = []) -> DebugSession {
+        DebugSession(debugID: id, hostID: dev, kind: .launch, name: "Shop Admin", path: "C:\\Shop\\desktop\\Shop Admin.exe",
+                     args: ["--env=staging"], cwd: "C:\\Shop\\desktop", pauseOnStart: true, pid: 10244,
                      state: state, targets: targets ?? [
                         DebugTarget(id: main, role: "main", type: "node", url: "file:///main.js", title: "main"),
                         DebugTarget(id: page, role: "renderer", type: "page", url: "app://shop/index.html", title: "결제"),
-                     ], createdAt: Timestamp(date: .now))
+                     ], breakpoints: breakpoints, pauseOnExceptions: .all, createdAt: Timestamp(date: .now))
     }
 
     private func frames(_ tag: String) -> [DebugCallFrame] {
@@ -233,17 +296,32 @@ final class DebuggerModelTests: XCTestCase {
         DebugProperty(name: name, value: RemoteValue(type: "object", className: "Object", valuePreview: "{…}", objectID: id))
     }
 
+    private func breakpoint(rev: Int, line: Int = 31, enabled: Bool = true, resolved: Bool = false) -> DebugBreakpoint {
+        DebugBreakpoint(breakpointID: "bp-1", match: .fileName, pattern: "checkout.js", line: line, enabled: enabled,
+                        locations: resolved ? [BreakpointLocation(targetID: page, scriptID: "88", url: "app://shop/checkout.js", line: line, column: 3)] : [],
+                        rev: rev)
+    }
+
+    private func breakpointEvent(_ breakpoint: DebugBreakpoint, removed: Bool = false) -> [String: JSONValue] {
+        ["debug_id": .string("d-1"), "breakpoint": PreviewBackend.payload(breakpoint), "removed": .bool(removed)]
+    }
+
+    private static let fast = DebugTimings(consoleFrame: .milliseconds(5), stateRetries: [.milliseconds(5), .milliseconds(5)])
+
     /// A started model whose session list holds `sessions`, after the list loaded.
-    private func started(_ backend: FakeDebuggerBackend, sessions: [DebugSession] = []) async throws -> DebuggerModel {
+    private func started(_ backend: FakeDebuggerBackend, sessions: [DebugSession] = [],
+                         timings: DebugTimings = DebuggerModelTests.fast) async throws -> DebuggerModel {
         backend.configure { $0.sessions = sessions }
         let model = DebuggerModel(hostID: dev, backend: backend, defaults: UserDefaults(suiteName: "debugger-tests-\(UUID())")!,
-                                  backoff: .init(initial: .milliseconds(10), maximum: .milliseconds(20)))
+                                  backoff: .init(initial: .milliseconds(10), maximum: .milliseconds(20)), timings: timings)
         model.start()
         try await waitUntil { model.listPhase == .loaded && backend.subscriptions == 1 }
         return model
     }
 
-    func testLaunchGoesFromIdleThroughStartingToRunning() async throws {
+    // MARK: Launching
+
+    func testLaunchGoesFromIdleThroughStartingToRunningAndRemembersItsParameters() async throws {
         let backend = FakeDebuggerBackend()
         let model = try await started(backend)
         XCTAssertEqual(model.phase, .idle)
@@ -251,7 +329,10 @@ final class DebuggerModelTests: XCTestCase {
             $0.launchResult = .success(self.session())
             $0.holdLaunch = true
         }
-        let launch = Task { await model.launch(DebugLaunchRequest(hostID: dev, path: "C:\\Shop\\desktop\\Shop Admin.exe")) }
+        let spec = BreakpointSpec(match: .fileName, pattern: "checkout.js", line: 31)
+        let request = DebugLaunchRequest(hostID: dev, path: "C:\\Shop\\desktop\\Shop Admin.exe", args: ["--env=staging"], cwd: "C:\\Shop",
+                                         pauseOnStart: true, breakpoints: [spec], pauseOnExceptions: .all)
+        let launch = Task { await model.launch(request) }
         try await waitUntil { backend.heldLaunchCount == 1 }
         XCTAssertEqual(model.phase, .starting("Shop Admin"))
         backend.releaseLaunches()
@@ -261,18 +342,34 @@ final class DebuggerModelTests: XCTestCase {
         XCTAssertEqual(model.selected?.id, "d-1")
         XCTAssertEqual(model.selected?.selectedTargetID, page)
         try await waitUntil { backend.calls.contains("console latest") }
-        XCTAssertEqual(model.recentLaunches.first?.path, "C:\\Shop\\desktop\\Shop Admin.exe")
+        let recent = try XCTUnwrap(model.recentLaunches.first)
+        XCTAssertEqual(recent.request(hostID: dev), request)
+        XCTAssertEqual(LaunchDraft(recent).request(hostID: dev), request)
     }
 
     func testFailedLaunchReturnsTheErrorAndStaysIdle() async throws {
         let backend = FakeDebuggerBackend()
         let model = try await started(backend)
-        backend.configure { $0.launchResult = .failure(OperationError(code: "TIMEOUT", message: "디버그 포트가 열리지 않았습니다")) }
+        backend.configure { $0.launchResult = .failure(OperationError(code: "EXITED_EARLY", message: "앱이 종료되었습니다")) }
         let error = await model.launch(DebugLaunchRequest(hostID: dev, path: "C:\\Shop\\bin\\Shop.exe"))
-        XCTAssertEqual(error?.code, "TIMEOUT")
+        XCTAssertEqual(error?.code, "EXITED_EARLY")
         XCTAssertEqual(model.phase, .idle)
         XCTAssertNil(model.starting)
+        XCTAssertNotNil(LaunchSheet.fix(error!))
     }
+
+    func testRelaunchCarriesArgumentsFolderStartPauseBreakpointsAndExceptionSetting() async throws {
+        let backend = FakeDebuggerBackend()
+        let model = try await started(backend, sessions: [session(state: .closed, breakpoints: [breakpoint(rev: 2, resolved: true)])])
+        let request = try XCTUnwrap(model.selected?.relaunchRequest)
+        XCTAssertEqual(request.args, ["--env=staging"])
+        XCTAssertEqual(request.cwd, "C:\\Shop\\desktop")
+        XCTAssertTrue(request.pauseOnStart)
+        XCTAssertEqual(request.breakpoints, [BreakpointSpec(match: .fileName, pattern: "checkout.js", line: 31, enabled: true)])
+        XCTAssertEqual(request.pauseOnExceptions, .all)
+    }
+
+    // MARK: Pauses
 
     func testPausedEventSelectsTheTargetAndLoadsScopesAndSource() async throws {
         let backend = FakeDebuggerBackend()
@@ -286,11 +383,16 @@ final class DebuggerModelTests: XCTestCase {
         XCTAssertEqual(debug.selectedFrame?.function, "postOrder")
         try await waitUntil { debug.variables.rows.map(\.title) == ["지역", "order", "전역"] }
         try await waitUntil { backend.calls.contains("source 89") }
-        XCTAssertEqual(debug.source(for: debug.selectedFrame)?.lines.count, 2)
+        guard case .loaded(let source) = debug.sourceState(targetID: page, scriptID: "89") else { return XCTFail("source not loaded") }
+        XCTAssertEqual(source.text.lines, ["line 1", "line 2"])
 
         debug.selectFrame(1)
-        try await waitUntil { backend.calls.contains("variables L1-1") && backend.calls.contains("source 88") }
+        try await waitUntil { backend.calls.contains("variables L1-1 in \(page)") && backend.calls.contains("source 88") }
         XCTAssertEqual(debug.selectedFrame?.function, "submitOrder")
+        debug.moveFrameSelection(by: -1)
+        XCTAssertEqual(debug.selectedFrame?.function, "postOrder")
+        debug.moveFrameSelection(by: -1)
+        XCTAssertEqual(debug.selectedFrameIndex, 0)
     }
 
     func testPauseAndResumeEventsApplyOnlyNewerGens() async throws {
@@ -340,6 +442,63 @@ final class DebuggerModelTests: XCTestCase {
         XCTAssertTrue(backend.calls.contains("state \(page)"))
     }
 
+    func testTargetFieldsApplyWhilePauseFieldsWaitForANewerGen() async throws {
+        let backend = FakeDebuggerBackend()
+        let model = try await started(backend, sessions: [session()])
+        let debug = try XCTUnwrap(model.selected)
+        backend.send(EventKind.debugPaused, paused(5))
+        try await waitUntil { model.phase == .paused(.breakpoint) }
+        let older = DebugTarget(id: page, role: "renderer", type: "page", url: "app://shop/index.html", title: "결제 · 새 제목", paused: false, gen: 4)
+        backend.send(EventKind.debugTargetChanged, ["debug_id": .string("d-1"), "target": PreviewBackend.payload(older), "removed": .bool(false)])
+        try await waitUntil { debug.selectedTarget?.title == "결제 · 새 제목" }
+        XCTAssertEqual(model.phase, .paused(.breakpoint))
+        XCTAssertTrue(debug.selectedTarget?.paused ?? false)
+    }
+
+    func testFailedStateReadsRetryWithoutAdvancingTheGenThenApply() async throws {
+        let backend = FakeDebuggerBackend()
+        let state = DebugPauseState(targetID: page, gen: 3, paused: true, reason: .breakpoint, callFrames: frames("3"))
+        backend.configure {
+            $0.states[self.page] = state
+            $0.stateFailures[self.page] = 2
+        }
+        var listed = session(state: .paused)
+        listed.targets[1].paused = true
+        listed.targets[1].gen = 3
+        let model = try await started(backend, sessions: [listed])
+        try await waitUntil { model.phase == .paused(.breakpoint) }
+        XCTAssertEqual(backend.calls.filter { $0 == "state \(page)" }.count, 3)
+        XCTAssertNil(model.selected?.stateFailures[page])
+    }
+
+    func testStateReadThatKeepsFailingShowsTheErrorUntilARetrySucceeds() async throws {
+        let backend = FakeDebuggerBackend()
+        let state = DebugPauseState(targetID: page, gen: 3, paused: true, reason: .breakpoint, callFrames: frames("3"))
+        backend.configure {
+            $0.states[self.page] = state
+            $0.stateFailures[self.page] = 3
+        }
+        var listed = session(state: .paused)
+        listed.targets[1].paused = true
+        listed.targets[1].gen = 3
+        let model = try await started(backend, sessions: [listed])
+        let debug = try XCTUnwrap(model.selected)
+        try await waitUntil { debug.stateFailures[self.page] != nil }
+        XCTAssertEqual(debug.stateFailures[page]?.code, "TIMEOUT")
+        XCTAssertTrue(debug.awaitingState)
+        XCTAssertEqual(debug.pauses.gen(of: page), -1)
+        XCTAssertEqual(model.phase, .running)
+        XCTAssertTrue(debug.isPaused(page))
+        XCTAssertEqual(model.pausedElsewhere?.gen, 3)
+        XCTAssertNil(model.pausedElsewhere?.location)
+        debug.togglePause()
+        try await waitUntil { backend.calls.contains("resume \(self.page)") && debug.command == nil }
+        debug.retryState()
+        try await waitUntil { model.phase == .paused(.breakpoint) }
+        XCTAssertNil(debug.stateFailures[page])
+        XCTAssertFalse(debug.awaitingState)
+    }
+
     func testSessionListReadsTheStateOfPausedTargets() async throws {
         let backend = FakeDebuggerBackend()
         let state = DebugPauseState(targetID: page, gen: 3, paused: true, reason: .breakpoint, callFrames: frames("3"))
@@ -352,6 +511,24 @@ final class DebuggerModelTests: XCTestCase {
         XCTAssertEqual(model.selected?.selectedTargetID, page)
     }
 
+    func testPauseOfAnotherTabShowsUntilDismissedOrResumed() async throws {
+        let backend = FakeDebuggerBackend()
+        let model = try await started(backend, sessions: [session()])
+        XCTAssertNil(model.pausedElsewhere)
+        backend.send(EventKind.debugPaused, paused(1))
+        try await waitUntil { model.pausedElsewhere != nil }
+        let pause = try XCTUnwrap(model.pausedElsewhere)
+        XCTAssertEqual(pause.appName, "Shop Admin")
+        XCTAssertEqual(pause.location, "api.js:25")
+        model.dismiss(pause)
+        XCTAssertNil(model.pausedElsewhere)
+        backend.send(EventKind.debugResumed, resumed(2))
+        backend.send(EventKind.debugPaused, paused(3))
+        try await waitUntil { model.pausedElsewhere?.gen == 3 }
+        backend.send(EventKind.debugResumed, resumed(4))
+        try await waitUntil { model.pausedElsewhere == nil }
+    }
+
     func testClosedEventEndsTheSession() async throws {
         let backend = FakeDebuggerBackend()
         let model = try await started(backend, sessions: [session()])
@@ -361,38 +538,66 @@ final class DebuggerModelTests: XCTestCase {
         XCTAssertFalse(model.selected?.canControl ?? true)
     }
 
-    func testBreakpointsFollowRepliesAndEvents() async throws {
+    // MARK: Breakpoints
+
+    func testBreakpointsFollowRepliesAndEventsByRev() async throws {
         let backend = FakeDebuggerBackend()
         let model = try await started(backend, sessions: [session()])
         let debug = try XCTUnwrap(model.selected)
-        let unresolved = DebugBreakpoint(breakpointID: "bp-1", urlRegex: #"(^|[/\\])checkout\.js$"#, line: 31)
-        backend.configure { $0.breakpointReply = unresolved }
+        backend.configure { $0.breakpointReply = self.breakpoint(rev: 1) }
         let error = await debug.setBreakpoint(.fileName("checkout.js"), line: 31, condition: nil)
         XCTAssertNil(error)
+        XCTAssertTrue(backend.calls.contains("bp.set file_name checkout.js:31"))
         XCTAssertEqual(debug.info.breakpoints.map(\.resolved), [false])
 
-        var resolved = unresolved
-        resolved.locations = [BreakpointLocation(targetID: page, scriptID: "88", url: "app://shop/checkout.js", line: 31, column: 3)]
-        resolved.resolved = true
-        backend.send(EventKind.debugBreakpointChanged, ["debug_id": .string("d-1"), "breakpoint": PreviewBackend.payload(resolved),
-                                                        "removed": .bool(false)])
+        backend.send(EventKind.debugBreakpointChanged, breakpointEvent(breakpoint(rev: 2, resolved: true)))
         try await waitUntil { debug.info.breakpoints.first?.resolved == true }
+        backend.send(EventKind.debugBreakpointChanged, breakpointEvent(breakpoint(rev: 1)))
+        backend.send(EventKind.debugBreakpointChanged, breakpointEvent(breakpoint(rev: 3, line: 32, resolved: true)))
+        try await waitUntil { debug.info.breakpoints.first?.line == 32 }
+        XCTAssertTrue(debug.info.breakpoints.first?.resolved ?? false)
 
-        backend.configure { $0.breakpointReply = resolved }
+        backend.configure { $0.breakpointReply = self.breakpoint(rev: 3, line: 32, resolved: true) }
         debug.setBreakpointEnabled("bp-1", false)
         try await waitUntil { debug.info.breakpoints.first?.enabled == false }
-        XCTAssertTrue(backend.calls.contains("bp.enable bp-1 false"))
+        XCTAssertTrue(backend.calls.contains("bp.update bp-1 enabled=false condition=-"))
+        let refused = await debug.setBreakpointCondition("bp-1", " order.total > 0 ")
+        XCTAssertNil(refused)
+        XCTAssertEqual(debug.info.breakpoints.first?.condition, "order.total > 0")
 
-        debug.toggleBreakpoint(url: "app://shop/checkout.js", line: 31)
+        backend.configure { $0.removeReply = self.breakpoint(rev: 9, line: 32) }
+        debug.toggleBreakpoint(url: "app://shop/checkout.js", line: 32)
         try await waitUntil { backend.calls.contains("bp.remove bp-1") }
-        XCTAssertEqual(debug.info.breakpoints, [])
-        debug.toggleBreakpoint(url: "app://shop/api.js", line: 25)
-        try await waitUntil { backend.calls.contains("bp.set url app://shop/api.js:25") }
-
-        backend.send(EventKind.debugBreakpointChanged, ["debug_id": .string("d-1"), "breakpoint": PreviewBackend.payload(resolved),
-                                                        "removed": .bool(true)])
-        try await waitUntil { !debug.info.breakpoints.contains { $0.breakpointID == "bp-1" } }
+        try await waitUntil { debug.info.breakpoints.isEmpty }
+        backend.send(EventKind.debugBreakpointChanged, breakpointEvent(breakpoint(rev: 8, line: 32, resolved: true)))
+        backend.send(EventKind.debugBreakpointChanged, breakpointEvent(breakpoint(rev: 10, line: 40)))
+        try await waitUntil { debug.info.breakpoints.first?.line == 40 }
+        XCTAssertEqual(debug.info.breakpoints.count, 1)
     }
+
+    func testGutterClicksWhileTheChangeIsInFlightDoNothing() async throws {
+        let backend = FakeDebuggerBackend()
+        let model = try await started(backend, sessions: [session()])
+        let debug = try XCTUnwrap(model.selected)
+        backend.configure { $0.breakpointReply = self.breakpoint(rev: 1) }
+        debug.toggleBreakpoint(url: "app://shop/api.js", line: 25)
+        debug.toggleBreakpoint(url: "app://shop/api.js", line: 25)
+        try await waitUntil { debug.pendingLines.isEmpty }
+        XCTAssertEqual(backend.calls.filter { $0.hasPrefix("bp.set") }, ["bp.set url app://shop/api.js:25"])
+    }
+
+    func testRemovingTheSelectedBreakpointClearsTheSelection() async throws {
+        let backend = FakeDebuggerBackend()
+        let model = try await started(backend, sessions: [session(breakpoints: [breakpoint(rev: 1)])])
+        let debug = try XCTUnwrap(model.selected)
+        debug.selectedBreakpointID = "bp-1"
+        backend.configure { $0.removeReply = self.breakpoint(rev: 2) }
+        debug.removeSelectedBreakpoint()
+        try await waitUntil { debug.info.breakpoints.isEmpty }
+        XCTAssertNil(debug.selectedBreakpointID)
+    }
+
+    // MARK: Variables
 
     func testExpandedVariablesStayOpenAcrossAStep() async throws {
         let backend = FakeDebuggerBackend()
@@ -406,19 +611,93 @@ final class DebuggerModelTests: XCTestCase {
         backend.send(EventKind.debugPaused, paused(1))
         try await waitUntil { debug.variables.rows.contains { $0.title == "order" } }
         let order = try XCTUnwrap(debug.variables.rows.first { $0.title == "order" })
+        XCTAssertEqual(order.path, ["0:local", "order"])
         debug.toggleVariable(order)
         try await waitUntil { debug.variables.rows.contains { $0.title == "total" } }
-        XCTAssertEqual(backend.calls.filter { $0 == "variables O1" }.count, 1)
+        XCTAssertEqual(backend.calls.filter { $0 == "variables O1 in \(page)" }.count, 1)
         debug.toggleVariable(order)
         debug.toggleVariable(order)
-        XCTAssertEqual(backend.calls.filter { $0 == "variables O1" }.count, 1)
+        XCTAssertEqual(backend.calls.filter { $0 == "variables O1 in \(page)" }.count, 1)
 
         backend.send(EventKind.debugResumed, resumed(2))
         try await waitUntil { model.phase == .running }
         XCTAssertEqual(debug.variables.rows, [])
         backend.send(EventKind.debugPaused, paused(3))
-        try await waitUntil { backend.calls.contains("variables O3") }
+        try await waitUntil { backend.calls.contains("variables O3 in \(page)") }
     }
+
+    func testAVariablesReplyThatArrivesAfterResumeIsDropped() async throws {
+        let backend = FakeDebuggerBackend()
+        backend.configure {
+            $0.properties["L0-1"] = DebugPropertyPage(properties: [self.object("order", "O1")])
+            $0.holdVariables = ["L0-1"]
+        }
+        let model = try await started(backend, sessions: [session()])
+        let debug = try XCTUnwrap(model.selected)
+        backend.send(EventKind.debugPaused, paused(1))
+        try await waitUntil { backend.heldVariablesCount == 1 }
+        backend.send(EventKind.debugResumed, resumed(2))
+        try await waitUntil { model.phase == .running }
+        backend.releaseVariables()
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertEqual(debug.variables.rows, [])
+    }
+
+    func testAVariablesReplyForAnEarlierPauseDoesNotFillTheNewOne() async throws {
+        let backend = FakeDebuggerBackend()
+        backend.configure {
+            $0.properties["L0-1"] = DebugPropertyPage(properties: [self.object("stale", "S1")])
+            $0.properties["L0-3"] = DebugPropertyPage(properties: [self.object("fresh", "F3")])
+            $0.holdVariables = ["L0-1"]
+        }
+        let model = try await started(backend, sessions: [session()])
+        let debug = try XCTUnwrap(model.selected)
+        backend.send(EventKind.debugPaused, paused(1))
+        try await waitUntil { backend.heldVariablesCount == 1 }
+        backend.send(EventKind.debugResumed, resumed(2))
+        backend.send(EventKind.debugPaused, paused(3))
+        try await waitUntil { debug.variables.rows.contains { $0.title == "fresh" } }
+        backend.releaseVariables()
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertFalse(debug.variables.rows.contains { $0.title == "stale" })
+        XCTAssertEqual(debug.variables.gen, 3)
+    }
+
+    func testMoreRowLoadsTheNextPageOnce() async throws {
+        let backend = FakeDebuggerBackend()
+        backend.configure {
+            $0.properties["L0-1"] = DebugPropertyPage(properties: [self.object("a", "A1")], total: 3)
+        }
+        let model = try await started(backend, sessions: [session()])
+        let debug = try XCTUnwrap(model.selected)
+        backend.send(EventKind.debugPaused, paused(1))
+        try await waitUntil { debug.variables.rows.contains { $0.kind == .more } }
+        backend.configure { $0.holdVariables = ["L0-1"] }
+        let more = try XCTUnwrap(debug.variables.rows.first { $0.kind == .more })
+        debug.toggleVariable(more)
+        debug.toggleVariable(more)
+        try await waitUntil { backend.heldVariablesCount == 1 }
+        XCTAssertTrue(debug.variables.rows.first { $0.kind == .more }?.busy ?? false)
+        backend.releaseVariables()
+        XCTAssertEqual(backend.calls.filter { $0 == "variables L0-1 @1 in \(page)" }.count, 1)
+    }
+
+    func testKeyboardMovesTheVariableSelectionAndExpandsIt() async throws {
+        let backend = FakeDebuggerBackend()
+        backend.configure { $0.properties["L0-1"] = DebugPropertyPage(properties: [self.object("order", "O1")]) }
+        let model = try await started(backend, sessions: [session()])
+        let debug = try XCTUnwrap(model.selected)
+        backend.send(EventKind.debugPaused, paused(1))
+        try await waitUntil { debug.variables.rows.contains { $0.title == "order" } }
+        debug.moveVariableSelection(by: 1)
+        debug.moveVariableSelection(by: 1)
+        XCTAssertEqual(debug.selectedVariable?.path, ["0:local", "order"])
+        debug.setSelectedVariableExpanded(true)
+        try await waitUntil { backend.calls.contains("variables O1 in \(page)") }
+        XCTAssertTrue(debug.variables.isExpanded(["0:local", "order"]))
+    }
+
+    // MARK: Console
 
     func testConsoleLoadsTheLatestPageFollowsEventsAndCatchesUpAfterResubscribing() async throws {
         let backend = FakeDebuggerBackend()
@@ -447,6 +726,66 @@ final class DebuggerModelTests: XCTestCase {
         try await waitUntil { backend.subscriptions == 2 && backend.calls.contains("console cursor 44") }
     }
 
+    func testAReconnectReloadsTheSessionsAndCatchesUpTheConsole() async throws {
+        let backend = FakeDebuggerBackend()
+        backend.configure { $0.consolePages = [ConsolePage(entries: [self.entry(1), self.entry(2)], nextCursor: 2)] }
+        let model = try await started(backend, sessions: [session()])
+        let debug = try XCTUnwrap(model.selected)
+        try await waitUntil { debug.console.entries.count == 2 }
+        var moved = session()
+        moved.rev = 5
+        moved.targets[1].title = "결제 · 다시 연결"
+        backend.configure {
+            $0.sessions = [moved]
+            $0.consolePages = [ConsolePage(entries: [self.entry(3)], nextCursor: 3, gap: true)]
+        }
+        let lists = backend.calls.filter { $0 == "list" }.count
+        backend.reconnect()
+        try await waitUntil { backend.calls.filter { $0 == "list" }.count == lists + 1 }
+        try await waitUntil { debug.console.entries.map(\.seq) == [1, 2, 3] }
+        XCTAssertTrue(backend.calls.contains("console cursor 2"))
+        XCTAssertEqual(debug.selectedTarget?.title, "결제 · 다시 연결")
+        XCTAssertEqual(debug.console.gaps, [3])
+        XCTAssertEqual(backend.subscriptions, 1)
+    }
+
+    func testConsoleEventsGatherIntoOneFlushPerFrame() async throws {
+        let backend = FakeDebuggerBackend()
+        let model = try await started(backend, sessions: [session()],
+                                      timings: DebugTimings(consoleFrame: .milliseconds(40), stateRetries: []))
+        let debug = try XCTUnwrap(model.selected)
+        try await waitUntil { debug.consolePhase == .loaded }
+        let before = debug.consoleFlushes
+        for seq in 1...50 {
+            backend.send(EventKind.debugConsole, ["debug_id": .string("d-1"), "entry": PreviewBackend.payload(entry(seq))])
+        }
+        try await waitUntil { debug.console.entries.count == 50 }
+        XCTAssertLessThanOrEqual(debug.consoleFlushes - before, 2)
+    }
+
+    func testClearingTheConsoleEmptiesItEverywhereAndKeepsLaterEntries() async throws {
+        let backend = FakeDebuggerBackend()
+        backend.configure {
+            $0.consolePages = [ConsolePage(entries: [self.entry(10), self.entry(11)], nextCursor: 11, hasEarlier: true, dropped: 4)]
+            $0.clearedThrough = 11
+        }
+        let model = try await started(backend, sessions: [session()])
+        let debug = try XCTUnwrap(model.selected)
+        try await waitUntil { debug.console.entries.count == 2 }
+        XCTAssertTrue(debug.console.hasEarlier)
+        XCTAssertEqual(debug.console.dropped, 4)
+        debug.clearConsole()
+        XCTAssertEqual(debug.console.entries, [])
+        XCTAssertFalse(debug.console.hasEarlier)
+        XCTAssertEqual(debug.console.dropped, 0)
+        try await waitUntil { backend.calls.contains("console.clear") }
+        backend.send(EventKind.debugConsole, ["debug_id": .string("d-1"), "entry": PreviewBackend.payload(entry(11))])
+        backend.send(EventKind.debugConsole, ["debug_id": .string("d-1"), "entry": PreviewBackend.payload(entry(12))])
+        try await waitUntil { debug.console.entries.map(\.seq) == [12] }
+        backend.send(EventKind.debugConsoleCleared, ["debug_id": .string("d-1"), "through_seq": .int(12)])
+        try await waitUntil { debug.console.entries.isEmpty }
+    }
+
     func testEvaluateRunsInTheSelectedFrameWhilePausedAndRecordsHistory() async throws {
         let backend = FakeDebuggerBackend()
         let model = try await started(backend, sessions: [session()])
@@ -466,6 +805,54 @@ final class DebuggerModelTests: XCTestCase {
         XCTAssertEqual(debug.console.evaluations.last?.frame, "submitOrder")
     }
 
+    func testConsoleResultsExpandAgainstTheTargetTheyRanInAndSurviveSteps() async throws {
+        let backend = FakeDebuggerBackend()
+        backend.configure {
+            $0.evaluation = DebugEvaluation(value: RemoteValue(type: "object", className: "Object", valuePreview: "{total: 1}",
+                                                               objectID: "console-1", hasChildren: true))
+            $0.properties["console-1"] = DebugPropertyPage(properties: [DebugProperty(name: "total", value: RemoteValue(type: "number", valuePreview: "1"))])
+        }
+        let model = try await started(backend, sessions: [session()])
+        let debug = try XCTUnwrap(model.selected)
+        debug.evaluate("order")
+        try await waitUntil { debug.consoleObjects.targetID(of: ["x1"]) == self.page }
+        debug.select(target: main)
+        backend.send(EventKind.debugPaused, paused(3, target: page))
+        backend.send(EventKind.debugResumed, resumed(4, target: page))
+        try await waitUntil { model.phase == .running }
+        let record = try XCTUnwrap(debug.console.evaluations.first)
+        XCTAssertEqual(record.targetID, page)
+        let root = VariableTree.Row(kind: .scope, path: ["x1"], depth: 0, title: "order", isExpandable: true, objectID: "console-1",
+                                    targetID: record.targetID)
+        debug.toggleConsoleObject(root)
+        try await waitUntil { debug.consoleObjects.rows(under: ["x1"]).contains { $0.title == "total" } }
+        XCTAssertTrue(backend.calls.contains("variables console-1 in \(page)"))
+    }
+
+    func testSelectedConsoleRowsCopyInOrder() async throws {
+        let backend = FakeDebuggerBackend()
+        backend.configure { $0.consolePages = [ConsolePage(entries: [self.entry(1, "하나"), self.entry(2, "둘"), self.entry(3, "셋")], nextCursor: 3)] }
+        let model = try await started(backend, sessions: [session()])
+        let debug = try XCTUnwrap(model.selected)
+        try await waitUntil { debug.console.entries.count == 3 }
+        debug.selectConsoleItem("e3", extending: false, toggling: false)
+        debug.selectConsoleItem("e1", extending: false, toggling: true)
+        XCTAssertEqual(debug.selectedConsoleText, "하나\n셋")
+        debug.selectConsoleItem("e1", extending: false, toggling: false)
+        debug.selectConsoleItem("e3", extending: true, toggling: false)
+        XCTAssertEqual(debug.selectedConsoleText, "하나\n둘\n셋")
+    }
+
+    func testScriptListFailureIsKept() async throws {
+        let backend = FakeDebuggerBackend()
+        let model = try await started(backend, sessions: [session()])
+        let debug = try XCTUnwrap(model.selected)
+        await debug.loadScripts()
+        XCTAssertEqual(debug.scriptsError?.code, "STALE_TARGET")
+    }
+
+    // MARK: Execution
+
     func testTogglePauseSendsPauseOrResumeForTheSelectedTarget() async throws {
         let backend = FakeDebuggerBackend()
         let model = try await started(backend, sessions: [session()])
@@ -478,6 +865,19 @@ final class DebuggerModelTests: XCTestCase {
         try await waitUntil { backend.calls.contains("resume \(page)") }
     }
 
+    func testCommandAlternatesActOnTheSelectedSessionUnlessTheConsoleHasTheKeyboard() async throws {
+        let backend = FakeDebuggerBackend()
+        let model = try await started(backend, sessions: [session()])
+        let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.command], timestamp: 0, windowNumber: 0,
+                                                   context: nil, characters: "\\", charactersIgnoringModifiers: "\\", isARepeat: false, keyCode: 42))
+        model.consoleFocused = true
+        XCTAssertFalse(DebuggerKeyHandler.handle(event, model: model, enabled: true))
+        model.consoleFocused = false
+        XCTAssertTrue(DebuggerKeyHandler.handle(event, model: model, enabled: true))
+        try await waitUntil { backend.calls.contains("pause \(page)") }
+        XCTAssertTrue(DebuggerKeyHandler.handle(event, model: model, enabled: false))
+    }
+
     func testCloseAsksTheDaemonAndKeepsTheSessionListed() async throws {
         let backend = FakeDebuggerBackend()
         let model = try await started(backend, sessions: [session()])
@@ -488,7 +888,7 @@ final class DebuggerModelTests: XCTestCase {
         XCTAssertEqual(model.sessions.count, 1)
     }
 
-    func testDebugMenuShortcutsApplyOnlyWhileTheDebuggerTabShows() {
+    func testDebugMenuShortcutsApplyOnlyWhileTheDebuggerTabShowsAndTheConsoleIsNotTyping() async throws {
         let backend = PreviewBackend(stepDelay: .zero)
         let defaults = UserDefaults(suiteName: "debugger-menu-\(UUID())")!
         let store = AppStore.seeded(backend: backend, defaults: defaults, hosts: PreviewFixtures.hosts(), selectedHostID: dev)
@@ -498,6 +898,14 @@ final class DebuggerModelTests: XCTestCase {
         store.layout.tab = .debugger
         XCTAssertTrue(DebuggerCommandContext(store: store).isShown)
         XCTAssertTrue(DebuggerCommandContext(store: store).canStart)
+        let host = try XCTUnwrap(store.host(dev))
+        let model = store.debugger(for: host)
+        let error = await model.launch(DebugLaunchRequest(hostID: dev, path: PreviewDebugProgram.appPath))
+        XCTAssertNil(error)
+        XCTAssertTrue(DebuggerCommandContext(store: store).canControl)
+        model.consoleFocused = true
+        XCTAssertFalse(DebuggerCommandContext(store: store).canControl)
+        model.consoleFocused = false
         store.selectedHostID = PreviewFixtures.qaLaptopID
         XCTAssertFalse(DebuggerCommandContext(store: store).canStart, "the QA laptop's agent cannot open tunnels")
         XCTAssertEqual(FunctionKey.f8.character, Character(UnicodeScalar(UInt32(NSF8FunctionKey))!))

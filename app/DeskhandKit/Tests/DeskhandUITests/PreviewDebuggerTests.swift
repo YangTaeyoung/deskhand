@@ -69,8 +69,10 @@ final class PreviewDebuggerTests: XCTestCase {
 
     func testLaunchFailuresMatchTheContract() async throws {
         let backend = PreviewBackend(stepDelay: .zero)
+        _ = try await launched(backend)
         let cases: [(String, String, String)] = [
             (dev, Program.notElectronPath, "TIMEOUT"),
+            (dev, Program.appPath, "EXITED_EARLY"),
             (dev, "C:\\Shop\\notes.txt", "NOT_FOUND"),
             (PreviewFixtures.qaLaptopID, Program.appPath, "CAPABILITY_UNSUPPORTED"),
             (PreviewFixtures.designID, Program.appPath, "OFFLINE"),
@@ -90,18 +92,16 @@ final class PreviewDebuggerTests: XCTestCase {
         let session = try await launched(backend)
         let checkout = Program.Script.checkout
         let blank = checkout.line("function subtotalOf") - 1
-        let moved = try await backend.debugBreakpointSet(BreakpointRequest(
-            debugID: session.debugID, match: try BreakpointPattern.fileName("checkout.js").match(), line: blank))
+        let moved = try await backend.debugBreakpointSet(debugID: session.debugID, spec: try BreakpointPattern.fileName("checkout.js").spec(line: blank))
         XCTAssertTrue(moved.resolved)
         XCTAssertEqual(moved.locations.map(\.line), [blank + 1])
         XCTAssertEqual(moved.locations.first?.scriptID, checkout.scriptID)
 
-        let pending = try await backend.debugBreakpointSet(BreakpointRequest(
-            debugID: session.debugID, match: try BreakpointPattern.fileName("settings.js").match(), line: 3))
+        let pending = try await backend.debugBreakpointSet(debugID: session.debugID, spec: try BreakpointPattern.fileName("settings.js").spec(line: 3))
         XCTAssertFalse(pending.resolved)
 
         do {
-            _ = try await backend.debugBreakpointSet(BreakpointRequest(debugID: session.debugID, match: .regex("api("), line: 3))
+            _ = try await backend.debugBreakpointSet(debugID: session.debugID, spec: BreakpointSpec(match: .urlRegex, pattern: "api(", line: 3))
             XCTFail("invalid regex is refused")
         } catch {
             XCTAssertEqual(OperationError(error).code, "INVALID_ARGUMENT")
@@ -114,8 +114,8 @@ final class PreviewDebuggerTests: XCTestCase {
         defer { events.cancel() }
         let session = try await launched(backend)
         let api = Program.Script.api
-        _ = try await backend.debugBreakpointSet(BreakpointRequest(debugID: session.debugID, match: .url(api.url),
-                                                                   line: api.line("const payload = {")))
+        _ = try await backend.debugBreakpointSet(debugID: session.debugID, spec: BreakpointSpec(match: .url, pattern: api.url,
+                                                                                               line: api.line("const payload = {")))
         let run = Task { await backend.debugRun(debugID: session.debugID, flow: .submit) }
 
         let first = try await waitForPause(events, count: 1)
@@ -161,8 +161,8 @@ final class PreviewDebuggerTests: XCTestCase {
         defer { events.cancel() }
         let session = try await launched(backend)
         let api = Program.Script.api
-        _ = try await backend.debugBreakpointSet(BreakpointRequest(debugID: session.debugID, match: .url(api.url),
-                                                                   line: api.line("return request('/orders'")))
+        _ = try await backend.debugBreakpointSet(debugID: session.debugID, spec: BreakpointSpec(match: .url, pattern: api.url,
+                                                                                               line: api.line("return request('/orders'")))
         let run = Task { await backend.debugRun(debugID: session.debugID, flow: .submit) }
         let pause = try await waitForPause(events, count: 1)
         let local = try XCTUnwrap(pause.callFrames.first?.scopeChain.first)
@@ -220,7 +220,7 @@ final class PreviewDebuggerTests: XCTestCase {
         XCTAssertEqual(error.consoleSource, .exception)
         XCTAssertEqual(error.stack?.map(\.function), ["applyDiscount", "applyCoupon", "HTMLButtonElement.<anonymous>"])
 
-        try await backend.debugExceptions(debugID: session.debugID, mode: .none)
+        _ = try await backend.debugExceptions(debugID: session.debugID, mode: .none)
         await backend.debugRun(debugID: session.debugID, flow: .coupon)
         XCTAssertEqual(pausedStates(events).count, 1)
         let after = try await backend.debugConsole(ConsoleQuery(debugID: session.debugID, cursor: error.seq))
@@ -240,21 +240,31 @@ final class PreviewDebuggerTests: XCTestCase {
         XCTAssertEqual(fields.properties.first?.name, "apiBase")
     }
 
-    func testConsolePagesFollowTheCursorRules() {
+    func testConsolePagesFollowTheCursorRules() throws {
         let entries = (1...10).map { ConsoleEntry(seq: $0, time: Timestamp(date: .now), targetID: "t", level: .log, text: "\($0)") }
-        let latest = PreviewBackend.page(entries, ConsoleQuery(debugID: "d", limit: 3))
+        let latest = try PreviewBackend.page(entries, ConsoleQuery(debugID: "d", limit: 3))
         XCTAssertEqual(latest.entries.map(\.seq), [8, 9, 10])
         XCTAssertTrue(latest.hasEarlier)
         XCTAssertEqual(latest.nextCursor, 10)
-        let after = PreviewBackend.page(entries, ConsoleQuery(debugID: "d", cursor: 6, limit: 3))
+        let after = try PreviewBackend.page(entries, ConsoleQuery(debugID: "d", cursor: 6, limit: 3))
         XCTAssertEqual(after.entries.map(\.seq), [7, 8, 9])
         XCTAssertTrue(after.hasMore)
-        let before = PreviewBackend.page(entries, ConsoleQuery(debugID: "d", before: 8, limit: 3))
+        let before = try PreviewBackend.page(entries, ConsoleQuery(debugID: "d", before: 8, limit: 3))
         XCTAssertEqual(before.entries.map(\.seq), [5, 6, 7])
         XCTAssertTrue(before.hasEarlier)
-        let empty = PreviewBackend.page(entries, ConsoleQuery(debugID: "d", cursor: 10))
+        XCTAssertEqual(before.nextCursor, 7)
+        let empty = try PreviewBackend.page(entries, ConsoleQuery(debugID: "d", cursor: 10))
         XCTAssertEqual(empty.entries, [])
         XCTAssertEqual(empty.nextCursor, 10)
+        XCTAssertFalse(empty.gap)
+        let kept = Array(entries.suffix(4))
+        let behind = try PreviewBackend.page(kept, ConsoleQuery(debugID: "d", cursor: 2, limit: 10), lastSeq: 10)
+        XCTAssertTrue(behind.gap)
+        XCTAssertEqual(behind.firstSeq, 7)
+        XCTAssertEqual(behind.entries.map(\.seq), [7, 8, 9, 10])
+        XCTAssertThrowsError(try PreviewBackend.page(entries, ConsoleQuery(debugID: "d", cursor: 2, before: 8))) { error in
+            XCTAssertEqual(OperationError(error).code, "INVALID_ARGUMENT")
+        }
     }
 
     func testCloseEndsTheSessionAndLaterCallsAreNotFound() async throws {
@@ -280,11 +290,10 @@ final class PreviewDebuggerTests: XCTestCase {
         let events = EventCollector(backend, kinds: EventKind.debuggerKinds)
         defer { events.cancel() }
         let session = try await launched(backend)
-        let receipt = try await backend.debugBreakpointSet(BreakpointRequest(
-            debugID: session.debugID, match: try BreakpointPattern.fileName("receipt.js").match(), line: 2))
+        let receipt = try await backend.debugBreakpointSet(debugID: session.debugID, spec: try BreakpointPattern.fileName("receipt.js").spec(line: 2))
         XCTAssertFalse(receipt.resolved)
-        _ = try await backend.debugBreakpointSet(BreakpointRequest(
-            debugID: session.debugID, match: .url(checkout.url), line: checkout.line("const discount =")))
+        _ = try await backend.debugBreakpointSet(debugID: session.debugID, spec: BreakpointSpec(match: .url, pattern: checkout.url,
+                                                                                               line: checkout.line("const discount =")))
         let pause = try await waitForPause(events, count: 1)
         XCTAssertEqual(pause.callFrames.first?.function, "submitOrder")
         _ = try await backend.debugResume(debugID: session.debugID, targetID: Program.pageTargetID)
@@ -295,6 +304,57 @@ final class PreviewDebuggerTests: XCTestCase {
             }
         }
         try await backend.debugClose(debugID: session.debugID, keepProcess: false)
+    }
+
+    func testLaunchAppliesBreakpointsAndTheExceptionSettingBeforeRunning() async throws {
+        let backend = PreviewBackend(stepDelay: .zero)
+        let api = Program.Script.api
+        let session = try await backend.debugLaunch(DebugLaunchRequest(
+            hostID: dev, path: Program.appPath, cwd: "C:\\Shop", pauseOnStart: true,
+            breakpoints: [BreakpointSpec(match: .fileName, pattern: "api.js", line: api.line("const payload = {"))], pauseOnExceptions: ExceptionPauseMode.none))
+        XCTAssertEqual(session.breakpoints.map(\.resolved), [true])
+        XCTAssertEqual(session.exceptionMode, .none)
+        XCTAssertEqual(session.cwd, "C:\\Shop")
+        XCTAssertTrue(session.pauseOnStart)
+    }
+
+    func testAFusedAppThatIgnoresInspectAttachesItsRendererOnly() async throws {
+        let backend = PreviewBackend(stepDelay: .zero)
+        let session = try await backend.debugLaunch(DebugLaunchRequest(hostID: dev, path: Program.kioskPath))
+        XCTAssertEqual(session.targets.map(\.targetRole), [.renderer])
+        XCTAssertEqual(session.mainUnavailable, .inspectorDisabled)
+        XCTAssertNil(session.ports.inspect)
+    }
+
+    func testPauseOnAnIdlePageIsPendingUntilCodeRuns() async throws {
+        let backend = PreviewBackend(stepDelay: .zero)
+        let events = EventCollector(backend, kinds: EventKind.debuggerKinds)
+        defer { events.cancel() }
+        let session = try await launched(backend)
+        let target = try await backend.debugPause(debugID: session.debugID, targetID: Program.pageTargetID)
+        XCTAssertEqual(target?.pausePending, true)
+        XCTAssertEqual(target?.paused, false)
+        let run = Task { await backend.debugRun(debugID: session.debugID, flow: .submit) }
+        let pause = try await waitForPause(events, count: 1)
+        XCTAssertEqual(pause.pauseReason, .pauseRequest)
+        _ = try await backend.debugResume(debugID: session.debugID, targetID: Program.pageTargetID)
+        await run.value
+        let listed = try await backend.debugGet(debugID: session.debugID)
+        XCTAssertEqual(listed.targets.first { $0.id == Program.pageTargetID }?.pausePending, false)
+    }
+
+    func testClearingTheConsoleTellsEveryClientAndLaterPagesStartAfterIt() async throws {
+        let backend = PreviewBackend(stepDelay: .zero)
+        let events = EventCollector(backend, kinds: EventKind.debuggerKinds)
+        defer { events.cancel() }
+        let session = try await launched(backend)
+        let through = try await backend.debugConsoleClear(debugID: session.debugID)
+        XCTAssertEqual(through, Program.launchConsole().count)
+        try await waitUntil { !events.of(EventKind.debugConsoleCleared).isEmpty }
+        XCTAssertEqual(events.of(EventKind.debugConsoleCleared).first?.payload["through_seq"]?.intValue, through)
+        let page = try await backend.debugConsole(ConsoleQuery(debugID: session.debugID))
+        XCTAssertEqual(page.entries, [])
+        XCTAssertFalse(page.hasEarlier)
     }
 
     private var checkout: Program.Script { .checkout }

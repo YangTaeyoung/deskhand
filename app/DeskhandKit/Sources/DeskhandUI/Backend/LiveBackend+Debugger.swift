@@ -22,6 +22,8 @@ private struct DebugLaunchParams: Encodable {
     let args: [String]?
     let cwd: String?
     let pauseOnStart: Bool?
+    let breakpoints: [BreakpointSpec]?
+    let pauseOnExceptions: String?
 }
 
 private struct DebugAttachParams: Encodable {
@@ -29,21 +31,24 @@ private struct DebugAttachParams: Encodable {
     let port: Int?
     let pid: Int?
     let role: String?
+    let breakpoints: [BreakpointSpec]?
+    let pauseOnExceptions: String?
 }
 
 private struct BreakpointSetParams: Encodable {
     let debugID: String
-    let url: String?
-    let urlRegex: String?
+    let match: String
+    let pattern: String
     let line: Int
     let column: Int?
     let condition: String?
 }
 
-private struct BreakpointEnableParams: Encodable {
+private struct BreakpointUpdateParams: Encodable {
     let debugID: String
     let breakpointID: String
-    let enabled: Bool
+    let enabled: Bool?
+    let condition: String?
 }
 
 private struct BreakpointIDParams: Encodable {
@@ -125,6 +130,18 @@ private struct BreakpointResult: Decodable {
     let breakpoint: DebugBreakpoint
 }
 
+private struct OptionalBreakpointResult: Decodable {
+    let breakpoint: DebugBreakpoint?
+}
+
+private struct OptionalSessionResult: Decodable {
+    let session: DebugSession?
+}
+
+private struct ConsoleClearResult: Decodable {
+    let clearedThrough: Int
+}
+
 extension LiveBackend {
     public func debugList(hostID: String) async throws -> [DebugSession] {
         let result: SessionListResult = try await client.call("debug.list", DebugHostParams(hostID: hostID))
@@ -138,16 +155,21 @@ extension LiveBackend {
     public func debugLaunch(_ request: DebugLaunchRequest) async throws -> DebugSession {
         try await debugEnvelope("debug.electron.launch", DebugLaunchParams(
             hostID: request.hostID, path: request.path, args: request.args.isEmpty ? nil : request.args, cwd: request.cwd,
-            pauseOnStart: request.pauseOnStart ? true : nil), as: SessionResult.self).session
+            pauseOnStart: request.pauseOnStart ? true : nil, breakpoints: request.breakpoints.isEmpty ? nil : request.breakpoints,
+            pauseOnExceptions: request.pauseOnExceptions?.rawValue), as: SessionResult.self).session
     }
 
     public func debugAttach(_ request: DebugAttachRequest) async throws -> DebugSession {
         let params: DebugAttachParams
+        let breakpoints = request.breakpoints.isEmpty ? nil : request.breakpoints
+        let exceptions = request.pauseOnExceptions?.rawValue
         switch request.target {
         case .port(let port, let role):
-            params = DebugAttachParams(hostID: request.hostID, port: port, pid: nil, role: role?.rawValue)
+            params = DebugAttachParams(hostID: request.hostID, port: port, pid: nil, role: role?.rawValue, breakpoints: breakpoints,
+                                       pauseOnExceptions: exceptions)
         case .pid(let pid):
-            params = DebugAttachParams(hostID: request.hostID, port: nil, pid: pid, role: nil)
+            params = DebugAttachParams(hostID: request.hostID, port: nil, pid: pid, role: nil, breakpoints: breakpoints,
+                                       pauseOnExceptions: exceptions)
         }
         return try await debugEnvelope("debug.attach", params, as: SessionResult.self).session
     }
@@ -155,40 +177,35 @@ extension LiveBackend {
     public func debugTargetAttach(debugID: String, targetID: String) async throws -> DebugTarget {
         let result = try await debugEnvelope("debug.target.attach", DebugTargetParams(debugID: debugID, targetID: targetID),
                                              as: TargetResult.self)
-        guard let target = result.target else { throw DecodingError.valueNotFound(DebugTarget.self, .init(
-            codingPath: [], debugDescription: "debug.target.attach without target")) }
+        guard let target = result.target else {
+            throw OperationError(code: "INTERNAL", message: .ui("error.debugNoTarget", "데몬이 연결한 대상을 돌려주지 않았습니다"))
+        }
         return target
     }
 
-    public func debugBreakpointSet(_ request: BreakpointRequest) async throws -> DebugBreakpoint {
-        var url: String?
-        var regex: String?
-        switch request.match {
-        case .url(let value): url = value
-        case .regex(let value): regex = value
-        }
-        return try await debugEnvelope("debug.breakpoint.set", BreakpointSetParams(
-            debugID: request.debugID, url: url, urlRegex: regex, line: request.line, column: request.column,
-            condition: request.condition), as: BreakpointResult.self).breakpoint
+    public func debugBreakpointSet(debugID: String, spec: BreakpointSpec) async throws -> DebugBreakpoint {
+        try await debugEnvelope("debug.breakpoint.set", BreakpointSetParams(
+            debugID: debugID, match: spec.match, pattern: spec.pattern, line: spec.line, column: spec.column,
+            condition: spec.condition), as: BreakpointResult.self).breakpoint
     }
 
-    public func debugBreakpointEnable(debugID: String, breakpointID: String, enabled: Bool) async throws -> DebugBreakpoint {
-        try await debugEnvelope("debug.breakpoint.enable", BreakpointEnableParams(
-            debugID: debugID, breakpointID: breakpointID, enabled: enabled), as: BreakpointResult.self).breakpoint
+    public func debugBreakpointUpdate(debugID: String, breakpointID: String, enabled: Bool?, condition: String?) async throws -> DebugBreakpoint {
+        try await debugEnvelope("debug.breakpoint.update", BreakpointUpdateParams(
+            debugID: debugID, breakpointID: breakpointID, enabled: enabled, condition: condition), as: BreakpointResult.self).breakpoint
     }
 
-    public func debugBreakpointRemove(debugID: String, breakpointID: String) async throws {
-        _ = try await debugEnvelope("debug.breakpoint.remove", BreakpointIDParams(debugID: debugID, breakpointID: breakpointID),
-                                    as: Empty.self)
+    public func debugBreakpointRemove(debugID: String, breakpointID: String) async throws -> DebugBreakpoint? {
+        try await debugEnvelope("debug.breakpoint.remove", BreakpointIDParams(debugID: debugID, breakpointID: breakpointID),
+                                as: OptionalBreakpointResult.self).breakpoint
     }
 
-    public func debugBreakpointsActivate(debugID: String, active: Bool) async throws {
-        _ = try await debugEnvelope("debug.breakpoints.activate", BreakpointsActivateParams(debugID: debugID, active: active),
-                                    as: Empty.self)
+    public func debugBreakpointsActivate(debugID: String, active: Bool) async throws -> DebugSession? {
+        try await debugEnvelope("debug.breakpoints.activate", BreakpointsActivateParams(debugID: debugID, active: active),
+                                as: OptionalSessionResult.self).session
     }
 
-    public func debugExceptions(debugID: String, mode: ExceptionPauseMode) async throws {
-        _ = try await debugEnvelope("debug.exceptions", ExceptionsParams(debugID: debugID, mode: mode.rawValue), as: Empty.self)
+    public func debugExceptions(debugID: String, mode: ExceptionPauseMode) async throws -> DebugSession? {
+        try await debugEnvelope("debug.exceptions", ExceptionsParams(debugID: debugID, mode: mode.rawValue), as: OptionalSessionResult.self).session
     }
 
     public func debugPause(debugID: String, targetID: String) async throws -> DebugTarget? {
@@ -235,6 +252,10 @@ extension LiveBackend {
             limit: min(max(query.limit, 1), ConsoleQuery.maximumLimit)))
     }
 
+    public func debugConsoleClear(debugID: String) async throws -> Int {
+        try await debugEnvelope("debug.console.clear", DebugIDParams(debugID: debugID), as: ConsoleClearResult.self).clearedThrough
+    }
+
     public func debugClose(debugID: String, keepProcess: Bool) async throws {
         _ = try await debugEnvelope("debug.close", CloseParams(debugID: debugID, keepProcess: keepProcess ? true : nil), as: Empty.self)
     }
@@ -253,5 +274,13 @@ extension LiveBackend {
             }
         }
         return try Self.decode(T.self, from: value)
+    }
+}
+
+// MARK: Reconnects
+
+extension LiveBackend {
+    public func reconnects() -> AsyncStream<Void> {
+        client.reconnects()
     }
 }

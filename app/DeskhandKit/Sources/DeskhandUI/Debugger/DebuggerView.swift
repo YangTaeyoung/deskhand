@@ -3,11 +3,14 @@ import DeskhandClient
 import SwiftUI
 import struct DeskhandClient.Host
 
-/// The debugger tab: a toolbar with resume and step controls and the exception setting; sessions
-/// and their targets over the breakpoints on the left; the paused location over the console in
-/// the middle; the call stack over the variables on the right. Without a session it offers to
-/// launch an Electron app or attach to a running one.
+/// The debugger tab: a toolbar with resume and step controls, the script navigator and the
+/// exception setting; sessions and their targets over the breakpoints on the left; the paused
+/// location over the console in the middle; the call stack over the variables on the right.
+/// Below `narrowWidth` the left column folds away behind the toolbar's sidebar button. Without a
+/// session it offers to launch an Electron app or attach to a running one.
 public struct DebuggerView: View {
+    static let narrowWidth: CGFloat = 1000
+
     let store: AppStore
     let host: Host
     let chrome: WorkspaceChrome
@@ -24,7 +27,7 @@ public struct DebuggerView: View {
         let model = store.debugger(for: host)
         Group {
             if availability == .ready || !model.sessions.isEmpty {
-                DebuggerContent(store: store, model: model, host: host, availability: availability)
+                DebuggerContent(store: store, model: model, host: host, availability: availability, chrome: chrome)
             } else {
                 HostFeatureUnavailableView(host: host, availability: availability, feature: .debugger)
                     .background(DS.Color.surface)
@@ -39,12 +42,22 @@ private struct DebuggerContent: View {
     @Bindable var model: DebuggerModel
     let host: Host
     let availability: HostFeatureAvailability
+    let chrome: WorkspaceChrome
+    @State private var keys = DebuggerKeyMonitor()
+    @State private var width: CGFloat = 1440
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var narrow: Bool { width < DebuggerView.narrowWidth }
+    private var showsNavigator: Bool { model.navigatorShown ?? !narrow }
 
     var body: some View {
         VStack(spacing: 0) {
             if !model.sessions.isEmpty || model.starting != nil {
-                DebuggerToolbar(model: model, session: model.selected, enabled: availability == .ready)
+                DebuggerToolbar(model: model, session: model.selected, enabled: availability == .ready, chrome: chrome,
+                                navigatorShown: showsNavigator) {
+                    model.navigatorShown = !showsNavigator
+                }
             }
             if availability != .ready {
                 OfflineStrip(host: host, availability: availability)
@@ -53,6 +66,17 @@ private struct DebuggerContent: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(DS.Color.surface)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        .overlayPreferenceValue(ScriptNavigatorAnchor.self) { anchor in
+            if chrome == .standIn, model.showsScriptNavigator, let anchor, let session = model.selected {
+                GeometryReader { proxy in
+                    let rect = proxy[anchor]
+                    ScriptNavigatorStandIn(session: session)
+                        .offset(x: min(max(DS.Space.s, rect.midX - ScriptNavigator.width / 2), proxy.size.width - ScriptNavigator.width - DS.Space.s),
+                                y: rect.maxY + DS.Space.xs)
+                }
+            }
+        }
         .sheet(item: $model.sheet) { sheet in
             switch sheet {
             case .launch:
@@ -62,6 +86,10 @@ private struct DebuggerContent: View {
             case .breakpoint:
                 if let session = model.selected {
                     BreakpointSheet(session: session) { model.sheet = nil }
+                }
+            case .condition(let breakpointID):
+                if let session = model.selected, let breakpoint = session.info.breakpoints.first(where: { $0.breakpointID == breakpointID }) {
+                    BreakpointSheet(session: session, editing: breakpoint) { model.sheet = nil }
                 }
             }
         }
@@ -75,7 +103,7 @@ private struct DebuggerContent: View {
                     Task { await session.close(keepProcess: true) }
                 }
             } else {
-                Button(String.ui("debugger.close.detach", "연결 끊기")) {
+                Button(String.ui("debugger.close.detach", "연결 해제")) {
                     Task { await session.close(keepProcess: true) }
                 }
             }
@@ -83,11 +111,22 @@ private struct DebuggerContent: View {
         } message: { session in
             Text(closeMessage(session))
         }
+        .onAppear {
+            let model = model
+            let store = store
+            let host = host
+            keys.install { event in
+                let current = store.host(host.hostID) ?? host
+                return DebuggerKeyHandler.handle(event, model: model, enabled: HostFeatureAvailability(host: current, capability: "tunnel") == .ready)
+            }
+        }
+        .onDisappear { keys.remove() }
     }
 
     private var closeTitle: String {
         guard let session = model.pendingClose.flatMap(model.session) else { return "" }
         let name = session.info.name
+        if session.info.sessionKind == .attach { return .ui("debugger.close.detachTitle", "‘\(name)’ 앱에서 연결을 해제할까요?") }
         return .ui("debugger.close.title", "‘\(name)’ 세션을 닫을까요?")
     }
 
@@ -100,7 +139,7 @@ private struct DebuggerContent: View {
             }
             return .ui("debugger.close.launchMessageNoPID", "Deskhand가 실행한 \(name)도 함께 종료합니다. 앱을 두려면 ‘앱은 두고 세션만 닫기’를 고르세요.")
         }
-        return .ui("debugger.close.attachMessage", "\(name) 앱은 계속 실행되고 Deskhand가 연 연결과 터널만 닫힙니다.")
+        return .ui("debugger.close.attachMessage", "\(name) 앱은 계속 실행됩니다. Deskhand가 연 터널을 닫고, Deskhand가 켠 검사기는 끌 수 있으면 끕니다.")
     }
 
     @ViewBuilder
@@ -113,7 +152,7 @@ private struct DebuggerContent: View {
             case .failed(let error):
                 VStack {
                     ErrorBanner(message: String.ui("debugger.listFailed", "디버그 세션 목록을 불러오지 못했습니다"),
-                                fix: error.detail, code: error.code) {
+                                fix: DebuggerModel.listFix(error), code: error.code) {
                         Task { await model.reload() }
                     }
                     .frame(maxWidth: 520)
@@ -128,37 +167,57 @@ private struct DebuggerContent: View {
         }
     }
 
+    private var navigator: some View {
+        DebugSplit(axis: .vertical, fraction: $model.navigatorSplit, minimumFirst: 140, minimumSecond: 120) {
+            TargetsList(model: model, launch: { model.sheet = .launch }, attach: { model.sheet = .attach })
+        } second: {
+            BreakpointsList(model: model, session: model.selected) { model.sheet = .breakpoint }
+        }
+    }
+
     private var workspace: some View {
         GeometryReader { proxy in
             let width = proxy.size.width
-            let narrow = width < 1000
-            let navigator = narrow ? 208 : min(max(width * 0.22, 224), 280)
-            let inspector = narrow ? 244 : min(max(width * 0.25, 248), 320)
+            let navigatorWidth = min(max(width * 0.2, 224), 280)
+            let inspectorWidth = narrow ? 248 : min(max(width * 0.24, 248), 320)
+            let inspectorHeight = proxy.size.height
             HStack(spacing: 0) {
-                DebugSplit(axis: .vertical, fraction: $model.navigatorSplit, minimumFirst: 140, minimumSecond: 120) {
-                    TargetsList(model: model, launch: { model.sheet = .launch }, attach: { model.sheet = .attach })
-                } second: {
-                    BreakpointsList(session: model.selected) { model.sheet = .breakpoint }
+                if showsNavigator, !narrow {
+                    navigator
+                        .frame(width: navigatorWidth)
+                        .background(DS.Color.surfaceRaised.opacity(0.35))
+                        .clipped()
+                    Divider()
                 }
-                .frame(width: navigator)
-                .background(DS.Color.surfaceRaised.opacity(0.35))
-                .clipped()
-                Divider()
-                DebugSplit(axis: .vertical, fraction: $model.centerSplit, minimumFirst: 160, minimumSecond: 150) {
-                    SourcePanel(session: model.selected)
+                DebugSplit(axis: .vertical, fraction: $model.centerSplit, minimumFirst: 160, minimumSecond: 152) {
+                    SourcePanel(model: model, session: model.selected)
                 } second: {
-                    DebugConsoleView(session: model.selected)
+                    DebugConsoleView(model: model, session: model.selected, compact: narrow)
                 }
                 .frame(minWidth: 0, maxWidth: .infinity)
                 .clipped()
                 Divider()
-                DebugSplit(axis: .vertical, fraction: $model.inspectorSplit, minimumFirst: 120, minimumSecond: 140) {
+                VStack(spacing: 0) {
+                    let frames = model.selected?.pauseState?.callFrames.count ?? 0
                     CallStackView(session: model.selected)
-                } second: {
+                        .frame(height: min(CallStackView.idealHeight(frames: frames), inspectorHeight * 0.45))
+                    Divider()
                     VariablesView(session: model.selected)
+                        .frame(maxHeight: .infinity)
                 }
-                .frame(width: inspector)
+                .frame(width: inspectorWidth)
                 .clipped()
+            }
+            .overlay(alignment: .leading) {
+                if showsNavigator, narrow {
+                    navigator
+                        .frame(width: 248)
+                        .background(DS.Color.surfaceRaised.opacity(0.35))
+                        .background(DS.Color.surface)
+                        .overlay(alignment: .trailing) { Rectangle().fill(DS.Color.separator).frame(width: 1) }
+                        .shadow(color: .black.opacity(colorScheme == .dark ? 0.5 : 0.18), radius: 12, x: 4)
+                        .transition(reduceMotion ? .opacity : .move(edge: .leading))
+                }
             }
             .overlay(alignment: .bottom) {
                 if let session = model.selected, let notice = session.notice {
@@ -169,12 +228,13 @@ private struct DebuggerContent: View {
                 }
             }
             .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: model.selected?.notice)
+            .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: showsNavigator)
         }
     }
 }
 
 /// The computer went offline or is reconnecting while sessions are listed.
-private struct OfflineStrip: View {
+struct OfflineStrip: View {
     let host: Host
     let availability: HostFeatureAvailability
 
@@ -206,7 +266,7 @@ private struct OfflineStrip: View {
         let name = host.name
         switch availability {
         case .connecting, .reconnecting:
-            return .ui("debugger.offline.reconnecting", "\(name)에 다시 연결하는 중입니다. 연결이 돌아오면 세션 상태를 다시 읽습니다.")
+            return .ui("debugger.offline.reconnecting", "\(name)에 다시 연결하는 중입니다. 연결이 돌아오면 세션 상태와 놓친 콘솔 기록을 다시 읽습니다.")
         default:
             return .ui("debugger.offline.strip", "\(name)에 연결되어 있지 않아 실행 제어와 평가를 쓸 수 없습니다. 이전 세션 기록만 볼 수 있습니다.")
         }
@@ -215,55 +275,88 @@ private struct OfflineStrip: View {
 
 // MARK: Toolbar
 
-/// 일시정지·재개 (F8), 건너뛰기 (F10), 들어가기 (F11), 나오기 (⇧F11), the session's state, the
-/// exception setting and closing the session.
+/// The bounds of the toolbar's script button, where the script navigator opens.
+struct ScriptNavigatorAnchor: PreferenceKey {
+    static let defaultValue: Anchor<CGRect>? = nil
+
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+        value = value ?? nextValue()
+    }
+}
+
+/// The script navigator drawn in place of its popover, for offscreen snapshots.
+private struct ScriptNavigatorStandIn: View {
+    let session: DebugSessionModel
+
+    var body: some View {
+        ScriptNavigator(session: session) {}
+            .background(DS.Color.surface)
+            .clipShape(RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous).strokeBorder(DS.Color.separator, lineWidth: 1))
+            .shadow(color: .black.opacity(0.2), radius: 16, y: 8)
+    }
+}
+
+/// The sidebar button; 일시정지·재개 (F8 · ⌘\), 건너뛰기 (F10 · ⌘'), 들어가기 (F11 · ⌘;),
+/// 나오기 (⇧F11 · ⇧⌘;); the session's state; the script navigator (⇧⌘O), the exception setting
+/// and closing or detaching the session.
 struct DebuggerToolbar: View {
     let model: DebuggerModel
     let session: DebugSessionModel?
     let enabled: Bool
+    let chrome: WorkspaceChrome
+    let navigatorShown: Bool
+    let toggleNavigator: () -> Void
 
     var body: some View {
         let canControl = enabled && (session?.canControl ?? false) && session?.command == nil
-        let paused = session?.pauseState != nil
+        let paused = session?.isSelectedPaused ?? false
+        let steppable = session?.pauseState != nil
         HStack(spacing: DS.Space.s) {
-            HStack(spacing: 2) {
+            ToolbarIconButton(symbol: "sidebar.left", title: navigatorShown ? String.ui("debugger.navigator.hide", "세션 목록 숨기기")
+                                                                            : String.ui("debugger.navigator.show", "세션 목록 보기"),
+                              selected: navigatorShown, action: toggleNavigator)
+            HStack(spacing: DS.Space.xs) {
                 ControlButton(symbol: paused ? "play.fill" : "pause.fill",
                               title: paused ? String.ui("debugger.resume", "재개") : String.ui("debugger.pause", "일시정지"),
-                              shortcut: "F8", tint: paused ? DS.Color.success : nil, enabled: canControl) {
+                              shortcut: "F8 · ⌘\\", tint: paused ? DS.Color.success : nil, enabled: canControl) {
                     session?.togglePause()
                 }
-                ControlButton(symbol: "arrow.uturn.forward", title: String.ui("debugger.stepOver", "건너뛰기"), shortcut: "F10",
-                              enabled: canControl && paused) { session?.step(.over) }
-                ControlButton(symbol: "arrow.down.to.line", title: String.ui("debugger.stepInto", "들어가기"), shortcut: "F11",
-                              enabled: canControl && paused) { session?.step(.into) }
-                ControlButton(symbol: "arrow.up.to.line", title: String.ui("debugger.stepOut", "나오기"), shortcut: "⇧F11",
-                              enabled: canControl && paused) { session?.step(.out) }
+                ControlButton(symbol: "arrow.turn.up.right", title: String.ui("debugger.stepOver", "건너뛰기"), shortcut: "F10 · ⌘'",
+                              enabled: canControl && steppable) { session?.step(.over) }
+                ControlButton(symbol: "arrow.turn.right.down", title: String.ui("debugger.stepInto", "들어가기"), shortcut: "F11 · ⌘;",
+                              enabled: canControl && steppable) { session?.step(.into) }
+                ControlButton(symbol: "arrow.turn.left.up", title: String.ui("debugger.stepOut", "나오기"), shortcut: "⇧F11 · ⇧⌘;",
+                              enabled: canControl && steppable) { session?.step(.out) }
             }
-            .padding(2)
+            .padding(DS.Space.xs)
             .background(DS.Color.neutral.opacity(0.1), in: RoundedRectangle(cornerRadius: DS.Radius.s + 2, style: .continuous))
             StatusText(model: model, session: session)
                 .padding(.leading, DS.Space.xs)
             Spacer(minLength: DS.Space.s)
-            if let session, session.isClosed, session.info.sessionKind == .launch, let path = session.info.path {
+            if let session, session.isClosed, let request = session.relaunchRequest {
                 Button {
-                    Task { _ = await model.launch(DebugLaunchRequest(hostID: model.hostID, path: path, args: session.info.args)) }
+                    Task { _ = await model.launch(request) }
                 } label: {
                     Label(String.ui("debugger.relaunch", "다시 실행"), systemImage: "arrow.clockwise")
                 }
                 .disabled(!enabled || model.starting != nil)
-                .help(String.ui("debugger.relaunch.help", "같은 실행 파일과 인수로 새 디버그 세션을 시작합니다"))
+                .help(String.ui("debugger.relaunch.help", "같은 실행 파일, 인수, 작업 폴더, 중단점으로 새 디버그 세션을 시작합니다"))
+            }
+            if let session {
+                scriptButton(session)
             }
             if let session, !session.isClosed {
                 ExceptionMenu(session: session, enabled: enabled)
                 Button {
                     model.pendingClose = session.id
                 } label: {
-                    Label(session.info.sessionKind == .attach ? String.ui("debugger.detach", "연결 끊기") : String.ui("debugger.closeSession", "세션 닫기"),
+                    Label(session.info.sessionKind == .attach ? String.ui("debugger.detach", "연결 해제") : String.ui("debugger.closeSession", "세션 닫기"),
                           systemImage: "xmark.circle")
                 }
                 .disabled(session.command == .close)
                 .help(session.info.sessionKind == .attach
-                      ? String.ui("debugger.detach.help", "앱은 두고 디버거 연결만 끊습니다")
+                      ? String.ui("debugger.detach.help", "앱은 두고 디버거 연결만 해제합니다")
                       : String.ui("debugger.closeSession.help", "세션을 닫습니다. Deskhand가 실행한 앱도 종료할지 묻습니다"))
             }
         }
@@ -276,9 +369,55 @@ struct DebuggerToolbar: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(String.ui("debugger.toolbar", "디버거 제어"))
     }
+
+    @ViewBuilder
+    private func scriptButton(_ session: DebugSessionModel) -> some View {
+        @Bindable var model = model
+        let button = Button {
+            model.showsScriptNavigator.toggle()
+        } label: {
+            Label(String.ui("debugger.scripts", "스크립트"), systemImage: "doc.text.magnifyingglass")
+        }
+        .disabled(session.isClosed && session.scripts.isEmpty)
+        .help(String.ui("debugger.scripts.help", "로드된 스크립트를 찾아 엽니다 (⇧⌘O)"))
+        .anchorPreference(key: ScriptNavigatorAnchor.self, value: .bounds) { $0 }
+        switch chrome {
+        case .native:
+            button.popover(isPresented: $model.showsScriptNavigator, arrowEdge: .bottom) {
+                ScriptNavigator(session: session) { model.showsScriptNavigator = false }
+            }
+        case .standIn:
+            button
+        }
+    }
 }
 
-/// An icon button of the execution controls with its name and shortcut in the help tag.
+/// A square icon button of the toolbar, tinted while `selected`.
+private struct ToolbarIconButton: View {
+    let symbol: String
+    let title: String
+    var selected = false
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(selected ? AnyShapeStyle(DS.Color.accent) : AnyShapeStyle(.secondary))
+                .frame(width: 28, height: 24)
+                .background(hovering ? DS.Color.neutral.opacity(0.16) : .clear,
+                            in: RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(title)
+        .accessibilityLabel(title)
+    }
+}
+
+/// An icon button of the execution controls with its name and shortcuts in the help tag.
 private struct ControlButton: View {
     let symbol: String
     let title: String
@@ -293,7 +432,7 @@ private struct ControlButton: View {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(foreground)
-                .frame(width: 30, height: 24)
+                .frame(width: 32, height: 24)
                 .background(hovering && enabled ? DS.Color.neutral.opacity(0.16) : .clear,
                             in: RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
                 .contentShape(Rectangle())
@@ -332,7 +471,10 @@ private struct StatusText: View {
 
     @ViewBuilder
     private var indicator: some View {
-        if model.starting != nil || (session?.command != nil && session?.command != .close) || session?.command == .close {
+        if let session, session.command == nil, model.starting == nil, session.stateFailure != nil {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(DS.Color.warning)
+        } else if model.starting != nil || session?.command != nil || session?.awaitingState == true {
             ProgressView().controlSize(.small)
         } else if let session {
             switch session.phase {
@@ -343,11 +485,20 @@ private struct StatusText: View {
                 Image(systemName: "stop.circle")
                     .foregroundStyle(.secondary)
             default:
-                Image(systemName: "circle.fill")
-                    .font(.system(size: 7))
-                    .foregroundStyle(DS.Color.success)
+                if session.pausePending {
+                    Image(systemName: "pause.circle")
+                        .foregroundStyle(DS.Color.warning)
+                } else {
+                    runningDot
+                }
             }
         }
+    }
+
+    private var runningDot: some View {
+        Image(systemName: "circle.fill")
+            .font(.system(size: 7))
+            .foregroundStyle(DS.Color.success)
     }
 
     private var text: String {
@@ -361,7 +512,8 @@ private struct StatusText: View {
         case .pause: return .ui("debugger.status.pausing", "일시정지하는 중…")
         case .resume: return .ui("debugger.status.resuming", "재개하는 중…")
         case .step: return .ui("debugger.status.stepping", "한 단계 실행하는 중…")
-        case .close: return .ui("debugger.status.closing", "세션을 닫는 중…")
+        case .close: return session.info.sessionKind == .attach ? .ui("debugger.status.detaching", "연결을 해제하는 중…")
+                                                                : .ui("debugger.status.closing", "세션을 닫는 중…")
         case nil: break
         }
         let target = session.selectedTarget.map { DebugFormat.role($0) + " · " + DebugFormat.targetTitle($0) } ?? ""
@@ -370,12 +522,19 @@ private struct StatusText: View {
             let why = DebugFormat.reason(reason)
             if let frame = session.pauseState?.callFrames.first {
                 let location = DebugFormat.location(url: frame.url, line: frame.line)
+                if let by = session.pauseState?.requestedBy, by.actor == "ai" {
+                    let actor = DebugFormat.actor(by)
+                    return .ui("debugger.status.pausedAtBy", "일시정지됨 · \(why) · \(location) · \(actor)")
+                }
                 return .ui("debugger.status.pausedAt", "일시정지됨 · \(why) · \(location)")
             }
             return .ui("debugger.status.paused", "일시정지됨 · \(why)")
         case .closed(let reason):
-            return DebugFormat.closed(reason, exitCode: session.info.exitCode)
+            return DebugFormat.closed(reason, exitCode: session.info.exitCode, kind: session.info.sessionKind)
         default:
+            if session.stateFailure != nil { return .ui("debugger.status.pauseUnread", "일시정지됨 · 멈춘 위치를 불러오지 못했습니다") }
+            if session.awaitingState { return .ui("debugger.status.readingPause", "일시정지됨 · 멈춘 위치를 읽는 중") }
+            if session.pausePending { return .ui("debugger.status.pausePending", "일시정지 요청됨 · 다음 코드에서 멈춥니다") }
             if !session.pausedTargets.isEmpty {
                 let other = session.pausedTargets.map(DebugFormat.role).joined(separator: ", ")
                 return .ui("debugger.status.otherPaused", "\(target) 실행 중 · \(other) 일시정지됨")
@@ -385,7 +544,7 @@ private struct StatusText: View {
     }
 }
 
-/// 예외에서 멈춤: 멈추지 않음, 잡히지 않은 예외, 모든 예외.
+/// 예외에서 멈춤: 멈추지 않음, 잡히지 않은 것만, 모두.
 private struct ExceptionMenu: View {
     let session: DebugSessionModel
     let enabled: Bool
@@ -429,7 +588,7 @@ private struct DebuggerIdleView: View {
                         Text(String.ui("debugger.idle.title", "Electron 앱 디버그"))
                             .font(DS.Font.display)
                             .accessibilityAddTraits(.isHeader)
-                        Text(String.ui("debugger.idle.message", "\(host.name)에서 Electron 앱을 디버그 포트를 연 채로 실행하거나 실행 중인 앱에 붙습니다. 메인과 렌더러에 중단점을 걸고, 멈추면 호출 스택과 변수를 보고 식을 평가합니다."))
+                        Text(String.ui("debugger.idle.message", "\(host.name)에서 Electron 앱을 디버그 포트를 연 채로 실행하거나 실행 중인 앱에 연결합니다. 메인과 렌더러에 중단점을 걸고, 멈추면 호출 스택과 변수를 보고 식을 평가합니다."))
                             .font(DS.Font.body)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -467,7 +626,8 @@ private struct DebuggerIdleView: View {
     }
 }
 
-/// Apps launched for debugging before, each launched again with one click.
+/// Apps launched for debugging before, each launched again with one click with the same
+/// arguments, folder, start pause and breakpoints.
 private struct RecentLaunches: View {
     let model: DebuggerModel
     let enabled: Bool
@@ -494,7 +654,6 @@ private struct RecentLaunchRow: View {
     let model: DebuggerModel
     let launch: RecentLaunch
     let enabled: Bool
-    @State private var running = false
 
     var body: some View {
         HStack(spacing: DS.Space.m) {
@@ -503,7 +662,7 @@ private struct RecentLaunchRow: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 24)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 0) {
                 Text(FilePath.lastComponent(launch.path, style: .windows))
                     .font(DS.Font.body.weight(.medium))
                     .lineLimit(1)
@@ -512,21 +671,35 @@ private struct RecentLaunchRow: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                if let extras = extras {
+                    Text(extras)
+                        .font(DS.Font.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
             Spacer(minLength: DS.Space.s)
             Button(String.ui("debugger.recent.run", "다시 실행")) {
-                running = true
-                Task {
-                    _ = await model.launch(DebugLaunchRequest(hostID: model.hostID, path: launch.path, args: launch.args, cwd: launch.cwd))
-                    running = false
-                }
+                Task { _ = await model.launch(launch.request(hostID: model.hostID)) }
             }
             .controlSize(.small)
             .disabled(!enabled || model.starting != nil)
-            .help(String.ui("debugger.recent.run.help", "같은 인수로 디버그 실행합니다"))
+            .help(String.ui("debugger.recent.run.help", "같은 인수, 작업 폴더, 중단점으로 디버그 실행합니다"))
         }
         .padding(.horizontal, DS.Space.m)
         .padding(.vertical, DS.Space.s)
+    }
+
+    /// `중단점 3개 · 첫 줄에서 멈춤` when the launch carries them.
+    private var extras: String? {
+        var parts: [String] = []
+        if !launch.breakpoints.isEmpty {
+            let count = String(launch.breakpoints.count)
+            parts.append(.ui("debugger.recent.breakpoints", "중단점 \(count)개"))
+        }
+        if launch.pauseOnStart { parts.append(.ui("debugger.recent.pauseOnStart", "첫 줄에서 멈춤")) }
+        if let cwd = launch.cwd, !cwd.isEmpty { parts.append(.ui("debugger.recent.cwd", "작업 폴더 \(cwd)")) }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }
 
@@ -535,7 +708,7 @@ private struct HowItWorks: View {
     var body: some View {
         HStack(alignment: .top, spacing: DS.Space.m) {
             fact(symbol: "cpu", title: String.ui("debugger.how.main", "메인 프로세스"),
-                 text: String.ui("debugger.how.main.text", "--inspect로 Node 검사기를 열어 main.js와 IPC 처리기를 멈춥니다."))
+                 text: String.ui("debugger.how.main.text", "--inspect로 Node 검사기를 열어 main.js와 IPC 처리기에서 멈출 수 있습니다."))
             fact(symbol: "macwindow", title: String.ui("debugger.how.renderer", "렌더러"),
                  text: String.ui("debugger.how.renderer.text", "--remote-debugging-port로 창마다 DevTools 대상을 엽니다."))
             fact(symbol: "checkmark.shield", title: String.ui("debugger.how.cleanup", "정리"),

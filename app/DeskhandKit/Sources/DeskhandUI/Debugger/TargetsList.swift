@@ -18,7 +18,7 @@ struct TargetsList: View {
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 12, weight: .semibold))
-                        .frame(width: 18, height: 18)
+                        .frame(width: 20, height: 20)
                         .contentShape(Rectangle())
                 }
                 .menuStyle(.button)
@@ -32,10 +32,7 @@ struct TargetsList: View {
             ScrollView {
                 VStack(spacing: DS.Space.xs) {
                     ForEach(model.sessions) { session in
-                        ViewThatFits(in: .horizontal) {
-                            SessionRow(model: model, session: session, selected: session.id == model.selected?.id)
-                            SessionRow(model: model, session: session, selected: session.id == model.selected?.id, compactBadge: true)
-                        }
+                        SessionRow(model: model, session: session, selected: session.id == model.selected?.id)
                     }
                     if let starting = model.starting {
                         StartingRow(starting: starting)
@@ -56,37 +53,51 @@ struct TargetsList: View {
     }
 }
 
-/// A session: the app, how it was started, its state, and its targets.
+/// A session: the app, how and by whom it was started, its state, and its targets.
 private struct SessionRow: View {
+    static let iconSize: CGFloat = 28
+
     let model: DebuggerModel
     let session: DebugSessionModel
     let selected: Bool
-    var compactBadge = false
     @State private var hovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: DS.Space.xs) {
             Button {
                 model.selectedSessionID = session.id
             } label: {
                 header
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(String.ui("debugger.session.a11y", "\(session.info.name), \(stateTitle)"))
+            .overlay(alignment: .topTrailing) { dismissButton }
+            .accessibilityLabel(String.ui("debugger.session.a11y", "\(session.info.name), \(SessionStateBadge.title(session))"))
             if !session.isClosed {
-                ForEach(session.info.targets) { target in
-                    TargetRow(session: session, target: target,
-                              selected: selected && session.selectedTargetID == target.id) {
-                        model.selectedSessionID = session.id
-                        session.select(target: target.id)
+                VStack(spacing: 0) {
+                    ForEach(session.info.targets) { target in
+                        TargetRow(session: session, target: target, selected: selected && session.selectedTargetID == target.id) {
+                            model.selectedSessionID = session.id
+                            session.select(target: target.id)
+                        }
                     }
                 }
+                if let reason = session.info.mainUnavailable {
+                    Label(String.ui("debugger.main.unavailable", "메인 프로세스 디버그 불가"), systemImage: "info.circle")
+                        .font(DS.Font.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .padding(.leading, Self.iconSize + DS.Space.s + DS.Space.xs)
+                        .padding(.trailing, DS.Space.s)
+                        .help(DebugFormat.mainUnavailable(reason))
+                        .accessibilityHint(DebugFormat.mainUnavailable(reason))
+                }
             } else {
-                Text(DebugFormat.closed(session.info.closeKind, exitCode: session.info.exitCode))
+                Text(DebugFormat.closedShort(session.info.closeKind, exitCode: session.info.exitCode, kind: session.info.sessionKind))
+                    .help(DebugFormat.closed(session.info.closeKind, exitCode: session.info.exitCode, kind: session.info.sessionKind))
                     .font(DS.Font.caption)
                     .foregroundStyle(.secondary)
-                    .padding(.leading, 36 + DS.Space.s)
-                    .padding(.bottom, DS.Space.xs)
+                    .padding(.leading, Self.iconSize + DS.Space.s + DS.Space.xs)
+                    .padding(.trailing, DS.Space.s)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -100,56 +111,59 @@ private struct SessionRow: View {
         }
     }
 
+    /// The app icon, the name with the state badge, and how and by whom it was started.
     private var header: some View {
-        HStack(alignment: .center, spacing: DS.Space.s) {
+        HStack(alignment: .top, spacing: DS.Space.s) {
             Image(systemName: session.info.sessionKind == .attach ? "cable.connector" : "macwindow")
                 .font(.system(size: 14))
-                .foregroundStyle(session.isClosed ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
-                .frame(width: 28, height: 28)
+                .foregroundStyle(.secondary)
+                .frame(width: Self.iconSize, height: Self.iconSize)
                 .background(DS.Color.neutral.opacity(0.12), in: RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(session.info.name)
-                    .font(DS.Font.body.weight(.semibold))
-                    .foregroundStyle(session.isClosed ? .secondary : .primary)
-                    .lineLimit(1)
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: DS.Space.xs) {
+                    Text(session.info.name)
+                        .font(DS.Font.body.weight(.semibold))
+                        .foregroundStyle(session.isClosed ? .secondary : .primary)
+                        .lineLimit(1)
+                    Spacer(minLength: DS.Space.xs)
+                    SessionStateBadge(session: session)
+                        .opacity(session.isClosed && hovering ? 0 : 1)
+                }
                 Text(subtitle)
                     .font(DS.Font.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            Spacer(minLength: DS.Space.xs)
-            if session.isClosed, hovering {
-                Button {
-                    model.dismiss(session.id)
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 18, height: 18)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(String.ui("debugger.session.dismiss", "목록에서 지우기"))
-                .accessibilityLabel(String.ui("debugger.session.dismiss", "목록에서 지우기"))
-            } else {
-                SessionStateBadge(session: session, compact: compactBadge)
+                    .help(creatorHelp)
             }
         }
         .padding(.horizontal, DS.Space.xs)
         .contentShape(Rectangle())
     }
 
-    private var stateTitle: String {
-        switch session.phase {
-        case .paused: .ui("debugger.state.paused", "일시정지됨")
-        case .closed: .ui("debugger.state.closed", "종료됨")
-        default: session.pausedTargets.isEmpty ? .ui("debugger.state.running", "실행 중") : .ui("debugger.state.paused", "일시정지됨")
+    /// Removes a closed session, over its badge while the pointer is on the row.
+    @ViewBuilder
+    private var dismissButton: some View {
+        if session.isClosed, hovering {
+            Button {
+                model.dismiss(session.id)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.trailing, DS.Space.xs)
+            .help(String.ui("debugger.session.dismiss", "목록에서 지우기"))
+            .accessibilityLabel(String.ui("debugger.session.dismiss", "목록에서 지우기"))
         }
     }
 
-    /// `PID 10244 · 실행함` or `포트 9229에 연결함`.
+    private var startedByAI: Bool { session.info.createdBy.actor == "ai" }
+
+    /// `PID 10244 · 실행함`, `포트 9229 연결함` or `PID 10244 · AI가 실행함`.
     private var subtitle: String {
         var parts: [String] = []
         if let pid = session.info.pid {
@@ -157,57 +171,74 @@ private struct SessionRow: View {
             parts.append(.ui("debugger.session.pid", "PID \(number)"))
         }
         if session.info.sessionKind == .attach {
-            if let port = session.info.ports.inspect ?? session.info.ports.remoteDebugging {
+            if session.info.pid == nil, let port = session.info.ports.inspect ?? session.info.ports.remoteDebugging {
                 let number = String(port)
-                parts.append(.ui("debugger.session.attachedPort", "포트 \(number) 연결"))
-            } else {
-                parts.append(.ui("debugger.session.attached", "연결함"))
+                parts.append(.ui("debugger.session.attachedPort", "포트 \(number)"))
             }
+            parts.append(startedByAI ? .ui("debugger.session.attachedByAI", "AI가 연결함") : .ui("debugger.session.attached", "연결함"))
         } else {
-            parts.append(.ui("debugger.session.launched", "실행함"))
+            parts.append(startedByAI ? .ui("debugger.session.launchedByAI", "AI가 실행함") : .ui("debugger.session.launched", "실행함"))
         }
         return parts.joined(separator: " · ")
     }
+
+    private var creatorHelp: String {
+        guard let client = session.info.createdBy.clientName, !client.isEmpty else { return subtitle }
+        return .ui("debugger.session.createdBy", "\(client)에서 시작한 세션")
+    }
 }
 
-/// 일시정지 (orange), 실행 중 (green dot) or 종료됨 for a session.
+/// 일시정지됨 (orange), 실행 중 (green dot), 연결 해제됨 or 종료됨 for a session, in a column of
+/// one width.
 struct SessionStateBadge: View {
+    static let width: CGFloat = 64
+
     let session: DebugSessionModel
-    /// The symbol only, with the state as its help tag.
-    var compact = false
+
+    static func title(_ session: DebugSessionModel) -> String {
+        if session.isClosed {
+            if session.info.sessionKind == .attach, session.info.closeKind == .requested {
+                return .ui("debugger.state.detached", "연결 해제됨")
+            }
+            return .ui("debugger.state.closed", "종료됨")
+        }
+        return session.pausedTargets.isEmpty ? .ui("debugger.state.running", "실행 중") : .ui("debugger.state.paused", "일시정지됨")
+    }
 
     var body: some View {
+        let title = Self.title(session)
         if session.isClosed {
-            badge(String.ui("debugger.state.closed", "종료됨"), tint: DS.Color.neutral, symbol: nil)
+            badge(title, tint: DS.Color.neutral, symbol: nil)
         } else if !session.pausedTargets.isEmpty {
-            badge(String.ui("debugger.state.paused", "일시정지됨"), tint: DS.Color.warning, symbol: "pause.fill")
+            badge(title, tint: DS.Color.warning, symbol: "pause.fill")
         } else {
-            badge(String.ui("debugger.state.running", "실행 중"), tint: DS.Color.success, symbol: "circle.fill")
+            badge(title, tint: DS.Color.success, symbol: "circle.fill")
         }
     }
 
     private func badge(_ title: String, tint: Color, symbol: String?) -> some View {
-        HStack(spacing: 3) {
+        HStack(spacing: DS.Space.xs) {
             if let symbol {
                 Image(systemName: symbol)
                     .font(.system(size: symbol == "circle.fill" ? 6 : 8, weight: .bold))
             }
-            if !compact || symbol == nil {
-                Text(title)
-                    .font(.system(size: NSFont.smallSystemFontSize - 1, weight: .semibold))
-            }
+            Text(title)
+                .font(.system(size: NSFont.smallSystemFontSize - 1, weight: .semibold))
+                .lineLimit(1)
         }
         .help(title)
         .accessibilityLabel(title)
         .foregroundStyle(tint == DS.Color.neutral ? AnyShapeStyle(.secondary) : AnyShapeStyle(tint))
-        .padding(.horizontal, 6)
+        .padding(.horizontal, DS.Space.s)
+        .frame(minWidth: Self.width)
         .frame(height: 16)
         .background(tint.opacity(0.14), in: Capsule())
         .fixedSize()
     }
 }
 
-/// A target of a session: its role, title and whether it runs, is paused or is not attached.
+/// A target of a session: its role, title and whether it runs or is paused; a target the daemon
+/// left detached has a 연결 button beside it.
 private struct TargetRow: View {
     let session: DebugSessionModel
     let target: DebugTarget
@@ -216,33 +247,45 @@ private struct TargetRow: View {
     @State private var hovering = false
 
     var body: some View {
-        Button(action: select) {
-            HStack(spacing: DS.Space.s) {
-                RoleBadge(target: target, inverted: selected)
-                Text(DebugFormat.targetTitle(target))
-                    .font(DS.Font.body)
-                    .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(.primary))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Spacer(minLength: DS.Space.xs)
-                state
+        HStack(spacing: DS.Space.xs) {
+            Button(action: select) {
+                HStack(spacing: DS.Space.s) {
+                    RoleBadge(target: target, inverted: selected, fixedWidth: true)
+                    Text(DebugFormat.targetTitle(target))
+                        .font(DS.Font.body)
+                        .foregroundStyle(titleStyle)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: DS.Space.xs)
+                    stateSymbol
+                        .frame(width: 12)
+                }
+                .padding(.leading, DS.Space.xs)
+                .padding(.trailing, DS.Space.s)
+                .frame(height: 28)
+                .background(background, in: RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
+                .contentShape(Rectangle())
             }
-            .padding(.leading, 36 + DS.Space.xs)
-            .padding(.trailing, DS.Space.s)
-            .frame(height: 26)
-            .background(background, in: RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .help(String.ui("debugger.target.help", "\(DebugFormat.targetTitle(target)) · \(target.url)"))
+            .accessibilityLabel(String.ui("debugger.target.a11y", "\(DebugFormat.role(target)) \(DebugFormat.targetTitle(target)), \(stateText)"))
+            .accessibilityAddTraits(selected ? [.isSelected] : [])
+            if !target.attached {
+                Button(String.ui("debugger.target.attach", "연결")) { session.attachTarget(target.id) }
+                    .controlSize(.small)
+                    .disabled(session.isClosed)
+                    .help(String.ui("debugger.target.detached.help", "이 대상에는 아직 연결하지 않았습니다. 연결하면 중단점과 콘솔을 받습니다."))
+                    .accessibilityLabel(String.ui("debugger.target.attach.a11y", "\(DebugFormat.targetTitle(target))에 연결"))
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.leading, SessionRow.iconSize + DS.Space.s)
+        .padding(.trailing, DS.Space.xs)
         .onHover { hovering = $0 }
-        .contextMenu {
-            if !target.attached, !session.isClosed {
-                Button(String.ui("debugger.target.attach", "이 대상에 붙기")) { session.attachTarget(target.id) }
-            }
-        }
-        .help(String.ui("debugger.target.help", "\(DebugFormat.targetTitle(target)) · \(target.url)"))
-        .accessibilityLabel(String.ui("debugger.target.a11y", "\(DebugFormat.role(target)) \(DebugFormat.targetTitle(target)), \(stateText)"))
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
+    }
+
+    private var titleStyle: AnyShapeStyle {
+        if selected { return AnyShapeStyle(DS.Color.onFill) }
+        return target.attached ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary)
     }
 
     private var background: AnyShapeStyle {
@@ -252,22 +295,23 @@ private struct TargetRow: View {
 
     private var stateText: String {
         if !target.attached { return .ui("debugger.target.detached", "연결 안 됨") }
-        return session.isPaused(target.id) ? .ui("debugger.state.paused", "일시정지됨") : .ui("debugger.state.running", "실행 중")
+        if session.isPaused(target.id) { return .ui("debugger.state.paused", "일시정지됨") }
+        if target.pausePending { return .ui("debugger.target.pausePending", "일시정지 기다리는 중") }
+        return .ui("debugger.state.running", "실행 중")
     }
 
     @ViewBuilder
-    private var state: some View {
+    private var stateSymbol: some View {
         if !target.attached {
-            Button(String.ui("debugger.target.attachShort", "붙기")) { session.attachTarget(target.id) }
-                .buttonStyle(.link)
-                .font(DS.Font.caption)
-                .tint(selected ? DS.Color.onFill : DS.Color.accent)
-                .disabled(session.isClosed)
-                .help(String.ui("debugger.target.detached.help", "이 대상에는 아직 붙지 않았습니다. 누르면 붙어 중단점과 콘솔을 받습니다."))
+            Image(systemName: "circle.dashed")
+                .font(.system(size: 9))
+                .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(.secondary))
         } else if session.isPaused(target.id) {
             Image(systemName: "pause.fill")
                 .font(.system(size: 9, weight: .bold))
                 .foregroundStyle(selected ? DS.Color.onFill : DS.Color.warning)
+        } else if target.pausePending {
+            ProgressView().controlSize(.mini)
         } else {
             Image(systemName: "circle.fill")
                 .font(.system(size: 6))
@@ -284,8 +328,8 @@ private struct StartingRow: View {
         HStack(spacing: DS.Space.s) {
             ProgressView()
                 .controlSize(.small)
-                .frame(width: 28, height: 28)
-            VStack(alignment: .leading, spacing: 1) {
+                .frame(width: SessionRow.iconSize, height: SessionRow.iconSize)
+            VStack(alignment: .leading, spacing: 0) {
                 Text(starting.name)
                     .font(DS.Font.body.weight(.semibold))
                     .lineLimit(1)

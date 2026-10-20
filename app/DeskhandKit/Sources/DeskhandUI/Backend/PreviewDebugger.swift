@@ -35,6 +35,12 @@ final class PreviewDebugStore: Sendable {
         var waiting: [String: CheckedContinuation<PreviewResume, Never>] = [:]
         var runner: Task<Void, Never>?
         var iteration = 0
+        /// Console entries discarded from the 5,000-entry buffer.
+        var dropped = 0
+        /// Targets running a flow now.
+        var running: Set<String> = []
+        /// The `seq` of the newest console entry, cleared ones included.
+        var lastSeq = 0
     }
 
     struct State: Sendable {
@@ -87,8 +93,10 @@ extension PreviewBackend {
         return host
     }
 
-    /// Launches the simulated Shop Admin; `Shop.exe` (WebView2) never opens a debug port and a
-    /// path that is not an `.exe` is not found.
+    /// Launches the simulated Shop Admin with the given breakpoints and exception setting.
+    /// `Shop.exe` (WebView2) never opens a debug port, a path that is not an `.exe` is not found,
+    /// Shop Kiosk ignores `--inspect` and gives a renderer-only session, and a second launch of an
+    /// app that already runs in a session exits at once (single-instance lock).
     public func debugLaunch(_ request: DebugLaunchRequest) async throws -> DebugSession {
         _ = try debuggableHost(request.hostID)
         await pause(fraction: 1.2)
@@ -100,20 +108,36 @@ extension PreviewBackend {
             await pause(fraction: 1.5)
             throw OperationError(code: "TIMEOUT", message: "20초 안에 디버그 포트가 열리지 않아 앱을 종료했습니다")
         }
+        let running = debugger.state.withLock { s in
+            s.sessions.values.contains { $0.info.sessionState != .closed && $0.info.path?.caseInsensitiveCompare(path) == .orderedSame }
+        }
+        if running {
+            throw OperationError(code: "EXITED_EARLY", message: "디버그 포트가 열리기 전에 앱이 끝났습니다 (종료 코드 0)")
+        }
+        let kiosk = path.caseInsensitiveCompare(Program.kioskPath) == .orderedSame
         let name = String(FilePath.lastComponent(path, style: .windows).dropLast(4))
         let created = Date.now
-        let session = debugger.state.withLock { s -> DebugSession in
+        let session = try debugger.state.withLock { s -> DebugSession in
             s.sessionCount += 1
             let id = "d-preview-\(s.sessionCount)"
-            var info = Program.session(hostID: request.hostID, debugID: id, created: created)
+            var info = Program.session(hostID: request.hostID, debugID: id, created: created,
+                                       targets: kiosk ? [Program.pageTarget()] : Program.targets(),
+                                       exceptions: request.pauseOnExceptions ?? .uncaught,
+                                       mainUnavailable: kiosk ? .inspectorDisabled : nil)
             info.name = name
             info.path = path
             info.args = request.args
-            var session = PreviewDebugStore.Session(info: info, simulated: true)
-            session.loaded = Set(Program.Script.loadedAtLaunch)
+            info.cwd = request.cwd ?? FilePath.parent(path, style: .windows)
+            info.pauseOnStart = request.pauseOnStart
+            var session = PreviewDebugStore.Session(info: info, simulated: !kiosk)
+            session.loaded = kiosk ? [.index, .checkout, .api] : Set(Program.Script.loadedAtLaunch)
+            for spec in request.breakpoints {
+                s.breakpointCount += 1
+                session.info.breakpoints.append(try Self.breakpoint(spec, id: "bp-\(s.breakpointCount)", loaded: session.loaded))
+            }
             s.sessions[id] = session
             s.order.append(id)
-            return info
+            return session.info
         }
         emit(kind: EventKind.debugSessionChanged, hostID: request.hostID,
              payload: ["debug_id": .string(session.debugID), "session": Self.payload(session)])
@@ -161,8 +185,14 @@ extension PreviewBackend {
             let info = DebugSession(debugID: id, hostID: request.hostID, jobID: "j-debug-\(s.sessionCount)", kind: .attach, name: name,
                                     pid: pid, ports: DebugPorts(inspect: port), targets: [target], createdAt: Timestamp(date: created))
             var session = PreviewDebugStore.Session(info: info, simulated: false)
+            session.info.pauseOnExceptions = (request.pauseOnExceptions ?? .uncaught).rawValue
+            for spec in request.breakpoints {
+                s.breakpointCount += 1
+                if let bp = try? Self.breakpoint(spec, id: "bp-\(s.breakpointCount)", loaded: []) { session.info.breakpoints.append(bp) }
+            }
             session.console = [ConsoleEntry(seq: 1, time: Timestamp(date: created), targetID: target.id, level: .info,
                                             text: "Debugger attached.")]
+            session.lastSeq = 1
             s.sessions[id] = session
             s.order.append(id)
             return info
@@ -173,97 +203,113 @@ extension PreviewBackend {
     }
 
     public func debugTargetAttach(debugID: String, targetID: String) async throws -> DebugTarget {
-        try debugger.with(debugID) { session in
+        let (hostID, target, rev) = try debugger.with(debugID) { session -> (String, DebugTarget, Int) in
             guard let i = session.info.targets.firstIndex(where: { $0.id == targetID }) else {
                 throw RPCErrorInfo(message: "대상을 찾을 수 없습니다", code: "NOT_FOUND")
             }
             session.info.targets[i].attached = true
-            return session.info.targets[i]
+            session.info.rev += 1
+            return (session.info.hostID, session.info.targets[i], session.info.rev)
         }
+        emit(kind: EventKind.debugTargetChanged, hostID: hostID, payload: [
+            "debug_id": .string(debugID), "target": Self.payload(target), "removed": .bool(false), "rev": .int(rev),
+        ])
+        return target
     }
 
     public func debugClose(debugID: String, keepProcess: Bool) async throws {
-        let (hostID, runner, waiting) = try debugger.with(debugID) { session in
+        let (hostID, runner, waiting, rev) = try debugger.with(debugID) { session in
             session.info.state = DebugSessionState.closed.rawValue
             session.info.closedAt = Timestamp(date: .now)
             session.info.closeReason = DebugCloseReason.requested.rawValue
+            session.info.rev += 1
             let waiting = Array(session.waiting.values)
             session.waiting = [:]
             session.pauses = [:]
-            return (session.info.hostID, session.runner, waiting)
+            return (session.info.hostID, session.runner, waiting, session.info.rev)
         }
         runner?.cancel()
         for continuation in waiting { continuation.resume(returning: .close) }
         await pause(fraction: 0.3)
         emit(kind: EventKind.debugClosed, hostID: hostID,
-             payload: ["debug_id": .string(debugID), "reason": .string(DebugCloseReason.requested.rawValue)])
+             payload: ["debug_id": .string(debugID), "reason": .string(DebugCloseReason.requested.rawValue), "rev": .int(rev)])
     }
 
     // MARK: Breakpoints
 
-    public func debugBreakpointSet(_ request: BreakpointRequest) async throws -> DebugBreakpoint {
-        guard request.line >= 1 else { throw RPCErrorInfo(message: "줄 번호는 1 이상이어야 합니다", code: "INVALID_ARGUMENT") }
-        var breakpoint: DebugBreakpoint
-        switch request.match {
-        case .url(let url):
-            breakpoint = DebugBreakpoint(breakpointID: "", url: url, line: request.line, column: request.column, condition: request.condition)
-        case .regex(let pattern):
-            guard (try? NSRegularExpression(pattern: pattern)) != nil else {
-                throw RPCErrorInfo(message: "url_regex가 올바른 정규식이 아닙니다", code: "INVALID_ARGUMENT")
-            }
-            breakpoint = DebugBreakpoint(breakpointID: "", urlRegex: pattern, line: request.line, column: request.column,
-                                         condition: request.condition)
+    /// A breakpoint for `spec` with its locations in the loaded scripts; an empty pattern, a
+    /// line below 1 or a regex JavaScript would refuse is `INVALID_ARGUMENT`.
+    static func breakpoint(_ spec: BreakpointSpec, id: String, loaded: Set<Program.Script>) throws -> DebugBreakpoint {
+        guard spec.line >= 1, !spec.pattern.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw RPCErrorInfo(message: "스크립트와 1 이상의 줄 번호가 필요합니다", code: "INVALID_ARGUMENT")
         }
-        let hostID = try debugger.with(request.debugID) { $0.info.hostID }
-        breakpoint.breakpointID = debugger.nextBreakpointID()
-        let resolved = try debugger.with(request.debugID) { session -> DebugBreakpoint in
-            var bp = breakpoint
-            bp.locations = Self.locations(of: bp, in: session.loaded)
-            bp.resolved = !bp.locations.isEmpty
-            session.info.breakpoints.append(bp)
-            return bp
+        if spec.matchKind == .urlRegex, (try? NSRegularExpression(pattern: spec.pattern)) == nil {
+            throw RPCErrorInfo(message: "SyntaxError: Invalid regular expression: /\(spec.pattern)/", code: "INVALID_ARGUMENT")
         }
-        await pause(fraction: 0.2)
-        emitBreakpoint(resolved, debugID: request.debugID, hostID: hostID)
-        return resolved
+        var bp = DebugBreakpoint(breakpointID: id, match: spec.matchKind, pattern: spec.pattern, line: spec.line, column: spec.column,
+                                 condition: spec.condition, enabled: spec.enabled ?? true)
+        bp.locations = locations(of: bp, in: loaded)
+        bp.resolved = !bp.locations.isEmpty
+        return bp
     }
 
-    public func debugBreakpointEnable(debugID: String, breakpointID: String, enabled: Bool) async throws -> DebugBreakpoint {
+    public func debugBreakpointSet(debugID: String, spec: BreakpointSpec) async throws -> DebugBreakpoint {
+        let id = debugger.nextBreakpointID()
+        let (hostID, bp) = try debugger.with(debugID) { session -> (String, DebugBreakpoint) in
+            let bp = try Self.breakpoint(spec, id: id, loaded: session.loaded)
+            session.info.breakpoints.append(bp)
+            return (session.info.hostID, bp)
+        }
+        await pause(fraction: 0.2)
+        emitBreakpoint(bp, debugID: debugID, hostID: hostID)
+        return bp
+    }
+
+    public func debugBreakpointUpdate(debugID: String, breakpointID: String, enabled: Bool?, condition: String?) async throws -> DebugBreakpoint {
         let (hostID, bp) = try debugger.with(debugID) { session -> (String, DebugBreakpoint) in
             guard let i = session.info.breakpoints.firstIndex(where: { $0.breakpointID == breakpointID }) else {
                 throw RPCErrorInfo(message: "중단점을 찾을 수 없습니다", code: "NOT_FOUND")
             }
-            session.info.breakpoints[i].enabled = enabled
+            if let enabled { session.info.breakpoints[i].enabled = enabled }
+            if let condition { session.info.breakpoints[i].condition = condition.isEmpty ? nil : condition }
+            session.info.breakpoints[i].rev += 1
             return (session.info.hostID, session.info.breakpoints[i])
         }
         emitBreakpoint(bp, debugID: debugID, hostID: hostID)
         return bp
     }
 
-    public func debugBreakpointRemove(debugID: String, breakpointID: String) async throws {
+    public func debugBreakpointRemove(debugID: String, breakpointID: String) async throws -> DebugBreakpoint? {
         let (hostID, bp) = try debugger.with(debugID) { session -> (String, DebugBreakpoint) in
             guard let i = session.info.breakpoints.firstIndex(where: { $0.breakpointID == breakpointID }) else {
                 throw RPCErrorInfo(message: "중단점을 찾을 수 없습니다", code: "NOT_FOUND")
             }
-            return (session.info.hostID, session.info.breakpoints.remove(at: i))
+            var removed = session.info.breakpoints.remove(at: i)
+            removed.rev += 1
+            return (session.info.hostID, removed)
         }
         emitBreakpoint(bp, debugID: debugID, hostID: hostID, removed: true)
+        return bp
     }
 
-    public func debugBreakpointsActivate(debugID: String, active: Bool) async throws {
+    public func debugBreakpointsActivate(debugID: String, active: Bool) async throws -> DebugSession? {
         let info = try debugger.with(debugID) { session -> DebugSession in
             session.info.breakpointsActive = active
+            session.info.rev += 1
             return session.info
         }
         emit(kind: EventKind.debugSessionChanged, hostID: info.hostID, payload: ["debug_id": .string(debugID), "session": Self.payload(info)])
+        return info
     }
 
-    public func debugExceptions(debugID: String, mode: ExceptionPauseMode) async throws {
+    public func debugExceptions(debugID: String, mode: ExceptionPauseMode) async throws -> DebugSession? {
         let info = try debugger.with(debugID) { session -> DebugSession in
             session.info.pauseOnExceptions = mode.rawValue
+            session.info.rev += 1
             return session.info
         }
         emit(kind: EventKind.debugSessionChanged, hostID: info.hostID, payload: ["debug_id": .string(debugID), "session": Self.payload(info)])
+        return info
     }
 
     private func emitBreakpoint(_ breakpoint: DebugBreakpoint, debugID: String, hostID: String, removed: Bool = false) {
@@ -283,14 +329,30 @@ extension PreviewBackend {
 
     // MARK: Execution
 
+    /// Asks a target to pause at its next statement; a target that runs nothing now reports
+    /// `pause_pending` until a flow reaches code.
     public func debugPause(debugID: String, targetID: String) async throws -> DebugTarget? {
-        try debugger.with(debugID) { session in
-            guard let target = session.info.targets.first(where: { $0.id == targetID }) else {
+        let (hostID, target, pending, rev) = try debugger.with(debugID) { session -> (String, DebugTarget, Bool, Int) in
+            guard let i = session.info.targets.firstIndex(where: { $0.id == targetID }) else {
                 throw RPCErrorInfo(message: "대상을 찾을 수 없습니다", code: "NOT_FOUND")
             }
-            if session.pauses[targetID] == nil { session.pauseRequested.insert(targetID) }
-            return Self.target(target, in: session)
+            guard session.info.targets[i].attached else {
+                throw OperationError(code: "INVALID_ARGUMENT", message: "이 대상에는 아직 연결하지 않았습니다", nextAction: "attach_target")
+            }
+            var pending = false
+            if session.pauses[targetID] == nil {
+                session.pauseRequested.insert(targetID)
+                pending = !session.running.contains(targetID)
+                session.info.targets[i].pausePending = pending
+            }
+            return (session.info.hostID, Self.target(session.info.targets[i], in: session), pending, session.info.rev)
         }
+        if pending {
+            emit(kind: EventKind.debugTargetChanged, hostID: hostID, payload: [
+                "debug_id": .string(debugID), "target": Self.payload(target), "removed": .bool(false), "rev": .int(rev),
+            ])
+        }
+        return target
     }
 
     public func debugResume(debugID: String, targetID: String) async throws -> DebugTarget? {
@@ -308,6 +370,13 @@ extension PreviewBackend {
             guard let target = session.info.targets.first(where: { $0.id == targetID }) else {
                 throw RPCErrorInfo(message: "대상을 찾을 수 없습니다", code: "NOT_FOUND")
             }
+            if !target.attached {
+                throw OperationError(code: "INVALID_ARGUMENT", message: "이 대상에는 아직 연결하지 않았습니다", nextAction: "attach_target")
+            }
+            if case .resume = command, session.pauses[targetID] == nil, let i = session.info.targets.firstIndex(where: { $0.id == targetID }) {
+                session.pauseRequested.remove(targetID)
+                session.info.targets[i].pausePending = false
+            }
             guard session.pauses[targetID] != nil, let continuation = session.waiting.removeValue(forKey: targetID) else {
                 if requirePaused {
                     throw OperationError(code: "STALE_TARGET", message: "대상이 멈춰 있지 않아 한 단계 실행할 수 없습니다", nextAction: "check_state")
@@ -321,25 +390,43 @@ extension PreviewBackend {
         }
         if let gen {
             emit(kind: EventKind.debugResumed, hostID: hostID,
-                 payload: ["debug_id": .string(debugID), "target_id": .string(targetID), "gen": .int(gen)])
+                 payload: ["debug_id": .string(debugID), "target_id": .string(targetID), "gen": .int(gen),
+                           "by": Self.payload(Self.previewActor)])
         }
         continuation?.resume(returning: command)
         return target
     }
 
+    /// The actor of requests the preview receives: the app.
+    static let previewActor = DebugActor(actor: "human", clientName: "Deskhand")
+
     static func target(_ target: DebugTarget, in session: PreviewDebugStore.Session) -> DebugTarget {
         var copy = target
         copy.paused = session.pauses[target.id] != nil
+        copy.pausePending = session.pauses[target.id] == nil && target.pausePending
         copy.gen = session.gens[target.id] ?? 0
         return copy
     }
 
+    /// `INVALID_ARGUMENT` with `next_action:"attach_target"` for a target the session lists but has not attached.
+    private static func requireAttached(_ session: PreviewDebugStore.Session, _ targetID: String) throws {
+        guard let target = session.info.targets.first(where: { $0.id == targetID }) else {
+            throw RPCErrorInfo(message: "대상을 찾을 수 없습니다", code: "NOT_FOUND")
+        }
+        guard target.attached else {
+            throw RPCErrorInfo(message: "이 대상에는 아직 연결하지 않았습니다", code: "INVALID_ARGUMENT", nextAction: "attach_target")
+        }
+    }
+
     public func debugState(debugID: String, targetID: String) async throws -> DebugPauseState {
         try debugger.with(debugID) { session in
+            try Self.requireAttached(session, targetID)
             guard let pause = session.pauses[targetID] else {
                 return DebugPauseState(targetID: targetID, gen: session.gens[targetID] ?? 0, paused: false)
             }
-            return Program.pauseState(flow: pause.flow, step: pause.step, gen: pause.gen, reason: pause.reason, hitBreakpoints: pause.hits)
+            var state = Program.pauseState(flow: pause.flow, step: pause.step, gen: pause.gen, reason: pause.reason, hitBreakpoints: pause.hits)
+            if pause.reason == .pauseRequest || pause.reason == .step { state.requestedBy = Self.previewActor }
+            return state
         }
     }
 
@@ -347,6 +434,7 @@ extension PreviewBackend {
         let stale = RPCErrorInfo(message: "이 개체는 대상이 다시 실행되어 더 이상 유효하지 않습니다", code: "STALE_TARGET")
         guard let path = Program.ObjectPath(objectID) else { throw stale }
         try debugger.with(debugID) { session in
+            try Self.requireAttached(session, targetID)
             guard path.gen >= 0 else { return }
             guard let pause = session.pauses[targetID], pause.gen == path.gen, pause.flow == path.flow, pause.step == path.step else { throw stale }
         }
@@ -359,7 +447,8 @@ extension PreviewBackend {
 
     public func debugEvaluate(debugID: String, targetID: String, expression: String, frameID: String?) async throws -> DebugEvaluation {
         let flow = try debugger.with(debugID) { session -> Program.Flow in
-            session.info.targets.first { $0.id == targetID }?.targetRole == .main ? .print : .submit
+            try Self.requireAttached(session, targetID)
+            return session.info.targets.first { $0.id == targetID }?.targetRole == .main ? .print : .submit
         }
         await pause(fraction: 0.2)
         guard let frameID else { return Program.evaluate(expression, frame: nil, flow: flow) }
@@ -396,25 +485,47 @@ extension PreviewBackend {
         guard let session = debugger.state.withLock({ $0.sessions[query.debugID] }) else {
             throw RPCErrorInfo(message: "디버그 세션을 찾을 수 없습니다 (\(query.debugID))", code: "NOT_FOUND")
         }
-        return Self.page(session.console, query)
+        return try Self.page(session.console, query, dropped: session.dropped, lastSeq: session.lastSeq)
     }
 
-    /// `debug.console` over `entries` (ascending seq) with the cursor rules of local-api.md §9.
-    static func page(_ entries: [ConsoleEntry], _ query: ConsoleQuery) -> ConsolePage {
+    /// `debug.console` over `entries` (ascending seq, the newest `lastSeq`) with the cursor rules of
+    /// local-api.md §9.
+    static func page(_ entries: [ConsoleEntry], _ query: ConsoleQuery, dropped: Int = 0, lastSeq: Int? = nil) throws -> ConsolePage {
+        if query.cursor != nil, query.before != nil {
+            throw RPCErrorInfo(message: "cursor와 before는 함께 줄 수 없습니다", code: "INVALID_ARGUMENT")
+        }
         let limit = min(max(query.limit, 1), ConsoleQuery.maximumLimit)
+        let newest = lastSeq ?? entries.last?.seq ?? 0
+        let firstSeq = entries.first?.seq ?? newest + 1
         var slice: [ConsoleEntry]
         var hasMore = false
+        var next: Int
         if let cursor = query.cursor {
             let after = entries.filter { $0.seq > cursor }
             slice = Array(after.prefix(limit))
             hasMore = after.count > limit
+            next = slice.last?.seq ?? cursor
         } else if let before = query.before {
             slice = Array(entries.filter { $0.seq < before }.suffix(limit))
+            next = slice.last?.seq ?? before - 1
         } else {
             slice = Array(entries.suffix(limit))
+            next = slice.last?.seq ?? newest
         }
         let hasEarlier = slice.first.map { first in entries.contains { $0.seq < first.seq } } ?? false
-        return ConsolePage(entries: slice, nextCursor: slice.last?.seq ?? query.cursor ?? 0, hasMore: hasMore, hasEarlier: hasEarlier)
+        let gap = query.cursor.map { $0 < firstSeq - 1 } ?? false
+        return ConsolePage(entries: slice, nextCursor: next, firstSeq: firstSeq, hasMore: hasMore, hasEarlier: hasEarlier,
+                           dropped: dropped, gap: gap)
+    }
+
+    public func debugConsoleClear(debugID: String) async throws -> Int {
+        let (hostID, through) = try debugger.with(debugID) { session -> (String, Int) in
+            let through = session.lastSeq
+            session.console = []
+            return (session.info.hostID, through)
+        }
+        emit(kind: EventKind.debugConsoleCleared, hostID: hostID, payload: ["debug_id": .string(debugID), "through_seq": .int(through)])
+        return through
     }
 
     // MARK: Simulation
@@ -422,11 +533,15 @@ extension PreviewBackend {
     private func appendConsole(_ debugID: String, target: String, source: ConsoleSource = .console, level: ConsoleLevel, text: String,
                                script: Program.Script?, line: Int?, column: Int? = nil, stack: [StackFrameInfo]? = nil) {
         let made = try? debugger.with(debugID) { session -> (String, ConsoleEntry) in
-            let entry = ConsoleEntry(seq: (session.console.last?.seq ?? 0) + 1, time: Timestamp(date: .now), targetID: target, source: source,
+            session.lastSeq += 1
+            let entry = ConsoleEntry(seq: session.lastSeq, time: Timestamp(date: .now), targetID: target, source: source,
                                      level: level, text: text, scriptID: script?.scriptID, url: script?.url, line: line,
                                      column: column ?? line.map { script?.column($0) ?? 1 }, stack: stack)
             session.console.append(entry)
-            if session.console.count > 5000 { session.console.removeFirst(session.console.count - 5000) }
+            if session.console.count > 5000 {
+                session.dropped += session.console.count - 5000
+                session.console.removeFirst(session.console.count - 5000)
+            }
             return (session.info.hostID, entry)
         }
         guard let (hostID, entry) = made else { return }
@@ -453,7 +568,7 @@ extension PreviewBackend {
                 appendConsole(debugID, target: item.target, source: item.source, level: item.level, text: item.text, script: item.script,
                               line: item.line)
             }
-            if pauseOnStart { _ = try? await debugPause(debugID: debugID, targetID: Program.mainTargetID) }
+            if pauseOnStart { await debugRun(debugID: debugID, flow: .boot) }
             while !Task.isCancelled {
                 for _ in 0..<40 {
                     let requested = (try? debugger.with(debugID) { !$0.pauseRequested.isEmpty }) ?? false
@@ -484,6 +599,7 @@ extension PreviewBackend {
                 guard locations != session.info.breakpoints[i].locations else { continue }
                 session.info.breakpoints[i].locations = locations
                 session.info.breakpoints[i].resolved = !locations.isEmpty
+                session.info.breakpoints[i].rev += 1
                 changed.append(session.info.breakpoints[i])
             }
             return (session.info.hostID, changed)
@@ -497,12 +613,16 @@ extension PreviewBackend {
     func debugRun(debugID: String, flow: Program.Flow) async {
         let steps = Program.steps(flow)
         let target = flow.targetID
+        _ = try? debugger.with(debugID) { $0.running.insert(target) }
+        defer { _ = try? debugger.with(debugID) { $0.running.remove(target) } }
         var stepping: (kind: DebugStepKind, depth: Int)?
         for (index, step) in steps.enumerated() {
             guard let snapshot = try? debugger.with(debugID, { $0 }), snapshot.simulated else { return }
             var reason: DebugPauseReason?
             var hits: [String] = []
-            if snapshot.pauseRequested.contains(target) {
+            if flow == .boot {
+                reason = .start
+            } else if snapshot.pauseRequested.contains(target) {
                 reason = .pauseRequest
             } else if let stepping, Self.stepStops(stepping.kind, from: stepping.depth, at: step.depth) {
                 reason = .step
@@ -572,6 +692,7 @@ extension PreviewBackend {
             let gen = (session.gens[target] ?? 0) + 1
             session.gens[target] = gen
             session.pauseRequested.remove(target)
+            if let i = session.info.targets.firstIndex(where: { $0.id == target }) { session.info.targets[i].pausePending = false }
             session.pauses[target] = PreviewDebugStore.Pause(flow: flow, step: step, gen: gen, reason: reason, hits: hits)
             return (session.info.hostID, gen)
         }) else { return .close }
@@ -582,7 +703,8 @@ extension PreviewBackend {
                 return true
             }) ?? false
             guard stored else { return continuation.resume(returning: .close) }
-            let state = Program.pauseState(flow: flow, step: step, gen: gen, reason: reason, hitBreakpoints: hits)
+            var state = Program.pauseState(flow: flow, step: step, gen: gen, reason: reason, hitBreakpoints: hits)
+            if reason == .pauseRequest || reason == .step { state.requestedBy = Self.previewActor }
             emit(kind: EventKind.debugPaused, hostID: hostID, payload: ["debug_id": .string(debugID), "state": Self.payload(state)])
         }
     }

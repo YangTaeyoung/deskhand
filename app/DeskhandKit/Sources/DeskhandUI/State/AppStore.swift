@@ -104,6 +104,7 @@ public final class AppStore {
     @ObservationIgnored private var logModels: [String: LogsModel] = [:]
     @ObservationIgnored private var debuggerModels: [String: DebuggerModel] = [:]
     @ObservationIgnored private var eventsTask: Task<Void, Never>?
+    @ObservationIgnored private var reconnectsTask: Task<Void, Never>?
     @ObservationIgnored private var reloadTask: Task<Void, Never>?
     @ObservationIgnored private var reloadToken = 0
 
@@ -259,9 +260,18 @@ public final class AppStore {
 
     /// Consumes daemon events. When the stream ends or fails, the phase becomes `reconnecting`;
     /// after a backoff delay it subscribes again and reloads the computer list, returning to
-    /// `ready` once the list loads.
+    /// `ready` once the list loads. Whenever the daemon connection comes back under a stream that
+    /// lasts, it reads the computers, control states and loaded timelines again.
     private func subscribe() {
         eventsTask?.cancel()
+        reconnectsTask?.cancel()
+        let reconnects = backend.reconnects()
+        reconnectsTask = Task { [weak self] in
+            for await _ in reconnects {
+                guard !Task.isCancelled else { return }
+                await self?.resync()
+            }
+        }
         let backoff = self.backoff
         eventsTask = Task { [weak self] in
             var delay = backoff.initial
@@ -459,6 +469,13 @@ public final class AppStore {
         controls[hostID] = control
         syncOwner(at: i)
         return true
+    }
+
+    /// Reads the computers, the control state of every known host and the loaded timelines again.
+    func resync() async {
+        guard await reloadHosts() else { return }
+        await revalidateControls()
+        for hostID in Array(timelines.keys) { await loadTimeline(for: hostID) }
     }
 
     /// Reads the control state of every host already known again, accepting it whatever its

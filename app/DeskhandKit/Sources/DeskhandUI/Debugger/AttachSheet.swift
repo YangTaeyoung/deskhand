@@ -103,7 +103,7 @@ public struct AttachSheet: View {
                     Text(String.ui("debugger.attach.title", "실행 중인 앱에 연결"))
                         .font(DS.Font.title)
                         .accessibilityAddTraits(.isHeader)
-                    Text(String.ui("debugger.attach.subtitle", "\(host.name)에서 이미 실행 중인 Electron·Node 앱에 디버거를 붙입니다. 앱은 다시 시작하지 않습니다."))
+                    Text(String.ui("debugger.attach.subtitle", "\(host.name)에서 실행 중인 Electron·Node 앱에 디버거를 연결합니다.\n앱은 다시 시작하지 않습니다."))
                         .font(DS.Font.body)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -186,7 +186,7 @@ public struct AttachSheet: View {
                 .background(DS.Code.background)
                 .clipShape(RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous).strokeBorder(DS.Color.separator, lineWidth: 1))
-            Text(String.ui("debugger.attach.pidNote", "프로세스로 연결하면 메인 프로세스의 Node 검사기를 켭니다. 렌더러는 앱을 --remote-debugging-port로 시작했을 때만 함께 보입니다."))
+            Text(String.ui("debugger.attach.pidNote", "프로세스로 연결하면 메인 프로세스의 Node 검사기를 켜고 그 포트를 찾아 연결합니다. 연결을 해제하면 켠 검사기를 끌 수 있을 때 끕니다. 렌더러는 앱을 --remote-debugging-port로 시작했을 때만 함께 보입니다."))
                 .font(DS.Font.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -248,7 +248,7 @@ public struct AttachSheet: View {
                     .fixedSize()
                 }
             }
-            Text(String.ui("debugger.attach.portNote", "원격 PC의 127.0.0.1 포트입니다. Deskhand가 이 포트로 터널을 열고, 연결을 끊으면 터널만 닫습니다."))
+            Text(String.ui("debugger.attach.portNote", "원격 PC의 127.0.0.1 포트입니다. Deskhand가 이 포트로 터널을 열고, 연결을 해제하면 터널만 닫습니다."))
                 .font(DS.Font.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -301,9 +301,9 @@ private struct CandidateRow: View {
             HStack(alignment: .center, spacing: DS.Space.s) {
                 Image(systemName: candidate.kind == .node ? "terminal" : "macwindow")
                     .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(.secondary))
-                    .frame(width: 18)
+                    .frame(width: 20)
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: DS.Space.s) {
                         Text(candidate.process.name)
                             .font(DS.Font.body.weight(.medium))
@@ -315,7 +315,7 @@ private struct CandidateRow: View {
                     }
                     Text(candidate.process.cmd ?? candidate.process.path ?? "")
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill.opacity(0.8)) : AnyShapeStyle(.tertiary))
+                        .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill.opacity(0.85)) : AnyShapeStyle(.secondary))
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -323,7 +323,7 @@ private struct CandidateRow: View {
             }
             .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(.primary))
             .padding(.horizontal, DS.Space.m)
-            .padding(.vertical, 5)
+            .padding(.vertical, DS.Space.xs)
             .background(selected ? AnyShapeStyle(DS.Color.accent) : (hovering ? AnyShapeStyle(DS.Color.neutral.opacity(0.1)) : AnyShapeStyle(.clear)))
             .contentShape(Rectangle())
         }
@@ -348,7 +348,7 @@ private struct CandidateRow: View {
         Text(text)
             .font(.system(size: NSFont.smallSystemFontSize - 1, weight: .semibold))
             .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(DS.Color.accent))
-            .padding(.horizontal, 6)
+            .padding(.horizontal, DS.Space.s)
             .frame(height: 16)
             .background(selected ? DS.Color.onFill.opacity(0.2) : DS.Color.accent.opacity(0.14), in: Capsule())
     }

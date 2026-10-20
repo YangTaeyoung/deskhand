@@ -17,14 +17,22 @@ public enum PreviewDebugProgram {
     public static let pageTargetID = "A3F1C2D9E8B74F6AA0C1D2E3F4A5B6C7"
     /// A WebView2 app: launching it never opens a debug port.
     public static let notElectronPath = "C:\\Shop\\bin\\Shop.exe"
+    /// A fused Electron app that ignores `--inspect`: launching it attaches its renderer only.
+    public static let kioskPath = "C:\\Users\\taeyoung\\AppData\\Local\\Programs\\shop-kiosk\\Shop Kiosk.exe"
 
-    public static func targets(mainGen: Int = 0, pageGen: Int = 0, mainPaused: Bool = false, pagePaused: Bool = false) -> [DebugTarget] {
-        [
-            DebugTarget(id: mainTargetID, role: DebugTargetRole.main.rawValue, type: "node", url: Script.main.url, title: "Shop Admin — main",
-                        attached: true, paused: mainPaused, gen: mainGen),
-            DebugTarget(id: pageTargetID, role: DebugTargetRole.renderer.rawValue, type: "page", url: "app://shop-admin/index.html",
-                        title: "Shop 관리자 — 결제", attached: true, paused: pagePaused, gen: pageGen),
-        ]
+    public static func targets(mainGen: Int = 0, pageGen: Int = 0, mainPaused: Bool = false, pagePaused: Bool = false,
+                               pagePausePending: Bool = false) -> [DebugTarget] {
+        [mainTarget(gen: mainGen, paused: mainPaused), pageTarget(gen: pageGen, paused: pagePaused, pausePending: pagePausePending)]
+    }
+
+    public static func mainTarget(gen: Int = 0, paused: Bool = false) -> DebugTarget {
+        DebugTarget(id: mainTargetID, role: DebugTargetRole.main.rawValue, type: "node", url: Script.main.url, title: "Shop Admin — main",
+                    attached: true, paused: paused, gen: gen)
+    }
+
+    public static func pageTarget(gen: Int = 0, paused: Bool = false, pausePending: Bool = false) -> DebugTarget {
+        DebugTarget(id: pageTargetID, role: DebugTargetRole.renderer.rawValue, type: "page", url: "app://shop-admin/index.html",
+                    title: "Shop 관리자 — 결제", attached: true, paused: paused, pausePending: pausePending, gen: gen)
     }
 
     // MARK: Scripts
@@ -381,8 +389,10 @@ public enum PreviewDebugProgram {
         case submit
         case coupon
         case print
+        /// The first-line stop of the main process.
+        case boot
 
-        public var targetID: String { self == .print ? mainTargetID : pageTargetID }
+        public var targetID: String { self == .print || self == .boot ? mainTargetID : pageTargetID }
     }
 
     /// A frame of a step: the function, where it is, and its scopes' variables.
@@ -409,6 +419,7 @@ public enum PreviewDebugProgram {
         case .submit: submitSteps
         case .coupon: couponSteps
         case .print: printSteps
+        case .boot: [Step(frames: [FrameSpec(function: "", script: .main, line: 1, locals: [])])]
         }
     }
 
@@ -849,13 +860,16 @@ public enum PreviewDebugProgram {
     /// A launched Shop Admin session on `hostID`.
     public static func session(hostID: String, debugID: String = "d-shop-admin", created: Date, state: DebugSessionState = .running,
                                targets: [DebugTarget]? = nil, breakpoints: [DebugBreakpoint] = [], exceptions: ExceptionPauseMode = .uncaught,
-                               breakpointsActive: Bool = true, closeReason: DebugCloseReason? = nil, exitCode: Int? = nil) -> DebugSession {
+                               breakpointsActive: Bool = true, closeReason: DebugCloseReason? = nil, exitCode: Int? = nil,
+                               createdBy: DebugActor = DebugActor(actor: "human", clientName: "Deskhand"),
+                               mainUnavailable: MainUnavailableReason? = nil, rev: Int = 1) -> DebugSession {
         DebugSession(debugID: debugID, hostID: hostID, jobID: "j-debug-1", kind: .launch, name: appName, path: appPath,
-                     args: ["--env=staging"], pid: appPID, ports: DebugPorts(inspect: inspectPort, remoteDebugging: devtoolsPort),
-                     state: state, targets: targets ?? Self.targets(), breakpoints: breakpoints, breakpointsActive: breakpointsActive,
-                     pauseOnExceptions: exceptions, createdAt: Timestamp(date: created),
+                     args: ["--env=staging"], cwd: "C:\\Shop\\desktop", pid: appPID,
+                     ports: DebugPorts(inspect: mainUnavailable == nil ? inspectPort : nil, remoteDebugging: devtoolsPort),
+                     state: state, targets: targets ?? Self.targets(), mainUnavailable: mainUnavailable, breakpoints: breakpoints,
+                     breakpointsActive: breakpointsActive, pauseOnExceptions: exceptions, createdBy: createdBy, createdAt: Timestamp(date: created),
                      closedAt: state == .closed ? Timestamp(date: created.addingTimeInterval(240)) : nil, closeReason: closeReason,
-                     exitCode: exitCode)
+                     exitCode: exitCode, rev: rev)
     }
 
     /// Breakpoints of the sample sessions: on `postOrder`'s payload (resolved), on the order total
@@ -866,16 +880,17 @@ public enum PreviewDebugProgram {
         let payloadLine = api.line("const payload = {")
         let orderLine = checkout.line("console.log('주문 제출'")
         return [
-            DebugBreakpoint(breakpointID: "bp-1", urlRegex: #"(^|[/\\])api\.js$"#, line: payloadLine,
+            DebugBreakpoint(breakpointID: "bp-1", match: .fileName, pattern: "api.js", line: payloadLine,
                             locations: [BreakpointLocation(targetID: pageTargetID, scriptID: api.scriptID, url: api.url, line: payloadLine,
                                                            column: api.column(payloadLine))]),
-            DebugBreakpoint(breakpointID: "bp-2", urlRegex: #"(^|[/\\])checkout\.js$"#, line: orderLine, condition: "order.total > 40000",
+            DebugBreakpoint(breakpointID: "bp-2", match: .fileName, pattern: "checkout.js", line: orderLine - 1, condition: "order.total > 40000",
                             locations: [BreakpointLocation(targetID: pageTargetID, scriptID: checkout.scriptID, url: checkout.url,
                                                            line: orderLine, column: checkout.column(orderLine))]),
-            DebugBreakpoint(breakpointID: "bp-3", url: Script.main.url, line: Script.main.line("const printer = process.env"), enabled: false,
+            DebugBreakpoint(breakpointID: "bp-3", match: .url, pattern: Script.main.url, line: Script.main.line("const printer = process.env"),
+                            enabled: false,
                             locations: [BreakpointLocation(targetID: mainTargetID, scriptID: Script.main.scriptID, url: Script.main.url,
                                                            line: Script.main.line("const printer = process.env"), column: 3)]),
-            DebugBreakpoint(breakpointID: "bp-4", urlRegex: #"(^|[/\\])settings\.js$"#, line: 12),
+            DebugBreakpoint(breakpointID: "bp-4", match: .fileName, pattern: "settings.js", line: 12),
         ]
     }
 }

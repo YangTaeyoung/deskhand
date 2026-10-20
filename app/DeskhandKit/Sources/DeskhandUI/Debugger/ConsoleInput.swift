@@ -38,20 +38,25 @@ enum ConsoleInputKeys {
 
 /// The console's expression field: a plain monospaced text view without smart substitutions that
 /// grows to six lines, evaluates on ↩, breaks lines on ⇧↩ and walks the history with ↑ and ↓.
+/// `focusChanged` reports when it gains and loses the keyboard.
 struct ConsoleInput: NSViewRepresentable {
     @Binding var text: String
     @Binding var height: CGFloat
     let submit: (String) -> Void
     let previous: (String) -> String?
     let next: () -> String?
+    var focusChanged: (Bool) -> Void = { _ in }
     var enabled = true
 
     static let lineHeight: CGFloat = 16
     static let maximumLines = 6
 
+    /// Space above and below the text.
+    static let inset: CGFloat = DS.Space.xs
+
     /// The field's height for `lines` lines of text, between one and six.
     static func height(lines: Int) -> CGFloat {
-        CGFloat(max(1, min(maximumLines, lines))) * lineHeight + 4
+        CGFloat(max(1, min(maximumLines, lines))) * lineHeight + inset * 2
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -64,6 +69,7 @@ struct ConsoleInput: NSViewRepresentable {
         scroll.borderType = .noBorder
         let textView = ConsoleTextView()
         textView.delegate = context.coordinator
+        textView.onFocusChange = { [weak coordinator = context.coordinator] focused in coordinator?.parent.focusChanged(focused) }
         textView.isRichText = false
         textView.importsGraphics = false
         textView.allowsUndo = true
@@ -79,7 +85,7 @@ struct ConsoleInput: NSViewRepresentable {
         textView.font = NSFont.monospacedSystemFont(ofSize: DebugFormat.monoSize, weight: .regular)
         textView.textColor = .textColor
         textView.insertionPointColor = NSColor(DS.Color.accent)
-        textView.textContainerInset = NSSize(width: 0, height: 2)
+        textView.textContainerInset = NSSize(width: 0, height: ConsoleInput.inset)
         textView.textContainer?.lineFragmentPadding = 0
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
@@ -104,7 +110,26 @@ struct ConsoleInput: NSViewRepresentable {
     }
 
     final class ConsoleTextView: NSTextView {
+        var onFocusChange: ((Bool) -> Void)?
+
         override var acceptsFirstResponder: Bool { isEditable }
+
+        override func becomeFirstResponder() -> Bool {
+            let became = super.becomeFirstResponder()
+            if became { onFocusChange?(true) }
+            return became
+        }
+
+        override func resignFirstResponder() -> Bool {
+            let resigned = super.resignFirstResponder()
+            if resigned { onFocusChange?(false) }
+            return resigned
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window == nil { onFocusChange?(false) }
+        }
     }
 
     @MainActor

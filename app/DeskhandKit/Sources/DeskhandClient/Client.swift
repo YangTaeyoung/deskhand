@@ -60,6 +60,7 @@ public actor DeskhandClient {
     private var pending: [Int: CheckedContinuation<JSONValue, Error>] = [:]
     private var hello: HelloInfo?
     private var subscriptions: [UUID: Subscription] = [:]
+    private var reconnectWatchers: [UUID: AsyncStream<Void>.Continuation] = [:]
     private var reconnectTask: Task<Void, Never>?
     public private(set) var clientID: String?
 
@@ -113,6 +114,28 @@ public actor DeskhandClient {
         return stream
     }
 
+    /// Yields each time the connection comes back after a drop, once `hello` and the event
+    /// subscription are restored. Events sent while it was down were not delivered.
+    public nonisolated func reconnects() -> AsyncStream<Void> {
+        let (stream, continuation) = AsyncStream.makeStream(of: Void.self)
+        let id = UUID()
+        continuation.onTermination = { [weak self] _ in
+            guard let self else { return }
+            Task { await self.removeReconnectWatcher(id) }
+        }
+        Task { await self.addReconnectWatcher(id, continuation) }
+        return stream
+    }
+
+    private func addReconnectWatcher(_ id: UUID, _ continuation: AsyncStream<Void>.Continuation) {
+        guard state != .closed else { return continuation.finish() }
+        reconnectWatchers[id] = continuation
+    }
+
+    private func removeReconnectWatcher(_ id: UUID) {
+        reconnectWatchers[id] = nil
+    }
+
     /// Closes the connection, fails in-flight calls and finishes event streams.
     public func close() {
         guard state != .closed else { return }
@@ -122,6 +145,8 @@ public actor DeskhandClient {
         discardConnection()
         for sub in subscriptions.values { sub.continuation.finish() }
         subscriptions = [:]
+        for watcher in reconnectWatchers.values { watcher.finish() }
+        reconnectWatchers = [:]
     }
 
     // MARK: Requests
@@ -177,6 +202,7 @@ public actor DeskhandClient {
     }
 
     var subscriptionCount: Int { subscriptions.count }
+    var reconnectWatcherCount: Int { reconnectWatchers.count }
 
     private func startReader(_ connection: Connection, generation gen: Int) {
         Task {
@@ -234,6 +260,7 @@ public actor DeskhandClient {
                 guard state == .reconnecting else { return }
                 state = .ready
                 reconnectTask = nil
+                for watcher in reconnectWatchers.values { watcher.yield() }
                 return
             } catch {
                 discardConnection()

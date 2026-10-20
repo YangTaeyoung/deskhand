@@ -128,13 +128,13 @@ extension SnapshotBackend {
     func debugLaunch(_ request: DebugLaunchRequest) async throws -> DebugSession { throw ClientError.notConnected }
     func debugAttach(_ request: DebugAttachRequest) async throws -> DebugSession { throw ClientError.notConnected }
     func debugTargetAttach(debugID: String, targetID: String) async throws -> DebugTarget { throw ClientError.notConnected }
-    func debugBreakpointSet(_ request: BreakpointRequest) async throws -> DebugBreakpoint { throw ClientError.notConnected }
-    func debugBreakpointEnable(debugID: String, breakpointID: String, enabled: Bool) async throws -> DebugBreakpoint {
+    func debugBreakpointSet(debugID: String, spec: BreakpointSpec) async throws -> DebugBreakpoint { throw ClientError.notConnected }
+    func debugBreakpointUpdate(debugID: String, breakpointID: String, enabled: Bool?, condition: String?) async throws -> DebugBreakpoint {
         throw ClientError.notConnected
     }
-    func debugBreakpointRemove(debugID: String, breakpointID: String) async throws {}
-    func debugBreakpointsActivate(debugID: String, active: Bool) async throws {}
-    func debugExceptions(debugID: String, mode: ExceptionPauseMode) async throws {}
+    func debugBreakpointRemove(debugID: String, breakpointID: String) async throws -> DebugBreakpoint? { nil }
+    func debugBreakpointsActivate(debugID: String, active: Bool) async throws -> DebugSession? { nil }
+    func debugExceptions(debugID: String, mode: ExceptionPauseMode) async throws -> DebugSession? { nil }
     func debugPause(debugID: String, targetID: String) async throws -> DebugTarget? { nil }
     func debugResume(debugID: String, targetID: String) async throws -> DebugTarget? { nil }
     func debugStep(debugID: String, targetID: String, kind: DebugStepKind) async throws -> DebugTarget? { nil }
@@ -148,5 +148,6 @@ extension SnapshotBackend {
     func debugScripts(debugID: String, targetID: String?) async throws -> [DebugScript] { throw ClientError.notConnected }
     func debugSource(debugID: String, targetID: String, scriptID: String) async throws -> DebugSource { throw ClientError.notConnected }
     func debugConsole(_ query: ConsoleQuery) async throws -> ConsolePage { ConsolePage(entries: [], nextCursor: query.cursor ?? 0) }
+    func debugConsoleClear(debugID: String) async throws -> Int { 0 }
     func debugClose(debugID: String, keepProcess: Bool) async throws {}
 }

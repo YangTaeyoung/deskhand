@@ -2,7 +2,8 @@ import DeskhandClient
 import SwiftUI
 
 /// Adds a breakpoint by script and line: the script as a file name, an exact URL or a regular
-/// expression, with the loaded scripts offered; an optional condition.
+/// expression, with the loaded scripts offered; an optional condition. With `editing` it changes
+/// that breakpoint's condition only.
 public struct BreakpointSheet: View {
     public enum Match: String, CaseIterable, Identifiable, Sendable {
         case fileName
@@ -13,6 +14,7 @@ public struct BreakpointSheet: View {
     }
 
     let session: DebugSessionModel
+    let editing: DebugBreakpoint?
     let dismiss: () -> Void
     @State private var match: Match
     @State private var script: String
@@ -24,11 +26,25 @@ public struct BreakpointSheet: View {
     public init(session: DebugSessionModel, match: Match = .fileName, script: String = "", line: String = "", condition: String = "",
                 error: OperationError? = nil, dismiss: @escaping () -> Void) {
         self.session = session
+        self.editing = nil
         self.dismiss = dismiss
         _match = State(initialValue: match)
         _script = State(initialValue: script)
         _line = State(initialValue: line)
         _condition = State(initialValue: condition)
+        _error = State(initialValue: error)
+    }
+
+    /// The sheet that changes `breakpoint`'s condition.
+    public init(session: DebugSessionModel, editing breakpoint: DebugBreakpoint, condition: String? = nil, error: OperationError? = nil,
+                dismiss: @escaping () -> Void) {
+        self.session = session
+        self.editing = breakpoint
+        self.dismiss = dismiss
+        _match = State(initialValue: .fileName)
+        _script = State(initialValue: breakpoint.pattern)
+        _line = State(initialValue: String(breakpoint.line))
+        _condition = State(initialValue: condition ?? breakpoint.condition ?? "")
         _error = State(initialValue: error)
     }
 
@@ -45,7 +61,7 @@ public struct BreakpointSheet: View {
     /// Loaded scripts matching what is typed, at most eight.
     private var suggestions: [DebugScript] {
         let needle = script.trimmingCharacters(in: .whitespaces)
-        let scripts = session.scripts.filter { needle.isEmpty || $0.url.localizedCaseInsensitiveContains(needle) }
+        let scripts = session.scripts.filter { !ScriptURL.isInternal($0.url) && (needle.isEmpty || $0.url.localizedCaseInsensitiveContains(needle)) }
         return Array(scripts.prefix(8))
     }
 
@@ -61,62 +77,69 @@ public struct BreakpointSheet: View {
         }
     }
 
-    /// Scripts the pattern matches now.
+    /// Scripts the pattern matches now, or nil while it is empty or not a valid expression here.
     private var matched: Int? {
-        guard !script.trimmingCharacters(in: .whitespaces).isEmpty, let request = try? pattern.match() else { return nil }
-        let probe: DebugBreakpoint
-        switch request {
-        case .url(let url): probe = DebugBreakpoint(breakpointID: "", url: url, line: 1)
-        case .regex(let regex): probe = DebugBreakpoint(breakpointID: "", urlRegex: regex, line: 1)
-        }
+        guard let spec = try? pattern.spec(line: 1) else { return nil }
+        if spec.matchKind == .urlRegex, (try? NSRegularExpression(pattern: spec.pattern)) == nil { return nil }
+        let probe = DebugBreakpoint(breakpointID: "", match: spec.matchKind, pattern: spec.pattern, line: 1)
         return session.scripts.filter { BreakpointPattern.matches(probe, url: $0.url) }.count
     }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.l) {
             HStack(alignment: .top, spacing: DS.Space.m) {
-                BreakpointMarker(enabled: true, resolved: true, width: 30, height: 20)
-                    .padding(.top, 4)
+                BreakpointMarker(enabled: true, resolved: true, conditional: editing != nil, width: 32, height: 20)
+                    .padding(.top, DS.Space.xs)
                     .frame(width: 36)
                 VStack(alignment: .leading, spacing: DS.Space.xs) {
-                    Text(String.ui("debugger.breakpoint.sheet.title", "중단점 추가"))
+                    Text(editing == nil ? String.ui("debugger.breakpoint.sheet.title", "중단점 추가")
+                                        : String.ui("debugger.breakpoint.sheet.editTitle", "중단점 조건 편집"))
                         .font(DS.Font.title)
                         .accessibilityAddTraits(.isHeader)
-                    Text(String.ui("debugger.breakpoint.sheet.subtitle", "\(session.info.name)의 모든 대상에 겁니다. 아직 로드되지 않은 스크립트는 로드될 때 연결됩니다."))
+                    Text(subtitle)
                         .font(DS.Font.body)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: DS.Space.m, verticalSpacing: DS.Space.m) {
-                GridRow {
-                    label(String.ui("debugger.breakpoint.sheet.script", "스크립트"))
-                    VStack(alignment: .leading, spacing: DS.Space.s) {
-                        Picker(String.ui("debugger.breakpoint.sheet.match", "일치 방식"), selection: $match) {
-                            Text(String.ui("debugger.breakpoint.match.fileName", "파일 이름")).tag(Match.fileName)
-                            Text(String.ui("debugger.breakpoint.match.url", "정확한 URL")).tag(Match.url)
-                            Text(String.ui("debugger.breakpoint.match.regex", "정규식")).tag(Match.regex)
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .fixedSize()
-                        TextField(prompt, text: $script)
+                if let editing {
+                    GridRow {
+                        label(String.ui("debugger.breakpoint.sheet.location", "위치"))
+                        Text(BreakpointPattern.title(of: editing))
                             .font(DS.Font.mono)
-                            .textFieldStyle(.roundedBorder)
-                            .accessibilityLabel(String.ui("debugger.breakpoint.sheet.script", "스크립트"))
-                        matchLine
-                        if !suggestions.isEmpty, !exactlyChosen {
-                            suggestionList
+                            .help(editing.locations.first?.url ?? editing.pattern)
+                    }
+                } else {
+                    GridRow {
+                        label(String.ui("debugger.breakpoint.sheet.script", "스크립트"))
+                        VStack(alignment: .leading, spacing: DS.Space.s) {
+                            Picker(String.ui("debugger.breakpoint.sheet.match", "일치 방식"), selection: $match) {
+                                Text(String.ui("debugger.breakpoint.match.fileName", "파일 이름")).tag(Match.fileName)
+                                Text(String.ui("debugger.breakpoint.match.url", "정확한 URL")).tag(Match.url)
+                                Text(String.ui("debugger.breakpoint.match.regex", "정규식")).tag(Match.regex)
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                            .fixedSize()
+                            TextField(prompt, text: $script)
+                                .font(DS.Font.mono)
+                                .textFieldStyle(.roundedBorder)
+                                .accessibilityLabel(String.ui("debugger.breakpoint.sheet.script", "스크립트"))
+                            matchLine
+                            if !suggestions.isEmpty, !exactlyChosen {
+                                suggestionList
+                            }
                         }
                     }
-                }
-                GridRow {
-                    label(String.ui("debugger.breakpoint.sheet.line", "줄"))
-                    TextField("42", text: $line)
-                        .font(DS.Font.mono)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 96)
-                        .accessibilityLabel(String.ui("debugger.breakpoint.sheet.line", "줄"))
+                    GridRow {
+                        label(String.ui("debugger.breakpoint.sheet.line", "줄"))
+                        TextField("42", text: $line)
+                            .font(DS.Font.mono)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 96)
+                            .accessibilityLabel(String.ui("debugger.breakpoint.sheet.line", "줄"))
+                    }
                 }
                 GridRow {
                     label(String.ui("debugger.breakpoint.sheet.condition", "조건"))
@@ -125,7 +148,8 @@ public struct BreakpointSheet: View {
                             .font(DS.Font.mono)
                             .textFieldStyle(.roundedBorder)
                             .accessibilityLabel(String.ui("debugger.breakpoint.sheet.condition", "조건"))
-                        Text(String.ui("debugger.breakpoint.sheet.condition.hint", "참이 되는 JavaScript 식을 쓰면 그때만 멈춥니다."))
+                        Text(editing == nil ? String.ui("debugger.breakpoint.sheet.condition.hint", "참이 되는 JavaScript 식을 쓰면 그때만 멈춥니다.")
+                                            : String.ui("debugger.breakpoint.sheet.condition.editHint", "참이 되는 JavaScript 식을 쓰면 그때만 멈춥니다. 비우면 항상 멈춥니다."))
                             .font(DS.Font.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -133,8 +157,9 @@ public struct BreakpointSheet: View {
             }
             if let error {
                 StatusNotice(symbol: "exclamationmark.octagon.fill", tint: DS.Color.danger,
-                             title: String.ui("debugger.failed.breakpointSet", "중단점을 걸지 못했습니다"), message: error.message.asSentence,
-                             code: error.code)
+                             title: editing == nil ? String.ui("debugger.failed.breakpointSet", "중단점을 걸지 못했습니다")
+                                                   : String.ui("debugger.failed.breakpoint", "중단점을 바꾸지 못했습니다"),
+                             message: error.message.asSentence, code: error.code)
             }
             HStack {
                 Spacer()
@@ -146,22 +171,34 @@ public struct BreakpointSheet: View {
                     if saving {
                         ProgressView().controlSize(.small).frame(minWidth: 56)
                     } else {
-                        Text(String.ui("debugger.breakpoint.sheet.add", "추가")).frame(minWidth: 56)
+                        Text(editing == nil ? String.ui("debugger.breakpoint.sheet.add", "추가") : String.ui("action.save", "저장"))
+                            .frame(minWidth: 56)
                     }
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(lineNumber == nil || script.trimmingCharacters(in: .whitespaces).isEmpty || saving)
+                .disabled(!canSave || saving)
             }
             .controlSize(.large)
         }
         .padding(DS.Space.xl)
         .frame(width: 560)
-        .task { await session.loadScripts() }
+        .task { if editing == nil { await session.loadScripts() } }
+    }
+
+    private var subtitle: String {
+        let name = session.info.name
+        if editing != nil { return .ui("debugger.breakpoint.sheet.editSubtitle", "조건을 바꾸면 \(name)의 모든 대상에 다시 겁니다.") }
+        return .ui("debugger.breakpoint.sheet.subtitle", "\(name)의 모든 대상에 겁니다. 아직 로드되지 않은 스크립트는 로드될 때 연결됩니다.")
+    }
+
+    private var canSave: Bool {
+        if editing != nil { return true }
+        return lineNumber != nil && !script.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     private var prompt: String {
         switch match {
-        case .fileName: .ui("debugger.breakpoint.prompt.fileName", "예: checkout.js")
+        case .fileName: .ui("debugger.breakpoint.prompt.fileName", "예: checkout.js 또는 renderer/checkout.js")
         case .url: .ui("debugger.breakpoint.prompt.url", "예: app://shop-admin/renderer/checkout.js")
         case .regex: .ui("debugger.breakpoint.prompt.regex", "예: renderer/.*\\.js$")
         }
@@ -171,7 +208,7 @@ public struct BreakpointSheet: View {
     private var matchLine: some View {
         if let matched {
             if matched == 0, !suggestions.isEmpty {
-                Label(String.ui("debugger.breakpoint.sheet.pickSuggestion", "이름이 정확히 같은 스크립트가 없습니다. 아래 목록에서 고르세요."),
+                Label(String.ui("debugger.breakpoint.sheet.pickSuggestion", "일치하는 스크립트가 없습니다. 아래 목록에서 고르세요."),
                       systemImage: "info.circle")
                     .font(DS.Font.caption)
                     .foregroundStyle(.secondary)
@@ -186,10 +223,12 @@ public struct BreakpointSheet: View {
                     .font(DS.Font.caption)
                     .foregroundStyle(DS.Color.success)
             }
-        } else if match == .regex, !script.isEmpty, case .failure(let problem) = Result(catching: { try pattern.match() }) {
-            Label(problem.localizedDescription, systemImage: "exclamationmark.triangle.fill")
+        } else if match == .regex, !script.trimmingCharacters(in: .whitespaces).isEmpty {
+            Label(String.ui("debugger.breakpoint.sheet.badRegex", "이 정규식은 이 Mac에서 읽을 수 없습니다. 추가하면 데몬이 대상에서 확인합니다."),
+                  systemImage: "exclamationmark.triangle.fill")
                 .font(DS.Font.caption)
                 .foregroundStyle(DS.Color.warning)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -211,12 +250,12 @@ public struct BreakpointSheet: View {
                             .font(DS.Font.body)
                         Text(ScriptURL.display(item.url))
                             .font(DS.Font.caption)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.head)
                         Spacer(minLength: 0)
                         if let target = session.info.targets.first(where: { $0.id == item.targetID }) {
-                            RoleBadge(target: target)
+                            RoleBadge(target: target, fixedWidth: true)
                         }
                     }
                     .padding(.horizontal, DS.Space.s)
@@ -239,11 +278,17 @@ public struct BreakpointSheet: View {
     }
 
     private func save() {
-        guard let number = lineNumber else { return }
         saving = true
         error = nil
         Task {
-            let failure = await session.setBreakpoint(pattern, line: number, condition: condition)
+            let failure: OperationError?
+            if let editing {
+                failure = await session.setBreakpointCondition(editing.breakpointID, condition)
+            } else if let number = lineNumber {
+                failure = await session.setBreakpoint(pattern, line: number, condition: condition)
+            } else {
+                failure = nil
+            }
             saving = false
             if let failure { error = failure } else { dismiss() }
         }

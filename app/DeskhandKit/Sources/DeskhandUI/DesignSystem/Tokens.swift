@@ -50,15 +50,20 @@ public enum DS {
         public static let terminalBackground = SwiftUI.Color(nsColor: .textBackgroundColor)
     }
 
-    /// Script source and value colors of the debugger. System colors outside the semantic set, so
-    /// code never reads as a state.
+    /// Colors of script source, values and console text in the debugger. The text colors are system
+    /// hues blended toward black (light) or white (dark) until they reach 4.5:1 against both the
+    /// text and the window background of the appearance; error text also against its row tint.
     public enum Code {
         /// JavaScript keywords and the literals `true`, `false`, `null`, `undefined`.
-        public static let keyword = SwiftUI.Color(nsColor: .systemPink)
-        /// String and template literals and string values.
-        public static let string = SwiftUI.Color(nsColor: .systemBrown)
+        public static let keyword = SwiftUI.Color(nsColor: keywordNS)
+        /// String, template and regular expression literals and string values.
+        public static let string = SwiftUI.Color(nsColor: stringNS)
         /// Numbers and bigints.
-        public static let number = SwiftUI.Color(nsColor: .systemTeal)
+        public static let number = SwiftUI.Color(nsColor: numberNS)
+        /// Source locations and other links in the console.
+        public static let link = SwiftUI.Color(nsColor: linkNS)
+        /// Text of console errors and thrown values.
+        public static let errorText = SwiftUI.Color(nsColor: errorTextNS)
         /// Comments, `undefined` values and internal properties.
         public static let comment = SwiftUI.Color.secondary
         /// The line the paused frame is on.
@@ -75,6 +80,54 @@ public enum DS {
         public static let background = SwiftUI.Color(nsColor: .textBackgroundColor)
         /// The gutter beside the source lines.
         public static let gutter = SwiftUI.Color(nsColor: .underPageBackgroundColor).opacity(0.5)
+        /// Opacity of the danger tint behind console error rows.
+        public static let errorRowOpacity: CGFloat = 0.06
+
+        public static let keywordNS = readable(.systemPink)
+        public static let stringNS = readable(.systemRed)
+        public static let numberNS = readable(.systemBlue)
+        public static let linkNS = readable(.systemIndigo)
+        public static let errorTextNS = readable(.systemRed, tint: (.systemRed, errorRowOpacity))
+
+        /// The backgrounds code text sits on in `appearance`: text, window, and with `tint` the
+        /// text background under that tint.
+        static func backgrounds(in appearance: NSAppearance, tint: (NSColor, CGFloat)?) -> [NSColor] {
+            var colors: [NSColor] = []
+            appearance.performAsCurrentDrawingAppearance {
+                let text = NSColor.textBackgroundColor.usingColorSpace(.sRGB) ?? .white
+                let window = NSColor.windowBackgroundColor.usingColorSpace(.sRGB) ?? .white
+                colors = [text, window]
+                if let (hue, fraction) = tint, let shade = hue.usingColorSpace(.sRGB) {
+                    colors.append(text.blended(withFraction: fraction, of: shade) ?? text)
+                }
+            }
+            return colors
+        }
+
+        /// `base` blended toward black (light) or white (dark) until it reaches 4.5:1 against every background.
+        static func readable(_ base: NSColor, tint: (NSColor, CGFloat)? = nil, ratio: Double = 4.5) -> NSColor {
+            NSColor(name: nil) { appearance in
+                let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+                var resolved = base
+                appearance.performAsCurrentDrawingAppearance {
+                    resolved = base.usingColorSpace(.sRGB) ?? base
+                }
+                let backgrounds = backgrounds(in: appearance, tint: tint)
+                func passes(_ color: NSColor) -> Bool {
+                    backgrounds.allSatisfy { Terminal.contrast(color, $0) >= ratio }
+                }
+                if passes(resolved) { return resolved }
+                let target: NSColor = dark ? .white : .black
+                var low: CGFloat = 0
+                var high: CGFloat = 1
+                for _ in 0..<20 {
+                    let mid = (low + high) / 2
+                    let mixed = resolved.blended(withFraction: mid, of: target) ?? resolved
+                    if passes(mixed) { high = mid } else { low = mid }
+                }
+                return (resolved.blended(withFraction: high, of: target) ?? resolved).usingColorSpace(.sRGB) ?? resolved
+            }
+        }
     }
 
     /// Spacing scale in points. Layout uses only these values.
