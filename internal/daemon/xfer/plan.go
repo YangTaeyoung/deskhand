@@ -279,7 +279,7 @@ func (t *transfer) plan(ctx context.Context, h *conn.Host) error {
 		}
 	}
 	t.row.Planned = true
-	if err := t.m.opt.Store.SaveTransfer(t.row, files, true); err != nil {
+	if err := t.m.save(t.row, files, true); err != nil {
 		t.row.Planned = false
 		return apierr.Internal(fmt.Sprintf("전송할 파일 목록을 저장하지 못했습니다(%v). 데몬 로그를 확인하세요", err))
 	}

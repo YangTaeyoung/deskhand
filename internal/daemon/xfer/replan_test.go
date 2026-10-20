@@ -7,11 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YangTaeyoung/deskhand/internal/daemon/conn"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/events"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/store"
 )
 
-// testManager returns a Manager over a new store, without connections.
+// testManager returns a Manager over a new store and a connection manager
+// without hosts.
 func testManager(t *testing.T) (*Manager, *store.Store) {
 	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "deskhand.db"))
@@ -19,7 +21,9 @@ func testManager(t *testing.T) (*Manager, *store.Store) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	m := New(Options{Store: st, Bus: events.NewBus(st, nil)})
+	conns := conn.NewManager(conn.Options{})
+	t.Cleanup(conns.Close)
+	m := New(Options{Store: st, Bus: events.NewBus(st, nil), Conns: conns})
 	t.Cleanup(m.Close)
 	return m, st
 }

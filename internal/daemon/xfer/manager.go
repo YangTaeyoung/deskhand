@@ -112,6 +112,9 @@ type Manager struct {
 	// mu guards live and is taken before the lock of a transfer.
 	mu   sync.Mutex
 	live map[string]*transfer
+
+	// save stores a transfer and files of it (store.Store.SaveTransfer).
+	save func(t store.Transfer, files []store.TransferFile, replace bool) error
 }
 
 // New returns a Manager; Load restores the stored transfers.
@@ -120,7 +123,7 @@ func New(opt Options) *Manager {
 	if lg == nil {
 		lg = log.New(io.Discard, "", 0)
 	}
-	m := &Manager{opt: opt, lg: lg, live: map[string]*transfer{}}
+	m := &Manager{opt: opt, lg: lg, live: map[string]*transfer{}, save: opt.Store.SaveTransfer}
 	m.base, m.stop = context.WithCancel(context.Background())
 	return m
 }
@@ -252,12 +255,19 @@ func (m *Manager) acquire(transferID string) (*transfer, error) {
 	return t, nil
 }
 
-// release gives back a transfer acquire returned; a transfer nobody holds
-// and that does not run stops being live once its changes are stored.
+// release gives back a transfer acquire returned (forgetIdle).
 func (m *Manager) release(t *transfer) {
 	if t.refs.Add(-1) > 0 {
 		return
 	}
+	m.forgetIdle(t)
+}
+
+// forgetIdle ends the life of a transfer nobody holds and that does not
+// run, once its changes are stored: a change that waits for its flush is
+// flushed now, and a transfer whose rev could not be stored stays live
+// until its flush stores it.
+func (m *Manager) forgetIdle(t *transfer) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if t.refs.Load() > 0 || m.live[t.row.TransferID] != t {
@@ -268,8 +278,11 @@ func (m *Manager) release(t *transfer) {
 	if t.run != nil {
 		return
 	}
-	if t.timer != nil {
+	if t.timer != nil && !t.unsaved {
 		t.flushLocked()
+	}
+	if t.unsaved || t.timer != nil {
+		return
 	}
 	delete(m.live, t.row.TransferID)
 }

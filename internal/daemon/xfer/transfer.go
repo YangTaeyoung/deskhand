@@ -81,6 +81,8 @@ type transfer struct {
 	// removing is set while a move removes its source, until the transfer
 	// ends.
 	removing bool
+	// unsaved is set while a rev of the transfer could not be stored.
+	unsaved bool
 }
 
 func newTransfer(m *Manager, row store.Transfer, files []store.TransferFile) *transfer {
@@ -174,12 +176,14 @@ func (t *transfer) armLocked(due time.Time) {
 	t.due = due
 	t.timer = time.AfterFunc(time.Until(due), func() {
 		t.mu.Lock()
-		defer t.mu.Unlock()
 		if t.timerSeq != seq || t.timer == nil {
+			t.mu.Unlock()
 			return
 		}
 		t.timer = nil
 		t.flushLocked()
+		t.mu.Unlock()
+		t.m.forgetIdle(t)
 	})
 }
 
@@ -199,11 +203,13 @@ func (t *transfer) flushLocked() {
 	now := time.Now()
 	t.row.Rev++
 	t.row.UpdatedAt = now
-	if err := t.m.opt.Store.SaveTransfer(t.row, t.dirtyFilesLocked(), false); err != nil {
+	if err := t.m.save(t.row, t.dirtyFilesLocked(), false); err != nil {
 		t.m.lg.Printf("transfer %s: store rev %d: %v", t.row.TransferID, t.row.Rev, err)
+		t.unsaved = true
 		t.armLocked(now.Add(rateRefresh))
 		return
 	}
+	t.unsaved = false
 	t.sampleLocked(now)
 	t.dirty = map[int]bool{}
 	t.lastFlush = now
@@ -219,7 +225,7 @@ func (t *transfer) flushLocked() {
 // saveLocked stores the row and the changed files of the transfer without
 // publishing them. t.mu is held.
 func (t *transfer) saveLocked() error {
-	err := t.m.opt.Store.SaveTransfer(t.row, t.dirtyFilesLocked(), false)
+	err := t.m.save(t.row, t.dirtyFilesLocked(), false)
 	if err == nil {
 		t.dirty = map[int]bool{}
 	}
