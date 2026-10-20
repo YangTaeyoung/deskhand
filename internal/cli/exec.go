@@ -104,18 +104,21 @@ func (r *run) exec(ctx context.Context, args []string) int {
 		return r.failMut(err, host)
 	}
 	r.reqID, r.jobID = start.str("request_id"), start.str("job_id")
+	startCode := exitOK
+	if !commandEnded(start) {
+		startCode = r.statusExit(start, "명령 시작", allowRunning)
+	}
 	if *detach {
 		if r.asJSON {
 			writeJSON(r.Stdout, start)
 		}
-		code := r.statusExit(start, "명령 시작", allowRunning)
-		if code == exitOK && r.jobID != "" && !r.asJSON {
+		if startCode == exitOK && r.jobID != "" && !r.asJSON {
 			fmt.Fprintln(r.Stdout, r.jobID)
 			r.info("작업을 시작했습니다. deskhand jobs watch %s 로 출력을 따라가세요", r.jobID)
 		}
-		return code
+		return startCode
 	}
-	if code := r.statusExit(start, "명령 시작", allowRunning); code != exitOK {
+	if code := startCode; code != exitOK {
 		if r.asJSON {
 			writeJSON(r.Stdout, start)
 		}
@@ -135,6 +138,18 @@ func (r *run) exec(ctx context.Context, args []string) int {
 		r.writeExecJSON(start, f, outBuf.String(), errBuf.String())
 	}
 	return f.exit
+}
+
+// commandEnded reports whether an exec.start envelope says the command
+// already ran to its end: status succeeded, or failed without an error.
+func commandEnded(start obj) bool {
+	switch start.str("status") {
+	case model.StatusSucceeded:
+		return true
+	case model.StatusFailed:
+		return start.sub("error") == nil
+	}
+	return false
 }
 
 // writeExecJSON prints the start envelope completed with the end of the

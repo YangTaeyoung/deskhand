@@ -34,7 +34,8 @@ var stepNames = map[string]string{
 	"probe": "PC 확인", "copy": "에이전트 복사", "init": "에이전트 초기화", "install": "서비스 설치", "verify": "연결 확인",
 }
 
-// printProgress prints host.install.progress events of host name on stderr
+// printProgress prints host.install.progress events of host name on stderr,
+// with the detail of an active step when it differs from the step's label,
 // until events closes or stop is closed and the buffered events are drained.
 func (r *run) printProgress(events <-chan client.Event, name string, stop <-chan struct{}) {
 	show := func(ev client.Event) {
@@ -62,7 +63,7 @@ func (r *run) printProgress(events <-chan client.Event, name string, stop <-chan
 		default:
 			return
 		}
-		if detail != "" && status != "failed" {
+		if status == "active" && detail != "" && detail != label {
 			r.info("       %s", detail)
 		}
 	}

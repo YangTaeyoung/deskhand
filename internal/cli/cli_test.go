@@ -213,6 +213,26 @@ func TestExecExitCodePassthrough(t *testing.T) {
 	}
 }
 
+func TestExecFollowsACommandThatEndedBeforeTheStartAnswer(t *testing.T) {
+	for _, status := range []string{"failed", "succeeded"} {
+		code := 7
+		if status == "succeeded" {
+			code = 0
+		}
+		startFake(t, execFake(exited(code, "안녕\r\n", ""), map[string]handler{
+			"exec.start": ok(envelope(status, map[string]any{"pid": 1, "remote_job": "j3"})),
+		}))
+		r := runCLI(t, false, "", "exec", "windows-dev", "--", "cmd", "/c", "echo 안녕 & exit 7")
+		if r.code != code || r.stdout != "안녕\r\n" || r.err != "" {
+			t.Fatalf("start %s: code %d stdout %q stderr %q", status, r.code, r.stdout, r.err)
+		}
+		r = runCLI(t, false, "", "exec", "windows-dev", "--detach", "--", "cmd", "/c", "exit 7")
+		if r.code != 0 || r.stdout != "j-1\n" {
+			t.Fatalf("detached start %s: code %d stdout %q stderr %q", status, r.code, r.stdout, r.err)
+		}
+	}
+}
+
 func TestExecShellTakesOneCommandString(t *testing.T) {
 	f := startFake(t, execFake(exited(0, "", ""), nil))
 	if r := runCLI(t, false, "", "exec", "h1", "--shell", "powershell", "--timeout", "5s", "--", "Get-Date -Format o"); r.code != 0 {
@@ -335,6 +355,23 @@ func TestDiagnosticsOnStderr(t *testing.T) {
 		if !strings.Contains(r.err, want) {
 			t.Errorf("stderr %q lacks %q", r.err, want)
 		}
+	}
+}
+
+func TestInstallProgressShowsADifferingDetailOnce(t *testing.T) {
+	startFake(t, map[string]handler{
+		"host.add": func(p map[string]any, notify func(any)) (any, *rpcFail) {
+			for _, ev := range [][3]string{{"copy", "active", "에이전트 복사"}, {"copy", "done", "에이전트 복사"},
+				{"init", "active", "에이전트 키 만들기"}, {"init", "done", "에이전트 키 만들기"}} {
+				notify(map[string]any{"kind": "host.install.progress", "name": "pc9", "step": ev[0], "status": ev[1], "detail": ev[2]})
+			}
+			return envelope("succeeded", map[string]any{"host": map[string]any{"state": "ready"}}), nil
+		},
+	})
+	r := runCLI(t, false, "", "host", "add", "pc9", "--ssh", "pc9")
+	want := "[진행] 에이전트 복사 ...\n[완료] 에이전트 복사\n[진행] 에이전트 초기화 ...\n       에이전트 키 만들기\n[완료] 에이전트 초기화\n"
+	if r.code != 0 || r.err != want {
+		t.Fatalf("code %d stderr %q, want %q", r.code, r.err, want)
 	}
 }
 
