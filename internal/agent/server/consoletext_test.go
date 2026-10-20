@@ -91,3 +91,49 @@ func TestConsoleOutputWithoutDecoderWritesDirectly(t *testing.T) {
 	}
 	flush()
 }
+
+func TestConsoleTextKeepsAUTF8StreamThroughAnInvalidByte(t *testing.T) {
+	var out bytes.Buffer
+	w := &consoleText{w: &out, decode: testCodePage}
+	writeAll(t, w, "안녕\n", "a\xffb 😀\n")
+	w.flush()
+	if got := text(out.Bytes()); got != "안녕\na�b 😀\n" {
+		t.Fatalf("out = %q", got)
+	}
+}
+
+func TestConsoleTextASCIIDoesNotDecideTheEncoding(t *testing.T) {
+	var out bytes.Buffer
+	w := &consoleText{w: &out, decode: testCodePage}
+	writeAll(t, w, "ok\r\n", "\xbe\xc8\r\n")
+	w.flush()
+	if out.String() != "ok\r\n안\r\n" {
+		t.Fatalf("out = %q", out.String())
+	}
+}
+
+func TestDecodeDBCSConvertsWholeCharacters(t *testing.T) {
+	lead := func(c byte) bool { return c >= 0x81 }
+	convert := func(p []byte) ([]uint16, bool) {
+		if string(p) != "a\xbe\xc8" {
+			t.Fatalf("convert got % x", p)
+		}
+		return []uint16{'a', 0xC548}, true
+	}
+	got, used := decodeDBCS([]byte("a\xbe\xc8\xb3"), lead, convert)
+	if used != 3 || string(got) != "a안" {
+		t.Fatalf("decodeDBCS = %q, %d", got, used)
+	}
+}
+
+func TestDecodeDBCSFallsBackWhenConversionFails(t *testing.T) {
+	lead := func(c byte) bool { return c >= 0x81 }
+	fail := func([]byte) ([]uint16, bool) { return nil, false }
+	got, used := decodeDBCS([]byte("a\xbe\xc8\xb3"), lead, fail)
+	if used != 3 || string(got) != "a�" {
+		t.Fatalf("decodeDBCS = %q, %d", got, used)
+	}
+	if got, used := decodeDBCS([]byte("\xbe"), lead, fail); used != 0 || len(got) != 0 {
+		t.Fatalf("a lone lead byte gave %q, %d", got, used)
+	}
+}

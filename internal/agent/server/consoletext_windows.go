@@ -3,9 +3,7 @@
 package server
 
 import (
-	"strings"
 	"syscall"
-	"unicode/utf16"
 	"unsafe"
 )
 
@@ -29,27 +27,18 @@ func consoleDecoder() func([]byte) ([]byte, int) {
 }
 
 // decodeCodePage converts the longest prefix of b that holds whole
-// characters of code page cp to UTF-8 and returns it with the prefix length.
+// characters of code page cp to UTF-8 with decodeDBCS, IsDBCSLeadByteEx and
+// MultiByteToWideChar, and returns it with the prefix length.
 func decodeCodePage(cp uint32, b []byte) ([]byte, int) {
-	n := 0
-	for n < len(b) {
-		if lead, _, _ := procIsDBCSLeadByteEx.Call(uintptr(cp), uintptr(b[n])); lead != 0 {
-			if n+1 >= len(b) {
-				break
-			}
-			n += 2
-			continue
-		}
-		n++
+	lead := func(c byte) bool {
+		r, _, _ := procIsDBCSLeadByteEx.Call(uintptr(cp), uintptr(c))
+		return r != 0
 	}
-	if n == 0 {
-		return nil, 0
+	convert := func(p []byte) ([]uint16, bool) {
+		wide := make([]uint16, len(p))
+		k, _, _ := procMultiByteToWideChar.Call(uintptr(cp), 0, uintptr(unsafe.Pointer(&p[0])), uintptr(len(p)),
+			uintptr(unsafe.Pointer(&wide[0])), uintptr(len(wide)))
+		return wide[:k], k != 0
 	}
-	wide := make([]uint16, n)
-	k, _, _ := procMultiByteToWideChar.Call(uintptr(cp), 0, uintptr(unsafe.Pointer(&b[0])), uintptr(n),
-		uintptr(unsafe.Pointer(&wide[0])), uintptr(len(wide)))
-	if k == 0 {
-		return []byte(strings.ToValidUTF8(string(b[:n]), "�")), n
-	}
-	return []byte(string(utf16.Decode(wide[:k]))), n
+	return decodeDBCS(b, lead, convert)
 }
