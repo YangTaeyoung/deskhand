@@ -30,13 +30,16 @@
 }
 ```
 
+`error`는 실패했거나 결과를 모를 때 `{code, message, retryable, next_action?}` 객체이고 그 밖에는 `null`이다. `code`는 [protocol.md §8](protocol.md#8-오류-코드)의 상수, `message`는 다음 행동을 알려 주는 한 문장, `retryable`은 같은 요청을 그대로 다시 보내도 되는지, `next_action`은 `check_state`/`retry`/`fix_params`/`host_repair`/`host_connect`/`host_doctor`/`host_add_force`/`human_release` 같은 다음 단계 이름이다. 봉투의 `next_action`은 따로 정하지 않으면 `error.next_action`과 같다.
+
 ## 3. 메서드
 
 ### 호스트·연결
 | 메서드 | 파라미터 | 결과 |
 |---|---|---|
 | `host.list` | — | `hosts`: [{`host_id`, `name`, `os`, `arch`, `address`, `state`(연결 상태), `caps`, `session`, `owner`, `last_seen`}] |
-| `host.add` | `name`, `ssh`(별칭), `address`(선택), `port` | 설치·페어링 job(진행 이벤트 `host.install.progress`) |
+| `host.add` | `name`, `ssh`(별칭), `address`(선택), `port`(선택, 기본 47600: 에이전트가 듣는 UDP 포트이자 방화벽 규칙이 여는 포트), `force`(선택) | 설치·페어링 job(진행 이벤트 `host.install.progress`) |
+| `host.repair` | `host_id` | 저장된 `port`로 다시 설치·페어링하는 job |
 | `host.remove` | `host_id`, `uninstall`(bool) | — |
 | `host.doctor` | `host_id` | 항목별 `checks`: [{`id`, `status`(`pass`/`fail`/`warn`/`skip`), `detail`, `fix`}] |
 | `host.connect` / `host.disconnect` | `host_id` | 연결 상태 |
@@ -70,31 +73,53 @@
 ### 명령·터미널·프로세스
 | 메서드 | 결과 |
 |---|---|
-| `exec.run{host_id, argv|cmd, shell, cwd, env, stdin, timeout_ms}` | 봉투 + `code`, `stdout`, `stderr` (큰 출력은 artifact) |
-| `exec.start{…}` | 봉투(job) |
+| `exec.run{host_id, argv|cmd, shell, cwd, env, stdin, timeout_ms}` | 봉투 + `code`, `stdout`, `stderr`, `timed_out`(시간 초과로 끝냈으면 true), `truncated`(스트림마다 끝 200000바이트만 남겼으면 true), `killed?`(§7) (큰 출력은 artifact) |
+| `exec.start{…, timeout_ms?}` | 봉투(job). `timeout_ms`는 데몬이 job을 만든 시각부터 잰다. 넘으면 `jobs.cancel`과 같은 길로 프로세스를 끝내고 job을 `failed` + `TIMEOUT`(`result.timed_out:true`)으로 끝낸다. 그때까지의 출력은 `jobs.output`으로 읽을 수 있다. 데몬이 다시 시작해도 남은 시간을 이어 재고, 연결이 끊긴 동안 시간이 다 된 job은 다시 연결될 때 끝낸다 |
 | `jobs.list{host_id?, kind?, status?}` / `jobs.get{job_id}` / `jobs.cancel{job_id}` | job 목록·상세 |
 | `jobs.output{job_id, cursor}` | `chunks`, `next_cursor`, `state` |
 | `proc.list` / `proc.kill` / `app.launch` | 에이전트 op와 동일 + 봉투 |
-| `pty.open{host_id, shell, cols, rows}` | 봉투(job, kind `pty`) + `pty_id`. `shell`은 `powershell`/`cmd`/`pwsh`(`caps.pty.shells`에 있는 것). 이후 `stream.attach{kind:"pty", pty_id}`. 셸 목록은 `jobs.list{host_id, kind:"pty", status:"running"}`, 끝내기는 `jobs.cancel{job_id}`(봉투 `cancelled`; 셸이 먼저 끝났으면 `succeeded`). pty job의 `result`는 `{shell, pid, client_name?}` |
+| `pty.open{host_id, shell?, cols?, rows?}` | 봉투(job, kind `pty`) + `pty_id` + `job`(Job). `shell`은 `powershell`/`cmd`/`pwsh`(`caps.pty.shells`에 있는 것, Windows 밖 PC는 `sh`), 생략하면 `caps.pty.shells`의 첫 셸. `cols`·`rows`는 함께 1–1000(둘 다 생략하면 80×24). 이후 `stream.attach{kind:"pty", pty_id}`. 셸 목록은 `jobs.list{host_id, kind:"pty", status:"running"}`, 끝내기는 `jobs.cancel{job_id}`(봉투 `cancelled`; 셸이 먼저 끝났으면 `succeeded`). pty job의 `result`는 `{shell, pid, client_name?}`(§5) |
 
 ### 파일
 | 메서드 | 결과 |
 |---|---|
-| `files.list{host_id, path}` / `files.stat` / `files.read{path, offset, length}` / `files.write` | 원격 파일 작업 |
-| `files.copy` / `files.move` / `files.rename` / `files.mkdir` / `files.trash` / `files.delete{permanent:true}` | 봉투 |
+| `files.list{host_id, path, recursive?, cursor?, limit?}` | `{host_id, path(실제 경로), entries:[FileEntry], total, next_cursor?, truncated, skipped?}` — 페이지 규칙은 §8 |
+| `files.stat{host_id, path, sha256?}` | `{host_id, exists, path, name, dir, size, link, mtime?, owner?, sha256?, locked?}` — 없는 경로는 `exists:false` |
+| `files.read{host_id, path, offset, length}` | `{host_id, path, data(base64), size(파일 전체), eof, encoding?}` |
+| `files.write` | 봉투 + `size` |
+| `files.copy{host_id, from, to, on_conflict?, recursive?}` | 봉투 + `path`(복사본의 실제 경로), `copied`(파일 수), `outcome`(`written`/`skipped`/`renamed`). `on_conflict`는 `fail`(기본)/`replace`/`skip`/`rename`, 규칙은 [protocol.md §3.1](protocol.md#31-op-목록) `fs.copy` |
+| `files.trash{host_id, path}` | 봉투 + `trashed`(없는 경로면 false). 휴지통이 받지 않는 항목은 옮기지 않고 `failed` + `CAPABILITY_UNSUPPORTED`(영구 삭제로 대신하지 않는다. 영구 삭제는 `files.delete{permanent:true}`). 셸이 성공을 보고했는데 휴지통에 항목이 없으면 `failed` + `INTERNAL` |
+| `files.hash{host_id, path, offset?, length?}` | 봉투 + `sha256`, `offset`, `length`(읽은 바이트 수), `size`(파일 크기). `length` 0이면 끝까지 |
+| `files.rename` / `files.mkdir` / `files.delete{permanent:true}` | 봉투. `files.delete` 결과는 `deleted`. Mac과 PC 사이 이동은 `transfer.start{direction:"move_push"/"move_pull"}`(§8)다 |
 | `transfer.start{direction:"push"|"pull"|"move_push"|"move_pull", host_id, local, remote, on_conflict}` | `transfer_id` |
-| `transfer.list` / `transfer.get{transfer_id}` | 파일별 상태, 진행률, `outcome` |
-| `transfer.cancel` / `transfer.resume` | 상태 |
+| `transfer.list` / `transfer.get{transfer_id}` | 전송 목록(파일 수·바이트 합계) / TransferDetail(파일별 상태) — §8 |
+| `transfer.pause` / `transfer.resume` / `transfer.cancel` | TransferDetail(§8) |
 
 ### 진단
 `diag.system{host_id}`, `diag.services{host_id, name?}`, `diag.events{host_id, …}`, `diag.crashes{host_id, since?}` — 에이전트 op(protocol.md §3.1)와 같은 파라미터·결과 + 봉투, `save:true`면 결과 JSON을 artifact로 저장해 `artifact_id`를 붙인다. 크래시 덤프 받기는 `transfer.start{direction:"pull"}`. 프로세스 표는 `proc.list{host_id, name?}` → `procs`(protocol.md §3.1의 확장 필드 포함), 종료는 `proc.kill{host_id, pid, started?, tree?}` → 봉투 + `killed`.
 
+- 결과 필드는 봉투와 같은 객체에 평평하게 들어간다(`diag.system`은 `os`·`computer_name`·`cpu`·`memory`·`disks`·`gpus`·`boot_time`·`uptime_s`, `diag.services`는 `services`, `diag.events`는 `events`·`truncated`, `diag.crashes`는 `dumps`). 읽기라서 `request_id`는 없고, PC가 읽지 못하면 `failed`/`not_started`와 에이전트의 코드다(Windows 밖 PC는 `CAPABILITY_UNSUPPORTED`).
+- 파라미터 문제는 PC에 보내지 않고 JSON-RPC `INVALID_ARGUMENT`다: `host_id` 없음, `diag.events`의 모르는 `log`·`levels`, RFC 3339가 아닌 `since`·`until`, `since`보다 이른 `until`, 1–1000 밖이거나 정수가 아닌 `max`, `diag.crashes`의 RFC 3339가 아닌 `since`, `proc.kill`의 RFC 3339가 아닌 `started`와 `pid` 없이 준 `started`.
+- `save:true`: 성공한 결과를 `kind:"diag"` job(요약 `시스템 정보 저장`·`서비스 목록 저장`·`이벤트 로그 저장 (<로그>)`·`크래시 목록 저장`)의 artifact로 저장한다. artifact는 `kind:"report"`, `mime:"application/json"`, 이름 `diag-system.json`·`diag-services.json`·`diag-events.json`·`diag-crashes.json`이고 내용은 `{schema_version, host_id, method, saved_at, result}`(`result`는 위 결과 필드)다. 봉투의 `job_id`가 그 job, `artifacts`가 그 artifact, `artifact_id`가 그 ID다. job은 바로 `succeeded`로 끝나고 `result`는 `{artifact_id, artifacts}`다. 저장하지 못하면 결과 필드는 그대로 두고 `failed` + `INTERNAL`이다.
+- `proc.list`의 `started_by_deskhand`는 에이전트가 정한다. 그 필드를 보내지 않는 이전 에이전트에서는 데몬이 실행 중인 exec·pty job의 PID와 그 자손으로 정한다.
+
 ### 디버깅
 Chrome DevTools Protocol(CDP) 디버거. 세부 규칙은 [§9](#9-디버깅-세부-계약).
 
+터널(`Tunnel`): `{tunnel_id("tn-…"), host_id, remote_port, local_port, local_address("127.0.0.1:<local_port>"), owner, created_at, connections(지금 열린 연결), total_connections, failed_connections, bytes_to_remote, bytes_from_remote, last_error?}`.
+
+- 이 Mac 쪽은 `127.0.0.1`에만 묶고(`0.0.0.0`·다른 인터페이스 없음) PC 쪽은 에이전트가 `127.0.0.1`·`::1`에만 연결한다. 받은 TCP 연결 하나가 `tunnel` 스트림 하나(protocol.md §2)이고 양쪽 반쪽 닫기를 그대로 전한다. 호스트가 연결돼 있고 에이전트 `caps.tunnel`이 `ready`일 때만 연다: 연결이 없으면 `OFFLINE`, 터널을 모르는 에이전트는 `CAPABILITY_UNSUPPORTED`, `local_port`가 이미 쓰이면 `PORT_CONFLICT`, 포트가 1–65535 밖(`local_port`는 0 허용)이거나 `host_id`가 없으면 `INVALID_ARGUMENT`.
+- `owner`는 `"user"`(이 API로 연 터널) 또는 `"debug:<debug_id>"`(디버그 세션이 연 터널). 디버그 세션의 터널은 그 세션이 `debug.close`·`connection_lost`·실패 정리에서 닫는다. `tunnel.close`는 `owner`가 `user`가 아닌 터널을 `INVALID_ARGUMENT`로 거절한다. 디버거는 `debug.ports`로 받은 PC 포트마다 자기 `owner`로 터널을 열고 자기 터널만 닫는다.
+- 호스트 연결이 끊겨도 리스너는 열려 있다. 그동안 들어온 연결은 바로 닫히고 `failed_connections`와 `last_error`에 이유가 남으며, 연결이 돌아오면 같은 포트로 다시 쓸 수 있다. 이미 열려 있던 연결은 호스트 연결과 함께 끊긴다. 호스트를 제거하거나(`host.remove`) 데몬이 끝나면 그 터널이 닫힌다. 데몬을 다시 시작해도 터널은 이어지지 않는다.
+- 한도: 호스트마다 터널 32개(넘으면 `tunnel.open`이 `INVALID_ARGUMENT`), 터널마다 동시 연결 128개, 호스트 전체 터널 스트림 256개. 넘어서 들어온 연결은 바로 닫히고 `failed_connections`와 `last_error`에 남는다. 한쪽 방향이 끝난 연결은 반대 방향이 2분 동안 바이트를 나르지 않으면 닫힌다(양쪽이 열려 있으면 오래 놀아도 유지된다).
+- PC의 포트에 받는 프로그램이 없으면 터널은 열리지만 그 포트로 들어온 연결이 바로 닫히고 `last_error`에 이유가 남는다.
+- 사람이 쓰는 CLI는 `deskhand tunnel <호스트> <포트> [--local P]`(실행하는 동안 열려 있고 Ctrl-C로 닫음), `deskhand tunnel list [호스트]`, `deskhand tunnel close <로컬포트|터널ID>`다. MCP는 `tunnel_open`·`tunnel_close`·`tunnel_list`.
+
 | 메서드 | 결과 |
 |---|---|
-| `tunnel.open{host_id, remote_port}` → `local_port` / `tunnel.close{local_port}` / `tunnel.list{host_id?}` | |
+| `tunnel.open{host_id, remote_port, local_port?}` | Tunnel(아래) — 이 Mac의 `127.0.0.1:local_port`(생략하면 빈 포트)에서 받아 PC의 `127.0.0.1:remote_port`로 잇는다 |
+| `tunnel.close{tunnel_id \| local_port}` | `{closed:true, tunnel_id, local_port, remote_port, host_id}` — 리스너와 모든 연결을 닫는다. 없는 터널은 `NOT_FOUND` |
+| `tunnel.list{host_id?}` | `{tunnels:[Tunnel]}`(연 순) |
 | `debug.list{host_id?}` | `{sessions:[DebugSession]}`(만든 순) |
 | `debug.get{debug_id}` | DebugSession |
 | `debug.electron.launch{host_id, path, args?, cwd?, pause_on_start?, breakpoints?, pause_on_exceptions?}` | 봉투(job, kind `debug`) + `session`(DebugSession). `breakpoints`는 [BreakpointSpec]이다(거는 시점은 §9 launch) |
@@ -116,11 +141,16 @@ Chrome DevTools Protocol(CDP) 디버거. 세부 규칙은 [§9](#9-디버깅-세
 | `debug.close{debug_id, keep_process?}` | 봉투 + `session`(DebugSession, `state:"closed"`) + `inspector_left_open?` |
 
 ### QA·산출물·기록
+QA 시나리오 실행기. 세부 규칙은 [§10](#10-qa-세부-계약).
+
 | 메서드 | 결과 |
 |---|---|
-| `qa.run{host_id, scenario_path | scenario}` | 봉투(job) |
-| `qa.get{run_id}` / `qa.list` | 단계별 결과 |
-| `artifacts.list{job_id}` / `artifacts.export{job_id, dir}` | 파일과 manifest |
+| `qa.run{host_id?, scenario_path \| scenario, base_dir?, vars?, timeout_ms?}` | 봉투(job, kind `qa`, `status:"running"`) + `run_id` + `run`(QARun, 단계 포함) |
+| `qa.get{run_id}` | QARun(단계 포함) |
+| `qa.list{host_id?, limit?, cursor?}` | `{runs:[QARun(단계 없음)], next_cursor?}`(최신순) |
+| `qa.cancel{run_id}` | 봉투 + `run`(QARun, 단계 포함) |
+| `artifacts.list{job_id}` | `{job_id, dir, artifacts:[Artifact]}` |
+| `artifacts.export{job_id, dir}` | `{job_id, dir(만든 폴더), files, bytes, manifest?}` |
 | `timeline.list{host_id, since, limit}` | 사람·AI 동작 기록 |
 
 ## 4. 스트림 연결 (`stream.attach`)
@@ -134,7 +164,12 @@ Chrome DevTools Protocol(CDP) 디버거. 세부 규칙은 [§9](#9-디버깅-세
 - 사람 입력(`0x41`)의 `gen`은 데몬이 현재 writer generation으로 덮어쓴다. 앱은 0을 보내도 된다.
 - 단축키: 화면 입력을 잡고 있어도 ⌘Q·⌘H·⌘Tab·⌘⇧.·⌘1–⌘7·⌘⌥0·⌘K·⌘,는 Mac에 남는다(설정 "시스템 단축키도 원격으로 보내기"로 ⌘Q·⌘H·⌘Tab만 원격 전달 가능, 기본 끔). 그 밖의 ⌘ 조합은 Cmd↔Ctrl 설정에 따라 원격으로 간다.
 
-`kind:"pty"` (`pty_id` 또는 `job_id`): `0x20`–`0x23` (protocol.md §7과 동일). `pty_id`는 방금 연 셸, `job_id`는 실행 중인 pty job에 다시 붙는다(분리했거나 연결이 끊긴 셸). 붙으면 데몬이 `0x23`{`job`(데몬 job_id), `pid`}을 보내고 이어서 스크롤백을 `0x20`으로 다시 보낸다. 앱은 `0x23`을 받을 때마다 현재 크기를 `0x21`로 보낸다. 끝난 job에 붙으면 `NOT_FOUND`.
+`kind:"pty"` (`pty_id` 또는 `job_id`): `0x20`–`0x23` (protocol.md §7과 동일). `pty_id`는 방금 연 셸, `job_id`는 실행 중인 pty job에 다시 붙는다(분리했거나 연결이 끊긴 셸). 붙으면 데몬이 `0x23`{`job`(데몬 job_id), `pid`}을 보내고 이어서 스크롤백(셸의 마지막 출력 최대 1 MiB, protocol.md §7)을 `0x20`으로 다시 보낸다. 앱은 `0x23`을 받을 때마다 현재 크기를 `0x21`로 보낸다. 끝난 job에 붙으면 `NOT_FOUND`.
+- 성공 응답의 `result`는 `{job_id, pid, host_id}`. 실패는 JSON-RPC 오류다: 없는 job·pty나 끝난 셸 `NOT_FOUND`, PC에 연결돼 있지 않음 `OFFLINE`(`retryable:true` — 다시 연결되면 붙는다), 셸이 아직 열리는 중 `IN_PROGRESS`, `pty_id`와 `job_id`를 함께 주거나 둘 다 없으면 `INVALID_ARGUMENT`.
+- 앱 → 데몬은 `0x20`(입력, 한 프레임 최대 1 MiB)과 `0x21`(`cols`·`rows` 각 1–1000, 범위 밖은 버린다)만 전달되고 다른 종류는 버린다. 데몬 → 앱은 `0x23`, `0x20`, `0x22`다.
+- 셸이 끝나면 `0x22`{`code`} 뒤 데몬이 연결을 닫는다. `0x22` 없이 닫히면(PC 연결 끊김) 셸은 PC에서 계속 돌고 있으니 `job_id`로 다시 붙는다. 앱이 연결을 닫으면(분리) 셸은 계속 돈다. 한 셸에 여러 연결이 함께 붙을 수 있고 출력은 모두에게 간다.
+
+스트림 연결 규칙: `stream.attach`는 `hello` 다음 아무 때나 부를 수 있지만 `events.subscribe`를 부른 연결에서는 `INVALID_ARGUMENT`다. 데몬은 그 연결에서 먼저 받은 요청의 응답을 모두 쓴 뒤 attach를 처리하고, 성공 응답 줄 바로 다음 바이트부터 프레임이다(응답 줄 뒤에 앱이 미리 보낸 바이트도 프레임으로 읽는다). 거절된 attach는 오류 응답만 쓰고 연결은 JSON-RPC 그대로 남는다. 모르는 `kind`는 `INVALID_ARGUMENT`, `kind:"screen"`은 화면 스트림 구현 전까지 `CAPABILITY_UNSUPPORTED`다.
 
 ## 5. 모델
 
@@ -143,15 +178,16 @@ Chrome DevTools Protocol(CDP) 디버거. 세부 규칙은 [§9](#9-디버깅-세
 | 모델 | 필드 |
 |---|---|
 | Host | `host_id`, `name`, `os`, `arch`, `address`, `port`, `ssh_alias`, `state`(연결 상태), `caps`(기능 이름 → Capability), `session?`(SessionInfo), `displays`([DisplayInfo]), `owner`(`none`/`human`/`ai`), `owner_client?`, `agent_version?`, `connection_generation`, `last_seen?` |
-| Capability | `state`(`ready`/`unavailable`/`unsupported`/`needs_user`), `reason?`, `shells?`(`pty` 기능만: 띄울 수 있는 셸 `powershell`/`cmd`/`pwsh`) |
+| Capability | `state`(`ready`/`unavailable`/`unsupported`/`needs_user`), `reason?`, `shells?`(`pty` 기능만: 띄울 수 있는 셸, 첫 항목이 기본. Windows는 `powershell`, `pwsh`(PowerShell 7이 설치돼 있을 때), `cmd` 순서, Windows 밖 PC는 `sh`) |
 | SessionInfo | `session_id`(정수), `user`, `sid?`, `connect_state`(`active`/`connected`/`disconnected`/`other`/`unknown`), `protocol`(`console`/`rdp`/`unknown`), `locked?`(에이전트가 잠금 상태를 보고하지 않으면 없음), `input_desktop`(`Default`/`Winlogon`/`unknown`), `integrity?` |
 | DisplayInfo | `index`, `name`, `adapter`, `x`, `y`, `width`, `height`, `dpi`(정수), `scale`(실수), `primary`, `refresh_hz`(정수) |
 | ControlState | `owner`, `owner_client?`, `gen`(호스트별 제어권 상태가 바뀔 때마다 — owner 또는 ai_paused — 1씩 오르는 값. 클라이언트는 더 큰 gen만 반영한다), `ai_paused` |
 | SessionInspect (`session.inspect` 결과) | SessionInfo의 모든 필드 + ControlState의 모든 필드 + `displays`([DisplayInfo]) + `caps` + `connection_generation` — 한 단계 평평한 객체 |
-| Job | `job_id`, `host_id`, `kind`(`exec`/`transfer`/`qa`/`install`/`debug`/`pty`), `status`(봉투 status 값), `request_id?`, `summary`, `progress?`(0–1), `created_at`, `updated_at`, `finished_at?`, `result?`(객체) |
+| Job | `job_id`, `host_id`, `kind`(`exec`/`transfer`/`qa`/`install`/`debug`/`pty`/`diag`), `status`(봉투 status 값), `request_id?`, `summary`, `progress?`(0–1), `created_at`, `updated_at`, `finished_at?`, `result?`(객체, 명령 출력 `stdout`·`stderr`는 넣지 않는다), `output_bytes?`(데몬이 기록한 stdout·stderr 바이트 수. 출력은 `jobs.output`과 artifact로만 읽는다). `kind:"transfer"` job은 전송 하나를 따른다: `status`는 전송이 `queued`·`running`·`verifying`·`paused`면 `running`(`paused`면 `result.paused:true`), `done`이면 `succeeded`, `failed`·`cancelled`면 그대로이고, `result`는 `{transfer_id, state, outcome?, paused?, error?}`다. `failed`·`cancelled` 전송을 `transfer.resume`하면 job도 다시 `running`(`finished_at` 없음)이 된다. `kind:"pty"` job은 셸 하나를 따른다: 셸이 도는 동안 `running`, 끝나면 종료 코드 0은 `succeeded`·그 밖은 `failed`(`result.code`), `jobs.cancel`로 끝내면 `cancelled`, 열지 못했으면 `failed`, PC 에이전트가 다시 시작돼 셸이 사라졌으면 `unknown`(`result.state:"lost"`, `error.code` `EXECUTION_OUTCOME_UNKNOWN`)이다. `result`는 `{shell, pid, client_name?}`이고 끝나면 `state`·`code`가 더해진다. `summary`는 `PowerShell 터미널`처럼 셸 이름이다. `kind:"qa"` job은 QA 실행 하나를 따른다(§10): 실행 중 `running`, 끝나면 `passed` → `succeeded`, `failed`·`blocked` → `failed`, `cancelled` → `cancelled`, `error` → `unknown`이고, `result`는 `{run_id, status(QARun status), steps_passed, steps_failed, steps_blocked, steps_not_run, report_dir?, error?}`, `summary`는 `QA: <시나리오 이름>`이다. 그 job의 `jobs.cancel`은 `qa.cancel`과 같다 |
 | FileEntry | `name`, `path`, `dir`, `size`, `mtime`, `link`, `hidden?`, `readonly?` |
-| Transfer | `transfer_id`, `host_id`, `direction`(`push`/`pull`/`move_push`/`move_pull`), `local`, `remote`, `on_conflict`, `state`(`queued`/`running`/`paused`/`verifying`/`done`/`failed`/`cancelled`), `bytes_done`, `bytes_total`, `files_done`, `files_total`, `rate_bps`, `outcome?`(`written`/`skipped`/`renamed`/`copied_source_retained`/`partial`/`failed`), `error?`, `files`([TransferFile]), `rev`(전송마다 바뀔 때마다 1씩 오르는 정수 — 클라이언트는 더 큰 rev만 반영), `updated_at` |
-| TransferFile | `rel`, `size`, `bytes_done`, `state`, `outcome?`, `sha256?`, `error?` |
+| Transfer | `transfer_id`, `host_id`, `direction`(`push`/`pull`/`move_push`/`move_pull`), `local`, `remote`, `on_conflict`, `state`(`queued`/`running`/`paused`/`verifying`/`done`/`failed`/`cancelled`), `bytes_done`, `bytes_total`, `files_done`, `files_failed`, `files_total`, `rate_bps`, `outcome?`(`written`/`skipped`/`renamed`/`copied_source_retained`/`partial`/`failed`), `error?`, `rev`(전송마다 바뀔 때마다 1씩 오르는 정수 — 클라이언트는 더 큰 rev만 반영), `updated_at` |
+| TransferDetail | Transfer의 모든 필드 + `files`([TransferFile]) — 한 단계 평평한 객체 |
+| TransferFile | `rel`(폴더 전송은 폴더 안 상대 경로, `/` 구분. 파일 하나는 그 이름), `size`, `bytes_done`, `state`, `outcome?`, `sha256?`, `path?`(반영된 실제 경로 — `rename`이면 바뀐 이름), `error?` |
 | ProcessInfo | protocol.md §3.1 `proc.list` 항목과 같다(`pid`, `ppid`, `name`, `path`, `cmd`, `mem_kb`, `cpu_pct`, `user?`, `started`, `started_by_deskhand`, `self`) |
 | DiagSystem | protocol.md §3.1 `diag.system` 결과와 같다 |
 | EventLogEntry | protocol.md §3.1 `diag.events`의 `events` 항목과 같다(`record_id`, `time`, `level`, `provider`, `event_id`, `message`) |
@@ -170,8 +206,9 @@ Chrome DevTools Protocol(CDP) 디버거. 세부 규칙은 [§9](#9-디버깅-세
 | StackFrame | `function`(익명 함수는 `""`), `script_id?`, `url`, `line`, `column` |
 | DebugScript | `script_id`, `target_id`, `url` |
 | ConsoleEntry | `seq`(세션 안에서 1부터 오르는 정수), `time`, `target_id`, `source`(`console`/`exception`/`browser`), `level`(`debug`/`info`/`log`/`warning`/`error`), `text`, `script_id?`, `url?`, `line?`, `column?`, `stack?`([StackFrame]) |
-| QARun | `run_id`, `host_id`, `name`, `status`(`running`/`passed`/`failed`/`blocked`/`error`), `started_at`, `finished_at?`, `steps_total`, `steps_passed`, `steps_failed`, `steps_blocked`, `report_dir?`, `steps`([QAStep], `qa.get`에서만) |
-| QAStep | `index`, `name`, `action`, `status`(`pass`/`fail`/`blocked`/`not_run`), `started_at?`, `duration_ms?`, `message?`, `artifacts`([Artifact]) |
+| QARun | `run_id`(`q-…`), `job_id`, `host_id`, `name`(시나리오 `name`), `scenario_path?`(이 Mac의 시나리오 파일 절대 경로, 글로 준 시나리오는 없음), `status`(`running`/`passed`/`failed`/`blocked`/`cancelled`/`error`), `rev`(실행마다 바뀔 때마다 1씩 오르는 정수, 데몬을 다시 시작해도 줄지 않는다 — 클라이언트는 더 큰 rev만 반영), `started_at`, `updated_at`, `finished_at?`, `steps_total`, `steps_passed`, `steps_failed`, `steps_blocked`, `steps_not_run`(진행 중에는 아직 끝나지 않은 단계가 이 넷 어디에도 들지 않는다), `current_step?`(실행 중인 단계의 `index`), `cancel_requested`(bool), `error?`({`code`, `message`} — 실행 전체를 멈춘 이유: 시간 초과 `TIMEOUT`, 데몬 재시작 `EXECUTION_OUTCOME_UNKNOWN`), `unsupported`([{`action`, `code`, `reason`}] — 이 PC·데몬이 할 수 없어 `blocked`가 된 단계 종류, 종류마다 한 번), `report_dir?`(끝난 뒤 결과 묶음 폴더), `report?`{`json`, `md`, `html`, `manifest`}(결과 묶음 파일의 절대 경로), `steps`([QAStep] — `qa.run`·`qa.get`·`qa.cancel`에만 있다) |
+| QAStep | `index`(1부터, setup·steps·teardown을 이은 실행 순서), `phase`(`setup`/`steps`/`teardown`), `name`, `action`(단계 종류, §10), `line`(시나리오 파일의 줄), `params`(치환 뒤 단계 값, `secret_` 변수는 `***`), `optional`, `continue_on_fail`, `status`(`pending`/`running`/`pass`/`fail`/`blocked`/`not_run` — 실행이 끝나면 `pending`·`running`은 남지 않는다), `started_at?`, `duration_ms?`, `message?`(사람이 읽는 한 줄), `error?`({`code`, `message`}), `assertions`([QAAssertion]), `result?`(종류별 결과 객체, §10), `evidence`([Artifact]) |
+| QAAssertion | `kind`(§10), `expected`, `actual`(문자열은 최대 2000자, 넘으면 `…`), `passed` |
 | TimelineEntry | `seq`, `ts`, `host_id`, `actor`(`human`/`ai`/`system`), `client_id?`, `client_name?`, `kind`(`input`/`exec`/`file`/`control`/`qa`/`debug`/`connection`/`install`), `summary`, `outcome`(`ok`/`failed`/`unknown`/`denied`), `job_id?`, `artifacts`([Artifact]) |
 | Artifact | `artifact_id`, `job_id?`, `kind`(`screenshot`/`ui_tree`/`log`/`file`/`report`/`trace`), `name`, `path`, `size`, `mime`, `sha256`, `created_at` |
 
@@ -194,7 +231,8 @@ Chrome DevTools Protocol(CDP) 디버거. 세부 규칙은 [§9](#9-디버깅-세
 | `control.changed` | ControlState 필드 |
 | `timeline.appended` | `entry`(TimelineEntry) |
 | `job.updated` | `job`(Job) |
-| `transfer.updated` | `transfer`(Transfer) |
+| `transfer.updated` | `transfer`(Transfer — 파일 목록 없음), `changed_files?`([TransferFile] — 앞 이벤트 뒤 `state`·`outcome`·`path`·`error`가 바뀐 파일. 진행 바이트만 바뀐 파일은 넣지 않는다) |
+| `events.dropped` | `count`(이 연결이 읽지 못해 버린 이벤트 수). `seq`는 0이다. 받으면 필요한 상태를 `host.list`·`jobs.list` 등으로 다시 읽는다 |
 | `debug.session_changed` | `debug_id`, `session`(DebugSession) — 세션이 생겼을 때, `state`·`breakpoints_active`·`pause_on_exceptions`·`main_unavailable_reason`·`renderer_unavailable_reason`이 바뀌었을 때 |
 | `debug.target_changed` | `debug_id`, `target`(DebugTarget), `removed`(bool), `rev`(바뀐 뒤 세션 `rev`) — 대상이 생기거나 바뀌거나(`title`·`url`·`attached`·`pause_pending`) 사라졌을 때 |
 | `debug.breakpoint_changed` | `debug_id`, `breakpoint`(Breakpoint), `removed`(bool), `error?`{`code`, `message`} — 만들기·바꾸기·위치 확정(`Debugger.breakpointResolved`)·지우기, 처음 붙는 대상이 거부해 지운 경우 `error` |
@@ -203,33 +241,46 @@ Chrome DevTools Protocol(CDP) 디버거. 세부 규칙은 [§9](#9-디버깅-세
 | `debug.console` | `debug_id`, `entry`(ConsoleEntry) |
 | `debug.console_cleared` | `debug_id`, `through_seq` |
 | `debug.closed` | `debug_id`, `reason`(`requested`/`process_exited`/`connection_lost`), `exit_code?`, `rev` |
+| `qa.updated` | `run`(QARun — `steps` 없음), `step?`(이번에 바뀐 QAStep 하나). 실행이 시작할 때, 단계가 시작하고 끝날 때, 취소를 받았을 때, 실행이 끝나 결과 묶음을 쓴 뒤에 나간다. `run.rev`가 이벤트마다 1씩 오른다 |
 
 - `timeline.list{host_id, since?, limit?}` 결과: `{entries: [TimelineEntry], next_cursor?}`(최신순).
-- `host.doctor` 항목 `id`: `ssh_reachable`, `agent_version`, `quic_connect`, `fingerprint`, `session`, `firewall_rule`.
+- `host.doctor` 항목 `id`: `ssh_reachable`, `agent_version`, `quic_connect`, `fingerprint`, `session`, `firewall_rule`(규칙이 꺼져 있거나 호스트 `port`가 아닌 포트를 열면 `warn`).
 
 ## 7. 오류와 결과 규칙
 
-- **요청 문제는 JSON-RPC 오류**: 잘못되거나 빠진 파라미터, 모르는 호스트·job·메서드, `permanent:true` 없는 `files.delete`. 읽기 메서드(`files.list/stat/read`, `proc.list`, `jobs.*`, `session.inspect`, `host.*`, `debug.list/get/state/variables/scripts/source/console`)의 실패도 JSON-RPC 오류다.
-- **원격에서 시도한 동작은 항상 봉투**(§2): 오프라인·차단된 호스트는 `status:"failed"`, `action:{executed:false, outcome:"not_started"}`, `error.code` `OFFLINE`/`AUTH_REQUIRED`. 에이전트가 거절하면 `failed`/`not_started`와 에이전트의 코드. 응답을 잃으면 `status:"unknown"`, `action:{executed:null, outcome:"unknown"}`, `EXECUTION_OUTCOME_UNKNOWN`(또는 `TIMEOUT`), `next_action:"check_state"`.
-- `exec.run`의 0이 아닌 종료 코드는 `status:"failed"`, `error:null`, `code`에 종료 코드. 명령 시간 초과는 `failed` + `TIMEOUT`.
-- `host.add`/`host.repair`는 동기 호출이다(진행은 `host.install.progress` 이벤트). 결과는 봉투 + `host`(Host) + `job`(Job, kind `install`). 이미 페어링된 PC는 봉투 `failed` + `INVALID_ARGUMENT` + `next_action:"host_repair"`. 같은 이름 중복은 JSON-RPC `INVALID_ARGUMENT`.
+- **요청 문제는 JSON-RPC 오류**: 잘못되거나 빠진 파라미터, 모르는 호스트·job·메서드, `permanent:true` 없는 `files.delete`. 읽기 메서드(`files.list/stat/read`, `proc.list`, `jobs.*`, `session.inspect`, `host.*`, `debug.list/get/state/variables/scripts/source/console`, `qa.get/list`, `artifacts.list`)의 실패도 JSON-RPC 오류다.
+- **원격에서 시도한 동작은 항상 봉투**(§2): 오프라인·차단된 호스트는 `status:"failed"`, `action:{executed:false, outcome:"not_started"}`, `error.code` `OFFLINE`/`AUTH_REQUIRED`. 에이전트가 거절하면 `failed`/`not_started`와 에이전트의 코드. `CAPABILITY_UNSUPPORTED`의 `next_action`은 에이전트가 op를 모를 때만 `host_repair`다. 응답을 잃으면 `status:"unknown"`, `action:{executed:null, outcome:"unknown"}`, `EXECUTION_OUTCOME_UNKNOWN`(또는 `TIMEOUT`), `next_action:"check_state"`.
+- `exec.run`의 0이 아닌 종료 코드는 `status:"failed"`, `error:null`, `code`에 종료 코드. 명령 시간 초과는 `failed` + `TIMEOUT`. 실행 중에 PC와의 연결이 끊겨 에이전트가 명령을 끝냈으면(재연결 뒤 `req.status`로 확인) `failed` + `OFFLINE` + `next_action:"check_state"`, `killed:"connection_closed"`, `code:-1`이다. 명령이 일부만 실행됐을 수 있다.
+- `host.add`/`host.repair`는 동기 호출이다(진행은 `host.install.progress` 이벤트). 결과는 봉투 + `host`(Host) + `job`(Job, kind `install`). 이미 페어링된 PC에 `force` 없는 `host.add`는 봉투 `failed` + `INVALID_ARGUMENT` + `next_action:"host_add_force"`(오류 문장에 `deskhand host add <이름> --ssh <별칭> --force`)이고, `host.add{force:true}`는 그 PC를 새 에이전트 키로 다시 페어링하며, `host.remove{uninstall:true}`는 PC의 에이전트 키·설정·데이터까지 지운다(`uninstall --purge`). 같은 이름 중복은 JSON-RPC `INVALID_ARGUMENT`.
 - `host.connect`/`host.disconnect` 결과는 Host. `host.remove` 결과 `{host_id, removed, uninstalled}`. `host.doctor` 결과 `{host_id, checks}`.
-- `jobs.list` → `{jobs}`, `jobs.get` → Job, `jobs.cancel` → 봉투(`cancelled`) + `job`, `jobs.output{job_id, cursor?}` → `{chunks:[{stream:"stdout"|"stderr", data}], next_cursor, state, status, code?, dropped?}` (`next_cursor`는 `"<out>:<err>"` 바이트 위치, 끝났으면 `"end"`).
+- `pty.open`이 셸을 열지 못하면 봉투 `failed`/`not_started` + `pty_id:null`이다: PC가 `pty`를 지원하지 않거나 그 셸이 없음 `CAPABILITY_UNSUPPORTED`, 오프라인 `OFFLINE`, 에이전트 거절은 그 코드. 셸을 여는 사이 연결이 끊기면 데몬이 다시 연결해 `pty.list`의 `rid`로 확인한다: 열렸으면 `running`, 같은 에이전트 실행에서 없으면 `failed` + `OFFLINE`(`retryable:true`), 확인하지 못하면 `unknown` + `EXECUTION_OUTCOME_UNKNOWN`(`next_action:"check_state"`). 데몬은 셸 시작을 다시 보내지 않는다. PC가 ready가 될 때마다 데몬은 `pty.list`를 한 번 불러 그 PC의 실행 중 pty job 가운데 끝난 셸은 종료 코드로, 목록에 없는 셸은 `unknown`(`result.state:"lost"`)으로 끝낸다.
+- `jobs.list` → `{jobs}`, `jobs.get` → Job, `jobs.cancel` → 봉투(`cancelled`) + `job`(pty job은 셸이 이미 끝났으면 봉투 `succeeded`), `jobs.output{job_id, cursor?}` → `{chunks:[{stream:"stdout"|"stderr", data}], next_cursor, state, status, code?, dropped?, timed_out?, error?}`(`timed_out`·`error`는 끝난 job의 결과에 있을 때 `"end"` 쪽에 붙는다) (`next_cursor`는 `"<out>:<err>"` 바이트 위치. 프로세스가 끝나고 출력을 모두 돌려준 뒤에만 `"end"`다. 프로세스가 끝난 뒤에도 출력이 남아 있으면 `state:"exited"`인 채로 바이트 위치를 계속 주므로, 클라이언트는 `"end"`가 나올 때까지 읽는다. exec job이 아닌 job은 끝나면 출력 없이 `"end"`).
+- 데몬이 시작할 때 끝나지 않았고 원격 job id가 없는 job(진행 중이던 `exec.run`, 응답 전의 `exec.start`, `install`)은 `status:"unknown"`(`result.state:"interrupted"`, `error.code` `EXECUTION_OUTCOME_UNKNOWN`, `next_action:"check_state"`)으로 끝내고 `job.updated`와 행위자 `system`의 타임라인 항목을 남긴다. 호스트가 ready가 될 때마다 데몬은 `exec.list`를 한 번 불러 그 호스트의 실행 중 exec job 가운데 에이전트가 `exited`로 보고한 것은 종료 코드로, `lost`이거나 목록에 없는 것은 `unknown`(`result.state:"lost"`)으로 끝낸다.
 - `timeline.list`는 `cursor`(이전 결과의 `next_cursor`, seq)도 받는다. `since`는 RFC 3339. 행위자: `mcp` 클라이언트 → `ai`, `app`/`cli` → `human`, 데몬 자신 → `system`.
 - Host에는 준비되지 않은 이유 `reason?`이 있다. `hello` 결과 `{client_id, daemon_version, api_version}`, `events.subscribe` 결과 `{subscribed, host_id, kinds}`.
 - 봉투의 `session_id`는 알면 `s-<host_id>-<session_id>`, 모르면 null.
 
 ## 8. 파일·전송 세부 계약
 
-- `files.list{host_id, path, cursor?, limit?}` → `{entries:[FileEntry], next_cursor?, total?, truncated?}`. `limit` 기본 500·최대 5000, `cursor`는 이전 결과의 `next_cursor`(불투명 문자열). 에이전트 한 번 목록이 5,000개를 넘으면 `truncated:true`.
+- `files.list{host_id, path, cursor?, limit?}` → `{entries:[FileEntry], next_cursor?, total?, truncated?}`. `limit` 기본 500·최대 5000, `cursor`는 이전 결과의 `next_cursor`(불투명 문자열). 에이전트 한 번 목록이 5,000개를 넘으면 `truncated:true`. 항목은 폴더가 먼저, 그다음 이름(대소문자 무시) 순이고, `total`은 에이전트가 돌려준 전체 항목 수(항상 있다), `next_cursor`는 다음 페이지가 있을 때만 있다. `limit`은 0(또는 생략)이면 기본값 500, 5000 초과·음수나 읽을 수 없는 `cursor`는 JSON-RPC `INVALID_ARGUMENT`다. 데몬은 페이지마다 에이전트에 목록을 다시 요청해 `cursor` 뒤의 항목을 고른다: 폴더가 바뀌어도 `cursor` 뒤에 남은 항목은 중복도 누락도 없이 나오고, `cursor` 앞에 새로 생긴 항목은 보이지 않으며, `total`은 호출마다 달라질 수 있다. `truncated:true`이면 에이전트가 이름순(바이트 순서)으로 앞의 5,000개만 돌려준 것이라 페이지는 그 부분집합 안에서만 이어진다.
 - `files.stat{host_id, path}` → FileEntry, 없으면 JSON-RPC `NOT_FOUND`.
-- `files.mkdir{host_id, path}`, `files.rename{host_id, from, to}`(전체 경로), `files.copy{host_id, from, to, on_conflict, recursive}`, `files.trash{host_id, path}`, `files.delete{host_id, path, permanent:true}`, `files.hash{host_id, path, offset?, length?}` → 모두 §2 봉투(`files.hash`는 봉투 + `sha256`).
-- `transfer.start{direction, host_id, local, remote, on_conflict}`: `local`·`remote`는 옮길 항목의 전체 경로(대상 폴더가 아님). 결과는 봉투 + `transfer_id`. 폴더는 `on_conflict`를 폴더 안 파일마다 적용한다.
-- `transfer.list{host_id?}` → `{transfers:[Transfer]}`(최신순). `transfer.get{transfer_id}` → Transfer.
-- `transfer.pause{transfer_id}` → Transfer(`paused`). `transfer.resume{transfer_id}`는 `paused`·`failed`·`cancelled` 모두 다시 시작한다 → Transfer. `transfer.cancel{transfer_id}` → Transfer(`cancelled`, 끝난 파일은 남긴다).
+- `files.mkdir{host_id, path}`, `files.rename{host_id, from, to}`(전체 경로), `files.copy{host_id, from, to, on_conflict, recursive}`, `files.trash{host_id, path}`, `files.delete{host_id, path, permanent:true}`, `files.hash{host_id, path, offset?, length?}` → 모두 §2 봉투(`files.hash`는 봉투 + `sha256`·`offset`·`length`·`size`).
+- `transfer.start{direction, host_id, local, remote, on_conflict}`: `local`·`remote`는 옮길 항목의 전체 경로(대상 폴더가 아님). 결과는 봉투 + `transfer_id`이고 봉투 `job_id`는 그 전송을 따르는 job(§5 Job `kind:"transfer"`)이다. 그 job의 `jobs.cancel`은 `transfer.cancel`과 같다. 폴더는 `on_conflict`를 폴더 안 파일마다 적용한다. `remote`에 `.`이나 `..` 원소가 있으면 JSON-RPC `INVALID_ARGUMENT`다.
+- `transfer.list{host_id?}` → `{transfers:[Transfer]}`(최신순, 파일 목록 없이 `files_total`·`files_done`·`files_failed`·`bytes_total`·`bytes_done`). `transfer.get{transfer_id}` → TransferDetail(파일 목록 포함). 앱은 목록과 이벤트로 합계를 보이고, 파일 목록은 `transfer.get`으로 읽은 뒤 `transfer.updated`의 `changed_files`를 `rel`로 맞춰 반영한다.
+- `transfer.pause{transfer_id}` → TransferDetail(`paused`). `transfer.resume{transfer_id}`는 `paused`·`failed`·`cancelled` 모두 다시 시작한다 → TransferDetail. `transfer.cancel{transfer_id}` → TransferDetail(`cancelled`, 끝난 파일은 남긴다).
 - `Transfer.rate_bps`와 진행 값은 **초당 바이트**다(비트 아님).
 - `app.launch{host_id, path, args?, cwd?, wait_window_ms?}` → 봉투 + `pid`, `window?`.
 - `Transfer.error`·`TransferFile.error`는 `{code, message}` 객체다(§2 error 객체와 같은 형태, `retryable`·`next_action`은 선택).
+- `transfer.start`는 원본이 없거나, 대상 폴더(push는 `remote`의 폴더, pull은 `local`의 폴더)가 없거나, PC가 응답하지 않으면 전송을 만들지 않고 봉투 `failed`/`not_started` + `transfer_id:null`이다. 시작하면 봉투 `status:"running"`이고 전송은 `queued`에서 시작한다. 링크인 원본은 `INVALID_ARGUMENT`다.
+- `queued`는 PC 연결을 기다리는 상태다(전송 중에 연결이 끊겨도 `queued`로 돌아가 다시 연결되면 받은 바이트부터 잇는다). 데몬이 다시 시작하면 `queued`·`running`·`verifying` 전송은 PC가 연결될 때 이어지고, `paused` 전송은 `transfer.resume`까지 그대로다. 전송의 `verifying`은 이동의 원본 정리 중, 파일의 `verifying`은 검증·반영 중이다.
+- `transfer.updated`는 파일 진행·파일 상태가 바뀌면 전송마다 250 ms에 많아야 한 번, 전송 상태가 바뀌면 바로 나간다.
+- 원본 지문은 계획 때 잡은 크기·수정 시각(push는 sha256도)이다. 전송 중에 원본이 바뀌면 그 파일만 `TRANSFER_CONFLICT`로 실패하고 대상은 그대로다. `transfer.resume`은 실패한 파일의 지문을 다시 잡는다.
+- 전송 `outcome`: 파일이 모두 같은 결과면 그 값, 섞이면 `written`. 일부 파일이 실패하면 `state:"failed"` + `partial`, 모두 실패하면 `failed`. `transfer.resume`은 끝난 파일을 다시 보내지 않는다.
+- 이동(`move_*`)은 모든 파일이 반영·검증된 뒤에만 원본을 지운다: PC의 원본은 휴지통(`fs.trash`)으로, 이 Mac의 원본은 지운다. 폴더는 원본 폴더의 항목이 계획 때와 같을 때만 통째로 지운다. 원본을 남기면(삭제 실패, 바뀌거나 새로 생긴 항목, 건너뛴 파일) `state:"done"` + `outcome:"copied_source_retained"` + `error`(남긴 이유)다.
+- 이동의 원본 행방은 전송 상태에서 정해진다: `done`이고 `outcome`이 `copied_source_retained`가 아니면 원본이 정리됐고(`move_pull` 휴지통, `move_push` 삭제), 그 밖의 끝난 상태(`failed`·`cancelled`·`copied_source_retained`)는 원본이 남아 있다. CLI `--json`과 MCP 구조화 결과는 이를 `source`(`trashed`/`deleted`/`retained`, 진행 중은 `pending`, 이동이 아니면 없음)로 덧붙인다. 데몬 응답에는 이 필드가 없다.
+- 취소하면 끝난 파일은 남고 나머지 파일은 `cancelled`이며 임시 파일은 지운다(PC가 연결돼 있지 않으면 다음 연결 때). `transfer.pause`는 끝난 전송에, `transfer.resume`·`transfer.cancel`은 `done` 전송에 JSON-RPC `INVALID_ARGUMENT`이고(멈추는 사이에 그렇게 끝난 전송도 같다), 이미 그 상태인 전송은 그대로 돌려준다. 이동이 받은 쪽 검증을 마치고 원본을 정리하기 시작하면 `transfer.pause`·`transfer.cancel`은 `INVALID_ARGUMENT`("원본 정리 중")이고 그 이동은 끝까지 간다.
+- 끝난(`done`·`failed`·`cancelled`) 지 30일이 지났고 PC에 임시 파일이 남지 않은 전송은 데몬이 시작할 때와 24시간마다 파일 기록·job과 함께 지운다.
+- pull은 이 Mac의 `<대상>.deskhand-part-<transfer_id>`(숨김 플래그)에 받아 PC가 계산한 sha256과 맞춘 뒤 이름을 바꾼다. 충돌 정책과 `이름 (1).확장자` 규칙은 PC 쪽(protocol.md §3.1)과 같다. 옮기는 메타데이터는 내용과 수정 시각뿐이다. 폴더 안의 링크·특수 파일은 옮기지 않고 그 항목만 `INVALID_ARGUMENT`로 실패한다. 폴더 안 이름에 빈 원소·`.`·`..`·`\`가 있거나, Windows로 보낼 때 Windows가 받지 못하는 이름(`< > : " | ? *`·제어 문자, 점이나 공백으로 끝남, `CON`·`NUL`·`COM1` 같은 장치 이름 — 확장자가 붙어도)이면 그 항목만 `INVALID_ARGUMENT`이고, Windows로 보낼 때와 대소문자를 가리지 않는 Mac 볼륨으로 받을 때 대소문자만 다른 두 이름은 뒤의 것이 `TRANSFER_CONFLICT`다. PC가 읽지 못한 항목이 있는 폴더의 pull은 `PERMISSION_DENIED`로 실패한다.
 
 ## 9. 디버깅 세부 계약
 
@@ -263,3 +314,88 @@ Chrome DevTools Protocol(CDP) 디버거. 세부 규칙은 [§9](#9-디버깅-세
 - **콘솔 항목**: `source` `console` ← `Runtime.consoleAPICalled`, `exception` ← `Runtime.exceptionThrown`, `browser` ← `Log.entryAdded`. `level`은 CDP `type`에서 `log`/`info`/`debug`/`warning`(`warning`)/`error`로 줄인다(`trace` → `debug`, `assert` 실패 → `error`, `dir`·`dirxml`·`table`·`count`·`timeEnd` → `log`). `text`는 인수 미리보기를 공백으로 이은 것(`%s`·`%d`·`%i`·`%f`·`%o`·`%O` 치환 적용, `%c` 제거, 최대 10,000자). `script_id`·`url`·`line`·`column`은 호출 위치(스택 첫 프레임), `stack`은 최대 20프레임.
 - **닫기**: `debug.close` → 데몬이 CDP 연결과 자기가 연 터널을 닫고, launch 세션이면(`keep_process:true`가 아니면) 자기가 띄운 프로세스 트리를 끝낸다. attach 세션은 프로세스를 두고 연결만 해제한다. PID로 연결하면서 데몬이 켠 Node 검사기는 가능하면 닫고(main 대상에서 `require('node:inspector').close()`), 닫지 못하면 결과에 `inspector_left_open:true`를 싣는다. 결과 뒤 `debug.closed{reason:"requested"}`. 프로세스가 스스로 끝나면 `debug.closed{reason:"process_exited", exit_code?}`. 원격 PC와 연결이 끊기면 세션은 `connection_lost`로 닫히고, 다시 연결되면 데몬이 그 launch 세션이 띄운 프로세스를 끝낸다. 닫힌 세션에 다른 `debug.*`를 부르면 JSON-RPC `NOT_FOUND`.
 - **기록**: launch·attach·중단점·실행 제어·평가·콘솔 지우기·닫기는 timeline `kind:"debug"`로 요청한 클라이언트의 행위자와 함께 남는다. 평가 식은 기록하고 결과 값은 기록하지 않는다.
+
+## 10. QA 세부 계약
+
+데몬이 실행(`run_id`)을 소유한다. 앱을 닫거나 CLI·MCP 연결이 끊겨도 실행은 끝까지 가고, 앱·CLI·MCP가 같은 실행을 본다. 시나리오 예: [docs/examples/qa/fixture-smoke.yaml](examples/qa/fixture-smoke.yaml).
+
+### 시나리오 파일
+
+YAML 1.2의 부분집합이다: 블록 매핑·블록 시퀀스, 흐름 시퀀스 `[a, b]`·흐름 매핑 `{k: v}`(여러 줄 가능), 따옴표 없는 값·작은따옴표(`''`로 `'`)·큰따옴표(`\n` `\t` `\\` `\"` `\uXXXX` 등 이스케이프), 블록 값 `|`·`|-`·`>`·`>-`, `#` 주석, 맨 앞 `---` 하나. 앵커·별칭(`&`·`*`)·태그(`!`)·`?` 키·여러 문서·들여쓰기 탭·같은 키 두 번·모르는 키·모르는 단계 종류는 `<파일>:<줄>: <다음 행동을 알려 주는 문장>`의 `INVALID_ARGUMENT`로 거절한다(글로 준 시나리오의 파일 이름은 `scenario`). 오류는 처음 하나만 알린다. 값은 100단계까지 중첩할 수 있고, 닫히지 않은 `[`·`{`는 그것을 연 줄로 알린다. 단계는 setup·steps·teardown을 합해 1000개까지다. Windows 경로는 따옴표 없이(`C:\qa\app.exe`)나 작은따옴표로 쓴다(큰따옴표 안의 `\`는 이스케이프).
+
+| 최상위 키 | 뜻 |
+|---|---|
+| `name` | 필수. 실행 이름 |
+| `description` | 선택 |
+| `host` | 선택. host_id 또는 이름. `qa.run`의 `host_id`가 우선하고 둘 다 없으면 `INVALID_ARGUMENT` |
+| `vars` | 선택. 이름 → 문자열(숫자·불도 글자 그대로). `qa.run`의 `vars`가 같은 이름을 덮어쓴다 |
+| `timeout_ms` | 선택. setup·steps 전체 제한(teardown 제외). `qa.run`의 `timeout_ms`가 우선 |
+| `setup` / `steps` / `teardown` | 단계 목록. `steps`는 필수이고 하나 이상 |
+
+- **변수**: 모든 문자열 값의 `${이름}`을 실행 전에 바꾼다(키는 바꾸지 않는다). 이름은 `[A-Za-z_][A-Za-z0-9_]*`, `$${`는 글자 `${`. 정의되지 않은 이름은 그 줄의 `INVALID_ARGUMENT`. 미리 정의된 `run_id`(이 실행의 ID)가 있다. 이름이 `secret_`로 시작하는 변수의 값은 `params`·`message`·`assertions`·`result`·텍스트 증거·결과 묶음과 시나리오 오류 문장에서 `***`로 가린다(따옴표·이스케이프·자르기 전에 가린다. 스크린샷 속 화면은 가리지 못한다). 비밀값은 CLI `--var` 대신 `--var-file`로 넘긴다. `exec`에 변수를 넣을 때는 셸이 해석하는 `cmd` 글 대신 `argv` 항목으로 넣는다(값이 셸 명령으로 실행되지 않는다).
+- **경로**: `push`의 `from`이 상대 경로면 시나리오 파일의 폴더(글로 준 시나리오는 `base_dir`, 없으면 `INVALID_ARGUMENT`) 기준이다. `from`이 없으면 실행 전에 `INVALID_ARGUMENT`.
+- **단계**: 매핑 하나에 종류 키 하나와 공통 키 `name?`(없으면 종류와 주요 값으로 만든다), `timeout_ms?`(종류별 기본값, 실행 제한이 더 이르면 그때까지), `continue_on_fail?`(기본 false), `optional?`(기본 false). 종류 키가 없거나 둘 이상이면 `INVALID_ARGUMENT`. 글로 줄여 쓴 `launch`·`wait_window`·`key`·`exec`·`assert_screen_text`의 빈 글, `contains`·`not_contains`·`stdout_contains`·`stderr_contains`의 빈 항목도 `INVALID_ARGUMENT`다.
+- **선택자**(`<선택자>`): `window?`(창 ID `0x…`, 제목 일부, `foreground`. 없으면 현재 창 — 앞의 `launch`·`wait_window`가 찾은 창 —, 그것도 없으면 전경 창), `role?`(UIA 역할 이름, 예 `button`·`edit`·`text`), `name?`(정확히 일치), `name_contains?`(대소문자 무시), `automation_id?`, `index?`(맞는 것 중 0부터). `window` 말고 하나 이상 필요하다. 에이전트 `ui.*` op에는 `window`·`role`·`name`·`nameContains`·`automationId`·`index`로 간다.
+
+| 종류 | 값 | PC에서 하는 일 | 기본 `timeout_ms` | 제어권 확인 | 필요한 caps |
+|---|---|---|---|---|---|
+| `push` | `{from, to, on_conflict?(기본 replace), mkdir?(기본 true)}` | `to`의 폴더를 만들고(`fs.mkdir`) 파일·폴더를 보내(transfer push, job과 전송 기록이 따로 남는다) 끝날 때까지 기다린다 | 600000 | — | `files` |
+| `launch` | 경로, 또는 `{path, args?, cwd?, wait_window_ms?(기본 15000)}` | `app.launch`. 응답의 창이 현재 창이 된다 | 60000 | 예 | `exec` |
+| `wait_window` | 제목 일부, 또는 `{title?, title_contains?, process?, pid?, gone?(기본 false)}`(하나 이상) | `win.list`를 300 ms마다 읽어 맞는 창이 생길 때까지(`gone:true`면 없어질 때까지). 찾은 창이 현재 창이 된다 | 15000 | — | `uia` |
+| `click` | `{element: <선택자>}` 또는 `{x, y, window?}`(창 왼쪽 위 기준 화면 픽셀), `button?`(`left`/`right`/`middle`), `count?`(1·2) | 마우스 입력 | 30000 | 예 | `input` |
+| `type` | 글, 또는 `{text, method?(auto/unicode/paste)}` | 키보드 글자 입력 | 30000 | 예 | `input` |
+| `key` | `ctrl+s` 같은 글, 또는 `{keys}` | 키 입력 | 30000 | 예 | `input` |
+| `ui_act` | `{action, value?, <선택자>}` — `action`은 `invoke`/`toggle`/`expand`/`collapse`/`select`/`set_value`(`value` 필요)/`focus`/`scroll_into_view` | `ui.act` | 30000 | 예 | `uia` |
+| `assert_ui` | `{<선택자>, exists?(count가 없으면 기본 true), text?, text_contains?, text_matches?, enabled?, count?}` | `ui.find`(최대 200개)와, 글 기준이 있으면 `ui.text`. 모두 맞을 때까지 300 ms마다 다시 본다 | 5000 | — | `uia` |
+| `assert_screen_text` | 포함할 글, 또는 `{contains?, not_contains?, matches?, window?}`(`contains`·`not_contains`는 글 또는 글 목록, 하나 이상) | 창의 `ui.tree{filter:"all", max:2000}` 항목(정적 글 포함)의 이름·값(값은 항목마다 앞 200자)을 줄로 이은 글. 맞을 때까지 300 ms마다 | 5000 | — | `uia` |
+| `assert_file` | `{path, exists?(기본 true), contains?, not_contains?, matches?, sha256?, size?}` | `fs.stat`(`sha256`이 있으면 해시 포함)과, 내용 기준이 있으면 `fs.read`(앞 8 MiB, UTF-16LE 파일은 UTF-8로 바꿔 비교). 맞을 때까지 300 ms마다 | 5000 | — | `files` |
+| `exec` | 명령 글(`cmd`, 셸 기본값), 또는 `{argv? \| cmd?, shell?, cwd?, expect_code?(기본 0), stdout_contains?, stderr_contains?}` | `exec.run{timeout_ms}` | 120000 | — | `exec` |
+| `screenshot` | 비움·이름, 또는 `{name?, display?(기본 0), window?, max_width?(기본 1920)}` | `screen.capture{format:"png"}` | 30000 | — | `screen` |
+| `collect` | `{file, max_bytes?(기본 8 MiB, 최대 64 MiB), name?}`, `{events: {log?, since?(기본 실행 시작 시각), until?, levels?, provider?, max?}, name?}`, `{crashes: {since?(기본 실행 시작 시각)}, name?}` 중 하나 | 파일 끝 `max_bytes`(`fs.read`) / `diag.events` / `diag.crashes`를 증거로 저장 | 120000 | — | `files` / `diag` / `diag` |
+| `sleep` | 밀리초 정수, 또는 `{ms}`(최대 600000) | 기다린다 | — | — | — |
+| `close` | 비움·창, 또는 `{window?}` | `win.action{action:"close"}` | 15000 | 예 | `uia` |
+
+- `matches`·`text_matches`는 Go 정규식(RE2) 문법이고 잘못된 식은 실행 전 `INVALID_ARGUMENT`다.
+- 단계 `result`: `push` `{transfer_id, state, files_total, bytes_total, files:[{rel, size, sha256?, path?}](최대 50개)}`, `launch` `{pid, window?}`, `wait_window` `{window?}`, `ui_act` 에이전트 응답(`node`, `gone?`, `pending?`, `unresponsive?`), `exec` `{code, timed_out, truncated}`, `screenshot` `{width, height, method?}`, `collect` `{path?, size?, collected_bytes?, truncated?, count?}`, `close` `{window?}`. 에이전트에 보낸 요청의 `rid`가 있으면 `request_id`가 붙는다.
+- `assertions[].kind`: `wait_window` `window`, `assert_ui` `exists`·`count`·`enabled`·`text`·`text_contains`·`text_matches`, `assert_screen_text` `contains`·`not_contains`·`matches`, `assert_file` `exists`·`size`·`sha256`·`contains`·`not_contains`·`matches`, `exec` `exit_code`·`stdout_contains`·`stderr_contains`. 다시 볼 때마다 마지막으로 본 값으로 바꿔 둔다.
+
+### 실행과 결과
+
+- `qa.run`은 시나리오를 읽고 검사한 뒤 job(kind `qa`)과 실행을 만들고 바로 봉투 `running`으로 답한다. 시나리오 문제·없는 호스트·`scenario_path`와 `scenario`를 함께 주거나 둘 다 없음은 JSON-RPC `INVALID_ARGUMENT`/`NOT_FOUND`다. `scenario_path`는 이 Mac의 절대 경로, `scenario`는 YAML 글(최대 1 MiB), `vars` 값은 문자열·숫자·불, `timeout_ms`는 0 이상. 같은 PC에서 끝나지 않은 실행이 있으면 JSON-RPC `IN_PROGRESS`(`retryable:true`, `next_action:"check_state"`)다. PC에 연결돼 있지 않아도 실행은 시작하고 PC가 필요한 단계가 `blocked`(`OFFLINE`)가 된다.
+- 단계는 setup → steps → teardown 순서로 하나씩 실행한다. 단계 `status`:
+  - `pass`: 기준이 모두 맞았다.
+  - `fail`: 기준이 맞지 않음, PC가 요청을 거절함(`NOT_FOUND`·`INVALID_ARGUMENT`·`PERMISSION_DENIED` 등), 단계 시간 초과(`TIMEOUT`), 명령 종료 코드가 다름.
+  - `blocked`: 할 수 없었다 — 사람이 제어권을 쥠(`CONTROL_HELD_BY_HUMAN`·`CONTROL_PREEMPTED`), 이 PC·데몬이 그 기능을 못 함(`CAPABILITY_UNSUPPORTED`), PC 연결 없음(`OFFLINE`·`AUTH_REQUIRED`), 잠금·보안 데스크톱·권한 상승 필요(`SESSION_LOCKED`·`DISPLAY_UNAVAILABLE`·`ELEVATION_REQUIRED`), 결과를 확인하지 못함(`EXECUTION_OUTCOME_UNKNOWN`), 취소.
+  - `not_run`: 앞 단계 때문에 건너뜀(이유는 `message`).
+- 흐름: `optional`도 `continue_on_fail`도 아닌 단계가 `fail`·`blocked`면 그 뒤의 setup·steps 단계는 `not_run`이다. teardown 단계는 앞의 결과와 상관없이 모두 차례로 실행한다. `optional` 단계는 결과를 그대로 남기지만 흐름과 실행 상태 계산에서 빠진다.
+- 실행 `status`: 취소가 단계를 멈추거나 건너뛰게 했으면 `cancelled`, 데몬이 멈춰 끊겼거나 결과 묶음을 쓰지 못했으면 `error`(`error`에 이유, `report` 없음), 그 밖에는 `optional`이 아닌 단계(teardown 포함) 중 `fail`이 있으면 `failed`, 아니면 `blocked`가 있으면 `blocked`, 아니면 `passed`. 실행 제한(`timeout_ms`)은 setup·steps에만 걸리고 그것들이 끝나면 멈춘다: 넘으면 그때 실행 중인 단계가 `fail`(`TIMEOUT`), 남은 setup·steps는 `not_run`, teardown을 실행하고 실행은 `failed` + `error`(`TIMEOUT`)다. 제한이 지났어도 멈추거나 건너뛴 단계가 없으면 결과는 단계로 정한다.
+- **제어권**: `launch`·`click`·`type`·`key`·`ui_act`·`close`는 단계마다 실행 직전에 제어권(§3 제어권, design §5.1)을 확인한다. 사람이 쥐고 있으면 PC에 아무것도 보내지 않고 `blocked` + `CONTROL_HELD_BY_HUMAN`("사람이 조작 중입니다 …")이다. 실행기는 제어권을 가져오거나 기다리지 않는다. 다른 단계(관찰·확인·명령·파일)는 제어권과 상관없이 실행한다.
+- **기능**: 단계에 필요한 caps(호스트 `caps`, 에이전트가 알린 기능만)가 `ready`가 아니면 PC에 보내지 않고 `blocked` + `CAPABILITY_UNSUPPORTED`(caps의 `reason`)이고 `run.unsupported`에 남는다. 이 데몬은 아직 마우스·키보드 입력을 보내지 못해 `click`·`type`·`key`는 항상 `blocked` + `CAPABILITY_UNSUPPORTED`이고, `screenshot`과 실패 스크린샷은 에이전트의 `screen`이 `ready`일 때만 찍는다.
+- **취소**: `qa.cancel`은 바로 답한다(`run.cancel_requested:true`, 봉투 `running`). 실행 중인 setup·steps 단계의 요청을 멈춰 그 단계는 `blocked`("취소로 멈췄습니다"), 남은 setup·steps는 `not_run`, 그다음 teardown을 실행하고 실행은 `cancelled`, job은 `cancelled`로 끝난다. 첫 `qa.cancel`은 teardown을 멈추지 않는다(teardown 중에 받아도 teardown은 끝까지 가고, 멈춘 단계가 없으면 결과는 단계로 정한다). 첫 취소 뒤 teardown 중에 다시 받은 `qa.cancel`은 teardown도 멈춘다(실행 중인 teardown 단계 `blocked`, 남은 teardown `not_run`, 실행 `cancelled`). 이미 `cancelled`인 실행은 그대로 돌려주고(봉투 `cancelled`), 다른 상태로 끝난 실행은 JSON-RPC `INVALID_ARGUMENT`다. 진행 중 `push`의 전송은 함께 취소한다.
+- **데몬 재시작**: 끝나지 않은 실행은 데몬이 시작할 때 `error` + `error`(`EXECUTION_OUTCOME_UNKNOWN`)로 끝낸다. 실행 중이던 단계는 `blocked`(`EXECUTION_OUTCOME_UNKNOWN`), 남은 단계(teardown 포함)는 `not_run`이고 결과 묶음을 그때 쓴다. 데몬은 단계를 다시 보내지 않는다.
+- `qa.list`: `limit` 기본 50·최대 500(0이면 기본값, 그 밖은 `INVALID_ARGUMENT`), `cursor`는 이전 결과의 `next_cursor`(불투명 문자열), 다음 페이지가 있을 때만 `next_cursor`.
+- `qa.updated`(§6)는 `run`과 바뀐 `step` 하나를 싣는다. 클라이언트는 `run.rev`가 더 클 때만 반영하고 `step`은 `index`로 맞춘다. `events.dropped`를 받았으면 `qa.get`으로 다시 읽는다.
+- 기록: 실행 시작·끝은 timeline `kind:"qa"`(끝 항목의 `artifacts`는 report 파일들), 결과 `outcome`은 `passed` `ok`, `failed`·`cancelled` `failed`, `blocked` `denied`, `error` `unknown`.
+
+### 증거와 결과 묶음
+
+결과 묶음은 `<home>/artifacts/<job_id>/`(`report_dir`)이고, 실행이 끝나면 다음을 쓴다.
+
+```
+report.json    기계 판독 결과
+report.md      Markdown 보고서(한국어)
+report.html    HTML 보고서 한 파일(한국어, 스타일 내장, 스크립트·외부 자원 없음, 이미지는 evidence/… 상대 경로)
+manifest.json  묶음 안 모든 파일(자신 제외)의 sha256
+evidence/      단계 증거
+```
+
+- 증거(`evidence/<NN>-<종류>[-<무엇>].<확장자>`, `NN`은 단계 `index`): `fail`인 단계마다 화면 전체 스크린샷(`-screenshot.png`, `screenshot` kind — `screen` caps가 `ready`일 때), `assert_ui`·`assert_screen_text`가 `fail`이면 그 창의 UI 스냅샷(`-ui-tree.json`, `ui_tree` kind — `ui.tree{filter:"interactive", depth:12, max:300}` 응답), `assert_file` 내용 기준이 `fail`이면 읽은 내용의 끝 64 KiB(`-content.txt`, `log`), `exec`의 비지 않은 stdout·stderr(`-stdout.txt`·`-stderr.txt`, `exec.run`이 돌려준 각 끝 200000바이트, `log`), `screenshot` 단계의 화면(`screenshot`), `collect`가 모은 것(파일은 원래 이름, 로그·텍스트는 `log`, 그 밖은 `file`; 이벤트·크래시 목록은 `report` JSON). 증거는 QAStep `evidence`의 Artifact이고 `artifact_id`는 manifest와 같다.
+- `report.json`: `{schema_version:1, generated_at, run(QARun, steps 포함), scenario:{path?, sha256, source}, vars(secret_ 가림), host:{host_id, name, os, arch, address, agent_version?}, environment?(실행 시작 때 읽은 diag.system 결과 필드, 읽지 못하면 없음), daemon_version}`.
+- `manifest.json`: `{schema_version:1, run_id, job_id, generated_at, files:[{path(묶음 안 상대 경로, / 구분), artifact_id, kind, mime, size, sha256}]}`(경로 순).
+- `artifacts.list{job_id}`: job 폴더에 `manifest.json`이 있으면 그 파일들(`path`는 절대 경로), 없으면 job `result.artifacts`, 그것도 없으면 폴더의 파일(그때 `sha256`을 계산). 모르는 job은 `NOT_FOUND`, 산출물이 없는 job은 빈 목록.
+- `artifacts.export{job_id, dir}`: `dir`은 이 Mac의 있는 폴더 절대 경로(아니면 `INVALID_ARGUMENT`). job 폴더 전체를 `<dir>/<job_id>`(있으면 `<job_id> (1)`…)로 복사하고, manifest가 있는 묶음은 폴더의 파일(manifest 제외)이 manifest 목록과 같아야 하고(빠지거나 더 있으면 복사하지 않고 `HASH_MISMATCH`), 복사본의 sha256이 manifest·Artifact와 다르면 복사본을 지우고 `HASH_MISMATCH`, 산출물이 없는 job은 `NOT_FOUND`다. 결과 `{job_id, dir(만든 폴더), files(파일 수), bytes, manifest?(복사한 manifest.json 경로)}`. 상대 경로 이미지 덕분에 복사한 `report.html`도 그대로 열린다.
+
+### CLI·MCP
+
+- CLI: `deskhand qa run <시나리오.yaml> [--host H] [--var 이름=값]… [--var-file 파일] [--timeout 10m] [--detach] [--json]`은 단계가 끝날 때마다 한 줄씩 보이고 결과와 보고서 경로를 출력한다. 종료 코드 0 `passed`, 1 `failed`·`cancelled`, 2 사용법, 3 `blocked`, 4 `error`·결과 불명. Ctrl-C는 실행을 취소하고(teardown까지 최대 1분 기다림), 한 번 더 누르면 `qa.cancel`을 다시 보내 teardown도 멈춘다. `--detach`는 `run_id`만 출력한다. `deskhand qa list [--host H] [--limit N]`, `deskhand qa get <run_id>`, `deskhand qa report <run_id> [--open]`(`--open`은 report.html을 연다), `deskhand qa cancel <run_id>`. `--var-file`은 한 줄에 `이름=값`, `#` 주석.
+- MCP: `qa_run`(바로 `run_id`·`job_id`와 `next_action:"qa_get"`), `qa_get`, `qa_list`, `qa_cancel`. 짧은 시나리오를 `scenario` 글로 바로 보내 자유 탐색 중의 확인에도 쓴다.
