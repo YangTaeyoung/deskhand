@@ -246,7 +246,7 @@ func (r *runner) execute() {
 			return
 		}
 		if (status == StepFail || status == StepBlocked) && !st.Optional && !st.ContinueOnFail {
-			stop = fmt.Sprintf("%d단계(%s)가 %s여서 실행하지 않았습니다", i+1, st.Name, stepLabel(status))
+			stop = fmt.Sprintf("%d단계(%s)의 결과(%s) 때문에 실행하지 않았습니다", i+1, st.Name, stepLabel(status))
 		}
 	}
 	if r.stopTimer != nil {
