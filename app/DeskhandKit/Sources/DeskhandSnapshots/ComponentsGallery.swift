@@ -333,6 +333,7 @@ struct ComponentsGallery: View {
             Divider()
             caption("글꼴")
             VStack(alignment: .leading, spacing: DS.Space.s) {
+                typeRow("display", Text("작업 공간").font(DS.Font.display))
                 typeRow("title", Text("원격 PC 제어").font(DS.Font.title))
                 typeRow("headline", Text("세션 정보").font(DS.Font.headline))
                 typeRow("body", Text("연결이 준비되었습니다.").font(DS.Font.body))

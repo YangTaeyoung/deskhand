@@ -165,6 +165,7 @@ private struct TimelineParams: Encodable {
     let limit: Int
 }
 
+/// `{entries, next_cursor?}`; entries are newest first.
 private struct TimelineResult: Decodable {
     let entries: [TimelineEntry]
 }

@@ -19,7 +19,7 @@ public struct RootView: View {
                 DaemonUnavailableView(failure: failure) {
                     Task { await store.start() }
                 }
-            case .ready:
+            case .ready, .reconnecting:
                 ComputersSplitView(store: store)
             }
         }
@@ -91,6 +91,20 @@ public struct RootDetailView: View {
     }
 
     public var body: some View {
+        content
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if store.phase == .reconnecting {
+                    StatusNotice(symbol: nil, tint: DS.Color.warning,
+                                 title: String.ui("daemon.reconnecting.title", "데몬과 다시 연결하는 중…"),
+                                 message: String.ui("daemon.reconnecting.message", "연결되면 목록과 상태를 다시 불러옵니다. 그동안 보이는 상태는 최신이 아닐 수 있습니다."))
+                        .padding(.horizontal, DS.Space.xl)
+                        .padding(.top, DS.Space.l)
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         if let error = store.hostsError, !store.hostsLoaded {
             VStack {
                 ErrorBanner(message: String.ui("hosts.failed", "컴퓨터 목록을 불러오지 못했습니다"),
@@ -111,6 +125,7 @@ public struct RootDetailView: View {
             EmptyStateView(symbol: "sidebar.left",
                            title: String.ui("detail.select.title", "컴퓨터를 선택하세요"),
                            message: String.ui("detail.select.message", "사이드바에서 작업할 컴퓨터를 고르세요."))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
@@ -124,15 +139,14 @@ public struct NoHostsView: View {
     }
 
     public var body: some View {
-        VStack(spacing: DS.Space.xxl) {
+        VStack(spacing: DS.Space.xl) {
             Spacer(minLength: 0)
             EmptyStateView(
                 symbol: "pc",
                 title: String.ui("empty.hosts.title", "아직 연결한 컴퓨터가 없습니다"),
-                message: String.ui("empty.hosts.message", "SSH로 접속할 수 있는 Windows PC를 추가하면 Deskhand가 에이전트를 설치하고 이 Mac과 안전하게 페어링합니다."),
+                message: String.ui("empty.hosts.message", "SSH로 접속되는 Windows PC를 추가하면 에이전트를 설치하고 이 Mac과 안전하게 페어링합니다."),
                 actionTitle: String.ui("action.addHost", "컴퓨터 추가"),
                 action: add)
-                .fixedSize(horizontal: false, vertical: true)
             prerequisites
                 .frame(maxWidth: 520)
             Spacer(minLength: 0)
@@ -262,9 +276,9 @@ public struct DaemonUnavailableView: View {
                 .accessibilityHidden(true)
             VStack(spacing: DS.Space.s) {
                 Text(String.ui("daemon.unavailable.title", "데몬을 시작할 수 없습니다"))
-                    .font(.title.weight(.semibold))
+                    .font(DS.Font.display)
                     .accessibilityAddTraits(.isHeader)
-                Text(String.ui("daemon.unavailable.message", "Deskhand는 이 Mac의 백그라운드 데몬을 통해 원격 컴퓨터에 연결합니다. 데몬이 실행되어야 컴퓨터 목록과 작업 공간을 열 수 있습니다."))
+                Text(String.ui("daemon.unavailable.message", "Deskhand는 이 Mac에서 실행되는 데몬을 통해 원격 컴퓨터에 연결합니다."))
                     .font(DS.Font.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -298,7 +312,8 @@ public struct DaemonUnavailableView: View {
                     }
                     .help(String.ui("help.copyCommand", "데몬을 시작하는 터미널 명령을 복사합니다"))
                 }
-                .controlSize(.large)
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .dsCard()

@@ -76,20 +76,21 @@ public enum PreviewFixtures {
         return controls
     }
 
+    /// Timeline entries newest first, as `timeline.list` returns them.
     public static func timeline(hostID: String, now: Date = .now) -> [TimelineEntry] {
         guard hostID == devPCID else { return [] }
         func at(_ minutesAgo: Double) -> Timestamp { Timestamp(date: now.addingTimeInterval(-minutesAgo * 60)) }
         return [
-            TimelineEntry(seq: 101, ts: at(42), hostID: hostID, actor: "system", kind: "connection",
-                          summary: "연결됨 · 세대 4", outcome: "ok"),
-            TimelineEntry(seq: 102, ts: at(38), hostID: hostID, actor: "human", clientName: "Deskhand", kind: "control",
-                          summary: "AI에게 제어권을 넘겼습니다", outcome: "ok"),
-            TimelineEntry(seq: 103, ts: at(31), hostID: hostID, actor: "ai", clientName: "Claude Code", kind: "exec",
-                          summary: "dotnet test C:\\src\\Shop.sln", outcome: "failed", jobID: "j-01JB7Q"),
-            TimelineEntry(seq: 104, ts: at(12), hostID: hostID, actor: "ai", clientName: "Claude Code", kind: "input",
-                          summary: "‘주문 확인’ 버튼 클릭", outcome: "ok"),
             TimelineEntry(seq: 105, ts: at(3), hostID: hostID, actor: "ai", clientName: "Claude Code", kind: "file",
                           summary: "C:\\qa\\report.html 받기", outcome: "ok"),
+            TimelineEntry(seq: 104, ts: at(12), hostID: hostID, actor: "ai", clientName: "Claude Code", kind: "input",
+                          summary: "‘주문 확인’ 버튼 클릭", outcome: "ok"),
+            TimelineEntry(seq: 103, ts: at(31), hostID: hostID, actor: "ai", clientName: "Claude Code", kind: "exec",
+                          summary: "dotnet test C:\\src\\Shop.sln", outcome: "failed", jobID: "j-01JB7Q"),
+            TimelineEntry(seq: 102, ts: at(38), hostID: hostID, actor: "human", clientName: "Deskhand", kind: "control",
+                          summary: "AI에게 제어권을 넘겼습니다", outcome: "ok"),
+            TimelineEntry(seq: 101, ts: at(42), hostID: hostID, actor: "system", kind: "connection",
+                          summary: "연결됨 · 세대 4", outcome: "ok"),
         ]
     }
 
@@ -97,32 +98,33 @@ public enum PreviewFixtures {
         switch hostID {
         case devPCID:
             [
-                DoctorCheck(id: "ssh", status: "pass", detail: "ssh windows 접속 성공 · OpenSSH_for_Windows_9.5"),
+                DoctorCheck(id: "ssh_reachable", status: "pass", detail: "ssh windows 접속 성공 · OpenSSH_for_Windows_9.5"),
                 DoctorCheck(id: "agent_version", status: "pass", detail: "deskhand-agent 0.1.0 · 이 Mac의 데몬과 같은 버전"),
-                DoctorCheck(id: "quic", status: "pass", detail: "UDP 47600 연결 · 왕복 3 ms"),
+                DoctorCheck(id: "quic_connect", status: "pass", detail: "UDP 47600 연결 · 왕복 3 ms"),
                 DoctorCheck(id: "fingerprint", status: "pass", detail: "SHA256:4f9c2b7e…e21a · 페어링 때와 같음"),
                 DoctorCheck(id: "session", status: "warn", detail: "콘솔 세션이 잠겨 있어 화면과 입력을 쓸 수 없습니다",
                             fix: "원격 컴퓨터에서 Windows 잠금을 해제하세요"),
-                DoctorCheck(id: "firewall", status: "fail", detail: "인바운드 규칙 ‘Deskhand Agent’가 없습니다",
+                DoctorCheck(id: "firewall_rule", status: "fail", detail: "인바운드 규칙 ‘Deskhand Agent’가 없습니다",
                             fix: #"New-NetFirewallRule -DisplayName "Deskhand Agent" -Direction Inbound -Protocol UDP -LocalPort 47600 -RemoteAddress LocalSubnet -Action Allow"#),
-                DoctorCheck(id: "screen", status: "skip", detail: "세션이 잠겨 있어 화면 캡처 검사를 건너뛰었습니다"),
             ]
         case labID:
             [
-                DoctorCheck(id: "ssh", status: "pass", detail: "ssh lab-pc 접속 성공"),
+                DoctorCheck(id: "ssh_reachable", status: "pass", detail: "ssh lab-pc 접속 성공"),
                 DoctorCheck(id: "agent_version", status: "pass", detail: "deskhand-agent 0.1.0"),
                 DoctorCheck(id: "fingerprint", status: "fail", detail: "에이전트 인증서 지문이 페어링 때와 다릅니다",
                             fix: "deskhand host repair 실험실 PC"),
-                DoctorCheck(id: "quic", status: "skip", detail: "지문이 맞지 않아 연결하지 않았습니다"),
+                DoctorCheck(id: "quic_connect", status: "skip", detail: "지문이 맞지 않아 연결하지 않았습니다"),
+                DoctorCheck(id: "session", status: "skip", detail: "연결하지 않아 확인하지 않았습니다"),
+                DoctorCheck(id: "firewall_rule", status: "pass", detail: "인바운드 규칙 ‘Deskhand Agent’ 있음"),
             ]
         default:
             [
-                DoctorCheck(id: "ssh", status: "pass", detail: "SSH 접속 성공"),
+                DoctorCheck(id: "ssh_reachable", status: "pass", detail: "SSH 접속 성공"),
                 DoctorCheck(id: "agent_version", status: "pass", detail: "deskhand-agent 0.1.0"),
-                DoctorCheck(id: "quic", status: "pass", detail: "UDP 47600 연결"),
+                DoctorCheck(id: "quic_connect", status: "pass", detail: "UDP 47600 연결"),
                 DoctorCheck(id: "fingerprint", status: "pass", detail: "페어링 때와 같음"),
                 DoctorCheck(id: "session", status: "pass", detail: "콘솔 세션 활성"),
-                DoctorCheck(id: "firewall", status: "pass", detail: "인바운드 규칙 ‘Deskhand Agent’ 있음"),
+                DoctorCheck(id: "firewall_rule", status: "pass", detail: "인바운드 규칙 ‘Deskhand Agent’ 있음"),
             ]
         }
     }
@@ -145,7 +147,7 @@ public enum PreviewFixtures {
 
     public static func installFailure(alias: String) -> OperationError {
         OperationError(code: "ELEVATION_REQUIRED",
-                       message: "\(alias) 계정에 관리자 권한이 없어 예약 작업을 등록하지 못했습니다",
+                       message: "관리자 권한이 없어 예약 작업을 등록하지 못했습니다",
                        nextAction: "use_admin_account")
     }
 

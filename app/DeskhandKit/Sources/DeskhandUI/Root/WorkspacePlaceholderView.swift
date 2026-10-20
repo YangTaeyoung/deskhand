@@ -26,7 +26,10 @@ public struct WorkspacePlaceholderView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 CapabilitySummary(host: host)
                     .dsCard()
-                ActivityCard(entries: store.timeline(for: host.hostID))
+                ActivityCard(entries: store.timeline(for: host.hostID),
+                             error: store.timelineError(for: host.hostID)) {
+                    Task { await store.loadTimeline(for: host.hostID) }
+                }
             }
             .padding(DS.Space.xl)
             .frame(maxWidth: 1040, alignment: .leading)
@@ -45,7 +48,7 @@ public struct WorkspacePlaceholderView: View {
             HostTile(host: host, size: 48)
             VStack(alignment: .leading, spacing: DS.Space.xs) {
                 Text(host.name)
-                    .font(.title.weight(.semibold))
+                    .font(DS.Font.display)
                     .lineLimit(1)
                     .accessibilityAddTraits(.isHeader)
                 HStack(spacing: DS.Space.s) {
@@ -182,12 +185,14 @@ struct FactCard: View {
     }
 }
 
-/// Inline status message with a symbol (or a spinner when `symbol` is nil), tinted background.
+/// Inline status message with a symbol (or a spinner when `symbol` is nil), tinted background,
+/// and an error code line when `code` is given.
 struct StatusNotice: View {
     let symbol: String?
     let tint: Color
     let title: String
     let message: String
+    var code: String?
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: DS.Space.m) {
@@ -210,6 +215,10 @@ struct StatusNotice: View {
                     .font(DS.Font.body)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if let code {
+                    ErrorCodeLine(code: code)
+                        .padding(.top, DS.Space.xs)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -223,9 +232,12 @@ struct StatusNotice: View {
     }
 }
 
-/// The latest timeline entries of a computer.
+/// The latest timeline entries of a computer (`entries` newest first), with an inline retry
+/// when the last load failed.
 struct ActivityCard: View {
     let entries: [TimelineEntry]
+    let error: OperationError?
+    let retry: () -> Void
     static let limit = 5
 
     var body: some View {
@@ -233,13 +245,28 @@ struct ActivityCard: View {
             Text(String.ui("host.section.activity", "최근 활동"))
                 .font(DS.Font.headline)
                 .accessibilityAddTraits(.isHeader)
+            if let error {
+                HStack(alignment: .firstTextBaseline, spacing: DS.Space.s) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(DS.Color.warning)
+                        .accessibilityHidden(true)
+                    Text(String.ui("host.activity.failed", "활동 기록을 불러오지 못했습니다: \(error.message)"))
+                        .font(DS.Font.body)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button(String.ui("action.retry", "다시 시도"), action: retry)
+                        .buttonStyle(.bordered)
+                }
+            }
             if entries.isEmpty {
-                Text(String.ui("host.activity.empty", "아직 기록된 동작이 없습니다. 사람이나 AI가 이 컴퓨터를 조작하면 여기에 남습니다."))
-                    .font(DS.Font.body)
-                    .foregroundStyle(.secondary)
+                if error == nil {
+                    Text(String.ui("host.activity.empty", "아직 기록된 동작이 없습니다. 사람이나 AI가 이 컴퓨터를 조작하면 여기에 남습니다."))
+                        .font(DS.Font.body)
+                        .foregroundStyle(.secondary)
+                }
             } else {
                 VStack(spacing: DS.Space.s) {
-                    ForEach(entries.suffix(Self.limit).reversed(), id: \.seq) { entry in
+                    ForEach(entries.prefix(Self.limit), id: \.seq) { entry in
                         ActivityRow(entry: entry)
                     }
                 }

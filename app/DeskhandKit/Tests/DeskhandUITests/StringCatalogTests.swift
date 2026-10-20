@@ -35,7 +35,30 @@ final class StringCatalogTests: XCTestCase {
         }
     }
 
-    func testEveryUIKeyIsInCatalogWithMatchingArguments() throws {
+    /// The source literal with escapes resolved and each `\\(…)` replaced by `◆`.
+    private func normalizedSource(_ literal: String) -> String {
+        var out = ""
+        var chars = Array(literal)[...]
+        while let c = chars.popFirst() {
+            guard c == "\\", let next = chars.popFirst() else {
+                out.append(c)
+                continue
+            }
+            switch next {
+            case "n": out.append("\n")
+            case "(":
+                var depth = 1
+                while depth > 0, let inner = chars.popFirst() {
+                    if inner == "(" { depth += 1 } else if inner == ")" { depth -= 1 }
+                }
+                out.append("◆")
+            default: out.append(next)
+            }
+        }
+        return out
+    }
+
+    func testEveryUIKeyIsInCatalogWithSameText() throws {
         let calls = try uiCalls()
         XCTAssertGreaterThan(calls.count, 100)
         let catalog = try catalog()
@@ -45,9 +68,9 @@ final class StringCatalogTests: XCTestCase {
                 XCTFail("missing catalog entry \(key)")
                 continue
             }
-            let interpolations = value.components(separatedBy: "\\(").count - 1
-            let specifiers = specifier.numberOfMatches(in: entry, range: NSRange(entry.startIndex..., in: entry))
-            XCTAssertEqual(interpolations, specifiers, key)
+            let normalizedEntry = specifier.stringByReplacingMatches(
+                in: entry, range: NSRange(entry.startIndex..., in: entry), withTemplate: "◆")
+            XCTAssertEqual(normalizedSource(value), normalizedEntry, key)
         }
     }
 

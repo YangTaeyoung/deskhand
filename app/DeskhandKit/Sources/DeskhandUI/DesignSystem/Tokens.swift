@@ -46,7 +46,9 @@ public enum DS {
 
     /// Text styles. All are system text styles, so they follow the user's text size setting.
     public enum Font {
-        /// Screen and empty-state titles (17 pt semibold).
+        /// Hero titles of empty states, full-window errors and the workspace header (22 pt semibold).
+        public static let display = SwiftUI.Font.title.weight(.semibold)
+        /// Screen and sheet titles (17 pt semibold).
         public static let title = SwiftUI.Font.title2.weight(.semibold)
         /// Section headers and emphasized row text (13 pt bold).
         public static let headline = SwiftUI.Font.headline

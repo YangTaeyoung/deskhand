@@ -26,22 +26,20 @@ public struct SidebarView: View {
 
     public var body: some View {
         List(selection: selection) {
-            if !store.hosts.isEmpty {
-                Section {
+            Section {
+                if store.hosts.isEmpty {
+                    placeholder
+                        .selectionDisabled()
+                } else {
                     ForEach(store.hosts, id: \.hostID) { host in
                         row(host)
                     }
-                } header: {
-                    Text(String.ui("sidebar.section", "컴퓨터"))
                 }
+            } header: {
+                Text(String.ui("sidebar.section", "컴퓨터"))
             }
         }
         .listStyle(.sidebar)
-        .overlay {
-            if store.hosts.isEmpty {
-                placeholder
-            }
-        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             AddHostButton { store.presentAddHost() }
         }
@@ -67,18 +65,23 @@ public struct SidebarView: View {
         }
     }
 
+    /// Row shown in the empty section: loading, or a note that no computer was added yet.
     @ViewBuilder
     private var placeholder: some View {
         if !store.hostsLoaded && store.hostsError == nil {
-            ProgressView()
-                .controlSize(.small)
-                .accessibilityLabel(String.ui("hosts.loading", "컴퓨터 목록을 불러오는 중"))
+            HStack(spacing: DS.Space.s) {
+                ProgressView()
+                    .controlSize(.small)
+                Text(String.ui("hosts.loading", "컴퓨터 목록을 불러오는 중"))
+                    .font(DS.Font.body)
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .combine)
         } else if store.hostsLoaded {
-            Text(String.ui("sidebar.empty", "추가한 컴퓨터가\n여기에 표시됩니다"))
-                .font(DS.Font.caption)
+            Text(String.ui("sidebar.empty", "아직 추가한 컴퓨터가 없습니다"))
+                .font(DS.Font.body)
                 .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(DS.Space.l)
+                .padding(.vertical, DS.Space.xs)
         }
     }
 }

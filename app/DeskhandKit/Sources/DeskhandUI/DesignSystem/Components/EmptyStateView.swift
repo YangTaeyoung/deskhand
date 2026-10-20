@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// Centered placeholder for a screen or panel with no content: symbol, title, message and an
-/// optional prominent action.
+/// Placeholder for a screen or panel with no content: symbol, a primary title, a secondary
+/// message and an optional prominent action grouped right under the text. Takes its natural size;
+/// callers center it in the space they give it.
 public struct EmptyStateView: View {
     public let symbol: String
     public let title: String
@@ -24,16 +25,29 @@ public struct EmptyStateView: View {
     }
 
     public var body: some View {
-        ContentUnavailableView {
-            Label(title, systemImage: symbol)
-        } description: {
-            Text(message)
-        } actions: {
+        VStack(spacing: DS.Space.l) {
+            Image(systemName: symbol)
+                .font(.system(size: 40, weight: .regular))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            VStack(spacing: DS.Space.s) {
+                Text(title)
+                    .font(DS.Font.display)
+                    .foregroundStyle(.primary)
+                    .accessibilityAddTraits(.isHeader)
+                Text(message)
+                    .font(DS.Font.body)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: 440)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .multilineTextAlignment(.center)
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
             }
         }
+        .padding(DS.Space.l)
     }
 }

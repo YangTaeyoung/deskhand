@@ -13,7 +13,7 @@ public struct KeyValueRow: Hashable, Sendable {
     }
 }
 
-/// Two-column grid of right-aligned secondary labels and selectable values, as in an inspector.
+/// Two-column grid of left-aligned secondary labels and selectable values, as in an inspector.
 /// Long values wrap instead of truncating.
 public struct KeyValueGrid: View {
     public let rows: [KeyValueRow]
@@ -29,7 +29,7 @@ public struct KeyValueGrid: View {
                     Text(row.key)
                         .font(DS.Font.body)
                         .foregroundStyle(.secondary)
-                        .gridColumnAlignment(.trailing)
+                        .gridColumnAlignment(.leading)
                         .lineLimit(1)
                     Text(row.value)
                         .font(row.monospaced ? DS.Font.mono : DS.Font.body)

@@ -47,6 +47,26 @@ public final class PreviewBackend: Backend {
         state = Mutex(State(hosts: hosts, controls: PreviewFixtures.controls(for: hosts)))
     }
 
+    /// Ends every open `events` stream, finishing it with `error` when given, as a dropped
+    /// daemon subscription would.
+    public func endEventStreams(throwing error: (any Error)? = nil) {
+        let continuations = state.withLock { s -> [AsyncThrowingStream<DaemonEvent, Error>.Continuation] in
+            let all = s.subscribers.values.map(\.continuation)
+            s.subscribers = [:]
+            return all
+        }
+        for continuation in continuations { continuation.finish(throwing: error) }
+    }
+
+    /// The value as the daemon spells it in JSON (snake_case keys).
+    static func payload(_ value: some Encodable) -> JSONValue {
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        guard let data = try? encoder.encode(value),
+              let json = try? JSONDecoder().decode(JSONValue.self, from: data) else { return .null }
+        return json
+    }
+
     /// Delivers an event to every matching `events` stream, as the daemon would.
     public func emit(kind: String, hostID: String?, payload: [String: JSONValue] = [:]) {
         let (event, targets) = state.withLock { s -> (DaemonEvent, [AsyncThrowingStream<DaemonEvent, Error>.Continuation]) in
@@ -139,7 +159,9 @@ extension PreviewBackend {
             emit(kind: EventKind.installProgress, hostID: hostID, payload: InstallProgress(
                 hostID: hostID, name: name, step: step, status: .done,
                 detail: PreviewFixtures.installDetail(step, alias: alias, done: true)).payload)
-            if let hostID { emit(kind: EventKind.hostAdded, hostID: hostID) }
+            if let hostID, let host = state.withLock({ $0.hosts.first { $0.hostID == hostID } }) {
+                emit(kind: EventKind.hostAdded, hostID: hostID, payload: ["host": Self.payload(host)])
+            }
         }
     }
 
@@ -262,7 +284,7 @@ extension PreviewBackend {
     public func timelineList(hostID: String, since: Int?, limit: Int) async throws -> [TimelineEntry] {
         _ = try host(hostID)
         let entries = PreviewFixtures.timeline(hostID: hostID).filter { since == nil || $0.seq > since! }
-        return Array(entries.suffix(limit))
+        return Array(entries.prefix(limit))
     }
 }
 

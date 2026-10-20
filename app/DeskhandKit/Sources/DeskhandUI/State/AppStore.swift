@@ -12,6 +12,8 @@ public final class AppStore {
         case idle
         case starting
         case ready
+        /// The event subscription ended; the store is subscribing again.
+        case reconnecting
         case daemonUnavailable(DaemonFailure)
     }
 
@@ -26,11 +28,25 @@ public final class AppStore {
         }
     }
 
+    /// Delays between attempts to subscribe again after the event stream ends.
+    public struct ResubscribeBackoff: Sendable {
+        public var initial: Duration
+        public var maximum: Duration
+
+        public init(initial: Duration, maximum: Duration) {
+            self.initial = initial
+            self.maximum = maximum
+        }
+
+        public static let standard = ResubscribeBackoff(initial: .milliseconds(500), maximum: .seconds(8))
+    }
+
     /// UserDefaults key holding the selected host ID.
     public static let selectionKey = "selectedHostID"
 
     public let backend: any Backend
     @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let backoff: ResubscribeBackoff
 
     public private(set) var phase: Phase = .idle
     public private(set) var hosts: [Host] = []
@@ -39,6 +55,7 @@ public final class AppStore {
     public private(set) var isLoadingHosts = false
     public private(set) var hostsError: OperationError?
 
+    /// The selected host. Kept while the list is empty, replaced by the first host when it is not in a non-empty list.
     public var selectedHostID: String? {
         didSet {
             guard selectedHostID != oldValue else { return }
@@ -60,13 +77,17 @@ public final class AppStore {
     public var actionError: OperationError?
 
     private var controls: [String: ControlState] = [:]
+    /// Per host, newest first.
     private var timelines: [String: [TimelineEntry]] = [:]
+    private var timelineErrors: [String: OperationError] = [:]
     @ObservationIgnored private var eventsTask: Task<Void, Never>?
     @ObservationIgnored private var reloadTask: Task<Void, Never>?
+    @ObservationIgnored private var reloadToken = 0
 
-    public init(backend: any Backend, defaults: UserDefaults = .standard) {
+    public init(backend: any Backend, defaults: UserDefaults = .standard, backoff: ResubscribeBackoff = .standard) {
         self.backend = backend
         self.defaults = defaults
+        self.backoff = backoff
         self.selectedHostID = defaults.string(forKey: Self.selectionKey)
     }
 
@@ -86,13 +107,19 @@ public final class AppStore {
 
     /// The last known control state: from `control.get` or events, otherwise from the host list.
     public func control(for hostID: String) -> ControlState? {
-        if let control = controls[hostID] { return control }
         guard let host = host(hostID) else { return nil }
+        if let control = controls[hostID] { return control }
         return ControlState(owner: host.owner, ownerClient: host.ownerClient, gen: 0, aiPaused: false)
     }
 
+    /// Timeline entries of a host, newest first.
     public func timeline(for hostID: String) -> [TimelineEntry] {
         timelines[hostID] ?? []
+    }
+
+    /// Why the last timeline load of a host failed, until a load succeeds.
+    public func timelineError(for hostID: String) -> OperationError? {
+        timelineErrors[hostID]
     }
 
     // MARK: Lifecycle
@@ -100,7 +127,7 @@ public final class AppStore {
     /// Starts the daemon connection, subscribes to events and loads the computer list.
     public func start() async {
         switch phase {
-        case .starting, .ready: return
+        case .starting, .ready, .reconnecting: return
         case .idle, .daemonUnavailable: break
         }
         phase = .starting
@@ -122,33 +149,80 @@ public final class AppStore {
         return DaemonFailure(message: OperationError(error).message, logPath: Paths.daemonLog)
     }
 
+    /// Consumes daemon events. When the stream ends or fails, the phase becomes `reconnecting`;
+    /// after a backoff delay it subscribes again and reloads the computer list, returning to
+    /// `ready` once the list loads.
     private func subscribe() {
         eventsTask?.cancel()
-        let stream = backend.events(kinds: EventKind.storeKinds, hostID: nil)
+        let backoff = self.backoff
         eventsTask = Task { [weak self] in
-            do {
-                for try await event in stream {
-                    self?.handle(event)
+            var delay = backoff.initial
+            var resubscribing = false
+            while !Task.isCancelled {
+                guard let stream = self?.backend.events(kinds: EventKind.storeKinds, hostID: nil) else { return }
+                if resubscribing {
+                    let loaded = await self?.reloadHosts() ?? false
+                    guard !Task.isCancelled, let store = self else { return }
+                    if loaded {
+                        store.phase = .ready
+                        delay = backoff.initial
+                    } else {
+                        try? await Task.sleep(for: delay)
+                        delay = min(delay * 2, backoff.maximum)
+                        continue
+                    }
                 }
-            } catch {}
+                do {
+                    for try await event in stream {
+                        self?.handle(event)
+                    }
+                } catch {}
+                guard !Task.isCancelled, let store = self else { return }
+                store.phase = .reconnecting
+                resubscribing = true
+                try? await Task.sleep(for: delay)
+                delay = min(delay * 2, backoff.maximum)
+            }
         }
     }
 
-    public func reloadHosts() async {
+    /// Loads the computer list. Only the latest of overlapping loads is applied; returns whether it succeeded.
+    @discardableResult
+    public func reloadHosts() async -> Bool {
+        reloadToken += 1
+        let token = reloadToken
         isLoadingHosts = true
-        defer { isLoadingHosts = false }
         do {
-            hosts = try await backend.hostList()
+            let list = try await backend.hostList()
+            guard token == reloadToken else { return false }
+            isLoadingHosts = false
+            apply(hostList: list)
             hostsError = nil
             hostsLoaded = true
-            let ids = Set(hosts.map(\.hostID))
-            controls = controls.filter { ids.contains($0.key) }
-            timelines = timelines.filter { ids.contains($0.key) }
-            if selectedHostID.map({ !ids.contains($0) }) ?? true {
-                selectedHostID = hosts.first?.hostID
-            }
+            return true
         } catch {
+            guard token == reloadToken else { return false }
+            isLoadingHosts = false
+            if error is CancellationError || Task.isCancelled { return false }
             hostsError = OperationError(error)
+            return false
+        }
+    }
+
+    private func apply(hostList list: [Host]) {
+        hosts = list
+        let ids = Set(list.map(\.hostID))
+        controls = controls.filter { ids.contains($0.key) }
+        timelines = timelines.filter { ids.contains($0.key) }
+        timelineErrors = timelineErrors.filter { ids.contains($0.key) }
+        reconcileSelection()
+    }
+
+    /// Selects the first host when the selection is not in a non-empty list.
+    private func reconcileSelection() {
+        guard let first = hosts.first else { return }
+        if selectedHostID.map({ host($0) == nil }) ?? true {
+            selectedHostID = first.hostID
         }
     }
 
@@ -166,51 +240,103 @@ public final class AppStore {
     func handle(_ event: DaemonEvent) {
         let p = event.payload
         switch event.kind {
+        case EventKind.hostAdded, EventKind.hostUpdated:
+            guard let value = p["host"], let host = try? LiveBackend.decode(Host.self, from: value) else {
+                return scheduleReload()
+            }
+            if let i = hosts.firstIndex(where: { $0.hostID == host.hostID }) {
+                hosts[i] = host
+            } else {
+                hosts.append(host)
+            }
+            reconcileSelection()
+        case EventKind.hostRemoved:
+            guard let id = event.hostID else { return }
+            hosts.removeAll { $0.hostID == id }
+            controls[id] = nil
+            timelines[id] = nil
+            timelineErrors[id] = nil
+            reconcileSelection()
+        default:
+            guard let id = event.hostID, let i = hosts.firstIndex(where: { $0.hostID == id }) else {
+                if event.kind == EventKind.installProgress { handleInstallProgress(p) }
+                return
+            }
+            handle(event.kind, payload: p, hostIndex: i)
+        }
+    }
+
+    /// Applies an event for a host that is in the list.
+    private func handle(_ kind: String, payload p: [String: JSONValue], hostIndex i: Int) {
+        let id = hosts[i].hostID
+        switch kind {
         case EventKind.connectionState:
-            guard let id = event.hostID, let i = hosts.firstIndex(where: { $0.hostID == id }),
-                  let state = p["state"]?.stringValue else { return }
+            guard let state = p["state"]?.stringValue else { return }
             hosts[i].state = state
             if let generation = p["connection_generation"]?.intValue { hosts[i].connectionGeneration = generation }
         case EventKind.controlChanged:
-            guard let id = event.hostID, let owner = p["owner"]?.stringValue else { return }
+            guard let owner = p["owner"]?.stringValue else { return }
             let control = ControlState(owner: owner, ownerClient: p["owner_client"]?.stringValue,
                                        gen: p["gen"]?.intValue ?? 0, aiPaused: p["ai_paused"]?.boolValue ?? false)
             controls[id] = control
-            if let i = hosts.firstIndex(where: { $0.hostID == id }) {
-                hosts[i].owner = control.owner
-                hosts[i].ownerClient = control.ownerClient
-            }
+            hosts[i].owner = control.owner
+            hosts[i].ownerClient = control.ownerClient
         case EventKind.timelineAppended:
-            guard let id = event.hostID, let value = p["entry"],
-                  let entry = try? LiveBackend.decode(TimelineEntry.self, from: value) else { return }
-            var entries = timelines[id] ?? []
-            if entries.last.map({ entry.seq > $0.seq }) ?? true { entries.append(entry) }
-            timelines[id] = entries
-        case EventKind.hostAdded, EventKind.hostRemoved, EventKind.hostUpdated,
-             EventKind.capsChanged, EventKind.sessionChanged:
-            scheduleReload()
-        case EventKind.installProgress:
-            if p["step"]?.stringValue == InstallStep.verify.rawValue, p["status"]?.stringValue == "done" {
-                scheduleReload()
+            guard let value = p["entry"], let entry = try? LiveBackend.decode(TimelineEntry.self, from: value) else { return }
+            timelines[id] = Self.merge(timelines[id] ?? [], [entry])
+        case EventKind.capsChanged:
+            guard let value = p["caps"], let caps = try? LiveBackend.decode(HostCaps.self, from: value) else { return }
+            hosts[i].caps = caps
+        case EventKind.sessionChanged:
+            if let value = p["session"], value != .null {
+                guard let session = try? LiveBackend.decode(SessionInfo.self, from: value) else { return }
+                hosts[i].session = session
+            } else {
+                hosts[i].session = nil
             }
+        case EventKind.displayChanged:
+            guard let value = p["displays"], let displays = try? LiveBackend.decode([DisplayInfo].self, from: value) else { return }
+            hosts[i].displays = displays
+        case EventKind.installProgress:
+            handleInstallProgress(p)
         default:
             break
         }
     }
 
-    // MARK: Control and timeline
-
-    public func loadControl(for hostID: String) async {
-        if let control = try? await backend.controlGet(hostID: hostID) {
-            controls[hostID] = control
+    private func handleInstallProgress(_ p: [String: JSONValue]) {
+        if p["step"]?.stringValue == InstallStep.verify.rawValue, p["status"]?.stringValue == "done" {
+            scheduleReload()
         }
     }
 
+    /// Union of two newest-first entry lists by `seq`, newest first.
+    static func merge(_ current: [TimelineEntry], _ incoming: [TimelineEntry]) -> [TimelineEntry] {
+        var bySeq: [Int: TimelineEntry] = [:]
+        for entry in current { bySeq[entry.seq] = entry }
+        for entry in incoming { bySeq[entry.seq] = entry }
+        return bySeq.values.sorted { $0.seq > $1.seq }
+    }
+
+    // MARK: Control and timeline
+
+    public func loadControl(for hostID: String) async {
+        guard let control = try? await backend.controlGet(hostID: hostID), host(hostID) != nil else { return }
+        controls[hostID] = control
+    }
+
+    /// Loads a host's timeline and merges it with entries already received from events.
+    /// A failure is kept per host for `timelineError(for:)`.
     public func loadTimeline(for hostID: String, limit: Int = 200) async {
         do {
-            timelines[hostID] = try await backend.timelineList(hostID: hostID, since: nil, limit: limit)
+            let entries = try await backend.timelineList(hostID: hostID, since: nil, limit: limit)
+            guard host(hostID) != nil else { return }
+            timelines[hostID] = Self.merge(timelines[hostID] ?? [], entries)
+            timelineErrors[hostID] = nil
+        } catch is CancellationError {
         } catch {
-            actionError = OperationError(error)
+            guard host(hostID) != nil else { return }
+            timelineErrors[hostID] = OperationError(error)
         }
     }
 
@@ -280,7 +406,7 @@ extension AppStore {
         let store = AppStore(backend: backend, defaults: defaults)
         store.phase = phase
         store.hosts = hosts
-        store.hostsLoaded = phase == .ready
+        store.hostsLoaded = phase == .ready || phase == .reconnecting
         store.controls = PreviewFixtures.controls(for: hosts)
         store.timelines = timelines
         store.selectedHostID = selectedHostID

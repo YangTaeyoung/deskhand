@@ -51,8 +51,9 @@ public final class AddHostFlow: Identifiable {
         self.steps = steps
     }
 
-    static func pendingSteps() -> [StepItem] {
-        InstallStep.allCases.map { StepItem(id: $0.rawValue, title: $0.title, status: .pending) }
+    /// The five steps, pending, each with what it will do as its detail line.
+    public static func pendingSteps() -> [StepItem] {
+        InstallStep.allCases.map { StepItem(id: $0.rawValue, title: $0.title, detail: $0.activeDescription, status: .pending) }
     }
 
     public var trimmedAlias: String { alias.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -138,9 +139,11 @@ public final class AddHostFlow: Identifiable {
         store?.addHost = nil
     }
 
-    /// Closes the sheet after success and selects the new computer.
+    /// Closes the sheet after success and selects the new computer when it is still in the list.
     public func finish() {
-        if case .succeeded(let host) = stage { store?.selectedHostID = host.hostID }
+        if case .succeeded(let host) = stage, let store, store.host(host.hostID) != nil {
+            store.selectedHostID = host.hostID
+        }
         dismiss()
     }
 
@@ -151,7 +154,6 @@ public final class AddHostFlow: Identifiable {
         lastProgress = .now
         for i in steps.indices where i < index && steps[i].status != .done {
             steps[i].status = .done
-            if steps[i].detail == InstallStep.allCases[i].activeDescription { steps[i].detail = nil }
         }
         switch progress.status {
         case .active:
@@ -159,7 +161,7 @@ public final class AddHostFlow: Identifiable {
             steps[index].detail = progress.detail ?? progress.step.activeDescription
         case .done:
             steps[index].status = .done
-            steps[index].detail = progress.detail
+            steps[index].detail = progress.detail ?? steps[index].detail
         case .failed:
             steps[index].status = .failed
             steps[index].detail = progress.error?.message ?? progress.detail

@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Inline error: what failed (`message`), how to fix it (`fix`), the error code when known,
-/// and a retry button when `retry` is given.
+/// Inline error: what failed (`message`), how to fix it (`fix`), the error code on a small
+/// secondary line when known, and a prominent retry button under the text when `retry` is given.
 public struct ErrorBanner: View {
     public let message: String
     public let fix: String?
@@ -9,6 +9,7 @@ public struct ErrorBanner: View {
     public let retry: (() -> Void)?
 
     nonisolated static let symbols = ["exclamationmark.octagon.fill", "arrow.clockwise"]
+    private static let symbolWidth = DS.Space.l
 
     public init(message: String, fix: String? = nil, code: String? = nil, retry: (() -> Void)? = nil) {
         self.message = message
@@ -18,43 +19,68 @@ public struct ErrorBanner: View {
     }
 
     public var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: DS.Space.m) {
-            Image(systemName: Self.symbols[0])
-                .foregroundStyle(DS.Color.danger)
-                .font(DS.Font.headline)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: DS.Space.xs) {
-                Text(message)
+        VStack(alignment: .leading, spacing: DS.Space.m) {
+            HStack(alignment: .firstTextBaseline, spacing: DS.Space.m) {
+                Image(systemName: Self.symbols[0])
+                    .foregroundStyle(DS.Color.danger)
                     .font(DS.Font.headline)
-                    .foregroundStyle(.primary)
-                if let fix {
-                    Text(fix)
-                        .font(DS.Font.body)
-                        .foregroundStyle(.secondary)
+                    .frame(width: Self.symbolWidth)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: DS.Space.xs) {
+                    Text(message)
+                        .font(DS.Font.headline)
+                        .foregroundStyle(.primary)
+                    if let fix {
+                        Text(fix)
+                            .font(DS.Font.body)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let code {
+                        ErrorCodeLine(code: code)
+                            .padding(.top, DS.Space.xs)
+                    }
                 }
-                if let code {
-                    Text(code)
-                        .font(DS.Font.mono)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
             }
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityElement(children: .combine)
             if let retry {
                 Button(action: retry) {
                     Label(String.ui("action.retry", "다시 시도"), systemImage: Self.symbols[1])
                 }
+                .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
+                .padding(.leading, Self.symbolWidth + DS.Space.m)
             }
         }
         .padding(DS.Space.m)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(DS.Color.danger.opacity(0.08), in: RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous)
                 .strokeBorder(DS.Color.danger.opacity(0.28), lineWidth: 1)
         )
         .accessibilityElement(children: .contain)
+    }
+}
+
+/// Small secondary line `오류 코드 CODE` with a selectable monospaced code.
+public struct ErrorCodeLine: View {
+    public let code: String
+
+    public init(code: String) {
+        self.code = code
+    }
+
+    public var body: some View {
+        HStack(spacing: DS.Space.xs) {
+            Text(String.ui("error.codeLabel", "오류 코드"))
+            Text(code)
+                .monospaced()
+                .textSelection(.enabled)
+        }
+        .font(DS.Font.caption)
+        .foregroundStyle(.secondary)
+        .accessibilityElement(children: .combine)
     }
 }

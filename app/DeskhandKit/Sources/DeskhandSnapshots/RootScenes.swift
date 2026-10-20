@@ -33,7 +33,7 @@ enum RootScenes {
                     : PreviewFixtures.installDetail(s, alias: alias, done: false)
                 return StepItem(id: s.rawValue, title: s.title, detail: detail, status: status)
             }
-            return StepItem(id: s.rawValue, title: s.title, status: .pending)
+            return StepItem(id: s.rawValue, title: s.title, detail: s.activeDescription, status: .pending)
         }
     }
 
@@ -76,6 +76,12 @@ enum RootScenes {
                         stage: .succeeded(host), steps: steps(doneThrough: .verify, then: .done, at: nil, alias: "media-pc")))
                 }
             },
+            SnapshotScene(name: "root-reconnecting", size: size) {
+                SplitStandIn(store: AppStore.seeded(
+                    backend: backend, defaults: defaults, phase: .reconnecting, hosts: PreviewFixtures.hosts(),
+                    selectedHostID: PreviewFixtures.devPCID,
+                    timelines: [PreviewFixtures.devPCID: PreviewFixtures.timeline(hostID: PreviewFixtures.devPCID)]))
+            },
             SnapshotScene(name: "root-host-blocked", size: size) {
                 SplitStandIn(store: store(hosts: PreviewFixtures.hosts(), selected: PreviewFixtures.labID))
             },
@@ -88,6 +94,14 @@ enum RootScenes {
                     DoctorView(model: DoctorModel(backend: backend, host: host,
                                                   status: .loaded(PreviewFixtures.doctor(hostID: host.hostID)),
                                                   finishedAt: .now)) {}
+                }
+            },
+            SnapshotScene(name: "doctor-overflow", size: size) {
+                let host = PreviewFixtures.hosts()[0]
+                let checks = PreviewFixtures.doctor(hostID: PreviewFixtures.devPCID)
+                    + PreviewFixtures.doctor(hostID: PreviewFixtures.labID)
+                SheetStandIn(base: SplitStandIn(store: withHosts)) {
+                    DoctorView(model: DoctorModel(backend: backend, host: host, status: .loaded(checks), finishedAt: .now)) {}
                 }
             },
             SnapshotScene(name: "daemon-unavailable", size: size) {

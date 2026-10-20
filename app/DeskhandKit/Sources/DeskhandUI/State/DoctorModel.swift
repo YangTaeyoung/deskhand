@@ -112,15 +112,12 @@ extension DoctorCheck {
     /// Korean name of the check, falling back to its ID.
     public var title: String {
         switch id {
-        case "ssh": .ui("doctor.check.ssh", "SSH 접속")
+        case "ssh_reachable": .ui("doctor.check.sshReachable", "SSH 접속")
         case "agent_version": .ui("doctor.check.agentVersion", "에이전트 버전")
-        case "quic": .ui("doctor.check.quic", "보안 연결 (QUIC)")
+        case "quic_connect": .ui("doctor.check.quicConnect", "보안 연결 (QUIC)")
         case "fingerprint": .ui("doctor.check.fingerprint", "인증서 지문")
         case "session": .ui("doctor.check.session", "사용자 세션")
-        case "firewall": .ui("doctor.check.firewall", "방화벽 규칙")
-        case "screen": .ui("doctor.check.screen", "화면 캡처")
-        case "input": .ui("doctor.check.input", "입력")
-        case "uia": .ui("doctor.check.uia", "UI 자동화")
+        case "firewall_rule": .ui("doctor.check.firewallRule", "방화벽 규칙")
         default: id
         }
     }

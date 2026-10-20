@@ -433,30 +433,6 @@
         }
       }
     },
-    "addHost.failed.step": {
-      "comment": "Add-computer sheet: failed step",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "‘%@’ 단계에서 실패했습니다"
-          }
-        }
-      }
-    },
-    "addHost.failed.summary": {
-      "comment": "Add-computer sheet: failed summary",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "설치를 마치지 못했습니다"
-          }
-        }
-      }
-    },
     "addHost.failed.title": {
       "comment": "Add-computer sheet: failed title",
       "extractionState": "manual",
@@ -465,6 +441,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "컴퓨터를 추가하지 못했습니다"
+          }
+        }
+      }
+    },
+    "addHost.fix.title": {
+      "comment": "Add-computer sheet: heading of the fix shown after a failed step",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "해결 방법"
           }
         }
       }
@@ -937,6 +925,30 @@
         }
       }
     },
+    "daemon.reconnecting.message": {
+      "comment": "Banner while the event subscription is restored: what the user sees meanwhile",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결되면 목록과 상태를 다시 불러옵니다. 그동안 보이는 상태는 최신이 아닐 수 있습니다."
+          }
+        }
+      }
+    },
+    "daemon.reconnecting.title": {
+      "comment": "Banner while the event subscription is restored",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "데몬과 다시 연결하는 중…"
+          }
+        }
+      }
+    },
     "daemon.starting": {
       "comment": "Daemon start-up screen: starting",
       "extractionState": "manual",
@@ -992,7 +1004,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Deskhand는 이 Mac의 백그라운드 데몬을 통해 원격 컴퓨터에 연결합니다. 데몬이 실행되어야 컴퓨터 목록과 작업 공간을 열 수 있습니다."
+            "value": "Deskhand는 이 Mac에서 실행되는 데몬을 통해 원격 컴퓨터에 연결합니다."
           }
         }
       }
@@ -1069,8 +1081,8 @@
         }
       }
     },
-    "doctor.check.firewall": {
-      "comment": "Diagnostics sheet: check firewall",
+    "doctor.check.firewallRule": {
+      "comment": "Diagnostics check firewall_rule",
       "extractionState": "manual",
       "localizations": {
         "ko": {
@@ -1081,38 +1093,14 @@
         }
       }
     },
-    "doctor.check.input": {
-      "comment": "Diagnostics sheet: check input",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "입력"
-          }
-        }
-      }
-    },
-    "doctor.check.quic": {
-      "comment": "Diagnostics sheet: check quic",
+    "doctor.check.quicConnect": {
+      "comment": "Diagnostics check quic_connect",
       "extractionState": "manual",
       "localizations": {
         "ko": {
           "stringUnit": {
             "state": "translated",
             "value": "보안 연결 (QUIC)"
-          }
-        }
-      }
-    },
-    "doctor.check.screen": {
-      "comment": "Diagnostics sheet: check screen",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "화면 캡처"
           }
         }
       }
@@ -1129,26 +1117,14 @@
         }
       }
     },
-    "doctor.check.ssh": {
-      "comment": "Diagnostics sheet: check ssh",
+    "doctor.check.sshReachable": {
+      "comment": "Diagnostics check ssh_reachable",
       "extractionState": "manual",
       "localizations": {
         "ko": {
           "stringUnit": {
             "state": "translated",
             "value": "SSH 접속"
-          }
-        }
-      }
-    },
-    "doctor.check.uia": {
-      "comment": "Diagnostics sheet: check uia",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "UI 자동화"
           }
         }
       }
@@ -1261,6 +1237,18 @@
         }
       }
     },
+    "doctor.more": {
+      "comment": "Diagnostics sheet: button that scrolls to rows below the fold, with their count",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아래에 %lld개 더"
+          }
+        }
+      }
+    },
     "doctor.pass": {
       "comment": "Diagnostics sheet: pass",
       "extractionState": "manual",
@@ -1340,7 +1328,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "SSH로 접속할 수 있는 Windows PC를 추가하면 Deskhand가 에이전트를 설치하고 이 Mac과 안전하게 페어링합니다."
+            "value": "SSH로 접속되는 Windows PC를 추가하면 에이전트를 설치하고 이 Mac과 안전하게 페어링합니다."
           }
         }
       }
@@ -1461,6 +1449,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "컴퓨터를 추가했지만 목록에서 찾지 못했습니다"
+          }
+        }
+      }
+    },
+    "error.codeLabel": {
+      "comment": "Label before a daemon error code",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오류 코드"
           }
         }
       }
@@ -1592,7 +1592,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "터미널에서 이 별칭으로 ssh 접속이 비밀번호 없이 되는지 확인하세요."
+            "value": "이 별칭으로 비밀번호 없이 ssh 접속되는지 확인하세요."
           }
         }
       }
@@ -1604,7 +1604,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "원격 계정에 관리자 권한이 있어야 합니다. 관리자 계정으로 접속하는 SSH 별칭으로 다시 시도하세요."
+            "value": "관리자 계정의 SSH 별칭으로 다시 시도하세요."
           }
         }
       }
@@ -1693,6 +1693,18 @@
         }
       }
     },
+    "help.doctorMore": {
+      "comment": "Tooltip: scroll to the next diagnostics row",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다음 항목으로 스크롤합니다"
+          }
+        }
+      }
+    },
     "help.openLog": {
       "comment": "Tooltip: open log",
       "extractionState": "manual",
@@ -1713,6 +1725,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "아직 기록된 동작이 없습니다. 사람이나 AI가 이 컴퓨터를 조작하면 여기에 남습니다."
+          }
+        }
+      }
+    },
+    "host.activity.failed": {
+      "comment": "Computer detail: timeline load failed, with the error message",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "활동 기록을 불러오지 못했습니다: %@"
           }
         }
       }
@@ -2384,7 +2408,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "추가한 컴퓨터가\n여기에 표시됩니다"
+            "value": "아직 추가한 컴퓨터가 없습니다"
           }
         }
       }

@@ -39,8 +39,9 @@ public protocol ControlBackend: Sendable {
     func controlResumeAI(hostID: String) async throws -> ControlState
 }
 
-/// `timeline.list` (local-api.md §3).
+/// `timeline.list` (local-api.md §3, §6).
 public protocol TimelineBackend: Sendable {
+    /// Entries newest first.
     func timelineList(hostID: String, since: Int?, limit: Int) async throws -> [TimelineEntry]
 }
 
@@ -50,26 +51,33 @@ public protocol EventsBackend: Sendable {
     func events(kinds: [String]?, hostID: String?) -> AsyncThrowingStream<DaemonEvent, Error>
 }
 
-/// Event kinds the app reacts to.
+/// Event kinds the app reacts to, with their payload fields (local-api.md §6).
 public enum EventKind {
-    /// `{host_id, state, connection_generation?}`.
+    /// `state`, `connection_generation`, `reason?`.
     public static let connectionState = "connection.state"
-    /// `{host_id, owner, owner_client?, gen, ai_paused}`.
+    /// ControlState fields: `owner`, `owner_client?`, `gen`, `ai_paused`.
     public static let controlChanged = "control.changed"
-    /// `{host_id, entry}` with `entry` a `TimelineEntry` object.
+    /// `entry` (TimelineEntry).
     public static let timelineAppended = "timeline.appended"
+    /// `host` (Host).
     public static let hostAdded = "host.added"
+    /// No fields besides `host_id`.
     public static let hostRemoved = "host.removed"
+    /// `host` (Host).
     public static let hostUpdated = "host.updated"
+    /// `caps`.
     public static let capsChanged = "caps.changed"
+    /// `session` (SessionInfo).
     public static let sessionChanged = "session.changed"
-    /// `{host_id?, name, step, status, detail?, error?{code, message, next_action?}}`.
+    /// `displays` ([DisplayInfo]).
+    public static let displayChanged = "display.changed"
+    /// `name`, `step`, `status`, `detail?`, `error?{code, message, next_action?}`.
     public static let installProgress = "host.install.progress"
 
     /// Every kind `AppStore` subscribes to.
     public static let storeKinds = [
         connectionState, controlChanged, timelineAppended, hostAdded, hostRemoved, hostUpdated,
-        capsChanged, sessionChanged, installProgress,
+        capsChanged, sessionChanged, displayChanged, installProgress,
     ]
 }
 
@@ -203,11 +211,11 @@ public struct OperationError: Error, Sendable, Equatable {
     public var fix: String? {
         switch code {
         case "AUTH_REQUIRED":
-            .ui("fix.authRequired", "터미널에서 이 별칭으로 ssh 접속이 비밀번호 없이 되는지 확인하세요.")
+            .ui("fix.authRequired", "이 별칭으로 비밀번호 없이 ssh 접속되는지 확인하세요.")
         case "OFFLINE", "TIMEOUT":
             .ui("fix.offline", "컴퓨터가 켜져 있고 같은 네트워크나 VPN에 있는지 확인하세요.")
         case "ELEVATION_REQUIRED", "PERMISSION_DENIED":
-            .ui("fix.elevation", "원격 계정에 관리자 권한이 있어야 합니다. 관리자 계정으로 접속하는 SSH 별칭으로 다시 시도하세요.")
+            .ui("fix.elevation", "관리자 계정의 SSH 별칭으로 다시 시도하세요.")
         case "SESSION_LOCKED":
             .ui("fix.sessionLocked", "원격 컴퓨터에서 로그인하거나 잠금을 해제하세요.")
         case "PORT_CONFLICT":

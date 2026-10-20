@@ -2,12 +2,32 @@ import DeskhandClient
 import SwiftUI
 
 /// Diagnostics sheet: the `host.doctor` checks with pass, fail, warning and skipped states,
-/// each with its detail and a copyable fix.
+/// each with its detail and a copyable fix. The sheet grows with the checks up to
+/// `maxListHeight`; beyond that the list scrolls and a fade marks the hidden rows.
 public struct DoctorView: View {
     let model: DoctorModel
     let onClose: () -> Void
 
-    public static let size = CGSize(width: 640, height: 600)
+    public static let width: CGFloat = 640
+    static let maxListHeight: CGFloat = 480
+    static let placeholderHeight: CGFloat = 280
+    nonisolated private static let listSpace = "doctorList"
+
+    @State private var listHeight: CGFloat = 0
+    @State private var rowBottoms: [Int: CGFloat] = [:]
+    @State private var scrollOffset: CGFloat = 0
+
+    /// Rows whose bottom edge is below the visible part of the list.
+    private var hiddenRowIndices: [Int] {
+        rowBottoms.filter { $0.value > scrollOffset + visibleListHeight + 1 }.keys.sorted()
+    }
+
+    /// Height of the visible list: all of it when it fits, otherwise up to the last row that
+    /// fits completely under `maxListHeight`.
+    private var visibleListHeight: CGFloat {
+        guard listHeight > Self.maxListHeight else { return max(listHeight, 1) }
+        return rowBottoms.values.filter { $0 <= Self.maxListHeight }.max() ?? Self.maxListHeight
+    }
 
     public init(model: DoctorModel, onClose: @escaping () -> Void) {
         self.model = model
@@ -20,7 +40,7 @@ public struct DoctorView: View {
                 .padding([.horizontal, .top], DS.Space.xl)
                 .padding(.bottom, DS.Space.l)
             content
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .frame(maxWidth: .infinity, alignment: .top)
             Divider()
             HStack {
                 if let finishedAt = model.finishedAt, !model.isRunning {
@@ -36,7 +56,7 @@ public struct DoctorView: View {
             .padding(.horizontal, DS.Space.xl)
             .padding(.vertical, DS.Space.l)
         }
-        .frame(width: Self.size.width, height: Self.size.height)
+        .frame(width: Self.width)
     }
 
     private var header: some View {
@@ -84,30 +104,36 @@ public struct DoctorView: View {
                     .font(DS.Font.caption)
                     .foregroundStyle(.secondary)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity)
+            .frame(height: Self.placeholderHeight)
             .accessibilityElement(children: .combine)
         case .failed(let error):
-            VStack {
-                ErrorBanner(message: String.ui("doctor.failed", "진단을 실행하지 못했습니다"),
-                            fix: [error.message, error.fix].compactMap { $0 }.joined(separator: " "),
-                            code: error.code,
-                            retry: { model.run() })
-                Spacer()
-            }
-            .padding(.horizontal, DS.Space.xl)
+            ErrorBanner(message: String.ui("doctor.failed", "진단을 실행하지 못했습니다"),
+                        fix: [error.message, error.fix].compactMap { $0 }.joined(separator: " "),
+                        code: error.code,
+                        retry: { model.run() })
+                .padding(.horizontal, DS.Space.xl)
+                .padding(.bottom, DS.Space.xl)
         case .loaded(let checks) where checks.isEmpty:
             EmptyStateView(symbol: "stethoscope",
                            title: String.ui("doctor.empty.title", "진단 항목이 없습니다"),
                            message: String.ui("doctor.empty.message", "데몬이 이 컴퓨터에 대해 확인할 항목을 돌려주지 않았습니다."))
+                .frame(maxWidth: .infinity)
+                .frame(height: Self.placeholderHeight)
         case .loaded(let unordered):
             let checks = DoctorModel.problemsFirst(unordered)
             VStack(alignment: .leading, spacing: DS.Space.m) {
                 DoctorSummary(checks: checks)
                     .padding(.horizontal, DS.Space.xl)
+                ScrollViewReader { proxy in
                 ScrollView {
                     VStack(spacing: 0) {
                         ForEach(Array(checks.enumerated()), id: \.offset) { index, check in
                             DoctorRow(check: check)
+                                .id(index)
+                                .onGeometryChange(for: CGFloat.self) {
+                                    $0.frame(in: .named(Self.listSpace)).maxY
+                                } action: { rowBottoms[index] = $0 }
                             if index < checks.count - 1 {
                                 Divider().padding(.leading, DS.Space.xxl + DS.Space.l)
                             }
@@ -116,6 +142,40 @@ public struct DoctorView: View {
                     .dsCard(padding: 0)
                     .padding(.horizontal, DS.Space.xl)
                     .padding(.bottom, DS.Space.l)
+                    .coordinateSpace(.named(Self.listSpace))
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listHeight = $0 }
+                }
+                .scrollIndicators(.visible)
+                .frame(height: visibleListHeight)
+                .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, offset in
+                    scrollOffset = offset
+                }
+                .overlay(alignment: .bottom) {
+                    if !hiddenRowIndices.isEmpty {
+                        LinearGradient(colors: [DS.Color.surface.opacity(0), DS.Color.surface],
+                                       startPoint: .top, endPoint: .bottom)
+                            .frame(height: DS.Space.m)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
+                }
+                if let next = hiddenRowIndices.first {
+                    Button {
+                        withAnimation { proxy.scrollTo(next, anchor: .bottom) }
+                    } label: {
+                        Label(String.ui("doctor.more", "아래에 \(hiddenRowIndices.count)개 더"), systemImage: "chevron.down")
+                            .font(DS.Font.caption.weight(.semibold))
+                            .padding(.horizontal, DS.Space.m)
+                            .padding(.vertical, DS.Space.xs)
+                            .background(DS.Color.surfaceRaised, in: Capsule())
+                            .overlay(Capsule().strokeBorder(DS.Color.separator))
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity)
+                    .padding(.bottom, DS.Space.m)
+                    .help(String.ui("help.doctorMore", "다음 항목으로 스크롤합니다"))
+                }
                 }
             }
         }
@@ -168,16 +228,22 @@ struct DoctorRow: View {
                 .frame(width: DS.Space.l)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: DS.Space.xs) {
-                HStack(alignment: .firstTextBaseline) {
+                HStack(alignment: .firstTextBaseline, spacing: DS.Space.m) {
                     Text(check.title)
                         .font(DS.Font.headline)
-                    Spacer()
-                    Text(check.doctorStatus.title)
-                        .font(DS.Font.caption.weight(.medium))
-                        .foregroundStyle(check.doctorStatus == .pass || check.doctorStatus == .skip
-                                         ? AnyShapeStyle(.secondary) : AnyShapeStyle(check.doctorStatus.tint))
+                        .layoutPriority(1)
+                    if isCompact {
+                        Text(check.detail)
+                            .font(DS.Font.body)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .help(check.detail)
+                    }
+                    Spacer(minLength: DS.Space.s)
+                    statusBadge
                 }
-                if !check.detail.isEmpty {
+                if !isCompact, !check.detail.isEmpty {
                     Text(check.detail)
                         .font(DS.Font.body)
                         .foregroundStyle(.secondary)
@@ -194,6 +260,20 @@ struct DoctorRow: View {
         .padding(.vertical, DS.Space.m)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(String.ui("a11y.doctorRow", "\(check.title), \(check.doctorStatus.title)"))
+    }
+
+    /// Passed checks without a fix take one line: title, detail and badge.
+    private var isCompact: Bool {
+        check.doctorStatus == .pass && (check.fix ?? "").isEmpty
+    }
+
+    private var statusBadge: some View {
+        Text(check.doctorStatus.title)
+            .font(DS.Font.caption.weight(.semibold))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, DS.Space.s)
+            .padding(.vertical, DS.Space.xs)
+            .background(check.doctorStatus.tint.opacity(0.2), in: Capsule())
     }
 
     private func fixBox(_ fix: String) -> some View {
@@ -226,9 +306,5 @@ struct DoctorRow: View {
         }
         .padding(DS.Space.m)
         .background(DS.Color.surface, in: RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous)
-                .strokeBorder(DS.Color.separator, lineWidth: 1)
-        )
     }
 }

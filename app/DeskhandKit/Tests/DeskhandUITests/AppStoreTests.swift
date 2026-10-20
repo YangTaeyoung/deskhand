@@ -106,14 +106,4 @@ final class AppStoreTests: XCTestCase {
         XCTAssertEqual(flow.steps.first { $0.status == .failed }?.id, InstallStep.install.rawValue)
         XCTAssertTrue(store.hosts.isEmpty)
     }
-
-    private func waitUntil(timeout: Duration = .seconds(3), _ condition: @MainActor () -> Bool) async throws {
-        let deadline = ContinuousClock.now + timeout
-        while !condition() {
-            if ContinuousClock.now > deadline {
-                return XCTFail("condition not met within \(timeout)")
-            }
-            try await Task.sleep(for: .milliseconds(5))
-        }
-    }
 }

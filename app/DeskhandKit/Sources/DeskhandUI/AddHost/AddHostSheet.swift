@@ -120,56 +120,44 @@ public struct AddHostSheet: View {
             VStack(alignment: .leading, spacing: DS.Space.l) {
                 StepProgressView(steps: flow.steps)
                     .dsCard()
-                ErrorBanner(message: failureSummary, fix: error.fix ?? String.ui("addHost.failed.fix", "단계에 표시된 오류를 해결한 뒤 다시 시도하세요."), code: error.code)
+                StatusNotice(symbol: "wrench.and.screwdriver.fill", tint: DS.Color.accent,
+                             title: String.ui("addHost.fix.title", "해결 방법"),
+                             message: error.fix ?? String.ui("addHost.failed.fix", "단계에 표시된 오류를 해결한 뒤 다시 시도하세요."),
+                             code: error.code)
             }
         case .succeeded(let host):
             succeeded(host)
         }
     }
 
-    private var failureSummary: String {
-        guard let step = flow.steps.first(where: { $0.status == .failed }) else {
-            return .ui("addHost.failed.summary", "설치를 마치지 못했습니다")
-        }
-        return .ui("addHost.failed.step", "‘\(step.title)’ 단계에서 실패했습니다")
-    }
-
     private var form: some View {
-        VStack(alignment: .leading, spacing: DS.Space.xl) {
-            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: DS.Space.m, verticalSpacing: DS.Space.l) {
-                GridRow {
-                    fieldLabel(String.ui("addHost.alias", "SSH 별칭"))
-                    VStack(alignment: .leading, spacing: DS.Space.s) {
-                        TextField(String.ui("addHost.alias", "SSH 별칭"), text: $flow.alias,
-                                  prompt: Text(String.ui("addHost.alias.prompt", "예: windows")))
-                            .labelsHidden()
-                            .textFieldStyle(.roundedBorder)
-                            .font(DS.Font.mono)
-                            .autocorrectionDisabled()
-                            .focused($focus, equals: .alias)
-                            .onSubmit { flow.start() }
-                            .textInputSuggestions {
-                                ForEach(suggestions, id: \.self) { alias in
-                                    Text(alias).textInputCompletion(alias)
-                                }
-                            }
-                        aliasChoices
+        VStack(alignment: .leading, spacing: DS.Space.l) {
+            field(String.ui("addHost.alias", "SSH 별칭")) {
+                TextField(String.ui("addHost.alias", "SSH 별칭"), text: $flow.alias,
+                          prompt: Text(String.ui("addHost.alias.prompt", "예: windows")))
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .font(DS.Font.mono)
+                    .autocorrectionDisabled()
+                    .focused($focus, equals: .alias)
+                    .onSubmit { flow.start() }
+                    .textInputSuggestions {
+                        ForEach(suggestions, id: \.self) { alias in
+                            Text(alias).textInputCompletion(alias)
+                        }
                     }
-                }
-                GridRow {
-                    fieldLabel(String.ui("addHost.name", "표시 이름"))
-                    VStack(alignment: .leading, spacing: DS.Space.s) {
-                        TextField(String.ui("addHost.name", "표시 이름"), text: $flow.name,
-                                  prompt: Text(flow.trimmedAlias.isEmpty ? String.ui("addHost.name.prompt", "예: 개발 PC") : flow.trimmedAlias))
-                            .labelsHidden()
-                            .textFieldStyle(.roundedBorder)
-                            .focused($focus, equals: .name)
-                            .onSubmit { flow.start() }
-                        Text(String.ui("addHost.name.caption", "사이드바와 CLI에서 쓰는 이름입니다. 비워 두면 별칭을 씁니다."))
-                            .font(DS.Font.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                aliasChoices
+            }
+            field(String.ui("addHost.name", "표시 이름")) {
+                TextField(String.ui("addHost.name", "표시 이름"), text: $flow.name,
+                          prompt: Text(flow.trimmedAlias.isEmpty ? String.ui("addHost.name.prompt", "예: 개발 PC") : flow.trimmedAlias))
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focus, equals: .name)
+                    .onSubmit { flow.start() }
+                Text(String.ui("addHost.name.caption", "사이드바와 CLI에서 쓰는 이름입니다. 비워 두면 별칭을 씁니다."))
+                    .font(DS.Font.caption)
+                    .foregroundStyle(.secondary)
             }
             if let error = flow.formError {
                 ErrorBanner(message: error.message, fix: error.fix, code: error.code)
@@ -178,11 +166,14 @@ public struct AddHostSheet: View {
         }
     }
 
-    private func fieldLabel(_ text: String) -> some View {
-        Text(text)
-            .font(DS.Font.body)
-            .gridColumnAlignment(.trailing)
-            .accessibilityHidden(true)
+    /// A labeled field: the label above its controls.
+    private func field<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: DS.Space.s) {
+            Text(title)
+                .font(DS.Font.headline)
+                .accessibilityHidden(true)
+            content()
+        }
     }
 
     private var suggestions: [String] {
@@ -273,8 +264,8 @@ public struct AddHostSheet: View {
                     .disabled(!flow.canStart)
             case .running:
                 Text(runningStatus)
-                    .font(DS.Font.caption)
-                    .foregroundStyle(.secondary)
+                    .font(DS.Font.body)
+                    .foregroundStyle(.primary)
                     .monospacedDigit()
                 Spacer()
                 Button(String.ui("addHost.continueInBackground", "백그라운드에서 계속")) { flow.dismiss() }
