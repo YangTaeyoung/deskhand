@@ -141,9 +141,10 @@ const (
 	// displayCacheFor is how long the display list of move events is
 	// reused.
 	displayCacheFor = 2 * time.Second
-	// pasteRestoreWait bounds the wait between Ctrl+V and restoring the
-	// clipboard: the agent waits for the paste target to drain, at most
-	// this long.
+	// pasteMinWait is the least time between Ctrl+V and restoring the
+	// clipboard, and pasteRestoreWait bounds the wait for the paste target
+	// to drain that follows it.
+	pasteMinWait     = 120 * time.Millisecond
 	pasteRestoreWait = time.Second
 	// sessionCacheFor is how long a read of Options.SessionInfo is reused
 	// while the input desktop stays the same.
@@ -182,7 +183,7 @@ type Injector struct {
 	// lastText is when a chunk of text was last sent, in UnixNano.
 	lastText atomic.Int64
 
-	pasteDelay time.Duration
+	pasteMin, pasteDelay time.Duration
 }
 
 // New returns an injector for the desktop of the agent's session.
@@ -201,7 +202,7 @@ func newInjector(sys system, opt Options) *Injector {
 	if opt.Displays == nil {
 		opt.Displays = display.List
 	}
-	return &Injector{opt: opt, sys: sys, held: map[keyID]*heldInput{}, pasteDelay: pasteRestoreWait}
+	return &Injector{opt: opt, sys: sys, held: map[keyID]*heldInput{}, pasteMin: pasteMinWait, pasteDelay: pasteRestoreWait}
 }
 
 // Supported reports whether this system injects input.

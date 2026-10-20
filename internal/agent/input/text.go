@@ -143,7 +143,8 @@ func (j *Injector) typeText(ctx context.Context, owner uint64, ev wire.InputEven
 }
 
 // paste puts ev.Text on the clipboard, presses Ctrl+V and restores the
-// clipboard once the paste target has drained, at most pasteDelay later.
+// clipboard pasteMin later once the paste target has drained, waiting at
+// most pasteDelay more for it.
 func (j *Injector) paste(ctx context.Context, owner uint64, ev wire.InputEvent) error {
 	cb := j.sys.clipboard()
 	if cb == nil {
@@ -181,6 +182,7 @@ func (j *Injector) paste(ctx context.Context, owner uint64, ev wire.InputEvent) 
 	if err := j.locked(ev.Gen, func() error { return j.inject(owner, ctrlV) }); err != nil {
 		return err
 	}
+	time.Sleep(j.pasteMin)
 	_ = j.sys.drain(ctx, j.pasteDelay)
 	putBack()
 	return nil

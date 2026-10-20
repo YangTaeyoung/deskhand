@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -171,6 +172,47 @@ func TestPasteWaitsForTheTargetToDrainBeforeRestoring(t *testing.T) {
 	mustOK(t, <-done)
 	if clip.current() != "old" {
 		t.Fatalf("clipboard %q", clip.current())
+	}
+}
+
+func TestPasteWaitsTheMinimumBeforeDrainingAndRestoring(t *testing.T) {
+	clip := &fakeClipboard{text: "old"}
+	sys := &fakeSystem{clip: clip}
+	var mu sync.Mutex
+	var pressed, drained, restored time.Time
+	sys.hook = func(call int, in []raw) {
+		mu.Lock()
+		pressed = time.Now()
+		mu.Unlock()
+	}
+	sys.drainErr = func(int) error {
+		mu.Lock()
+		drained = time.Now()
+		mu.Unlock()
+		return nil
+	}
+	j := newTestInjector(t, sys, userSession, oneDisplay, Options{ClipboardWritten: func() {
+		if clip.current() == "old" {
+			mu.Lock()
+			restored = time.Now()
+			mu.Unlock()
+		}
+	}})
+	j.pasteMin = 40 * time.Millisecond
+	mustOK(t, j.Apply(wire.InputEvent{Seq: 1, K: "text", Text: "new", Method: "paste"}))
+	mu.Lock()
+	defer mu.Unlock()
+	if pressed.IsZero() || drained.IsZero() || restored.IsZero() {
+		t.Fatalf("Ctrl+V at %v, drain at %v, restore at %v", pressed, drained, restored)
+	}
+	if d := drained.Sub(pressed); d < j.pasteMin {
+		t.Fatalf("the drain began %v after Ctrl+V, before the minimum wait %v", d, j.pasteMin)
+	}
+	if restored.Before(drained) {
+		t.Fatal("the clipboard was restored before the drain")
+	}
+	if got := newInjector(sys, Options{}).pasteMin; got != pasteMinWait || pasteMinWait < 120*time.Millisecond {
+		t.Fatalf("default minimum wait %v (pasteMinWait %v), want at least 120 ms", got, pasteMinWait)
 	}
 }
 
