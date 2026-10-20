@@ -64,6 +64,7 @@ public final class AppStore {
             } else {
                 defaults.removeObject(forKey: Self.selectionKey)
             }
+            controlActions.selectionDidChange()
         }
     }
 
@@ -82,6 +83,9 @@ public final class AppStore {
     public let controlActions: ControlActions
 
     private var controls: [String: ControlState] = [:]
+    /// Hosts whose next control state is applied whatever its `gen`, after the event stream
+    /// was subscribed again.
+    private var controlsToRevalidate: Set<String> = []
     /// Per host, newest first.
     private var timelines: [String: [TimelineEntry]] = [:]
     private var timelineErrors: [String: OperationError] = [:]
@@ -191,6 +195,7 @@ public final class AppStore {
                     if loaded {
                         store.phase = .ready
                         delay = backoff.initial
+                        await store.revalidateControls()
                     } else {
                         try? await Task.sleep(for: delay)
                         delay = min(delay * 2, backoff.maximum)
@@ -235,9 +240,14 @@ public final class AppStore {
     }
 
     private func apply(hostList list: [Host]) {
-        hosts = list
         let ids = Set(list.map(\.hostID))
+        for host in hosts where !ids.contains(host.hostID) {
+            controlActions.forget(host.hostID)
+        }
+        hosts = list
+        for i in hosts.indices { syncOwner(at: i) }
         controls = controls.filter { ids.contains($0.key) }
+        controlsToRevalidate = controlsToRevalidate.intersection(ids)
         timelines = timelines.filter { ids.contains($0.key) }
         timelineErrors = timelineErrors.filter { ids.contains($0.key) }
         streamQualities = streamQualities.filter { ids.contains($0.key) }
@@ -272,14 +282,18 @@ public final class AppStore {
             }
             if let i = hosts.firstIndex(where: { $0.hostID == host.hostID }) {
                 hosts[i] = host
+                syncOwner(at: i)
             } else {
                 hosts.append(host)
+                syncOwner(at: hosts.count - 1)
             }
             reconcileSelection()
         case EventKind.hostRemoved:
             guard let id = event.hostID else { return }
             hosts.removeAll { $0.hostID == id }
+            controlActions.forget(id)
             controls[id] = nil
+            controlsToRevalidate.remove(id)
             timelines[id] = nil
             timelineErrors[id] = nil
             streamQualities[id] = nil
@@ -305,9 +319,7 @@ public final class AppStore {
             guard let owner = p["owner"]?.stringValue else { return }
             let control = ControlState(owner: owner, ownerClient: p["owner_client"]?.stringValue,
                                        gen: p["gen"]?.intValue ?? 0, aiPaused: p["ai_paused"]?.boolValue ?? false)
-            controls[id] = control
-            hosts[i].owner = control.owner
-            hosts[i].ownerClient = control.ownerClient
+            applyControl(control, for: id)
         case EventKind.timelineAppended:
             guard let value = p["entry"], let entry = try? LiveBackend.decode(TimelineEntry.self, from: value) else { return }
             timelines[id] = Self.merge(timelines[id] ?? [], [entry])
@@ -348,18 +360,41 @@ public final class AppStore {
     // MARK: Control and timeline
 
     public func loadControl(for hostID: String) async {
-        guard let control = try? await backend.controlGet(hostID: hostID), host(hostID) != nil else { return }
-        controls[hostID] = control
+        guard let control = try? await backend.controlGet(hostID: hostID) else { return }
+        applyControl(control, for: hostID)
     }
 
-    /// Applies the control state a `control.*` call returned, unless an event already brought a
-    /// newer generation.
-    func applyControlResult(_ control: ControlState, for hostID: String) {
-        guard let i = hosts.firstIndex(where: { $0.hostID == hostID }) else { return }
-        if let current = controls[hostID], current.gen > control.gen { return }
+    /// The one writer of control state, for `control.changed` events, `control.get` and the
+    /// replies of `control.*` calls: applies `control` only when its `gen` is larger than the
+    /// known one (local-api.md §5), or when the host is being revalidated. Returns whether it
+    /// was applied.
+    @discardableResult
+    func applyControl(_ control: ControlState, for hostID: String) -> Bool {
+        guard let i = hosts.firstIndex(where: { $0.hostID == hostID }) else { return false }
+        if let current = controls[hostID], !controlsToRevalidate.contains(hostID), control.gen <= current.gen {
+            return false
+        }
+        controlsToRevalidate.remove(hostID)
         controls[hostID] = control
-        hosts[i].owner = control.owner
-        hosts[i].ownerClient = control.ownerClient
+        syncOwner(at: i)
+        return true
+    }
+
+    /// Reads the control state of every host already known again, accepting it whatever its
+    /// `gen`, after the event stream was subscribed again.
+    func revalidateControls() async {
+        let known = Array(controls.keys)
+        controlsToRevalidate.formUnion(known)
+        for hostID in known {
+            await loadControl(for: hostID)
+        }
+    }
+
+    /// Copies the known control owner onto the host at `index`.
+    private func syncOwner(at index: Int) {
+        guard let control = controls[hosts[index].hostID] else { return }
+        hosts[index].owner = control.owner
+        hosts[index].ownerClient = control.ownerClient
     }
 
     /// Loads a host's timeline and merges it with entries already received from events.

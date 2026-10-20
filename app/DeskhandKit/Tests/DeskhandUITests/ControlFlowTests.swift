@@ -20,9 +20,14 @@ final class ControlFlowTests: XCTestCase {
 
     private func startedStore() async -> (AppStore, GatedBackend) {
         let backend = GatedBackend(PreviewBackend(scenario: .standard, stepDelay: .zero))
-        let store = AppStore(backend: backend, defaults: defaults)
+        let store = AppStore(backend: backend, defaults: defaults,
+                             backoff: .init(initial: .milliseconds(50), maximum: .milliseconds(100)))
         await store.start()
         return (store, backend)
+    }
+
+    private func bannerKind(_ store: AppStore, _ hostID: String) -> ControlBannerKind? {
+        store.host(hostID).map { ControlBannerKind(host: $0, control: store.control(for: hostID)) }
     }
 
     // MARK: Brief
@@ -38,7 +43,7 @@ final class ControlFlowTests: XCTestCase {
         XCTAssertEqual(store.control(for: dev)?.owner, "human")
         XCTAssertEqual(store.control(for: dev)?.aiPaused, true)
         XCTAssertFalse(store.controlActions.isRunning(.stop, on: dev))
-        XCTAssertNil(store.controlActions.failure(for: dev))
+        XCTAssertTrue(store.controlActions.failures(for: dev).isEmpty)
     }
 
     func testTakeoverRequiresConfirmationWhenAIOwns() async throws {
@@ -48,12 +53,12 @@ final class ControlFlowTests: XCTestCase {
         let task = store.controlActions.takeOver(dev)
 
         XCTAssertNil(task)
-        XCTAssertEqual(store.controlActions.pendingTakeover, ControlActions.PendingTakeover(hostID: dev, client: "Claude Code"))
+        XCTAssertEqual(store.controlActions.pendingTakeover(for: dev), ControlActions.PendingTakeover(hostID: dev, client: "Claude Code"))
         XCTAssertTrue(backend.controlCalls.isEmpty)
 
-        await store.controlActions.confirmTakeover()?.value
+        await store.controlActions.confirmTakeover(dev)?.value
 
-        XCTAssertNil(store.controlActions.pendingTakeover)
+        XCTAssertNil(store.controlActions.pendingTakeover(for: dev))
         XCTAssertEqual(backend.controlCalls, [ControlCall(method: "control.acquire", hostID: dev, owner: .human, force: true)])
         XCTAssertEqual(store.control(for: dev)?.owner, "human")
     }
@@ -79,18 +84,19 @@ final class ControlFlowTests: XCTestCase {
 
         await store.controlActions.takeOver(meeting)?.value
 
-        XCTAssertNil(store.controlActions.pendingTakeover)
+        XCTAssertNil(store.controlActions.pendingTakeover(for: meeting))
         XCTAssertEqual(backend.controlCalls, [ControlCall(method: "control.acquire", hostID: meeting, owner: .human, force: false)])
         XCTAssertEqual(store.control(for: meeting)?.owner, "human")
     }
 
     func testCancelledTakeoverSendsNothing() async throws {
         let (store, backend) = await startedStore()
-        store.controlActions.takeOver(PreviewFixtures.devPCID)
-        store.controlActions.cancelTakeover()
+        let dev = PreviewFixtures.devPCID
+        store.controlActions.takeOver(dev)
+        store.controlActions.cancelTakeover(dev)
 
-        XCTAssertNil(store.controlActions.pendingTakeover)
-        XCTAssertNil(store.controlActions.confirmTakeover())
+        XCTAssertNil(store.controlActions.pendingTakeover(for: dev))
+        XCTAssertNil(store.controlActions.confirmTakeover(dev))
         XCTAssertTrue(backend.controlCalls.isEmpty)
         XCTAssertEqual(store.control(for: PreviewFixtures.devPCID)?.owner, "ai")
     }
@@ -136,16 +142,16 @@ final class ControlFlowTests: XCTestCase {
 
         await store.controlActions.stop(dev)?.value
 
-        XCTAssertEqual(store.controlActions.failure(for: dev)?.action, .stop)
-        XCTAssertEqual(store.controlActions.failure(for: dev)?.error.code, "OFFLINE")
+        XCTAssertEqual(store.controlActions.failures(for: dev).map(\.action), [.stop])
+        XCTAssertEqual(store.controlActions.failures(for: dev).first?.error.code, "OFFLINE")
         XCTAssertFalse(store.controlActions.isRunning(.stop, on: dev))
         XCTAssertNil(store.actionError)
         XCTAssertEqual(store.control(for: dev)?.owner, "ai")
 
         backend.failControl("control.stop", with: nil)
-        await store.controlActions.retry(dev)?.value
+        await store.controlActions.retry(.stop, on: dev)?.value
 
-        XCTAssertNil(store.controlActions.failure(for: dev))
+        XCTAssertTrue(store.controlActions.failures(for: dev).isEmpty)
         XCTAssertEqual(backend.controlCalls.map(\.method), ["control.stop", "control.stop"])
         XCTAssertEqual(store.control(for: dev)?.aiPaused, true)
     }
@@ -164,6 +170,128 @@ final class ControlFlowTests: XCTestCase {
 
         XCTAssertEqual(store.control(for: qa), aiControl)
         XCTAssertEqual(store.host(qa)?.owner, "ai")
+    }
+
+    func testFailureOfOneActionSurvivesAnotherAction() async throws {
+        let (store, backend) = await startedStore()
+        let dev = PreviewFixtures.devPCID
+        backend.failControl("control.stop", with: OperationError(code: "TIMEOUT", message: "데몬이 응답하지 않았습니다"))
+        await store.controlActions.stop(dev)?.value
+
+        await store.controlActions.giveBack(dev)?.value
+
+        XCTAssertEqual(store.controlActions.failures(for: dev).map(\.action), [.stop])
+        store.controlActions.dismissFailure(.stop, for: dev)
+        XCTAssertTrue(store.controlActions.failures(for: dev).isEmpty)
+    }
+
+    func testEmergencyStopAppliesToOfflineHost() async throws {
+        let (store, backend) = await startedStore()
+        let design = PreviewFixtures.designID
+        XCTAssertEqual(store.connection(for: design), .offline)
+
+        await store.controlActions.stop(design)?.value
+
+        XCTAssertEqual(backend.controlCalls, [ControlCall(method: "control.stop", hostID: design)])
+        XCTAssertEqual(store.control(for: design)?.aiPaused, true)
+    }
+
+    // MARK: Pending takeover
+
+    func testPendingTakeoverIsPerHostAndClearedOnSelectionChange() async throws {
+        let (store, _) = await startedStore()
+        let dev = PreviewFixtures.devPCID
+        store.selectedHostID = dev
+        store.controlActions.takeOver(dev)
+        XCTAssertNotNil(store.controlActions.pendingTakeover(for: dev))
+        XCTAssertNil(store.controlActions.pendingTakeover(for: PreviewFixtures.qaLaptopID))
+
+        store.selectedHostID = PreviewFixtures.qaLaptopID
+
+        XCTAssertNil(store.controlActions.pendingTakeover(for: dev))
+    }
+
+    func testPendingTakeoverClearedWhenHostIsRemoved() async throws {
+        let (store, backend) = await startedStore()
+        let dev = PreviewFixtures.devPCID
+        store.controlActions.takeOver(dev)
+
+        backend.base.emit(kind: EventKind.hostRemoved, hostID: dev)
+
+        try await waitUntil { store.host(dev) == nil }
+        XCTAssertNil(store.controlActions.pendingTakeover(for: dev))
+        XCTAssertNil(store.controlActions.confirmTakeover(dev))
+    }
+
+    // MARK: Generation order
+
+    func testLateControlEventWithOlderGenIsIgnored() async throws {
+        let (store, backend) = await startedStore()
+        let qa = PreviewFixtures.qaLaptopID
+        backend.base.emit(kind: EventKind.controlChanged, hostID: qa, payload: [
+            "owner": .string("human"), "gen": .int(50), "ai_paused": .bool(true),
+        ])
+        try await waitUntil { store.control(for: qa)?.gen == 50 }
+
+        backend.base.emit(kind: EventKind.controlChanged, hostID: qa, payload: [
+            "owner": .string("ai"), "owner_client": .string("Codex"), "gen": .int(49), "ai_paused": .bool(false),
+        ])
+        backend.base.emit(kind: EventKind.controlChanged, hostID: qa, payload: [
+            "owner": .string("none"), "gen": .int(50), "ai_paused": .bool(false),
+        ])
+        backend.base.emit(kind: EventKind.connectionState, hostID: qa, payload: ["state": .string("degraded")])
+        try await waitUntil { store.connection(for: qa) == .degraded }
+
+        XCTAssertEqual(store.control(for: qa), ControlState(owner: "human", gen: 50, aiPaused: true))
+        XCTAssertEqual(store.host(qa)?.owner, "human")
+    }
+
+    func testStaleControlGetReplyIsIgnored() async throws {
+        let (store, backend) = await startedStore()
+        let dev = PreviewFixtures.devPCID
+        backend.holdControl("control.get", afterApplying: true)
+        let load = Task { await store.loadControl(for: dev) }
+        try await waitUntil { backend.pendingControlCount == 1 }
+
+        await store.controlActions.stop(dev)?.value
+        backend.releaseControl("control.get")
+        await load.value
+
+        XCTAssertEqual(store.control(for: dev)?.owner, "human")
+        XCTAssertEqual(store.control(for: dev)?.aiPaused, true)
+    }
+
+    func testTakeoverReplyArrivingAfterStopLeavesAIPaused() async throws {
+        let (store, backend) = await startedStore()
+        let meeting = PreviewFixtures.meetingPCID
+        backend.holdControl("control.acquire", afterApplying: true)
+        let takeover = store.controlActions.takeOver(meeting)
+        try await waitUntil { backend.pendingControlCount == 1 }
+
+        await store.controlActions.stop(meeting)?.value
+        backend.releaseControl("control.acquire")
+        await takeover?.value
+
+        XCTAssertEqual(store.control(for: meeting)?.aiPaused, true)
+        XCTAssertEqual(bannerKind(store, meeting), .aiPaused)
+        XCTAssertEqual(bannerKind(store, meeting)?.title, "AI 일시정지됨")
+    }
+
+    func testControlStateIsReadAgainWhateverItsGenAfterResubscribe() async throws {
+        let (store, backend) = await startedStore()
+        let qa = PreviewFixtures.qaLaptopID
+        backend.base.emit(kind: EventKind.controlChanged, hostID: qa, payload: [
+            "owner": .string("ai"), "owner_client": .string("Codex"), "gen": .int(50), "ai_paused": .bool(false),
+        ])
+        try await waitUntil { store.control(for: qa)?.gen == 50 }
+
+        backend.base.endEventStreams(throwing: ClientError.disconnected)
+        try await waitUntil { store.phase == .reconnecting }
+        try await waitUntil { store.phase == .ready }
+
+        let daemon = try await backend.base.controlGet(hostID: qa)
+        try await waitUntil { store.control(for: qa) == daemon }
+        XCTAssertEqual(store.host(qa)?.owner, daemon.owner)
     }
 
     // MARK: Banner
@@ -192,6 +320,23 @@ final class ControlFlowTests: XCTestCase {
         XCTAssertEqual(ControlBannerKind(host: reconnectingAI, control: controls[PreviewFixtures.devPCID]), .reconnecting)
         let pausedWhileObserving = ControlState(owner: "none", gen: 3, aiPaused: true)
         XCTAssertEqual(kind(PreviewFixtures.meetingPCID, pausedWhileObserving), .aiPaused)
+    }
+
+    func testToolbarOffersTakeOverOnlyWhileObserving() async throws {
+        let backend = PreviewBackend(scenario: .standard, stepDelay: .zero)
+        let hosts = PreviewFixtures.hosts()
+        let store = AppStore.seeded(backend: backend, defaults: defaults, hosts: hosts, selectedHostID: PreviewFixtures.devPCID)
+        var offering: [String] = []
+        var pills: [String] = []
+        for host in hosts {
+            let model = WorkspaceToolbarModel(store: store, host: host)
+            if model.showsTakeOver { offering.append(host.hostID) }
+            if model.showsPill { pills.append(host.hostID) }
+        }
+        XCTAssertEqual(offering, [PreviewFixtures.meetingPCID])
+        XCTAssertFalse(pills.contains(PreviewFixtures.designID))
+        XCTAssertFalse(pills.contains(PreviewFixtures.labID))
+        XCTAssertTrue(pills.contains(PreviewFixtures.buildServerID))
     }
 
     // MARK: Tabs and layout

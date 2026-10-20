@@ -1,17 +1,30 @@
 import SwiftUI
 
 /// Capsule showing who holds input control. Human and AI control fill the capsule with the
-/// owner color; observing uses a quiet neutral capsule. `clientName` names the controlling client.
-/// `sessionLocked` replaces the owner with 로그인 필요 while Windows shows its lock screen.
+/// owner color under white text; observing uses a quiet neutral capsule. `clientName` names the
+/// controlling client. `aiPaused` (after an emergency stop) reads AI 일시정지됨 and
+/// `sessionLocked` (Windows lock screen) reads 로그인 필요, both on a pale orange capsule with
+/// label-colored text; the lock wins over the pause.
 public struct ControlPill: View {
+    /// `regular` for rows and cards, `large` beside large toolbar buttons.
+    public enum Size: Sendable {
+        case regular
+        case large
+    }
+
     public let owner: ControlOwner
     public let clientName: String?
+    public let aiPaused: Bool
     public let sessionLocked: Bool
+    public let size: Size
 
-    public init(owner: ControlOwner, clientName: String? = nil, sessionLocked: Bool = false) {
+    public init(owner: ControlOwner, clientName: String? = nil, aiPaused: Bool = false,
+                sessionLocked: Bool = false, size: Size = .regular) {
         self.owner = owner
         self.clientName = clientName
+        self.aiPaused = aiPaused
         self.sessionLocked = sessionLocked
+        self.size = size
     }
 
     /// Text of the pill: the owner title, followed by the client name when someone holds control.
@@ -21,39 +34,80 @@ public struct ControlPill: View {
     }
 
     nonisolated static var loginRequired: String { .ui("control.loginRequired", "로그인 필요") }
+    nonisolated static var paused: String { .ui("banner.aiPaused.title", "AI 일시정지됨") }
+
+    /// Changes whenever the pill shows a different state or client.
+    public var identity: String {
+        "\(owner.rawValue)|\(clientName ?? "")|\(aiPaused)|\(sessionLocked)"
+    }
+
+    private enum Look {
+        case owner
+        case notice(symbol: String, title: String)
+    }
+
+    private var look: Look {
+        if sessionLocked { return .notice(symbol: "lock.fill", title: Self.loginRequired) }
+        if aiPaused { return .notice(symbol: "pause.circle.fill", title: Self.paused) }
+        return .owner
+    }
 
     public var body: some View {
         HStack(spacing: DS.Space.xs) {
-            Image(systemName: sessionLocked ? "lock.fill" : owner.symbol)
-                .imageScale(.small)
-                .foregroundStyle(sessionLocked ? AnyShapeStyle(DS.Color.warning) : AnyShapeStyle(.foreground))
-            Text(sessionLocked ? Self.loginRequired : owner.title)
-                .fontWeight(.semibold)
-            if !sessionLocked, owner != .none, let clientName, !clientName.isEmpty {
-                Text(verbatim: "·")
-                    .opacity(0.7)
-                Text(clientName)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+            switch look {
+            case .owner:
+                Image(systemName: owner.symbol)
+                    .imageScale(.small)
+                Text(owner.title)
+                    .fontWeight(.semibold)
+                if owner != .none, let clientName, !clientName.isEmpty {
+                    Text(verbatim: "·")
+                        .opacity(0.7)
+                    Text(clientName)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            case .notice(let symbol, let title):
+                Image(systemName: symbol)
+                    .imageScale(.small)
+                Text(title)
+                    .fontWeight(.semibold)
             }
         }
-        .font(DS.Font.caption)
+        .font(size == .large ? DS.Font.body : DS.Font.caption)
         .foregroundStyle(foreground)
         .padding(.horizontal, DS.Space.m)
-        .padding(.vertical, DS.Space.xs)
+        .padding(.vertical, size == .large ? 0 : DS.Space.xs)
+        .frame(minHeight: size == .large ? 28 : nil)
         .background(background, in: Capsule())
+        .overlay {
+            if case .notice = look {
+                Capsule().strokeBorder(DS.Color.warning.opacity(0.45), lineWidth: 1)
+            }
+        }
         .fixedSize()
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(String.ui("a11y.control", "제어권: \(sessionLocked ? Self.loginRequired : Self.label(owner: owner, clientName: clientName))"))
+        .accessibilityLabel(String.ui("a11y.control", "제어권: \(accessibilityValue)"))
+    }
+
+    private var accessibilityValue: String {
+        switch look {
+        case .owner: Self.label(owner: owner, clientName: clientName)
+        case .notice(_, let title): title
+        }
     }
 
     private var foreground: AnyShapeStyle {
-        if sessionLocked { return AnyShapeStyle(.primary) }
-        return owner == .none ? AnyShapeStyle(.secondary) : AnyShapeStyle(.white)
+        switch look {
+        case .notice: AnyShapeStyle(.primary)
+        case .owner: owner == .none ? AnyShapeStyle(.secondary) : AnyShapeStyle(.white)
+        }
     }
 
     private var background: AnyShapeStyle {
-        if sessionLocked { return AnyShapeStyle(DS.Color.warning.opacity(0.16)) }
-        return owner == .none ? AnyShapeStyle(DS.Color.observe.opacity(0.14)) : AnyShapeStyle(owner.fill.gradient)
+        switch look {
+        case .notice: AnyShapeStyle(DS.Color.warning.opacity(0.18))
+        case .owner: owner == .none ? AnyShapeStyle(DS.Color.observe.opacity(0.14)) : AnyShapeStyle(owner.fill.gradient)
+        }
     }
 }

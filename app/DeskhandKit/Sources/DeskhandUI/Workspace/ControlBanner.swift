@@ -37,6 +37,19 @@ public enum ControlBannerKind: Equatable, Sendable {
         }
     }
 
+    /// Taking control applies while observing or while an AI client holds control.
+    public var offersTakeOver: Bool {
+        switch self {
+        case .observing, .ai: true
+        default: false
+        }
+    }
+
+    /// Giving control back to the AI applies while the human holds control or the AI is paused.
+    public var offersGiveBack: Bool {
+        self == .human || self == .aiPaused
+    }
+
     /// The band title, also announced to VoiceOver when the kind changes.
     public var title: String {
         switch self {
@@ -69,10 +82,10 @@ struct ControlBanner: View {
     var body: some View {
         VStack(spacing: 0) {
             band
-            if let failure = actions.failure(for: host.hostID) {
+            ForEach(actions.failures(for: host.hostID)) { failure in
                 ControlFailureBar(failure: failure,
-                                  retry: { actions.retry(host.hostID) },
-                                  dismiss: { actions.dismissFailure(for: host.hostID) })
+                                  retry: { actions.retry(failure.action, on: host.hostID) },
+                                  dismiss: { actions.dismissFailure(failure.action, for: host.hostID) })
             }
         }
     }
@@ -142,27 +155,23 @@ struct ControlBanner: View {
         }
     }
 
+    /// AI에게 넘기기: a deep purple prominent button with white text, or a plain bordered button
+    /// with label-colored text.
+    @ViewBuilder
     private func giveBackButton(prominent: Bool) -> some View {
         let running = actions.isRunning(.giveBack, on: host.hostID)
-        return Button { actions.giveBack(host.hostID) } label: {
+        let button = Button { actions.giveBack(host.hostID) } label: {
             ControlActionLabel(action: .giveBack, running: running)
         }
-        .buttonStyle(prominent ? AnyPrimitiveButtonStyle(.borderedProminent) : AnyPrimitiveButtonStyle(.bordered))
-        .tint(DS.Color.ai)
         .disabled(running)
-    }
-}
-
-/// Type-erased primitive button style, for choosing between system styles at run time.
-struct AnyPrimitiveButtonStyle: PrimitiveButtonStyle {
-    private let make: (Configuration) -> AnyView
-
-    init<S: PrimitiveButtonStyle>(_ style: S) {
-        make = { AnyView(style.makeBody(configuration: $0)) }
-    }
-
-    func makeBody(configuration: Configuration) -> some View {
-        make(configuration)
+        if prominent {
+            button
+                .buttonStyle(.borderedProminent)
+                .tint(DS.Color.aiFill)
+        } else {
+            button
+                .buttonStyle(.bordered)
+        }
     }
 }
 
@@ -371,8 +380,8 @@ struct BandButtonStyle: ButtonStyle {
     }
 }
 
-/// Inline failure of the last control action: what failed, the daemon's message and fix,
-/// the error code, a retry button and a dismiss button.
+/// Inline failure of one control action: what failed, the daemon's message and fix, the error
+/// code, an accent retry button and a dismiss button.
 struct ControlFailureBar: View {
     let failure: ControlActions.Failure
     let retry: () -> Void
@@ -403,7 +412,7 @@ struct ControlFailureBar: View {
                 Label(String.ui("action.retry", "다시 시도"), systemImage: "arrow.clockwise")
             }
             .buttonStyle(.borderedProminent)
-            .tint(failure.action == .stop ? DS.Color.danger : DS.Color.accent)
+            .tint(DS.Color.accent)
             Button(action: dismiss) {
                 Image(systemName: "xmark")
                     .font(.system(size: 11, weight: .bold))

@@ -11,21 +11,23 @@ struct TimelineInspector: View {
     var body: some View {
         @Bindable var layout = store.layout
         VStack(spacing: 0) {
-            Picker(String.ui("inspector.pane", "인스펙터 패널"), selection: $layout.inspectorPane) {
+            HStack(spacing: DS.Space.xs) {
                 ForEach(WorkspaceLayout.InspectorPane.allCases) { pane in
-                    Text(pane.title).tag(pane)
+                    TabButton(title: pane.title, isSelected: layout.inspectorPane == pane) {
+                        layout.inspectorPane = pane
+                    }
                 }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
             .padding(.horizontal, DS.Space.l)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: WorkspaceTabBar.height)
             .overlay(alignment: .bottom) {
                 Rectangle()
                     .fill(DS.Color.separator)
                     .frame(height: 1)
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(String.ui("inspector.pane", "인스펙터 패널"))
             switch layout.inspectorPane {
             case .activity:
                 ActivityPane(store: store, host: host)

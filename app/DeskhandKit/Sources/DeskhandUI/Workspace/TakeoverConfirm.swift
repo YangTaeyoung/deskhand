@@ -26,8 +26,8 @@ public struct TakeoverConfirmView: View {
             computerName: store.host(pending.hostID)?.name ?? pending.hostID,
             client: pending.client,
             lastAIAction: store.timeline(for: pending.hostID).first { $0.actor == "ai" },
-            confirm: { store.controlActions.confirmTakeover() },
-            cancel: { store.controlActions.cancelTakeover() })
+            confirm: { store.controlActions.confirmTakeover(pending.hostID) },
+            cancel: { store.controlActions.cancelTakeover(pending.hostID) })
     }
 
     private var title: String {

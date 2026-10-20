@@ -170,6 +170,11 @@ public enum PreviewFixtures {
                 entry(51, ago(9), "ai", "Codex", "exec", "sqlcmd -S . -Q \"SELECT COUNT(*) FROM Orders\""),
                 entry(50, ago(11), "system", nil, "connection", "원격 데스크톱 세션 연결됨 · deploy"),
             ]
+        case labID:
+            return [
+                entry(72, ago(26 * 60 - 4), "system", nil, "connection", "인증서 지문이 페어링 때와 달라 연결을 거부했습니다", "denied"),
+                entry(71, ago(26 * 60), "system", nil, "connection", "연결 끊김 · 에이전트가 다시 시작됐습니다"),
+            ]
         case kioskID:
             return [
                 entry(31, ago(6), "system", nil, "connection", "Windows 세션이 잠겼습니다"),

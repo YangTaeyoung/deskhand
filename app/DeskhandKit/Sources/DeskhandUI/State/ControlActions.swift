@@ -3,12 +3,12 @@ import Foundation
 import Observation
 
 /// Control actions of the person at this Mac (local-api.md §3 `control.*`, design.md §5.1):
-/// take control, give it back to the AI, and the emergency stop. Tracks each call in flight and
-/// the last failure per computer.
+/// take control, give it back to the AI, and the emergency stop. Tracks each call in flight,
+/// the last failure of each action per computer, and takeovers awaiting confirmation.
 @MainActor
 @Observable
 public final class ControlActions {
-    public enum Action: Sendable, Hashable {
+    public enum Action: Sendable, Hashable, CaseIterable {
         /// `control.acquire{as: "human"}`.
         case takeOver
         /// `control.resume_ai`.
@@ -17,10 +17,12 @@ public final class ControlActions {
         case stop
     }
 
-    /// The last failed action on a computer.
-    public struct Failure: Sendable, Equatable {
+    /// The last failure of one action on a computer.
+    public struct Failure: Sendable, Equatable, Identifiable {
         public let action: Action
         public let error: OperationError
+
+        public var id: Action { action }
 
         public init(action: Action, error: OperationError) {
             self.action = action
@@ -42,11 +44,10 @@ public final class ControlActions {
         }
     }
 
-    /// Set by `takeOver(_:)` while an AI client holds control; cleared by confirming or cancelling.
-    public var pendingTakeover: PendingTakeover?
-
+    private var pending: [String: PendingTakeover] = [:]
     private var running: [String: Set<Action>] = [:]
-    private var failures: [String: Failure] = [:]
+    /// Per host, newest first, at most one per action.
+    private var failures: [String: [Failure]] = [:]
 
     @ObservationIgnored weak var store: AppStore?
     @ObservationIgnored private let backend: any Backend
@@ -61,39 +62,44 @@ public final class ControlActions {
         running[hostID]?.contains(action) ?? false
     }
 
-    /// The last failure on `hostID`, until it is dismissed or another action starts.
-    public func failure(for hostID: String) -> Failure? {
-        failures[hostID]
+    /// Failed actions on `hostID`, newest first. Each stays until it is dismissed or the same
+    /// action runs again.
+    public func failures(for hostID: String) -> [Failure] {
+        failures[hostID] ?? []
     }
 
-    public func dismissFailure(for hostID: String) {
-        failures[hostID] = nil
+    public func dismissFailure(_ action: Action, for hostID: String) {
+        failures[hostID]?.removeAll { $0.action == action }
+    }
+
+    /// The takeover of `hostID` waiting for confirmation.
+    public func pendingTakeover(for hostID: String) -> PendingTakeover? {
+        pending[hostID]
     }
 
     // MARK: Actions
 
     /// Takes control for the person at this Mac. While an AI client holds control this only
-    /// sets `pendingTakeover`; `confirmTakeover()` then acquires with `force`.
+    /// records a pending takeover; `confirmTakeover(_:)` then acquires with `force`.
     @discardableResult
     public func takeOver(_ hostID: String) -> Task<Void, Never>? {
         guard let control = store?.control(for: hostID) else { return nil }
         if control.owner == ControlOwner.ai.rawValue {
-            pendingTakeover = PendingTakeover(hostID: hostID, client: control.ownerClient)
+            pending[hostID] = PendingTakeover(hostID: hostID, client: control.ownerClient)
             return nil
         }
         return acquire(hostID, force: false)
     }
 
-    /// Acquires control for the pending takeover with `force`.
+    /// Acquires control for the pending takeover of `hostID` with `force`.
     @discardableResult
-    public func confirmTakeover() -> Task<Void, Never>? {
-        guard let pending = pendingTakeover else { return nil }
-        pendingTakeover = nil
-        return acquire(pending.hostID, force: true)
+    public func confirmTakeover(_ hostID: String) -> Task<Void, Never>? {
+        guard pending.removeValue(forKey: hostID) != nil else { return nil }
+        return acquire(hostID, force: true)
     }
 
-    public func cancelTakeover() {
-        pendingTakeover = nil
+    public func cancelTakeover(_ hostID: String) {
+        pending[hostID] = nil
     }
 
     /// Lets the AI take control again: clears the AI pause and releases human control.
@@ -103,18 +109,17 @@ public final class ControlActions {
     }
 
     /// Emergency stop: the human takes control and AI input stays paused until `giveBack(_:)`.
-    /// Runs even while a takeover or give-back is in flight.
+    /// Runs even while a takeover or give-back is in flight, and on computers that are offline.
     @discardableResult
     public func stop(_ hostID: String) -> Task<Void, Never>? {
         run(.stop, on: hostID) { try await $0.controlStop(hostID: hostID) }
     }
 
-    /// Repeats the failed action on `hostID`. A failed takeover runs again without asking,
-    /// forcing when an AI client still holds control.
+    /// Repeats the failed `action` on `hostID`. A takeover runs again without asking, forcing
+    /// when an AI client still holds control.
     @discardableResult
-    public func retry(_ hostID: String) -> Task<Void, Never>? {
-        guard let failure = failures[hostID] else { return nil }
-        switch failure.action {
+    public func retry(_ action: Action, on hostID: String) -> Task<Void, Never>? {
+        switch action {
         case .takeOver:
             let owner = store?.control(for: hostID)?.owner
             return acquire(hostID, force: owner == ControlOwner.ai.rawValue)
@@ -125,13 +130,29 @@ public final class ControlActions {
         }
     }
 
+    // MARK: Store notifications
+
+    /// Drops every pending takeover.
+    func selectionDidChange() {
+        pending = [:]
+    }
+
+    /// Drops the pending takeover and failures of a computer that left the list.
+    func forget(_ hostID: String) {
+        pending[hostID] = nil
+        failures[hostID] = nil
+    }
+
+    // MARK: Calls
+
     private func acquire(_ hostID: String, force: Bool) -> Task<Void, Never>? {
         run(.takeOver, on: hostID) { try await $0.controlAcquire(hostID: hostID, as: .human, force: force) }
     }
 
     /// Starts `call` unless the same action, or the other of take-over and give-back, is in
-    /// flight on `hostID`. The returned control state is applied to the store; a failure is kept
-    /// for `failure(for:)` and the control state is read again.
+    /// flight on `hostID`. Starting clears the earlier failure of the same action only. The
+    /// returned control state goes through `AppStore.applyControl`; a failure is kept for
+    /// `failures(for:)` and the control state is read again.
     private func run(
         _ action: Action,
         on hostID: String,
@@ -142,18 +163,20 @@ public final class ControlActions {
         let exclusive: Set<Action> = action == .stop ? [.stop] : [.takeOver, .giveBack]
         guard active.isDisjoint(with: exclusive) else { return nil }
         running[hostID, default: []].insert(action)
-        failures[hostID] = nil
+        dismissFailure(action, for: hostID)
         let backend = self.backend
         return Task { [weak self] in
             do {
                 let control = try await call(backend)
                 self?.running[hostID]?.remove(action)
-                self?.store?.applyControlResult(control, for: hostID)
+                self?.store?.applyControl(control, for: hostID)
             } catch {
                 guard let self else { return }
                 running[hostID]?.remove(action)
                 if error is CancellationError { return }
-                failures[hostID] = Failure(action: action, error: OperationError(error))
+                if store?.host(hostID) != nil {
+                    failures[hostID, default: []].insert(Failure(action: action, error: OperationError(error)), at: 0)
+                }
                 await store?.loadControl(for: hostID)
             }
         }

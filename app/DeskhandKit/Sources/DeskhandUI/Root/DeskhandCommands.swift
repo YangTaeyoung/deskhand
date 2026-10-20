@@ -80,20 +80,21 @@ private struct WorkspaceViewCommands: View {
     }
 }
 
-/// 제어권 가져오기, AI에게 넘기기 and 긴급 정지 (⇧⌘.) for the selected computer.
+/// 제어권 가져오기, AI에게 넘기기 and 긴급 정지 (⇧⌘.) for the selected computer. Taking and
+/// giving back follow the control banner; the emergency stop is always available.
 private struct ControlCommands: View {
     let store: AppStore
     let host: Host
 
     var body: some View {
         let actions = store.controlActions
-        let model = WorkspaceToolbarModel(store: store, host: host)
         let hostID = host.hostID
+        let kind = ControlBannerKind(host: host, control: store.control(for: hostID))
         let contextualRunning = actions.isRunning(.takeOver, on: hostID) || actions.isRunning(.giveBack, on: hostID)
         Button(ControlActions.Action.takeOver.title) { actions.takeOver(hostID) }
-            .disabled(!model.canChangeControl || contextualRunning || model.owner == .human)
+            .disabled(contextualRunning || !kind.offersTakeOver)
         Button(ControlActions.Action.giveBack.title) { actions.giveBack(hostID) }
-            .disabled(!model.canChangeControl || contextualRunning || (model.owner != .human && model.control?.aiPaused != true))
+            .disabled(contextualRunning || !kind.offersGiveBack)
         Button(ControlActions.Action.stop.title) { actions.stop(hostID) }
             .keyboardShortcut(".", modifiers: [.command, .shift])
             .disabled(actions.isRunning(.stop, on: hostID))

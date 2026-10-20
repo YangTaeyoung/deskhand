@@ -64,11 +64,18 @@ public struct WorkspaceView: View {
         }
     }
 
+    /// Layout rule: the tab bar has a fixed height and the control banner its ideal height; the
+    /// tab content region below them reports a zero minimum size to the split view and is
+    /// clipped to its frame, whatever the tab draws.
     private var main: some View {
         VStack(spacing: 0) {
             WorkspaceTabBar(layout: store.layout)
+                .layoutPriority(1)
             ControlBanner(store: store, host: host)
+                .layoutPriority(1)
             TabPlaceholderView(tab: store.layout.tab)
+                .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+                .clipped()
         }
         .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: bannerKind)
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
@@ -80,7 +87,8 @@ public struct WorkspaceView: View {
     }
 }
 
-/// Segmented control of the seven workspace tabs (⌘1–⌘7).
+/// Leading row of the seven workspace tabs (⌘1–⌘7): symbol and title, or symbols only when
+/// the column is narrow.
 struct WorkspaceTabBar: View {
     /// Height of the tab bar, shared with the inspector header beside it.
     static let height: CGFloat = 44
@@ -89,38 +97,72 @@ struct WorkspaceTabBar: View {
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            picker(iconsOnly: false)
-            picker(iconsOnly: true)
+            tabs(iconsOnly: false)
+            tabs(iconsOnly: true)
         }
         .padding(.horizontal, DS.Space.l)
-        .frame(minWidth: 0, maxWidth: .infinity)
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         .frame(height: Self.height)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(DS.Color.separator)
                 .frame(height: 1)
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(String.ui("tab.picker", "작업 공간 탭"))
     }
 
-    /// Segments titled with the tab names, or with their symbols when the column is narrow.
-    private func picker(iconsOnly: Bool) -> some View {
-        Picker(String.ui("tab.picker", "작업 공간 탭"), selection: $layout.tab) {
+    private func tabs(iconsOnly: Bool) -> some View {
+        HStack(spacing: DS.Space.xs) {
             ForEach(WorkspaceTab.allCases) { tab in
-                Group {
-                    if iconsOnly {
-                        Image(systemName: tab.symbol)
-                            .accessibilityLabel(tab.title)
-                    } else {
-                        Text(tab.title)
-                    }
+                TabButton(title: tab.title, symbol: tab.symbol, iconOnly: iconsOnly, isSelected: layout.tab == tab) {
+                    layout.tab = tab
                 }
                 .help(String.ui("tab.help", "\(tab.title) (⌘\(tab.number))"))
-                .tag(tab)
             }
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
         .fixedSize()
+    }
+}
+
+/// One tab of a tab row: the selected tab is drawn in the accent color on a tinted capsule,
+/// others in the secondary color with a hover wash.
+struct TabButton: View {
+    let title: String
+    var symbol: String?
+    var iconOnly = false
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: DS.Space.xs) {
+                if let symbol {
+                    Image(systemName: symbol)
+                        .imageScale(.medium)
+                }
+                if !iconOnly {
+                    Text(title)
+                        .lineLimit(1)
+                }
+            }
+            .font(isSelected ? DS.Font.body.weight(.semibold) : DS.Font.body)
+            .foregroundStyle(isSelected ? AnyShapeStyle(DS.Color.accent) : AnyShapeStyle(.secondary))
+            .padding(.horizontal, iconOnly ? DS.Space.s : DS.Space.m)
+            .frame(height: 28)
+            .background(background, in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
+
+    private var background: AnyShapeStyle {
+        if isSelected { return AnyShapeStyle(DS.Color.accent.opacity(0.14)) }
+        return hovering ? AnyShapeStyle(DS.Color.neutral.opacity(0.12)) : AnyShapeStyle(.clear)
     }
 }
 

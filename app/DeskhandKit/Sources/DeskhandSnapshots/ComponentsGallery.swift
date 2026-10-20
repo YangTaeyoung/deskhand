@@ -130,6 +130,7 @@ struct ComponentsGallery: View {
                 pillRow(ControlPill(owner: .none), note: "아무도 입력하지 않습니다")
                 pillRow(ControlPill(owner: .human), note: "이 Mac의 키보드·마우스가 원격 PC로 갑니다")
                 pillRow(ControlPill(owner: .ai, clientName: "Claude Code"), note: "AI 입력만 원격 PC로 갑니다")
+                pillRow(ControlPill(owner: .human, aiPaused: true), note: "긴급 정지 후 AI 입력이 멈춰 있습니다")
                 pillRow(ControlPill(owner: .none, sessionLocked: true), note: "Windows 잠금 화면이라 아무도 입력할 수 없습니다")
             }
             Divider()

@@ -10,35 +10,36 @@ struct WorkspaceToolbarModel {
 
     var control: ControlState? { store.control(for: host.hostID) }
     var owner: ControlOwner { control.flatMap { ControlOwner(rawValue: $0.owner) } ?? host.controlOwner }
+    var bannerKind: ControlBannerKind { ControlBannerKind(host: host, control: control) }
 
-    /// Control items are shown unless the computer is offline or blocked.
-    var showsControls: Bool {
+    /// The pill shows while a connection exists or is being restored, and on a disconnected
+    /// computer while an AI client holds control or the AI is paused.
+    var showsPill: Bool {
         switch host.connection {
         case .ready, .degraded, .connecting, .reconnecting: true
-        case .offline, .blocked: false
+        case .offline, .blocked: owner == .ai || control?.aiPaused == true
         }
     }
 
-    /// Take-over and give-back need a live connection.
-    var canChangeControl: Bool {
-        host.connection == .ready || host.connection == .degraded
+    /// The control pill with the current values, sized to the large toolbar buttons.
+    var pill: ControlPill {
+        ControlPill(owner: owner, clientName: control?.ownerClient ?? host.ownerClient,
+                    aiPaused: control?.aiPaused == true, sessionLocked: host.isSessionLocked, size: .large)
     }
+
+    /// 제어권 가져오기 shows only while observing. In the other states the control banner carries
+    /// the control action, or no control action applies.
+    var showsTakeOver: Bool { bannerKind == .observing }
 
     /// Stream quality while the screen tab is open and a stream reports one.
     var quality: StreamQuality? {
-        guard store.layout.tab == .screen, canChangeControl else { return nil }
+        guard store.layout.tab == .screen, host.connection == .ready || host.connection == .degraded else { return nil }
         return store.streamQuality(for: host.hostID)
-    }
-
-    /// The control action next to the pill: give back while the human holds control or the AI
-    /// is paused, take over otherwise.
-    var contextualAction: ControlActions.Action {
-        owner == .human || control?.aiPaused == true ? .giveBack : .takeOver
     }
 }
 
-/// Toolbar items of the workspace window: stream quality, the control pill, the contextual
-/// control action, the emergency stop and the inspector toggle.
+/// Toolbar items of the workspace window: stream quality, the control pill, 제어권 가져오기
+/// while observing, the emergency stop (always) and the inspector toggle.
 struct WorkspaceToolbar: ToolbarContent {
     let store: AppStore
     let host: Host
@@ -52,19 +53,29 @@ struct WorkspaceToolbar: ToolbarContent {
             }
             .sharedBackgroundVisibility(.hidden)
         }
-        if model.showsControls {
+        if model.showsPill {
+            let pill = model.pill
             ToolbarItem(placement: .primaryAction) {
-                WorkspaceControlPill(model: model)
+                pill
+                    .id(pill.identity)
             }
             .sharedBackgroundVisibility(.hidden)
-            ToolbarItemGroup(placement: .primaryAction) {
-                ContextualControlButton(model: model)
-                EmergencyStopButton(store: store, host: host)
+        }
+        let takeRunning = store.controlActions.isRunning(.takeOver, on: host.hostID)
+        let stopRunning = store.controlActions.isRunning(.stop, on: host.hostID)
+        ToolbarItemGroup(placement: .primaryAction) {
+            if model.showsTakeOver {
+                TakeOverButton(store: store, host: host, running: takeRunning)
+                    .id(takeRunning)
             }
+            EmergencyStopButton(store: store, host: host, running: stopRunning)
+                .id(stopRunning)
         }
         ToolbarSpacer(.fixed, placement: .primaryAction)
+        let showsInspector = store.layout.showsInspector
         ToolbarItem(placement: .primaryAction) {
-            InspectorToggleButton(layout: store.layout)
+            InspectorToggleButton(layout: store.layout, showsInspector: showsInspector)
+                .id(showsInspector)
         }
     }
 }
@@ -121,15 +132,19 @@ public struct WorkspaceToolbarStrip: View {
             if showsQuality, let quality = model.quality {
                 StreamQualityLabel(quality: quality, connection: model.host.connection)
             }
-            if model.showsControls {
-                WorkspaceControlPill(model: model)
-                HStack(spacing: DS.Space.s) {
-                    ContextualControlButton(model: model)
-                        .buttonStyle(.bordered)
-                    EmergencyStopButton(store: model.store, host: model.host)
-                }
+            if model.showsPill {
+                model.pill
             }
-            InspectorToggleButton(layout: model.store.layout)
+            HStack(spacing: DS.Space.s) {
+                if model.showsTakeOver {
+                    TakeOverButton(store: model.store, host: model.host,
+                                   running: model.store.controlActions.isRunning(.takeOver, on: model.host.hostID))
+                        .buttonStyle(.bordered)
+                }
+                EmergencyStopButton(store: model.store, host: model.host,
+                                    running: model.store.controlActions.isRunning(.stop, on: model.host.hostID))
+            }
+            InspectorToggleButton(layout: model.store.layout, showsInspector: model.store.layout.showsInspector)
                 .buttonStyle(.bordered)
                 .padding(.leading, DS.Space.s)
         }
@@ -160,48 +175,32 @@ struct StreamQualityLabel: View {
     }
 }
 
-/// The control pill for the toolbar: 로그인 필요 while the session is locked.
-struct WorkspaceControlPill: View {
-    let model: WorkspaceToolbarModel
+/// 제어권 가져오기, with a spinner while the call runs. `running` is read where the toolbar
+/// is built.
+struct TakeOverButton: View {
+    let store: AppStore
+    let host: Host
+    let running: Bool
 
     var body: some View {
-        ControlPill(owner: model.owner, clientName: model.control?.ownerClient ?? model.host.ownerClient,
-                    sessionLocked: model.host.isSessionLocked)
-    }
-}
-
-/// 제어권 가져오기 or AI에게 넘기기, with a spinner while the call runs.
-struct ContextualControlButton: View {
-    let model: WorkspaceToolbarModel
-
-    var body: some View {
-        let actions = model.store.controlActions
-        let hostID = model.host.hostID
-        let action = model.contextualAction
-        let running = actions.isRunning(.takeOver, on: hostID) || actions.isRunning(.giveBack, on: hostID)
         Button {
-            switch action {
-            case .takeOver: actions.takeOver(hostID)
-            case .giveBack: actions.giveBack(hostID)
-            case .stop: actions.stop(hostID)
-            }
+            store.controlActions.takeOver(host.hostID)
         } label: {
-            ControlActionLabel(action: action, running: running)
+            ControlActionLabel(action: .takeOver, running: running)
         }
-        .disabled(running || !model.canChangeControl)
-        .help(action == .takeOver
-              ? String.ui("help.takeOver", "AI 대신 내가 이 PC를 조작합니다")
-              : String.ui("help.giveBack", "AI가 다시 이 PC를 조작할 수 있게 합니다"))
+        .disabled(running)
+        .help(String.ui("help.takeOver", "AI 대신 내가 이 PC를 조작합니다"))
     }
 }
 
-/// Red 긴급 정지 button (⇧⌘. in the menu bar).
+/// Red 긴급 정지 button (⇧⌘. in the menu bar), with a spinner while the call runs. `running`
+/// is read where the toolbar is built.
 struct EmergencyStopButton: View {
     let store: AppStore
     let host: Host
+    let running: Bool
 
     var body: some View {
-        let running = store.controlActions.isRunning(.stop, on: host.hostID)
         Button {
             store.controlActions.stop(host.hostID)
         } label: {
@@ -214,22 +213,22 @@ struct EmergencyStopButton: View {
     }
 }
 
-/// Shows or hides the inspector (⌥⌘0).
+/// Shows or hides the inspector (⌥⌘0). `showsInspector` is read where the toolbar is built;
+/// the title and tooltip follow it.
 struct InspectorToggleButton: View {
-    @Bindable var layout: WorkspaceLayout
+    let layout: WorkspaceLayout
+    let showsInspector: Bool
 
     var body: some View {
         Button {
             layout.showsInspector.toggle()
         } label: {
-            Label(String.ui("inspector.toggle", "인스펙터"), systemImage: "sidebar.right")
+            Label(showsInspector ? String.ui("menu.hideInspector", "인스펙터 가리기") : String.ui("menu.showInspector", "인스펙터 보기"),
+                  systemImage: "sidebar.right")
                 .labelStyle(.iconOnly)
         }
-        .help(layout.showsInspector
+        .help(showsInspector
               ? String.ui("help.hideInspector", "인스펙터 가리기 (⌥⌘0)")
               : String.ui("help.showInspector", "인스펙터 보기 (⌥⌘0)"))
-        .accessibilityLabel(layout.showsInspector
-                            ? String.ui("menu.hideInspector", "인스펙터 가리기")
-                            : String.ui("menu.showInspector", "인스펙터 보기"))
     }
 }

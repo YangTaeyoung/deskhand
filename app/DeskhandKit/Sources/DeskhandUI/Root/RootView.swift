@@ -33,7 +33,6 @@ struct ComputersSplitView: View {
     @Bindable var store: AppStore
 
     var body: some View {
-        @Bindable var controlActions = store.controlActions
         NavigationSplitView {
             SidebarView(store: store)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 360)
@@ -42,7 +41,7 @@ struct ComputersSplitView: View {
                 .navigationTitle(store.selectedHost?.name ?? "Deskhand")
                 .navigationSubtitle(store.selectedHost?.sessionSubtitle ?? "")
         }
-        .sheet(item: $controlActions.pendingTakeover) { pending in
+        .sheet(item: pendingTakeover) { pending in
             TakeoverConfirmView(store: store, pending: pending)
         }
         .sheet(item: $store.addHost) { flow in
@@ -79,6 +78,16 @@ struct ComputersSplitView: View {
         } message: { error in
             Text([error.message, error.fix].compactMap { $0 }.joined(separator: "\n"))
         }
+    }
+
+    /// The takeover of the selected computer awaiting confirmation; dismissing the sheet cancels it.
+    private var pendingTakeover: Binding<ControlActions.PendingTakeover?> {
+        Binding(
+            get: { store.selectedHostID.flatMap { store.controlActions.pendingTakeover(for: $0) } },
+            set: { value in
+                guard value == nil, let id = store.selectedHostID else { return }
+                store.controlActions.cancelTakeover(id)
+            })
     }
 
     private var removalTitle: String {

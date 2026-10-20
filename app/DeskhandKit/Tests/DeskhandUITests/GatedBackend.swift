@@ -123,7 +123,12 @@ final class GatedBackend: Backend {
     func hostRepair(hostID: String) async throws -> JobReceipt { try await base.hostRepair(hostID: hostID) }
     func sessionInspect(hostID: String) async throws -> SessionInspect { try await base.sessionInspect(hostID: hostID) }
     func sshAliases() async -> [String] { await base.sshAliases() }
-    func controlGet(hostID: String) async throws -> ControlState { try await base.controlGet(hostID: hostID) }
+    /// Reads the preview daemon's state, then waits while `control.get` is held with `afterApplying`.
+    func controlGet(hostID: String) async throws -> ControlState {
+        let control = try await base.controlGet(hostID: hostID)
+        await gate("control.get", afterApplying: true)
+        return control
+    }
     func controlAcquire(hostID: String, as owner: ControlOwner, force: Bool) async throws -> ControlState {
         try await control(ControlCall(method: "control.acquire", hostID: hostID, owner: owner, force: force)) {
             try await base.controlAcquire(hostID: hostID, as: owner, force: force)

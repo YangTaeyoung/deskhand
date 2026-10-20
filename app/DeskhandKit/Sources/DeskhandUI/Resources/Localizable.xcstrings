@@ -1933,18 +1933,6 @@
         }
       }
     },
-    "help.giveBack": {
-      "comment": "Tooltip of the give-back button",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "AI가 다시 이 PC를 조작할 수 있게 합니다"
-          }
-        }
-      }
-    },
     "help.hideInspector": {
       "comment": "Tooltip of the inspector toggle while the inspector is shown",
       "extractionState": "manual",
@@ -2313,18 +2301,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "인스펙터 패널"
-          }
-        }
-      }
-    },
-    "inspector.toggle": {
-      "comment": "Toolbar button that shows or hides the inspector",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "인스펙터"
           }
         }
       }

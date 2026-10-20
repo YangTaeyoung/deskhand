@@ -72,8 +72,9 @@ enum WorkspaceScenes {
             scene("workspace-reconnecting", Setup(selected: PreviewFixtures.buildServerID, tab: .logs)),
             scene("workspace-session-locked", Setup(selected: PreviewFixtures.kioskID)),
             scene("workspace-offline", Setup(selected: PreviewFixtures.designID, tab: .files, inspector: .info)),
-            scene("workspace-blocked", Setup(selected: PreviewFixtures.labID, tab: .processes, timelines: [
-                PreviewFixtures.labID: .failure(OperationError(code: "OFFLINE", message: "실험실 PC에 연결되어 있지 않습니다")),
+            scene("workspace-blocked", Setup(selected: PreviewFixtures.labID, tab: .processes)),
+            scene("workspace-timeline-error", Setup(selected: PreviewFixtures.qaLaptopID, tab: .files, timelines: [
+                PreviewFixtures.qaLaptopID: .failure(OperationError(message: "데몬과 연결이 끊겼습니다")),
             ])),
             scene("workspace-info", Setup(selected: dev, tab: .debugger, inspector: .info)),
             scene("workspace-timeline-loading", Setup(selected: PreviewFixtures.meetingPCID, tab: .qa,
