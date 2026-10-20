@@ -243,8 +243,14 @@ func Export(job model.Job, dest string) (Exported, error) {
 	if err != nil {
 		return Exported{}, apierr.Internal(fmt.Sprintf("산출물 폴더 %s를 읽지 못했습니다(%v). 폴더 권한을 확인하세요", src, err))
 	}
-	_, hasManifest, _ := ReadManifest(src)
+	m, hasManifest, err := ReadManifest(src)
+	if err != nil {
+		return Exported{}, apierr.Internal(fmt.Sprintf("산출물 목록을 읽지 못했습니다(%v). 원본 폴더 %s를 확인하세요", err, src))
+	}
 	if hasManifest {
+		if err := matchesManifest(m, rels, src); err != nil {
+			return Exported{}, err
+		}
 		rels = append(rels, ManifestName)
 	}
 	if len(rels) == 0 {
@@ -283,6 +289,28 @@ func Export(job model.Job, dest string) (Exported, error) {
 		out.Manifest = filepath.Join(target, ManifestName)
 	}
 	return out, nil
+}
+
+// matchesManifest refuses a folder src whose files rels are not the files
+// of its manifest m.
+func matchesManifest(m Manifest, rels []string, src string) error {
+	listed := map[string]bool{}
+	for _, f := range m.Files {
+		listed[f.Path] = true
+	}
+	present := map[string]bool{}
+	for _, rel := range rels {
+		present[rel] = true
+		if !listed[rel] {
+			return apierr.New(wire.CodeHashMismatch, fmt.Sprintf("%s가 manifest에 없는데 묶음에 있습니다. 산출물이 바뀌었을 수 있으니 원본 폴더 %s를 확인하세요", rel, src), false, "")
+		}
+	}
+	for _, f := range m.Files {
+		if !present[f.Path] {
+			return apierr.New(wire.CodeHashMismatch, fmt.Sprintf("manifest의 %s가 묶음에 없습니다. 산출물이 바뀌었을 수 있으니 원본 폴더 %s를 확인하세요", f.Path, src), false, "")
+		}
+	}
+	return nil
 }
 
 // freeName returns dir/name, or dir/"name (n)" for the first n that is free.

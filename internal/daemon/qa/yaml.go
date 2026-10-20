@@ -1,6 +1,7 @@
 package qa
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -35,12 +36,29 @@ type yline struct {
 	text   string
 }
 
+// maxDepth bounds the nesting of collections.
+const maxDepth = 100
+
 // yamlParser parses the YAML subset of docs/local-api.md §10.
 type yamlParser struct {
 	file  string
 	lines []yline
 	pos   int
+	// depth is the nesting of the collection being parsed.
+	depth int
 }
+
+// enter counts one more level of nesting at line and refuses more than
+// maxDepth; leave undoes it.
+func (p *yamlParser) enter(line int) error {
+	p.depth++
+	if p.depth > maxDepth {
+		return p.errf(line, "값이 %d단계보다 깊게 중첩됐습니다. 시나리오를 얕게 고치세요", maxDepth)
+	}
+	return nil
+}
+
+func (p *yamlParser) leave() { p.depth-- }
 
 func (p *yamlParser) errf(line int, format string, a ...any) error {
 	return &ScenarioError{File: p.file, Line: line, Msg: fmt.Sprintf(format, a...)}
@@ -136,6 +154,10 @@ func (p *yamlParser) checkTab(l yline) error {
 // indent.
 func (p *yamlParser) block(indent int) (*node, error) {
 	l := p.cur()
+	if err := p.enter(l.num); err != nil {
+		return nil, err
+	}
+	defer p.leave()
 	if err := p.checkTab(l); err != nil {
 		return nil, err
 	}
@@ -572,14 +594,22 @@ func (f *flowParser) peek() byte {
 	return f.s[f.i]
 }
 
+// errFlowEnd is the end of the source inside a flow collection.
+var errFlowEnd = errors.New("the source ended inside a flow collection")
+
 func (f *flowParser) value() (*node, error) {
 	c := f.peek()
 	switch c {
 	case 0:
-		return nil, f.p.errf(f.line, "흐름 값이 끝나지 않았습니다. 닫는 ] 나 }를 쓰세요")
-	case '[':
-		return f.seq()
-	case '{':
+		return nil, errFlowEnd
+	case '[', '{':
+		if err := f.p.enter(f.line); err != nil {
+			return nil, err
+		}
+		defer f.p.leave()
+		if c == '[' {
+			return f.seq()
+		}
 		return f.mapping()
 	case '"', '\'':
 		line := f.line
@@ -621,6 +651,17 @@ func (f *flowParser) plain() (*node, error) {
 	return scalarNode(line, strings.TrimRight(f.s[start:f.i], " \t")), nil
 }
 
+// unclosed is the error of the collection opened with open at line that
+// does not close; at is the line where the parser stopped, 0 at the end.
+func (f *flowParser) unclosed(open byte, line, at int) error {
+	closer := map[byte]string{'[': "]", '{': "}"}[open]
+	where := "파일이 끝날 때까지"
+	if at > 0 {
+		where = fmt.Sprintf("%d줄에서", at)
+	}
+	return f.p.errf(line, "이 줄에서 연 %c가 닫히지 않았습니다(%s 닫히지 않음). 항목 사이에 ,를 쓰고 끝에 %s를 쓰세요", open, where, closer)
+}
+
 func (f *flowParser) seq() (*node, error) {
 	n := &node{kind: nodeSeq, line: f.line}
 	f.i++
@@ -630,6 +671,9 @@ func (f *flowParser) seq() (*node, error) {
 			return n, nil
 		}
 		item, err := f.value()
+		if errors.Is(err, errFlowEnd) {
+			return nil, f.unclosed('[', n.line, 0)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -641,9 +685,9 @@ func (f *flowParser) seq() (*node, error) {
 			f.i++
 			return n, nil
 		case 0:
-			return nil, f.p.errf(f.line, "목록이 닫히지 않았습니다. 끝에 ]를 쓰세요")
+			return nil, f.unclosed('[', n.line, 0)
 		default:
-			return nil, f.p.errf(f.line, "목록 항목 사이에 ,를 쓰고 끝에 ]를 쓰세요")
+			return nil, f.unclosed('[', n.line, f.line)
 		}
 	}
 }
@@ -658,6 +702,9 @@ func (f *flowParser) mapping() (*node, error) {
 			return n, nil
 		}
 		key, err := f.value()
+		if errors.Is(err, errFlowEnd) {
+			return nil, f.unclosed('{', n.line, 0)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -667,7 +714,11 @@ func (f *flowParser) mapping() (*node, error) {
 		if key.kind != nodeScalar {
 			return nil, f.p.errf(key.line, "흐름 매핑의 키는 글자여야 합니다. 키: 값 형식으로 쓰세요")
 		}
-		if f.peek() != ':' {
+		switch f.peek() {
+		case ':':
+		case 0:
+			return nil, f.unclosed('{', n.line, 0)
+		default:
 			return nil, f.p.errf(f.line, "흐름 매핑의 키 %q 뒤에 \": 값\"이 없습니다. 키: 값 형식으로 쓰세요", key.value)
 		}
 		f.i++
@@ -678,7 +729,9 @@ func (f *flowParser) mapping() (*node, error) {
 		var val *node
 		if c := f.peek(); c == ',' || c == '}' {
 			val = &node{kind: nodeNull, line: f.line}
-		} else if val, err = f.value(); err != nil {
+		} else if val, err = f.value(); errors.Is(err, errFlowEnd) {
+			return nil, f.unclosed('{', n.line, 0)
+		} else if err != nil {
 			return nil, err
 		}
 		n.keys = append(n.keys, key)
@@ -690,9 +743,9 @@ func (f *flowParser) mapping() (*node, error) {
 			f.i++
 			return n, nil
 		case 0:
-			return nil, f.p.errf(f.line, "매핑이 닫히지 않았습니다. 끝에 }를 쓰세요")
+			return nil, f.unclosed('{', n.line, 0)
 		default:
-			return nil, f.p.errf(f.line, "매핑 항목 사이에 ,를 쓰고 끝에 }를 쓰세요")
+			return nil, f.unclosed('{', n.line, f.line)
 		}
 	}
 }

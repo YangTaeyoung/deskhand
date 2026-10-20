@@ -304,6 +304,9 @@ func (pc *fakePC) Call(ctx context.Context, op string, params proto.Message, opt
 		}
 		nodes := []any{map[string]any{"ref": "e-root", "role": "window", "name": title, "depth": float64(0), "flags": []any{}}}
 		for _, e := range pc.elems {
+			if e.role == "text" && params.String("filter") != "all" {
+				continue
+			}
 			if e.window == title && e.hiddenFor == 0 {
 				n := elemNode(e)
 				n["depth"] = float64(1)

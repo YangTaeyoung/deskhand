@@ -220,3 +220,54 @@ func TestQAListGetReportCancel(t *testing.T) {
 		t.Fatalf("report of a running run %d %q", res.code, res.err)
 	}
 }
+
+func TestQARunSecondCtrlCCancelsTheTeardown(t *testing.T) {
+	dir := t.TempDir()
+	scenario := filepath.Join(dir, "smoke.yaml")
+	if err := os.WriteFile(scenario, []byte("name: x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sigs := make(chan os.Signal, 1)
+	var mu sync.Mutex
+	cancels := 0
+	teardown := qaRunObj("running", false, qaStep(1, "steps", "sleep", "blocked", "취소로 멈췄습니다"), qaStep(2, "teardown", "exec", "running", ""))
+	teardown["cancel_requested"] = true
+	done := qaRunObj("cancelled", true, qaStep(1, "steps", "sleep", "blocked", "취소로 멈췄습니다"), qaStep(2, "teardown", "exec", "blocked", "취소로 멈췄습니다"))
+	f := startFake(t, map[string]handler{
+		"qa.run": ok(envelope("running", map[string]any{"run_id": "q-1", "job_id": "j-9", "run": teardown})),
+		"qa.get": func(map[string]any, func(any)) (any, *rpcFail) {
+			mu.Lock()
+			defer mu.Unlock()
+			switch cancels {
+			case 0:
+				cancel()
+			case 1:
+				select {
+				case sigs <- os.Interrupt:
+				default:
+				}
+			default:
+				return done, nil
+			}
+			return teardown, nil
+		},
+		"qa.cancel": func(map[string]any, func(any)) (any, *rpcFail) {
+			mu.Lock()
+			cancels++
+			mu.Unlock()
+			return envelope("running", map[string]any{"run_id": "q-1", "run": teardown}), nil
+		},
+	})
+	var out, errb bytes.Buffer
+	app := New("test")
+	app.Stdout, app.Stderr = &out, &errb
+	app.PollInterval = time.Millisecond
+	app.Signals = func() (<-chan os.Signal, func()) { return sigs, func() {} }
+	code := app.Run(ctx, []string{"qa", "run", scenario})
+	if code != exitFailure || len(f.called("qa.cancel")) != 2 || !strings.Contains(errb.String(), "정리 단계도 멈추도록") ||
+		!strings.Contains(out.String(), "결과: 취소됨") {
+		t.Fatalf("second Ctrl-C %d\n%s\n%s", code, out.String(), errb.String())
+	}
+}

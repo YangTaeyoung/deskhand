@@ -41,13 +41,16 @@ type App struct {
 	Term Terminal
 	// Open shows a file in its default app; nil means it cannot.
 	Open func(path string) error
+	// Signals returns a channel of the interrupts that arrive from now on
+	// and the function that stops it; nil means none are watched.
+	Signals func() (<-chan os.Signal, func())
 }
 
 // New returns an App on the process's standard streams.
 func New(version string) *App {
 	return &App{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Version: version,
 		Interactive: stdinIsTerminal, PollInterval: 500 * time.Millisecond,
-		Progress: func() bool { return fileIsTerminal(os.Stderr) }, Term: stdinTerminal{}, Open: openFile}
+		Progress: func() bool { return fileIsTerminal(os.Stderr) }, Term: stdinTerminal{}, Open: openFile, Signals: interrupts}
 }
 
 // run is the state of one invocation: the App and the global flags.

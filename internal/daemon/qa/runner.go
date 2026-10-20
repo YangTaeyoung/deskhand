@@ -76,6 +76,10 @@ type runner struct {
 	window          map[string]any
 	screenOff       bool
 	seenUnsupported map[string]bool
+	// cancelHit and timeoutHit record that a cancel or the run timeout
+	// stopped or skipped a step.
+	cancelHit  bool
+	timeoutHit bool
 }
 
 // stepOut is what a step did.
@@ -129,11 +133,23 @@ func (r *runner) snapshot(steps bool) Run {
 // saveLocked stores the run with the next rev and publishes qa.updated
 // with step, the step that changed (0 for none).
 func (r *runner) saveLocked(step int) {
+	r.bumpLocked()
+	r.storeLocked(step)
+}
+
+// bumpLocked moves the run to its next rev.
+func (r *runner) bumpLocked() {
 	run := &r.rec.Run
 	run.Rev++
-	now := time.Now()
-	run.UpdatedAt = model.Time(now)
+	run.UpdatedAt = model.Time(time.Now())
 	count(run)
+}
+
+// storeLocked stores the run at its rev and publishes qa.updated with step,
+// the step that changed (0 for none).
+func (r *runner) storeLocked(step int) {
+	run := &r.rec.Run
+	now := time.Now()
 	data, err := json.Marshal(r.rec)
 	if err != nil {
 		r.m.lg.Printf("QA run %s: encode: %v", run.RunID, err)
@@ -176,17 +192,22 @@ func (r *runner) cancel(c model.Caller) (Run, error) {
 		return Run{}, ended(run)
 	}
 	first := !r.rec.Run.CancelRequested
-	if r.inTeardown {
-		r.cancelTD(errCancelled)
-	}
-	r.cancelMain(errCancelled)
-	if first {
+	teardown := !first && r.inTeardown
+	switch {
+	case first:
+		r.cancelMain(errCancelled)
 		r.rec.Run.CancelRequested = true
 		r.saveLocked(0)
+	case teardown:
+		r.cancelTD(errCancelled)
 	}
+	name, jobID := r.rec.Run.Name, r.rec.Run.JobID
 	r.mu.Unlock()
-	if first {
-		_, _ = r.m.opt.Bus.Record(c.Entry(r.host.HostID, model.TimelineQA, "QA 취소 요청: "+r.rec.Run.Name, model.TimelineOK, r.rec.Run.JobID))
+	switch {
+	case first:
+		_, _ = r.m.opt.Bus.Record(c.Entry(r.host.HostID, model.TimelineQA, "QA 취소 요청: "+name, model.TimelineOK, jobID))
+	case teardown:
+		_, _ = r.m.opt.Bus.Record(c.Entry(r.host.HostID, model.TimelineQA, "QA 정리 단계 취소 요청: "+name, model.TimelineOK, jobID))
 	}
 	return r.snapshot(true), nil
 }
@@ -211,7 +232,10 @@ func (r *runner) execute() {
 			return
 		}
 		if stop == "" && r.mainCtx.Err() != nil {
-			stop = stopReason(context.Cause(r.mainCtx))
+			cause := context.Cause(r.mainCtx)
+			stop = stopReason(cause)
+			r.cancelHit = r.cancelHit || cause == errCancelled
+			r.timeoutHit = r.timeoutHit || cause == errRunTimeout
 		}
 		if stop != "" {
 			r.notRun(i, stop)
@@ -224,6 +248,9 @@ func (r *runner) execute() {
 		if (status == StepFail || status == StepBlocked) && !st.Optional && !st.ContinueOnFail {
 			stop = fmt.Sprintf("%d단계(%s)가 %s여서 실행하지 않았습니다", i+1, st.Name, stepLabel(status))
 		}
+	}
+	if r.stopTimer != nil {
+		r.stopTimer()
 	}
 	r.mu.Lock()
 	r.inTeardown = true
@@ -238,6 +265,7 @@ func (r *runner) execute() {
 		}
 		if tdStop == "" && r.tdCtx.Err() != nil {
 			tdStop = "취소로 정리 단계를 멈춰 실행하지 않았습니다"
+			r.cancelHit = true
 		}
 		if tdStop != "" {
 			r.notRun(i, tdStop)
@@ -328,7 +356,9 @@ func (r *runner) runStep(ctx context.Context, i int) string {
 		switch {
 		case ctx.Err() != nil && context.Cause(ctx) == errCancelled:
 			out.status, out.err, out.message = StepBlocked, nil, "취소로 멈췄습니다"
+			r.cancelHit = true
 		case ctx.Err() != nil && context.Cause(ctx) == errRunTimeout:
+			r.timeoutHit = true
 			msg := fmt.Sprintf("실행 제한 시간(%s)이 지나 이 단계를 멈췄습니다. timeout_ms를 늘리거나 시나리오를 나누세요", millis(r.timeout))
 			out.status, out.err, out.message = StepFail, &ErrorInfo{Code: wire.CodeTimeout, Message: msg}, msg
 		case stepCause == errStepTimeout && !out.polled:
@@ -393,18 +423,18 @@ func (r *runner) failEvidence(st Step, i int, out *stepOut) {
 		}
 	}
 	if tree != nil {
-		if data, err := json.MarshalIndent(tree, "", "  "); err == nil {
-			if a, err := r.save(i, st.Action, "ui-tree", ".json", "ui_tree", []byte(r.sc.Scrub(string(data)))); err == nil {
+		if data, err := json.MarshalIndent(r.sc.ScrubAny(tree), "", "  "); err == nil {
+			if a, err := r.save(i, st.Action, "ui-tree", ".json", "ui_tree", data); err == nil {
 				out.evidence = append(out.evidence, a)
 			}
 		}
 	}
 	if out.content != nil {
-		data := out.content
+		data := []byte(r.sc.Scrub(string(out.content)))
 		if len(data) > 64<<10 {
 			data = data[len(data)-64<<10:]
 		}
-		if a, err := r.save(i, st.Action, "content", ".txt", "log", []byte(r.sc.Scrub(string(data)))); err == nil {
+		if a, err := r.save(i, st.Action, "content", ".txt", "log", data); err == nil {
 			out.evidence = append(out.evidence, a)
 		}
 	}
@@ -512,19 +542,19 @@ func safeName(s string) string {
 func (r *runner) finish() {
 	r.mu.Lock()
 	run := &r.rec.Run
-	run.Status = finalStatus(*run, context.Cause(r.mainCtx))
-	if context.Cause(r.mainCtx) == errRunTimeout {
+	run.Status = finalStatus(*run, r.cancelHit, r.timeoutHit)
+	if run.Status == RunFailed && r.timeoutHit {
 		run.Error = &ErrorInfo{Code: wire.CodeTimeout, Message: fmt.Sprintf("실행 제한 시간(%s)이 지났습니다. timeout_ms를 늘리거나 시나리오를 나누세요", millis(r.timeout))}
 	}
 	run.CurrentStep = nil
-	now := time.Now()
-	run.FinishedAt = model.Time(now)
-	count(run)
+	run.FinishedAt = model.Time(time.Now())
+	r.bumpLocked()
 	if err := writeBundle(&r.rec, r.dir); err != nil {
 		r.m.lg.Printf("QA run %s: write the bundle: %v", run.RunID, err)
+		bundleFailed(run, r.dir, err)
 	}
 	r.m.release(r)
-	r.saveLocked(0)
+	r.storeLocked(0)
 	final := clone(*run)
 	report := r.rec.Run.Report
 	r.mu.Unlock()
@@ -550,13 +580,21 @@ func (r *runner) finish() {
 	_, _ = r.m.opt.Bus.Record(entry)
 }
 
-// finalStatus is the status of a run whose steps have ended; cause is the
-// cause of its main context.
-func finalStatus(run Run, cause error) string {
-	switch cause {
-	case errCancelled:
+// bundleFailed ends run in error because its bundle in dir could not be
+// written.
+func bundleFailed(run *Run, dir string, err error) {
+	run.Status = RunError
+	run.Error = &ErrorInfo{Code: wire.CodeInternal, Message: fmt.Sprintf("결과 묶음을 쓰지 못했습니다(%v). %s의 남은 공간과 권한을 확인한 뒤 시나리오를 다시 실행하세요", err, dir)}
+	run.Report, run.ReportDir = nil, ""
+}
+
+// finalStatus is the status of a run whose steps have ended; cancelled and
+// timedOut say that a cancel or the run timeout stopped or skipped a step.
+func finalStatus(run Run, cancelled, timedOut bool) string {
+	switch {
+	case cancelled:
 		return RunCancelled
-	case errRunTimeout:
+	case timedOut:
 		return RunFailed
 	}
 	failed, blocked := false, false

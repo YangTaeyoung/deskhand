@@ -229,6 +229,14 @@ teardown:
 		}
 	})
 
+	t.Run("the run timeout does not cover the teardown", func(t *testing.T) {
+		e := newEnv(t, fixturePC(), testOpts{})
+		run := e.run(t, "name: td late\ntimeout_ms: 200\nsteps:\n  - sleep: 1\nteardown:\n  - sleep: 400\n")
+		if run.Status != RunPassed || statuses(run) != "pass pass" || run.Error != nil {
+			t.Fatalf("run %s %s %+v", run.Status, statuses(run), run.Error)
+		}
+	})
+
 	t.Run("the run timeout fails the running step and skips the rest", func(t *testing.T) {
 		e := newEnv(t, fixturePC(), testOpts{})
 		run := e.run(t, `name: run timeout
@@ -350,6 +358,11 @@ steps:
 		}
 		if a := s.Assertions[0]; a.Kind != "contains" || a.Expected != "없는 글" || !strings.Contains(a.Actual.(string), "한글 라벨") {
 			t.Fatalf("assertion %+v", a)
+		}
+		for _, c := range pc.callsOf("ui.tree") {
+			if c.params.String("filter") == "interactive" && c.params.Int("max") == screenTreeMax {
+				t.Fatalf("assert_screen_text read the interactive tree: %+v", c.params)
+			}
 		}
 	})
 
@@ -602,7 +615,7 @@ steps:
 		t.Fatal(err)
 	}
 	srcSum := sha256.Sum256([]byte(src))
-	if rep.SchemaVersion != 1 || len(rep.Run.Steps) != 4 || rep.Run.Status != RunFailed || rep.Scenario["sha256"] != hex.EncodeToString(srcSum[:]) ||
+	if rep.SchemaVersion != 1 || len(rep.Run.Steps) != 4 || rep.Run.Status != RunFailed || rep.Run.Rev != run.Rev || rep.Scenario["sha256"] != hex.EncodeToString(srcSum[:]) ||
 		rep.Scenario["source"] != strings.ReplaceAll(src, "s3cr3t-value", "***") || rep.Vars["secret_token"] != "***" || rep.Host["host_id"] != "pc" || rep.Daemon != "test" ||
 		rep.Environment["computer_name"] != "DEV-PC" {
 		t.Fatalf("report.json %+v", rep)
@@ -745,20 +758,49 @@ teardown:
 		}
 	})
 
-	t.Run("a cancel during the teardown stops it", func(t *testing.T) {
+	t.Run("the first cancel during the teardown lets the teardown finish", func(t *testing.T) {
 		pc := fixturePC()
-		pc.blockOp = "exec.run"
-		e := newEnv(t, pc, testOpts{})
-		run := e.start(t, "name: td\nsteps:\n  - sleep: 1\nteardown:\n  - exec: slow cleanup\n  - sleep: 1\n", nil)
-		<-pc.started
-		if _, err := e.m.Cancel(run.RunID, tester); err != nil {
-			t.Fatal(err)
+		started, release := make(chan struct{}), make(chan struct{})
+		pc.exec = func(p proto.Message) (proto.Message, error) {
+			close(started)
+			<-release
+			return proto.Message{"code": float64(0)}, nil
 		}
+		e := newEnv(t, pc, testOpts{})
+		run := e.start(t, "name: td\nsteps:\n  - sleep: 1\nteardown:\n  - exec: cleanup\n  - sleep: 1\n", nil)
+		<-started
+		got, err := e.m.Cancel(run.RunID, tester)
+		if err != nil || !got.CancelRequested {
+			t.Fatalf("Cancel %+v %v", got, err)
+		}
+		close(release)
 		done := e.wait(t, run.RunID)
-		if done.Status != RunCancelled || statuses(done) != "pass blocked not_run" {
-			t.Fatalf("run %s %s", done.Status, statuses(done))
+		if done.Status != RunPassed || statuses(done) != "pass pass pass" || !done.CancelRequested {
+			t.Fatalf("run %s %s %v", done.Status, statuses(done), done.CancelRequested)
 		}
 	})
+}
+
+func TestASecondCancelDuringTheTeardownStopsIt(t *testing.T) {
+	pc := fixturePC()
+	pc.blockOp = "exec.run"
+	e := newEnv(t, pc, testOpts{})
+	run := e.start(t, "name: td\nsteps:\n  - sleep: 1\nteardown:\n  - exec: slow cleanup\n  - sleep: 1\n", nil)
+	<-pc.started
+	if _, err := e.m.Cancel(run.RunID, tester); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if cur, _ := e.m.Get(run.RunID); cur.FinishedAt != "" {
+		t.Fatalf("the first cancel stopped the teardown: %s %s", cur.Status, statuses(cur))
+	}
+	if _, err := e.m.Cancel(run.RunID, tester); err != nil {
+		t.Fatal(err)
+	}
+	done := e.wait(t, run.RunID)
+	if done.Status != RunCancelled || statuses(done) != "pass blocked not_run" || !strings.Contains(done.Steps[1].Message, "취소") {
+		t.Fatalf("run %s %s", done.Status, statuses(done))
+	}
 }
 
 func TestOneRunPerHost(t *testing.T) {
@@ -956,5 +998,63 @@ func TestSecretValuesStayOutOfTheRunRecord(t *testing.T) {
 	report, _ := os.ReadFile(run.Report.JSON)
 	if strings.Contains(string(report), "hunter2") {
 		t.Fatalf("report.json holds the secret")
+	}
+}
+
+func TestSecretValuesStayMaskedWhenEscapedOrCut(t *testing.T) {
+	pc := fixturePC()
+	secret := `Zq9p&ss"w\rd<x>`
+	pc.setText("Transcript", strings.Repeat("가", 1997)+secret+" 끝")
+	pc.setCap("screen", "ready")
+	e := newEnv(t, pc, testOpts{})
+	run := e.wait(t, e.start(t, `name: leak
+steps:
+  - ui_act: {name: Message, action: set_value, value: '${secret_pw}'}
+  - assert_ui: {name: Message, text: nope}
+    timeout_ms: 50
+    continue_on_fail: true
+  - assert_ui: {name: Transcript, text: nope}
+    timeout_ms: 50
+    continue_on_fail: true
+  - wait_window: {title: '${secret_pw}'}
+    timeout_ms: 50
+`, map[string]string{"secret_pw": secret}).RunID)
+	if statuses(run) != "pass fail fail fail" {
+		t.Fatalf("statuses %s %+v", statuses(run), run.Steps)
+	}
+	b, _ := json.Marshal(run)
+	if strings.Contains(string(b), "Zq9") {
+		t.Fatalf("the run holds a part of the secret: %s", b)
+	}
+	err := filepath.WalkDir(run.ReportDir, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		if data, _ := os.ReadFile(p); strings.Contains(string(data), "Zq9") {
+			t.Errorf("%s holds a part of the secret", p)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBundleFailureEndsTheRunInError(t *testing.T) {
+	pc := fixturePC()
+	pc.blockOp = "ui.act"
+	e := newEnv(t, pc, testOpts{})
+	run := e.start(t, "name: no bundle\nsteps:\n  - ui_act: {name: Send, action: invoke}\n    timeout_ms: 200\n", nil)
+	<-pc.started
+	if err := os.WriteFile(artifacts.Dir(run.JobID), []byte("in the way"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	done := e.wait(t, run.RunID)
+	if done.Status != RunError || done.Error == nil || done.Error.Code != wire.CodeInternal || done.Report != nil || done.ReportDir != "" {
+		t.Fatalf("run %s %+v %+v", done.Status, done.Error, done.Report)
+	}
+	job, _ := e.jr.Get(context.Background(), done.JobID)
+	if job.Status != model.StatusUnknown {
+		t.Fatalf("job %+v", job)
 	}
 }

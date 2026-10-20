@@ -1,15 +1,19 @@
 package qa
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/YangTaeyoung/deskhand/internal/proto"
 	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
@@ -117,14 +121,20 @@ func (s *Scenario) Scrub(v string) string {
 	return v
 }
 
-// ScrubAny returns v with Scrub applied to every string inside it.
+// ScrubAny returns v with Scrub applied to every string inside it; maps,
+// slices and structs of other types are first turned into their JSON
+// values.
 func (s *Scenario) ScrubAny(v any) any {
 	if len(s.secrets) == 0 {
 		return v
 	}
 	switch t := v.(type) {
+	case nil, bool, float64, int, int64:
+		return v
 	case string:
 		return s.Scrub(t)
+	case proto.Message:
+		return s.ScrubAny(map[string]any(t))
 	case map[string]any:
 		out := make(map[string]any, len(t))
 		for k, x := range t {
@@ -144,6 +154,18 @@ func (s *Scenario) ScrubAny(v any) any {
 		}
 		return out
 	}
+	switch reflect.ValueOf(v).Kind() {
+	case reflect.Map, reflect.Slice, reflect.Array, reflect.Struct, reflect.Pointer:
+		b, err := json.Marshal(v)
+		if err != nil {
+			return masked
+		}
+		var plain any
+		if err := json.Unmarshal(b, &plain); err != nil {
+			return masked
+		}
+		return s.ScrubAny(plain)
+	}
 	return v
 }
 
@@ -159,8 +181,40 @@ func (d *decoder) errf(line int, format string, a ...any) error {
 	return &ScenarioError{File: d.file, Line: line, Msg: fmt.Sprintf(format, a...)}
 }
 
-// Parse parses and checks a scenario.
+// maxSteps bounds the steps of a scenario, setup and teardown included.
+const maxSteps = 1000
+
+// Parse parses and checks a scenario. The error is a *ScenarioError whose
+// text has the secret values masked.
 func Parse(src []byte, opt ParseOptions) (*Scenario, error) {
+	d := &decoder{}
+	sc, err := d.parse(src, opt)
+	if err != nil {
+		var se *ScenarioError
+		if errors.As(err, &se) {
+			se.Msg = d.mask(se.Msg)
+		}
+		return nil, err
+	}
+	return sc, nil
+}
+
+// mask replaces the secret values the decoder knows in s with ***.
+func (d *decoder) mask(s string) string {
+	var secrets []string
+	for k, v := range d.vars {
+		if strings.HasPrefix(k, secretPrefix) && v != "" {
+			secrets = append(secrets, v)
+		}
+	}
+	sort.Slice(secrets, func(i, j int) bool { return len(secrets[i]) > len(secrets[j]) })
+	for _, v := range secrets {
+		s = strings.ReplaceAll(s, v, masked)
+	}
+	return s
+}
+
+func (d *decoder) parse(src []byte, opt ParseOptions) (*Scenario, error) {
 	file := opt.File
 	if file == "" {
 		file = "scenario"
@@ -169,8 +223,8 @@ func Parse(src []byte, opt ParseOptions) (*Scenario, error) {
 	if err != nil {
 		return nil, err
 	}
-	d := &decoder{file: file, dir: opt.Dir, vars: map[string]string{"run_id": opt.RunID}, display: map[string]string{}}
-	d.display["run_id"] = opt.RunID
+	d.file, d.dir = file, opt.Dir
+	d.vars, d.display = map[string]string{"run_id": opt.RunID}, map[string]string{"run_id": opt.RunID}
 	if root.kind == nodeNull {
 		return nil, d.errf(1, "시나리오가 비어 있습니다. name과 steps를 쓰세요")
 	}
@@ -216,6 +270,9 @@ func Parse(src []byte, opt ParseOptions) (*Scenario, error) {
 		}
 		if ph.key == "steps" && len(ph.n.items) == 0 {
 			return nil, d.errf(ph.n.line, "steps가 비어 있습니다. 단계를 하나 이상 쓰세요")
+		}
+		if len(sc.Steps)+len(ph.n.items) > maxSteps {
+			return nil, d.errf(ph.n.line, "setup·steps·teardown의 단계가 모두 %d개를 넘습니다. 시나리오를 여러 개로 나누세요", maxSteps)
 		}
 		for _, item := range ph.n.items {
 			st, err := d.step(item, ph.phase)
@@ -369,6 +426,13 @@ func (o *object) get(key string) *node {
 	return nil
 }
 
+// shown returns the recorded form of the text of key, with secret values
+// masked.
+func (o *object) shown(key string) string {
+	v, _ := o.params[key].(string)
+	return v
+}
+
 // text returns the substituted text of a scalar node.
 func (o *object) text(key string, n *node) (string, string, error) {
 	switch n.kind {
@@ -433,6 +497,20 @@ func (o *object) strs(key string) ([]string, error) {
 	return real, nil
 }
 
+// texts is strs for expected texts: an empty text is refused.
+func (o *object) texts(key string) ([]string, error) {
+	out, err := o.strs(key)
+	if err != nil {
+		return nil, err
+	}
+	for _, v := range out {
+		if v == "" {
+			return nil, o.d.errf(o.get(key).line, "%s의 %s에 빈 글이 있습니다. 찾을 글을 쓰거나 그 항목을 지우세요", o.what, key)
+		}
+	}
+	return out, nil
+}
+
 // int returns the integer of key, at least min and, when max ≥ 0, at most
 // max.
 func (o *object) int(key string, min, max int64) (int64, bool, error) {
@@ -487,7 +565,7 @@ func (o *object) regex(key string) (*regexp.Regexp, error) {
 	}
 	re, err := regexp.Compile(v)
 	if err != nil {
-		return nil, o.d.errf(o.get(key).line, "%s의 %s %q는 올바른 정규식이 아닙니다(%v). Go 정규식(RE2) 문법으로 고치세요", o.what, key, cut(v, 40), err)
+		return nil, o.d.errf(o.get(key).line, "%s의 %s %q는 올바른 정규식이 아닙니다. Go 정규식(RE2) 문법으로 고치세요", o.what, key, cut(o.shown(key), 40))
 	}
 	return re, nil
 }
@@ -654,6 +732,12 @@ func (d *decoder) shortKind(k string, n *node) (any, map[string]any, error) {
 		return nil, nil, err
 	}
 	switch k {
+	case ActLaunch, ActWaitWindow, ActKey, ActExec, ActAssertScreenText:
+		if strings.TrimSpace(v) == "" {
+			return nil, nil, d.errf(n.line, "%s의 값이 비어 있습니다. %s: 뒤에 값을 쓰세요", k, k)
+		}
+	}
+	switch k {
 	case ActLaunch:
 		return &LaunchSpec{Path: v}, params, nil
 	case ActWaitWindow:
@@ -672,7 +756,7 @@ func (d *decoder) shortKind(k string, n *node) (any, map[string]any, error) {
 	case ActSleep:
 		ms, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
 		if err != nil {
-			return nil, nil, d.errf(n.line, "sleep의 값 %q는 정수가 아닙니다. 밀리초를 숫자로 쓰세요", v)
+			return nil, nil, d.errf(n.line, "sleep의 값 %q는 정수가 아닙니다. 밀리초를 숫자로 쓰세요", params[key])
 		}
 		if ms < 0 || ms > maxSleepMS {
 			return nil, nil, d.errf(n.line, "sleep은 0부터 %d밀리초까지입니다. 값을 고치세요", maxSleepMS)
@@ -704,15 +788,16 @@ func (d *decoder) push(o *object) (*PushSpec, error) {
 		return nil, err
 	}
 	line := o.get("from").line
+	shownFrom := o.shown("from")
 	if !filepath.IsAbs(from) {
 		if d.dir == "" {
-			return nil, d.errf(line, "push의 from %q가 상대 경로입니다. 절대 경로로 쓰거나 시나리오를 파일로 주거나 base_dir을 주세요", from)
+			return nil, d.errf(line, "push의 from %q가 상대 경로입니다. 절대 경로로 쓰거나 시나리오를 파일로 주거나 base_dir을 주세요", shownFrom)
 		}
-		from = filepath.Join(d.dir, from)
+		from, shownFrom = filepath.Join(d.dir, from), filepath.Join(d.dir, shownFrom)
 	}
 	from = filepath.Clean(from)
 	if _, err := os.Stat(from); err != nil {
-		return nil, d.errf(line, "push의 from %s가 없습니다. 이 Mac의 경로를 확인하세요", from)
+		return nil, d.errf(line, "push의 from %s가 없습니다. 이 Mac의 경로를 확인하세요", filepath.Clean(shownFrom))
 	}
 	o.params["from"] = from
 	p := &PushSpec{From: from, To: to, OnConflict: "replace", Mkdir: true}
@@ -720,7 +805,7 @@ func (d *decoder) push(o *object) (*PushSpec, error) {
 		return nil, err
 	} else if ok {
 		if !wire.IsConflictPolicy(v) {
-			return nil, d.errf(o.get("on_conflict").line, "push의 on_conflict %q는 쓸 수 없습니다. %s 중 하나를 쓰세요", v, strings.Join(wire.ConflictPolicies(), ", "))
+			return nil, d.errf(o.get("on_conflict").line, "push의 on_conflict %q는 쓸 수 없습니다. %s 중 하나를 쓰세요", o.shown("on_conflict"), strings.Join(wire.ConflictPolicies(), ", "))
 		}
 		p.OnConflict = v
 	}
@@ -854,7 +939,7 @@ func (d *decoder) click(o *object) (*ClickSpec, error) {
 		return nil, err
 	} else if ok {
 		if !contains([]string{"left", "right", "middle"}, v) {
-			return nil, d.errf(o.get("button").line, "click의 button %q는 쓸 수 없습니다. left, right, middle 중 하나를 쓰세요", v)
+			return nil, d.errf(o.get("button").line, "click의 button %q는 쓸 수 없습니다. left, right, middle 중 하나를 쓰세요", o.shown("button"))
 		}
 		c.Button = v
 	}
@@ -883,7 +968,7 @@ func (d *decoder) typeSpec(o *object) (*TypeSpec, error) {
 		return nil, err
 	} else if ok {
 		if !contains([]string{"auto", "unicode", "paste"}, v) {
-			return nil, d.errf(o.get("method").line, "type의 method %q는 쓸 수 없습니다. auto, unicode, paste 중 하나를 쓰세요", v)
+			return nil, d.errf(o.get("method").line, "type의 method %q는 쓸 수 없습니다. auto, unicode, paste 중 하나를 쓰세요", o.shown("method"))
 		}
 		t.Method = v
 	}
@@ -900,7 +985,7 @@ func (d *decoder) uiAct(o *object) (*UIActSpec, error) {
 		return nil, err
 	}
 	if !contains(uiActions, action) {
-		return nil, d.errf(o.get("action").line, "ui_act의 action %q는 쓸 수 없습니다. %s 중 하나를 쓰세요", action, strings.Join(uiActions, ", "))
+		return nil, d.errf(o.get("action").line, "ui_act의 action %q는 쓸 수 없습니다. %s 중 하나를 쓰세요", o.shown("action"), strings.Join(uiActions, ", "))
 	}
 	sel, err := d.selector(o)
 	if err != nil {
@@ -965,10 +1050,10 @@ func (d *decoder) assertScreen(o *object) (*AssertScreenTextSpec, error) {
 	}
 	a := &AssertScreenTextSpec{}
 	var err error
-	if a.Contains, err = o.strs("contains"); err != nil {
+	if a.Contains, err = o.texts("contains"); err != nil {
 		return nil, err
 	}
-	if a.NotContains, err = o.strs("not_contains"); err != nil {
+	if a.NotContains, err = o.texts("not_contains"); err != nil {
 		return nil, err
 	}
 	if a.Matches, err = o.regex("matches"); err != nil {
@@ -995,10 +1080,10 @@ func (d *decoder) assertFile(o *object) (*AssertFileSpec, error) {
 	if a.Exists, err = o.optBool("exists"); err != nil {
 		return nil, err
 	}
-	if a.Contains, err = o.strs("contains"); err != nil {
+	if a.Contains, err = o.texts("contains"); err != nil {
 		return nil, err
 	}
-	if a.NotContains, err = o.strs("not_contains"); err != nil {
+	if a.NotContains, err = o.texts("not_contains"); err != nil {
 		return nil, err
 	}
 	if a.Matches, err = o.regex("matches"); err != nil {
@@ -1009,7 +1094,7 @@ func (d *decoder) assertFile(o *object) (*AssertFileSpec, error) {
 	} else if ok {
 		v = strings.ToLower(v)
 		if len(v) != 64 || strings.Trim(v, "0123456789abcdef") != "" {
-			return nil, d.errf(o.get("sha256").line, "assert_file의 sha256 %q는 64자리 16진수가 아닙니다. 해시를 그대로 쓰세요", cut(v, 20))
+			return nil, d.errf(o.get("sha256").line, "assert_file의 sha256 %q는 64자리 16진수가 아닙니다. 해시를 그대로 쓰세요", cut(o.shown("sha256"), 20))
 		}
 		a.SHA256 = v
 		o.params["sha256"] = v
@@ -1052,10 +1137,10 @@ func (d *decoder) exec(o *object) (*ExecSpec, error) {
 	}
 	e.ExpectCode = int(code)
 	o.params["expect_code"] = code
-	if e.StdoutContains, err = o.strs("stdout_contains"); err != nil {
+	if e.StdoutContains, err = o.texts("stdout_contains"); err != nil {
 		return nil, err
 	}
-	if e.StderrContains, err = o.strs("stderr_contains"); err != nil {
+	if e.StderrContains, err = o.texts("stderr_contains"); err != nil {
 		return nil, err
 	}
 	return e, nil
@@ -1125,7 +1210,7 @@ func (d *decoder) collect(o *object) (*CollectSpec, error) {
 			}
 			if c.Crashes.Since != "" {
 				if _, err := wire.ParseDiagTime(c.Crashes.Since); err != nil {
-					return nil, d.errf(co.get("since").line, "crashes의 since %q는 RFC 3339 시각이 아닙니다. 2026-10-20T00:00:00Z처럼 쓰세요", c.Crashes.Since)
+					return nil, d.errf(co.get("since").line, "crashes의 since %q는 RFC 3339 시각이 아닙니다. 2026-10-20T00:00:00Z처럼 쓰세요", co.shown("since"))
 				}
 			}
 			o.params["crashes"] = co.params
@@ -1186,8 +1271,8 @@ func (d *decoder) events(n *node, parent *object) (*EventsQuery, error) {
 	}
 	checked, fault := p.Check(time.Now())
 	if fault != nil {
-		return nil, d.errf(n.line, "collect의 events에서 %s %q를 쓸 수 없습니다. log는 %s, levels는 %s, 시각은 RFC 3339로 쓰세요",
-			fault.Field, fault.Value, strings.Join(wire.DiagEventLogs, "·"), strings.Join(wire.DiagEventLevels, "·"))
+		return nil, d.errf(n.line, "collect의 events에서 %s %v를 쓸 수 없습니다. log는 %s, levels는 %s, 시각은 RFC 3339로 쓰세요",
+			fault.Field, eo.params[fault.Field], strings.Join(wire.DiagEventLogs, "·"), strings.Join(wire.DiagEventLevels, "·"))
 	}
 	q.Log, q.Levels, q.Max = checked.Log, checked.Levels, int(max)
 	parent.params["events"] = eo.params

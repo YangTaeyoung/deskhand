@@ -268,7 +268,7 @@ func (r *runner) launch(ctx context.Context, s *LaunchSpec) stepOut {
 	out := pass(fmt.Sprintf("pid %d로 실행했습니다", res.Int("pid")))
 	if w, ok := res["window"].(map[string]any); ok {
 		r.window = w
-		out.message += fmt.Sprintf(", 창 %q", w["title"])
+		out.message += fmt.Sprintf(", 창 %q", r.sc.Scrub(fmt.Sprint(w["title"])))
 	}
 	out.result = withRID(res, rid)
 	return out
@@ -289,16 +289,18 @@ func matchWindow(w map[string]any, s *WaitWindowSpec) bool {
 	return true
 }
 
-func describeWindow(s *WaitWindowSpec) string {
+// describeWindow describes the window s looks for, with secret values
+// masked.
+func (r *runner) describeWindow(s *WaitWindowSpec) string {
 	var parts []string
 	if s.Title != "" {
-		parts = append(parts, fmt.Sprintf("제목 %q", s.Title))
+		parts = append(parts, fmt.Sprintf("제목 %q", r.sc.Scrub(s.Title)))
 	}
 	if s.TitleContains != "" {
-		parts = append(parts, fmt.Sprintf("제목에 %q", s.TitleContains))
+		parts = append(parts, fmt.Sprintf("제목에 %q", r.sc.Scrub(s.TitleContains)))
 	}
 	if s.Process != "" {
-		parts = append(parts, "프로세스 "+s.Process)
+		parts = append(parts, "프로세스 "+r.sc.Scrub(s.Process))
 	}
 	if s.PID != 0 {
 		parts = append(parts, fmt.Sprintf("pid %d", s.PID))
@@ -307,7 +309,7 @@ func describeWindow(s *WaitWindowSpec) string {
 }
 
 func (r *runner) waitWindow(ctx context.Context, s *WaitWindowSpec) stepOut {
-	want := describeWindow(s)
+	want := r.describeWindow(s)
 	var lastErr error
 	listed := false
 	for {
@@ -332,7 +334,7 @@ func (r *runner) waitWindow(ctx context.Context, s *WaitWindowSpec) stepOut {
 			}
 			if !s.Gone && found != nil {
 				r.window = found
-				out := pass(fmt.Sprintf("창 %q를 찾았습니다", found["title"]))
+				out := pass(fmt.Sprintf("창 %q를 찾았습니다", r.sc.Scrub(fmt.Sprint(found["title"]))))
 				out.assertions = []Assertion{{Kind: "window", Expected: want, Actual: found["title"], Passed: true}}
 				out.result = map[string]any{"window": found}
 				return out
@@ -419,7 +421,7 @@ func (r *runner) findWindow(ctx context.Context, ref string) (map[string]any, er
 			return w, nil
 		}
 	}
-	return nil, apierr.New(wire.CodeNotFound, fmt.Sprintf("창 %q가 없습니다. win.list로 열린 창을 확인하세요", ref), false, "")
+	return nil, apierr.New(wire.CodeNotFound, fmt.Sprintf("창 %q가 없습니다. win.list로 열린 창을 확인하세요", r.sc.Scrub(ref)), false, "")
 }
 
 func (r *runner) uiAct(ctx context.Context, s *UIActSpec) stepOut {
@@ -445,8 +447,9 @@ func (r *runner) uiAct(ctx context.Context, s *UIActSpec) stepOut {
 	return out
 }
 
-// textValue cuts a text recorded as an assertion's value.
-func textValue(s string) string { return cut(s, actualCut) }
+// textValue masks the secret values of a text recorded as an assertion's
+// value, then cuts it.
+func (r *runner) textValue(s string) string { return cut(r.sc.Scrub(s), actualCut) }
 
 func (r *runner) assertUI(ctx context.Context, s *AssertUISpec) stepOut {
 	window := r.windowRef(s.Selector.Window)
@@ -471,14 +474,14 @@ func (r *runner) assertUI(ctx context.Context, s *AssertUISpec) stepOut {
 			break
 		}
 	}
-	out := assertionFail(last, lastErr)
+	out := r.assertionFail(last, lastErr)
 	out.uiWindow = &window
 	return out
 }
 
 // assertionFail is the failure of a polling step whose last check gave
 // assertions, or only the error err.
-func assertionFail(last []Assertion, err error) stepOut {
+func (r *runner) assertionFail(last []Assertion, err error) stepOut {
 	if last == nil && err != nil {
 		out := fromError(err)
 		out.polled = true
@@ -487,7 +490,7 @@ func assertionFail(last []Assertion, err error) stepOut {
 	out := stepOut{status: StepFail, assertions: last, polled: true}
 	for _, a := range last {
 		if !a.Passed {
-			out.message = fmt.Sprintf("기대와 다릅니다: %s 기대 %s, 실제 %s", a.Kind, show(a.Expected), show(a.Actual))
+			out.message = fmt.Sprintf("기대와 다릅니다: %s 기대 %s, 실제 %s", a.Kind, r.show(a.Expected), r.show(a.Actual))
 			break
 		}
 	}
@@ -497,14 +500,16 @@ func assertionFail(last []Assertion, err error) stepOut {
 	return out
 }
 
-func show(v any) string {
+// show writes an assertion value for a message: secret values masked,
+// then cut and quoted.
+func (r *runner) show(v any) string {
 	switch t := v.(type) {
 	case nil:
 		return "없음"
 	case string:
-		return fmt.Sprintf("%q", cut(t, 120))
+		return fmt.Sprintf("%q", cut(r.sc.Scrub(t), 120))
 	}
-	return fmt.Sprint(v)
+	return r.sc.Scrub(fmt.Sprint(v))
 }
 
 func allPassed(list []Assertion) bool {
@@ -564,7 +569,7 @@ func (r *runner) checkUI(ctx context.Context, s *AssertUISpec) ([]Assertion, err
 		check := func(kind string, expected any, ok func(string) bool) {
 			a := Assertion{Kind: kind, Expected: expected}
 			if text != nil {
-				a.Actual, a.Passed = textValue(*text), ok(*text)
+				a.Actual, a.Passed = r.textValue(*text), ok(*text)
 			}
 			out = append(out, a)
 		}
@@ -600,22 +605,22 @@ func screenText(tree proto.Message) string {
 }
 
 // textAssertions checks text against contains, not_contains and matches.
-func textAssertions(text string, contains, notContains []string, matches *regexp.Regexp) []Assertion {
+func (r *runner) textAssertions(text string, contains, notContains []string, matches *regexp.Regexp) []Assertion {
 	var out []Assertion
 	for _, c := range contains {
-		out = append(out, Assertion{Kind: "contains", Expected: c, Actual: textValue(text), Passed: strings.Contains(text, c)})
+		out = append(out, Assertion{Kind: "contains", Expected: c, Actual: r.textValue(text), Passed: strings.Contains(text, c)})
 	}
 	for _, c := range notContains {
-		out = append(out, Assertion{Kind: "not_contains", Expected: c, Actual: textValue(text), Passed: !strings.Contains(text, c)})
+		out = append(out, Assertion{Kind: "not_contains", Expected: c, Actual: r.textValue(text), Passed: !strings.Contains(text, c)})
 	}
 	if matches != nil {
-		out = append(out, Assertion{Kind: "matches", Expected: matches.String(), Actual: textValue(text), Passed: matches.MatchString(text)})
+		out = append(out, Assertion{Kind: "matches", Expected: matches.String(), Actual: r.textValue(text), Passed: matches.MatchString(text)})
 	}
 	return out
 }
 
 func (r *runner) assertScreen(ctx context.Context, s *AssertScreenTextSpec) stepOut {
-	params := proto.Message{"filter": "interactive", "max": screenTreeMax}
+	params := proto.Message{"filter": "all", "max": screenTreeMax}
 	if w := r.windowRef(s.Window); w != "" {
 		params["window"] = w
 	}
@@ -628,7 +633,7 @@ func (r *runner) assertScreen(ctx context.Context, s *AssertScreenTextSpec) step
 			return fromError(err)
 		}
 		if err == nil {
-			got := textAssertions(screenText(tree), s.Contains, s.NotContains, s.Matches)
+			got := r.textAssertions(screenText(tree), s.Contains, s.NotContains, s.Matches)
 			last, lastTree, lastErr = got, tree, nil
 			if allPassed(got) {
 				out := pass("")
@@ -642,7 +647,7 @@ func (r *runner) assertScreen(ctx context.Context, s *AssertScreenTextSpec) step
 			break
 		}
 	}
-	out := assertionFail(last, lastErr)
+	out := r.assertionFail(last, lastErr)
 	out.tree = lastTree
 	return out
 }
@@ -670,7 +675,7 @@ func (r *runner) assertFile(ctx context.Context, s *AssertFileSpec, i int) stepO
 			break
 		}
 	}
-	out := assertionFail(last, lastErr)
+	out := r.assertionFail(last, lastErr)
 	for _, a := range last {
 		if !a.Passed && (a.Kind == "contains" || a.Kind == "not_contains" || a.Kind == "matches") {
 			out.content = content
@@ -711,7 +716,7 @@ func (r *runner) checkFile(ctx context.Context, s *AssertFileSpec) ([]Assertion,
 	if err != nil {
 		return nil, nil, err
 	}
-	return append(out, textAssertions(string(data), s.Contains, s.NotContains, s.Matches)...), data, nil
+	return append(out, r.textAssertions(string(data), s.Contains, s.NotContains, s.Matches)...), data, nil
 }
 
 // readFile reads up to max bytes of a PC file from offset; a UTF-16LE file
@@ -803,16 +808,16 @@ func (r *runner) exec(ctx context.Context, s *ExecSpec, i int, timeout int64) st
 	}
 	out.assertions = []Assertion{{Kind: "exit_code", Expected: s.ExpectCode, Actual: code, Passed: code == s.ExpectCode}}
 	for _, c := range s.StdoutContains {
-		out.assertions = append(out.assertions, Assertion{Kind: "stdout_contains", Expected: c, Actual: textValue(stdout), Passed: strings.Contains(stdout, c)})
+		out.assertions = append(out.assertions, Assertion{Kind: "stdout_contains", Expected: c, Actual: r.textValue(stdout), Passed: strings.Contains(stdout, c)})
 	}
 	for _, c := range s.StderrContains {
-		out.assertions = append(out.assertions, Assertion{Kind: "stderr_contains", Expected: c, Actual: textValue(stderr), Passed: strings.Contains(stderr, c)})
+		out.assertions = append(out.assertions, Assertion{Kind: "stderr_contains", Expected: c, Actual: r.textValue(stderr), Passed: strings.Contains(stderr, c)})
 	}
 	if allPassed(out.assertions) {
 		out.status, out.message = StepPass, fmt.Sprintf("종료 코드 %d", code)
 		return out
 	}
-	failed := assertionFail(out.assertions, nil)
+	failed := r.assertionFail(out.assertions, nil)
 	out.status, out.message = StepFail, failed.message
 	return out
 }
@@ -924,10 +929,7 @@ func (r *runner) collect(ctx context.Context, s *CollectSpec, i int) stepOut {
 // collected keeps the result of a diag method as JSON evidence.
 func (r *runner) collected(i int, method, name string, result map[string]any, msg string, n int) stepOut {
 	data, err := json.MarshalIndent(map[string]any{"schema_version": model.SchemaVersion, "host_id": r.host.HostID, "method": method,
-		"saved_at": model.Time(time.Now()), "result": result}, "", "  ")
-	if err == nil {
-		data = []byte(r.sc.Scrub(string(data)))
-	}
+		"saved_at": model.Time(time.Now()), "result": r.sc.ScrubAny(result)}, "", "  ")
 	var a model.Artifact
 	if err == nil {
 		a, err = r.save(i, ActCollect, name, ".json", "report", data)

@@ -19,7 +19,7 @@ const qaHelp = `사용법:
   deskhand qa cancel <실행-id>
 
 qa run은 단계가 끝날 때마다 한 줄씩 보이고, 끝나면 결과와 보고서 경로를 출력합니다.
-Ctrl-C는 실행을 취소합니다(정리 단계 teardown은 실행합니다, 최대 1분 기다림). 기다리지 않으려면 --detach.
+Ctrl-C는 실행을 취소합니다(정리 단계 teardown은 실행하고 최대 1분 기다립니다). 한 번 더 누르면 정리 단계도 멈춥니다. 기다리지 않으려면 --detach.
 비밀값은 --var 대신 --var-file(한 줄에 이름=값)로 넘기고, 이름을 secret_로 시작하면 기록에서 ***로 가립니다.
 시나리오 형식: docs/local-api.md §10, 예: docs/examples/qa/fixture-smoke.yaml
 종료 코드: 0 통과, 1 실패·취소, 2 사용법, 3 차단(사람이 조작 중이거나 이 PC가 못 하는 단계), 4 오류·결과 불명.
@@ -245,10 +245,23 @@ func (r *run) followQA(ctx context.Context, c *client.Client, id string, events 
 	watch := ctx
 	cancelled := false
 	var deadline <-chan time.Time
+	var sigs <-chan os.Signal
+	var stopSignals func()
+	firstCancel := func() {
+		watch, deadline, cancelled = r.cancelQA(c, id, false)
+		if r.Signals != nil && sigs == nil {
+			sigs, stopSignals = r.Signals()
+		}
+	}
+	defer func() {
+		if stopSignals != nil {
+			stopSignals()
+		}
+	}()
 	for {
 		if err := get(watch); err != nil {
 			if watch.Err() != nil && !cancelled {
-				watch, deadline, cancelled = r.cancelQA(c, id)
+				firstCancel()
 				continue
 			}
 			if watch.Err() != nil {
@@ -264,7 +277,9 @@ func (r *run) followQA(ctx context.Context, c *client.Client, id string, events 
 			if cancelled {
 				return r.qaStillRunning(id)
 			}
-			watch, deadline, cancelled = r.cancelQA(c, id)
+			firstCancel()
+		case <-sigs:
+			r.cancelQA(c, id, true)
 		case <-deadline:
 			return r.qaStillRunning(id)
 		case ev, ok := <-events:
@@ -283,15 +298,19 @@ func (r *run) followQA(ctx context.Context, c *client.Client, id string, events 
 	return r.reportQA(cur)
 }
 
-// cancelQA asks the daemon to cancel run id after Ctrl-C and returns the
-// context to keep watching under and the end of the wait.
-func (r *run) cancelQA(c *client.Client, id string) (context.Context, <-chan time.Time, bool) {
+// cancelQA asks the daemon to cancel run id after a Ctrl-C and returns the
+// context to keep watching under and the end of the wait; again marks a
+// later Ctrl-C, which stops the teardown too.
+func (r *run) cancelQA(c *client.Client, id string, again bool) (context.Context, <-chan time.Time, bool) {
 	cctx, cancel := context.WithTimeout(context.Background(), callTimeout)
 	defer cancel()
-	if _, err := r.call(cctx, c, "qa.cancel", map[string]any{"run_id": id}, callTimeout); err != nil {
+	switch _, err := r.call(cctx, c, "qa.cancel", map[string]any{"run_id": id}, callTimeout); {
+	case err != nil:
 		fmt.Fprintf(r.Stderr, "QA 실행 %s를 취소하지 못했습니다: %v. deskhand qa cancel %s 로 다시 취소하세요\n", id, err, id)
-	} else {
-		fmt.Fprintf(r.Stderr, "취소를 요청했습니다. 정리 단계(teardown)를 마치는 중입니다\n")
+	case again:
+		fmt.Fprintf(r.Stderr, "정리 단계도 멈추도록 다시 취소했습니다\n")
+	default:
+		fmt.Fprintf(r.Stderr, "취소를 요청했습니다. 정리 단계(teardown)를 마치는 중입니다. 정리 단계까지 멈추려면 Ctrl-C를 한 번 더 누르세요\n")
 	}
 	return context.Background(), time.After(qaCancelWait), true
 }

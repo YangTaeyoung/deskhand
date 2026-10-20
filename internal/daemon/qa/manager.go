@@ -445,9 +445,9 @@ func (m *Manager) List(hostID string, limit int, cursor string) ([]Run, string, 
 }
 
 // Cancel stops a running run: its running step ends blocked, the steps
-// left are not run and the teardown runs; a second Cancel stops the
-// teardown. A cancelled run is returned as it is; a run that ended
-// otherwise is refused.
+// left are not run and the teardown runs; a later Cancel that arrives
+// while the teardown runs stops the teardown too. A cancelled run is
+// returned as it is; a run that ended otherwise is refused.
 func (m *Manager) Cancel(runID string, c model.Caller) (Run, error) {
 	m.mu.Lock()
 	r := m.live[runID]
@@ -513,11 +513,12 @@ func (m *Manager) settle(row store.QARun, rec record) error {
 	run.Status, run.CurrentStep = RunError, nil
 	run.Error = &ErrorInfo{Code: wire.CodeExecutionOutcomeUnknown, Message: "데몬이 멈춰 실행이 끊겼습니다. PC 상태를 확인한 뒤 시나리오를 다시 실행하세요"}
 	run.FinishedAt, run.UpdatedAt = model.Time(now), model.Time(now)
+	run.Rev = row.Rev + 1
 	count(run)
 	if err := writeBundle(&rec, artifacts.Dir(run.JobID)); err != nil {
 		m.lg.Printf("write the bundle of QA run %s: %v", run.RunID, err)
+		run.Report, run.ReportDir = nil, ""
 	}
-	run.Rev = row.Rev + 1
 	data, err := json.Marshal(rec)
 	if err != nil {
 		return err

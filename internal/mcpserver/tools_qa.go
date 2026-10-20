@@ -44,7 +44,7 @@ func (s *Server) registerQA(srv *mcp.Server) {
 			one, max := 1.0, 500.0
 			sc.Properties["limit"].Minimum, sc.Properties["limit"].Maximum = &one, &max
 		})
-	add[qaRunIDInput](s, srv, "qa_cancel", "Cancel a QA run by run_id: the running step stops (blocked), the remaining steps are not run, then the teardown runs and the run ends cancelled; calling it again during the teardown stops the teardown too. Returns at once; poll qa_get until finished_at is set. A run that already ended otherwise is refused.",
+	add[qaRunIDInput](s, srv, "qa_cancel", "Cancel a QA run by run_id: the running setup or steps step stops (blocked), the remaining ones are not run, then the teardown runs and the run ends cancelled. The first cancel never stops the teardown; calling qa_cancel again while the teardown runs stops the teardown too. Returns at once; poll qa_get until finished_at is set. A run that already ended otherwise is refused.",
 		spec{Method: "qa.cancel", Mutating: true}, nil)
 }
 

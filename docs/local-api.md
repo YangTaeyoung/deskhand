@@ -321,7 +321,7 @@ QA 시나리오 실행기. 세부 규칙은 [§10](#10-qa-세부-계약).
 
 ### 시나리오 파일
 
-YAML 1.2의 부분집합이다: 블록 매핑·블록 시퀀스, 흐름 시퀀스 `[a, b]`·흐름 매핑 `{k: v}`(여러 줄 가능), 따옴표 없는 값·작은따옴표(`''`로 `'`)·큰따옴표(`\n` `\t` `\\` `\"` `\uXXXX` 등 이스케이프), 블록 값 `|`·`|-`·`>`·`>-`, `#` 주석, 맨 앞 `---` 하나. 앵커·별칭(`&`·`*`)·태그(`!`)·`?` 키·여러 문서·들여쓰기 탭·같은 키 두 번·모르는 키·모르는 단계 종류는 `<파일>:<줄>: <다음 행동을 알려 주는 문장>`의 `INVALID_ARGUMENT`로 거절한다(글로 준 시나리오의 파일 이름은 `scenario`). 오류는 처음 하나만 알린다. Windows 경로는 따옴표 없이(`C:\qa\app.exe`)나 작은따옴표로 쓴다(큰따옴표 안의 `\`는 이스케이프).
+YAML 1.2의 부분집합이다: 블록 매핑·블록 시퀀스, 흐름 시퀀스 `[a, b]`·흐름 매핑 `{k: v}`(여러 줄 가능), 따옴표 없는 값·작은따옴표(`''`로 `'`)·큰따옴표(`\n` `\t` `\\` `\"` `\uXXXX` 등 이스케이프), 블록 값 `|`·`|-`·`>`·`>-`, `#` 주석, 맨 앞 `---` 하나. 앵커·별칭(`&`·`*`)·태그(`!`)·`?` 키·여러 문서·들여쓰기 탭·같은 키 두 번·모르는 키·모르는 단계 종류는 `<파일>:<줄>: <다음 행동을 알려 주는 문장>`의 `INVALID_ARGUMENT`로 거절한다(글로 준 시나리오의 파일 이름은 `scenario`). 오류는 처음 하나만 알린다. 값은 100단계까지 중첩할 수 있고, 닫히지 않은 `[`·`{`는 그것을 연 줄로 알린다. 단계는 setup·steps·teardown을 합해 1000개까지다. Windows 경로는 따옴표 없이(`C:\qa\app.exe`)나 작은따옴표로 쓴다(큰따옴표 안의 `\`는 이스케이프).
 
 | 최상위 키 | 뜻 |
 |---|---|
@@ -332,9 +332,9 @@ YAML 1.2의 부분집합이다: 블록 매핑·블록 시퀀스, 흐름 시퀀�
 | `timeout_ms` | 선택. setup·steps 전체 제한(teardown 제외). `qa.run`의 `timeout_ms`가 우선 |
 | `setup` / `steps` / `teardown` | 단계 목록. `steps`는 필수이고 하나 이상 |
 
-- **변수**: 모든 문자열 값의 `${이름}`을 실행 전에 바꾼다(키는 바꾸지 않는다). 이름은 `[A-Za-z_][A-Za-z0-9_]*`, `$${`는 글자 `${`. 정의되지 않은 이름은 그 줄의 `INVALID_ARGUMENT`. 미리 정의된 `run_id`(이 실행의 ID)가 있다. 이름이 `secret_`로 시작하는 변수의 값은 `params`·`message`·`assertions`·`result`·텍스트 증거·결과 묶음에서 `***`로 가린다(스크린샷 속 화면은 가리지 못한다). 비밀값은 CLI `--var` 대신 `--var-file`로 넘긴다.
+- **변수**: 모든 문자열 값의 `${이름}`을 실행 전에 바꾼다(키는 바꾸지 않는다). 이름은 `[A-Za-z_][A-Za-z0-9_]*`, `$${`는 글자 `${`. 정의되지 않은 이름은 그 줄의 `INVALID_ARGUMENT`. 미리 정의된 `run_id`(이 실행의 ID)가 있다. 이름이 `secret_`로 시작하는 변수의 값은 `params`·`message`·`assertions`·`result`·텍스트 증거·결과 묶음과 시나리오 오류 문장에서 `***`로 가린다(따옴표·이스케이프·자르기 전에 가린다. 스크린샷 속 화면은 가리지 못한다). 비밀값은 CLI `--var` 대신 `--var-file`로 넘긴다. `exec`에 변수를 넣을 때는 셸이 해석하는 `cmd` 글 대신 `argv` 항목으로 넣는다(값이 셸 명령으로 실행되지 않는다).
 - **경로**: `push`의 `from`이 상대 경로면 시나리오 파일의 폴더(글로 준 시나리오는 `base_dir`, 없으면 `INVALID_ARGUMENT`) 기준이다. `from`이 없으면 실행 전에 `INVALID_ARGUMENT`.
-- **단계**: 매핑 하나에 종류 키 하나와 공통 키 `name?`(없으면 종류와 주요 값으로 만든다), `timeout_ms?`(종류별 기본값, 실행 제한이 더 이르면 그때까지), `continue_on_fail?`(기본 false), `optional?`(기본 false). 종류 키가 없거나 둘 이상이면 `INVALID_ARGUMENT`.
+- **단계**: 매핑 하나에 종류 키 하나와 공통 키 `name?`(없으면 종류와 주요 값으로 만든다), `timeout_ms?`(종류별 기본값, 실행 제한이 더 이르면 그때까지), `continue_on_fail?`(기본 false), `optional?`(기본 false). 종류 키가 없거나 둘 이상이면 `INVALID_ARGUMENT`. 글로 줄여 쓴 `launch`·`wait_window`·`key`·`exec`·`assert_screen_text`의 빈 글, `contains`·`not_contains`·`stdout_contains`·`stderr_contains`의 빈 항목도 `INVALID_ARGUMENT`다.
 - **선택자**(`<선택자>`): `window?`(창 ID `0x…`, 제목 일부, `foreground`. 없으면 현재 창 — 앞의 `launch`·`wait_window`가 찾은 창 —, 그것도 없으면 전경 창), `role?`(UIA 역할 이름, 예 `button`·`edit`·`text`), `name?`(정확히 일치), `name_contains?`(대소문자 무시), `automation_id?`, `index?`(맞는 것 중 0부터). `window` 말고 하나 이상 필요하다. 에이전트 `ui.*` op에는 `window`·`role`·`name`·`nameContains`·`automationId`·`index`로 간다.
 
 | 종류 | 값 | PC에서 하는 일 | 기본 `timeout_ms` | 제어권 확인 | 필요한 caps |
@@ -347,7 +347,7 @@ YAML 1.2의 부분집합이다: 블록 매핑·블록 시퀀스, 흐름 시퀀�
 | `key` | `ctrl+s` 같은 글, 또는 `{keys}` | 키 입력 | 30000 | 예 | `input` |
 | `ui_act` | `{action, value?, <선택자>}` — `action`은 `invoke`/`toggle`/`expand`/`collapse`/`select`/`set_value`(`value` 필요)/`focus`/`scroll_into_view` | `ui.act` | 30000 | 예 | `uia` |
 | `assert_ui` | `{<선택자>, exists?(count가 없으면 기본 true), text?, text_contains?, text_matches?, enabled?, count?}` | `ui.find`(최대 200개)와, 글 기준이 있으면 `ui.text`. 모두 맞을 때까지 300 ms마다 다시 본다 | 5000 | — | `uia` |
-| `assert_screen_text` | 포함할 글, 또는 `{contains?, not_contains?, matches?, window?}`(`contains`·`not_contains`는 글 또는 글 목록, 하나 이상) | 창의 `ui.tree{filter:"interactive", max:2000}` 항목의 이름·값(값은 항목마다 앞 200자)을 줄로 이은 글. 맞을 때까지 300 ms마다 | 5000 | — | `uia` |
+| `assert_screen_text` | 포함할 글, 또는 `{contains?, not_contains?, matches?, window?}`(`contains`·`not_contains`는 글 또는 글 목록, 하나 이상) | 창의 `ui.tree{filter:"all", max:2000}` 항목(정적 글 포함)의 이름·값(값은 항목마다 앞 200자)을 줄로 이은 글. 맞을 때까지 300 ms마다 | 5000 | — | `uia` |
 | `assert_file` | `{path, exists?(기본 true), contains?, not_contains?, matches?, sha256?, size?}` | `fs.stat`(`sha256`이 있으면 해시 포함)과, 내용 기준이 있으면 `fs.read`(앞 8 MiB, UTF-16LE 파일은 UTF-8로 바꿔 비교). 맞을 때까지 300 ms마다 | 5000 | — | `files` |
 | `exec` | 명령 글(`cmd`, 셸 기본값), 또는 `{argv? \| cmd?, shell?, cwd?, expect_code?(기본 0), stdout_contains?, stderr_contains?}` | `exec.run{timeout_ms}` | 120000 | — | `exec` |
 | `screenshot` | 비움·이름, 또는 `{name?, display?(기본 0), window?, max_width?(기본 1920)}` | `screen.capture{format:"png"}` | 30000 | — | `screen` |
@@ -368,10 +368,10 @@ YAML 1.2의 부분집합이다: 블록 매핑·블록 시퀀스, 흐름 시퀀�
   - `blocked`: 할 수 없었다 — 사람이 제어권을 쥠(`CONTROL_HELD_BY_HUMAN`·`CONTROL_PREEMPTED`), 이 PC·데몬이 그 기능을 못 함(`CAPABILITY_UNSUPPORTED`), PC 연결 없음(`OFFLINE`·`AUTH_REQUIRED`), 잠금·보안 데스크톱·권한 상승 필요(`SESSION_LOCKED`·`DISPLAY_UNAVAILABLE`·`ELEVATION_REQUIRED`), 결과를 확인하지 못함(`EXECUTION_OUTCOME_UNKNOWN`), 취소.
   - `not_run`: 앞 단계 때문에 건너뜀(이유는 `message`).
 - 흐름: `optional`도 `continue_on_fail`도 아닌 단계가 `fail`·`blocked`면 그 뒤의 setup·steps 단계는 `not_run`이다. teardown 단계는 앞의 결과와 상관없이 모두 차례로 실행한다. `optional` 단계는 결과를 그대로 남기지만 흐름과 실행 상태 계산에서 빠진다.
-- 실행 `status`: 취소면 `cancelled`, 데몬이 멈춰 끊겼으면 `error`, 그 밖에는 `optional`이 아닌 단계(teardown 포함) 중 `fail`이 있으면 `failed`, 아니면 `blocked`가 있으면 `blocked`, 아니면 `passed`. 실행 제한(`timeout_ms`)을 넘으면 그때 실행 중인 단계가 `fail`(`TIMEOUT`), 남은 setup·steps는 `not_run`, teardown을 실행하고 실행은 `failed` + `error`(`TIMEOUT`).
+- 실행 `status`: 취소가 단계를 멈추거나 건너뛰게 했으면 `cancelled`, 데몬이 멈춰 끊겼거나 결과 묶음을 쓰지 못했으면 `error`(`error`에 이유, `report` 없음), 그 밖에는 `optional`이 아닌 단계(teardown 포함) 중 `fail`이 있으면 `failed`, 아니면 `blocked`가 있으면 `blocked`, 아니면 `passed`. 실행 제한(`timeout_ms`)은 setup·steps에만 걸리고 그것들이 끝나면 멈춘다: 넘으면 그때 실행 중인 단계가 `fail`(`TIMEOUT`), 남은 setup·steps는 `not_run`, teardown을 실행하고 실행은 `failed` + `error`(`TIMEOUT`)다. 제한이 지났어도 멈추거나 건너뛴 단계가 없으면 결과는 단계로 정한다.
 - **제어권**: `launch`·`click`·`type`·`key`·`ui_act`·`close`는 단계마다 실행 직전에 제어권(§3 제어권, design §5.1)을 확인한다. 사람이 쥐고 있으면 PC에 아무것도 보내지 않고 `blocked` + `CONTROL_HELD_BY_HUMAN`("사람이 조작 중입니다 …")이다. 실행기는 제어권을 가져오거나 기다리지 않는다. 다른 단계(관찰·확인·명령·파일)는 제어권과 상관없이 실행한다.
 - **기능**: 단계에 필요한 caps(호스트 `caps`, 에이전트가 알린 기능만)가 `ready`가 아니면 PC에 보내지 않고 `blocked` + `CAPABILITY_UNSUPPORTED`(caps의 `reason`)이고 `run.unsupported`에 남는다. 이 데몬은 아직 마우스·키보드 입력을 보내지 못해 `click`·`type`·`key`는 항상 `blocked` + `CAPABILITY_UNSUPPORTED`이고, `screenshot`과 실패 스크린샷은 에이전트의 `screen`이 `ready`일 때만 찍는다.
-- **취소**: `qa.cancel`은 바로 답한다(`run.cancel_requested:true`, 봉투 `running`). 실행 중인 단계의 요청을 멈춰 그 단계는 `blocked`("취소로 멈췄습니다"), 남은 setup·steps는 `not_run`, 그다음 teardown을 실행하고 실행은 `cancelled`, job은 `cancelled`로 끝난다. teardown 중에 다시 `qa.cancel`하면 teardown도 멈춘다. 이미 `cancelled`인 실행은 그대로 돌려주고(봉투 `cancelled`), 다른 상태로 끝난 실행은 JSON-RPC `INVALID_ARGUMENT`다. 진행 중 `push`의 전송은 함께 취소한다.
+- **취소**: `qa.cancel`은 바로 답한다(`run.cancel_requested:true`, 봉투 `running`). 실행 중인 setup·steps 단계의 요청을 멈춰 그 단계는 `blocked`("취소로 멈췄습니다"), 남은 setup·steps는 `not_run`, 그다음 teardown을 실행하고 실행은 `cancelled`, job은 `cancelled`로 끝난다. 첫 `qa.cancel`은 teardown을 멈추지 않는다(teardown 중에 받아도 teardown은 끝까지 가고, 멈춘 단계가 없으면 결과는 단계로 정한다). 첫 취소 뒤 teardown 중에 다시 받은 `qa.cancel`은 teardown도 멈춘다(실행 중인 teardown 단계 `blocked`, 남은 teardown `not_run`, 실행 `cancelled`). 이미 `cancelled`인 실행은 그대로 돌려주고(봉투 `cancelled`), 다른 상태로 끝난 실행은 JSON-RPC `INVALID_ARGUMENT`다. 진행 중 `push`의 전송은 함께 취소한다.
 - **데몬 재시작**: 끝나지 않은 실행은 데몬이 시작할 때 `error` + `error`(`EXECUTION_OUTCOME_UNKNOWN`)로 끝낸다. 실행 중이던 단계는 `blocked`(`EXECUTION_OUTCOME_UNKNOWN`), 남은 단계(teardown 포함)는 `not_run`이고 결과 묶음을 그때 쓴다. 데몬은 단계를 다시 보내지 않는다.
 - `qa.list`: `limit` 기본 50·최대 500(0이면 기본값, 그 밖은 `INVALID_ARGUMENT`), `cursor`는 이전 결과의 `next_cursor`(불투명 문자열), 다음 페이지가 있을 때만 `next_cursor`.
 - `qa.updated`(§6)는 `run`과 바뀐 `step` 하나를 싣는다. 클라이언트는 `run.rev`가 더 클 때만 반영하고 `step`은 `index`로 맞춘다. `events.dropped`를 받았으면 `qa.get`으로 다시 읽는다.
@@ -393,9 +393,9 @@ evidence/      단계 증거
 - `report.json`: `{schema_version:1, generated_at, run(QARun, steps 포함), scenario:{path?, sha256, source}, vars(secret_ 가림), host:{host_id, name, os, arch, address, agent_version?}, environment?(실행 시작 때 읽은 diag.system 결과 필드, 읽지 못하면 없음), daemon_version}`.
 - `manifest.json`: `{schema_version:1, run_id, job_id, generated_at, files:[{path(묶음 안 상대 경로, / 구분), artifact_id, kind, mime, size, sha256}]}`(경로 순).
 - `artifacts.list{job_id}`: job 폴더에 `manifest.json`이 있으면 그 파일들(`path`는 절대 경로), 없으면 job `result.artifacts`, 그것도 없으면 폴더의 파일(그때 `sha256`을 계산). 모르는 job은 `NOT_FOUND`, 산출물이 없는 job은 빈 목록.
-- `artifacts.export{job_id, dir}`: `dir`은 이 Mac의 있는 폴더 절대 경로(아니면 `INVALID_ARGUMENT`). job 폴더 전체를 `<dir>/<job_id>`(있으면 `<job_id> (1)`…)로 복사하고, 복사본의 sha256이 manifest·Artifact와 다르면 복사본을 지우고 `HASH_MISMATCH`, 산출물이 없는 job은 `NOT_FOUND`다. 결과 `{job_id, dir(만든 폴더), files(파일 수), bytes, manifest?(복사한 manifest.json 경로)}`. 상대 경로 이미지 덕분에 복사한 `report.html`도 그대로 열린다.
+- `artifacts.export{job_id, dir}`: `dir`은 이 Mac의 있는 폴더 절대 경로(아니면 `INVALID_ARGUMENT`). job 폴더 전체를 `<dir>/<job_id>`(있으면 `<job_id> (1)`…)로 복사하고, manifest가 있는 묶음은 폴더의 파일(manifest 제외)이 manifest 목록과 같아야 하고(빠지거나 더 있으면 복사하지 않고 `HASH_MISMATCH`), 복사본의 sha256이 manifest·Artifact와 다르면 복사본을 지우고 `HASH_MISMATCH`, 산출물이 없는 job은 `NOT_FOUND`다. 결과 `{job_id, dir(만든 폴더), files(파일 수), bytes, manifest?(복사한 manifest.json 경로)}`. 상대 경로 이미지 덕분에 복사한 `report.html`도 그대로 열린다.
 
 ### CLI·MCP
 
-- CLI: `deskhand qa run <시나리오.yaml> [--host H] [--var 이름=값]… [--var-file 파일] [--timeout 10m] [--detach] [--json]`은 단계가 끝날 때마다 한 줄씩 보이고 결과와 보고서 경로를 출력한다. 종료 코드 0 `passed`, 1 `failed`·`cancelled`, 2 사용법, 3 `blocked`, 4 `error`·결과 불명. Ctrl-C는 실행을 취소하고(teardown까지 최대 1분 기다림) `--detach`는 `run_id`만 출력한다. `deskhand qa list [--host H] [--limit N]`, `deskhand qa get <run_id>`, `deskhand qa report <run_id> [--open]`(`--open`은 report.html을 연다), `deskhand qa cancel <run_id>`. `--var-file`은 한 줄에 `이름=값`, `#` 주석.
+- CLI: `deskhand qa run <시나리오.yaml> [--host H] [--var 이름=값]… [--var-file 파일] [--timeout 10m] [--detach] [--json]`은 단계가 끝날 때마다 한 줄씩 보이고 결과와 보고서 경로를 출력한다. 종료 코드 0 `passed`, 1 `failed`·`cancelled`, 2 사용법, 3 `blocked`, 4 `error`·결과 불명. Ctrl-C는 실행을 취소하고(teardown까지 최대 1분 기다림), 한 번 더 누르면 `qa.cancel`을 다시 보내 teardown도 멈춘다. `--detach`는 `run_id`만 출력한다. `deskhand qa list [--host H] [--limit N]`, `deskhand qa get <run_id>`, `deskhand qa report <run_id> [--open]`(`--open`은 report.html을 연다), `deskhand qa cancel <run_id>`. `--var-file`은 한 줄에 `이름=값`, `#` 주석.
 - MCP: `qa_run`(바로 `run_id`·`job_id`와 `next_action:"qa_get"`), `qa_get`, `qa_list`, `qa_cancel`. 짧은 시나리오를 `scenario` 글로 바로 보내 자유 탐색 중의 확인에도 쓴다.

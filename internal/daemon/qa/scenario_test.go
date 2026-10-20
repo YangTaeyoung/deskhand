@@ -197,6 +197,14 @@ steps:
 			{"click needs a target", "name: x\nsteps:\n  - click: {button: left}\n", "click", 3},
 			{"set_value needs value", "name: x\nsteps:\n  - ui_act: {name: Message, action: set_value}\n", "value", 3},
 			{"bad sha256", "name: x\nsteps:\n  - assert_file: {path: C:\\a.log, sha256: abc}\n", "sha256", 3},
+			{"empty exec", "name: x\nsteps:\n  - exec: ''\n", "exec", 3},
+			{"empty launch", "name: x\nsteps:\n  - launch: ''\n", "launch", 3},
+			{"empty wait_window", "name: x\nsteps:\n  - wait_window: ''\n", "wait_window", 3},
+			{"empty assert_screen_text", "name: x\nsteps:\n  - assert_screen_text: ''\n", "assert_screen_text", 3},
+			{"empty key", "name: x\nsteps:\n  - key: ''\n", "key", 3},
+			{"empty contains item", "name: x\nsteps:\n  - assert_file: {path: a.log, contains: [ok, '']}\n", "contains", 3},
+			{"unclosed bracket names its line", "name: x\nsteps:\n  - exec: {argv: [a, b\n  - sleep: 1\n", "[", 3},
+			{"unclosed brace at the end", "name: x\nsteps:\n  - exec: {argv: [a]\n", "{", 3},
 			{"unclosed flow", "name: x\nsteps:\n  - exec: {argv: [a, b}\n", "]", 3},
 		}
 		for _, c := range cases {
@@ -327,5 +335,56 @@ func TestExampleScenariosParse(t *testing.T) {
 	wait := sc.Steps[6].Spec.(*AssertUISpec)
 	if wait.TextMatches == nil || !wait.TextMatches.MatchString("You: 안녕 QA\r\nBot: echo 안녕 QA echo") {
 		t.Fatalf("assert_ui %+v", wait)
+	}
+}
+
+func TestScenarioLimits(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("name: many\nsetup:\n")
+	for i := 0; i < 500; i++ {
+		b.WriteString("  - sleep: 1\n")
+	}
+	b.WriteString("steps:\n")
+	for i := 0; i < 500; i++ {
+		b.WriteString("  - sleep: 1\n")
+	}
+	ok := b.String()
+	if sc, err := Parse([]byte(ok), ParseOptions{File: "many.yaml"}); err != nil || len(sc.Steps) != 1000 {
+		t.Fatalf("1000 steps: %v", err)
+	}
+	_, err := Parse([]byte(ok+"teardown:\n  - sleep: 1\n"), ParseOptions{File: "many.yaml"})
+	var se *ScenarioError
+	if !errors.As(err, &se) || !strings.Contains(se.Msg, "1000") {
+		t.Fatalf("1001 steps: %v", err)
+	}
+
+	deepFlow := "name: x\nvars: {v: " + strings.Repeat("[", 101) + strings.Repeat("]", 101) + "}\nsteps:\n  - sleep: 1\n"
+	if _, err := Parse([]byte(deepFlow), ParseOptions{File: "deep.yaml"}); !errors.As(err, &se) || se.Line != 2 || !strings.Contains(se.Msg, "100") {
+		t.Fatalf("deep flow: %v", err)
+	}
+	deepSeq := strings.Repeat("- ", 101) + "x\n"
+	if _, err := parseYAML("deep.yaml", []byte(deepSeq)); !errors.As(err, &se) || !strings.Contains(se.Msg, "100") {
+		t.Fatalf("deep sequence: %v", err)
+	}
+	if _, err := parseYAML("ok.yaml", []byte("a: "+strings.Repeat("[", 99)+strings.Repeat("]", 99)+"\n")); err != nil {
+		t.Fatalf("99 levels: %v", err)
+	}
+}
+
+func TestParseErrorsMaskSecretValues(t *testing.T) {
+	secret := `(a"b\<x>&`
+	for _, src := range []string{
+		"name: x\nsteps:\n  - sleep: '${secret_v}'\n",
+		"name: x\nsteps:\n  - assert_file: {path: a.log, matches: '${secret_v}'}\n",
+		"name: x\nsteps:\n  - click: {x: 1, y: 2, button: '${secret_v}'}\n",
+		"name: x\nsteps:\n  - assert_file: {path: a.log, sha256: '${secret_v}'}\n",
+	} {
+		_, err := Parse([]byte(src), ParseOptions{File: "s.yaml", Vars: map[string]string{"secret_v": secret}})
+		if err == nil {
+			t.Fatalf("%q parsed", src)
+		}
+		if strings.Contains(err.Error(), "(a") || !strings.Contains(err.Error(), "***") {
+			t.Fatalf("error %q shows the secret", err)
+		}
 	}
 }
