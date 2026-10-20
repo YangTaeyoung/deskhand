@@ -30,10 +30,11 @@ type fakeRemote struct {
 	initErr   string
 	initFail  bool
 	versionOS string
+	initCode  int
 }
 
 func newFake() *fakeRemote {
-	return &fakeRemote{arch: "X64", osName: "windows", versionOS: "windows"}
+	return &fakeRemote{arch: "X64", osName: "windows", versionOS: "windows", initCode: 4}
 }
 
 func (f *fakeRemote) run(_ context.Context, name string, args []string, stdin string) (string, string, error) {
@@ -51,7 +52,7 @@ func (f *fakeRemote) run(_ context.Context, name string, args []string, stdin st
 		return "deskhand-short=C:\\Users\\bob\\AppData\\Local\\Temp\\deskhand-install\n", "", nil
 	case strings.Contains(stdin, " init "):
 		if f.initFail {
-			return "", f.initErr, errors.New("exit status 1")
+			return "", f.initErr, exitErr(f.initCode)
 		}
 		out := f.initOut
 		if out == "" {
@@ -177,9 +178,9 @@ func TestPairNonWindowsShellMissingPowerShell(t *testing.T) {
 func TestPairAlreadyPairedWithoutForce(t *testing.T) {
 	f := newFake()
 	f.initFail = true
-	f.initErr = "오류: C:\\ProgramData\\Deskhand\\agent.key에 이미 키가 있습니다. 키를 바꾸려면 --force를 붙여 다시 실행하세요\n"
+	f.initErr = "unrelated text\n"
 	_, _, _, err := pair(t, f)
-	if err == nil || !strings.Contains(err.Error(), "deskhand host repair") || !strings.Contains(err.Error(), "이미 Deskhand 에이전트가 페어링돼 있습니다") {
+	if !errors.Is(err, ErrAlreadyPaired) || !strings.Contains(err.Error(), "deskhand host repair") {
 		t.Fatalf("err = %v", err)
 	}
 	for _, c := range f.calls {
@@ -315,4 +316,46 @@ func containsArg(args []string, v string) bool {
 		}
 	}
 	return false
+}
+
+type exitErr int
+
+func (e exitErr) Error() string { return "exit status" }
+func (e exitErr) ExitCode() int { return int(e) }
+
+func TestPairOtherInitFailureIsNotAlreadyPaired(t *testing.T) {
+	f := newFake()
+	f.initFail = true
+	f.initErr = "boom\n"
+	f.initCode = 1
+	if _, _, _, err := pair(t, f); err == nil || errors.Is(err, ErrAlreadyPaired) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestPairRejectsUnsafeNames(t *testing.T) {
+	for _, n := range []string{`a" --controller-fp "x`, `pc\`, "pc\x01", "", " pc", "pc ", strings.Repeat("가", 65), "a;b", "$(x)", "a'b"} {
+		f := newFake()
+		_, err := Pair(context.Background(), f.ssh(), n, testIdentity(), func(string) (string, error) { return "", nil }, func(string) {})
+		if err == nil || len(f.calls) != 0 {
+			t.Fatalf("name %q: err = %v, calls = %d", n, err, len(f.calls))
+		}
+	}
+	f := newFake()
+	if _, err := Pair(context.Background(), f.ssh(), "사무실 PC-1_a.b", testIdentity(), func(a string) (string, error) { return "/x", nil }, func(string) {}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRejectsUnsafeAliases(t *testing.T) {
+	for _, a := range []string{"", "-x", "a b", "a/b", "host:22", "a\tb", "a;b"} {
+		f := newFake()
+		if _, _, err := (SSH{Alias: a, Exec: f.run}).Run(context.Background(), "x"); err == nil || len(f.calls) != 0 {
+			t.Fatalf("alias %q accepted", a)
+		}
+	}
+	f := newFake()
+	if _, _, err := (SSH{Alias: "me@win-1.local_x", Exec: f.run}).Run(context.Background(), "x"); err != nil {
+		t.Fatal(err)
+	}
 }

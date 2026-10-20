@@ -63,7 +63,7 @@ func TestInitRefusesToReplaceAKeyWithoutForce(t *testing.T) {
 	_, key := config.KeyPaths(path)
 	before, _ := os.ReadFile(key)
 	code, stdout, stderr := runCLI(t, "init", "--name", "pc", "--controller-fp", controllerFP, "--config", path)
-	if code == 0 || stdout != "" || !strings.Contains(stderr, "--force") {
+	if code != 4 || stdout != "" || !strings.Contains(stderr, "--force") {
 		t.Fatalf("second init exited %d, stdout %q, stderr %q", code, stdout, stderr)
 	}
 	if after, _ := os.ReadFile(key); !bytes.Equal(before, after) {

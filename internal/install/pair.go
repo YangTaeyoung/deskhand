@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/YangTaeyoung/deskhand/internal/transport"
 )
@@ -22,6 +23,26 @@ const (
 	StepInstall = "install"
 	StepVerify  = "verify"
 )
+
+// agentExitKeyExists is the exit code of `deskhand-agent init` when a key
+// already exists.
+const agentExitKeyExists = 4
+
+// validName accepts 1-64 letters, digits, spaces and - _ . without a leading
+// or trailing space.
+func validName(name string) error {
+	n := 0
+	for _, c := range name {
+		n++
+		if !unicode.IsLetter(c) && !unicode.IsDigit(c) && !strings.ContainsRune(" -_.", c) {
+			return errors.New("PC 이름에는 글자, 숫자, 공백, - _ . 만 쓸 수 있습니다. 이름을 고쳐서 다시 실행하세요")
+		}
+	}
+	if n < 1 || n > 64 || name != strings.TrimSpace(name) {
+		return errors.New("PC 이름은 앞뒤 공백 없이 1~64자여야 합니다. 이름을 고쳐서 다시 실행하세요")
+	}
+	return nil
+}
 
 const (
 	remoteExe    = `C:\Program Files\Deskhand\deskhand-agent.exe`
@@ -72,8 +93,8 @@ func Pair(ctx context.Context, s SSH, name string, controller transport.Identity
 	if progress == nil {
 		progress = func(string) {}
 	}
-	if strings.TrimSpace(name) == "" {
-		return PairResult{}, errors.New("PC 이름이 비어 있습니다. 이름을 한 글자 이상 주세요")
+	if err := validName(name); err != nil {
+		return PairResult{}, err
 	}
 	if !validFingerprint(controller.Fingerprint) {
 		return PairResult{}, errors.New("컨트롤러 지문이 올바르지 않습니다. deskhand 데몬의 인증서를 다시 만드세요")
@@ -202,7 +223,8 @@ func initAgent(ctx context.Context, s SSH, name, controllerFP string, force bool
 	b.WriteString("\nexit $LASTEXITCODE")
 	stdout, stderr, err := s.Run(ctx, b.String())
 	if err != nil {
-		if strings.Contains(stderr, "이미 키가 있습니다") {
+		var ee interface{ ExitCode() int }
+		if errors.As(err, &ee) && ee.ExitCode() == agentExitKeyExists {
 			return "", ErrAlreadyPaired
 		}
 		return "", fmt.Errorf("에이전트 키를 만들지 못했습니다. PC의 C:\\ProgramData 쓰기 권한을 확인하세요: %s", firstLine(stderr, err))

@@ -31,6 +31,10 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/transport"
 )
 
+// exitKeyExists is the exit code of init when a key already exists and --force
+// is not given.
+const exitKeyExists = 4
+
 // version is set with -ldflags "-X main.version=…".
 var version = "dev"
 
@@ -116,7 +120,8 @@ func cmdInit(args []string, stdout, stderr io.Writer) int {
 	}
 	certPath, keyPath := config.KeyPaths(*cfgPath)
 	if _, err := os.Lstat(keyPath); err == nil && !*force {
-		return fail(stderr, fmt.Sprintf("%s에 이미 키가 있습니다. 키를 바꾸려면 --force를 붙여 다시 실행하세요", keyPath), nil)
+		fail(stderr, fmt.Sprintf("%s에 이미 키가 있습니다. 키를 바꾸려면 --force를 붙여 다시 실행하세요", keyPath), nil)
+		return exitKeyExists
 	}
 	dataDir := filepath.Dir(*cfgPath)
 	if err := prepareDataDir(dataDir); err != nil {

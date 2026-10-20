@@ -45,7 +45,7 @@ func (s SSH) runner() Runner {
 }
 
 func (s SSH) checkAlias() error {
-	if s.Alias == "" || strings.HasPrefix(s.Alias, "-") || strings.ContainsAny(s.Alias, " \t\r\n") {
+	if !validAlias(s.Alias) {
 		return fmt.Errorf("SSH 별칭 %q이(가) 올바르지 않습니다. ~/.ssh/config에 있는 호스트 이름을 주세요", s.Alias)
 	}
 	return nil
@@ -114,4 +114,18 @@ func firstLine(text string, err error) string {
 		}
 	}
 	return err.Error()
+}
+
+// validAlias accepts letters, digits and . - _ @, not starting with "-".
+func validAlias(a string) bool {
+	if a == "" || a[0] == '-' {
+		return false
+	}
+	for _, c := range a {
+		ok := c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.ContainsRune(".-_@", c)
+		if !ok {
+			return false
+		}
+	}
+	return true
 }
