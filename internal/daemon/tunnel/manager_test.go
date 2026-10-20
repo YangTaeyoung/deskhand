@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -401,5 +402,210 @@ func TestARefusedConnectionIsCountedWithTheAgentsReason(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatalf("list %+v", info)
 		}
+	}
+}
+
+func newLimited(t *testing.T, lim Limits) *Manager {
+	t.Helper()
+	m := NewWithLimits(nil, lim)
+	t.Cleanup(m.Shutdown)
+	return m
+}
+
+// holdServer accepts connections and reads them to the end without
+// answering or closing; it closes them when the test ends.
+func holdServer(t *testing.T) int {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop := make(chan struct{})
+	t.Cleanup(func() {
+		close(stop)
+		l.Close()
+	})
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				io.Copy(io.Discard, c)
+				<-stop
+				c.Close()
+			}()
+		}
+	}()
+	return l.Addr().(*net.TCPAddr).Port
+}
+
+func waitFailed(t *testing.T, m *Manager, id string, want int64) Info {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		info, _ := m.Get(id)
+		if info.FailedConnections == want {
+			return info
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("failed connections %+v, want %d", info, want)
+		}
+	}
+}
+
+// expectClosed reports whether c is closed by the peer within d.
+func expectClosed(c net.Conn, d time.Duration) bool {
+	c.SetReadDeadline(time.Now().Add(d))
+	_, err := c.Read(make([]byte, 1))
+	return err != nil && !isTimeout(err)
+}
+
+func TestOpenRefusesTunnelsBeyondTheHostLimit(t *testing.T) {
+	lim := DefaultLimits
+	lim.TunnelsPerHost = 3
+	m, h := newLimited(t, lim), newFakeHost(t)
+	remote := echoServer(t)
+	var first Info
+	for i := range 3 {
+		info, err := m.Open(h, OpenParams{RemotePort: remote, Owner: OwnerUser})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i == 0 {
+			first = info
+		}
+	}
+	_, err := m.Open(h, OpenParams{RemotePort: remote, Owner: OwnerUser})
+	if apierr.CodeOf(err) != wire.CodeInvalidArgument || !strings.Contains(err.Error(), "3개") {
+		t.Fatalf("the fourth tunnel: %v", err)
+	}
+	if _, err := m.Close(first.TunnelID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Open(h, OpenParams{RemotePort: remote, Owner: OwnerUser}); err != nil {
+		t.Fatalf("open after a close: %v", err)
+	}
+}
+
+func TestConnectionsBeyondTheTunnelLimitAreClosedAndCounted(t *testing.T) {
+	lim := DefaultLimits
+	lim.ConnsPerTunnel = 2
+	m, h := newLimited(t, lim), newFakeHost(t)
+	i, err := m.Open(h, OpenParams{RemotePort: echoServer(t), Owner: OwnerUser})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var held []net.Conn
+	for range 2 {
+		c, err := net.Dial("tcp", localAddr(i))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		c.Write([]byte("x"))
+		io.ReadFull(c, make([]byte, 1))
+		held = append(held, c)
+	}
+	extra, err := net.Dial("tcp", localAddr(i))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer extra.Close()
+	if !expectClosed(extra, 5*time.Second) {
+		t.Fatal("a connection beyond the tunnel limit stayed open")
+	}
+	info := waitFailed(t, m, i.TunnelID, 1)
+	if !strings.Contains(info.LastError, "2개") || info.Connections != 2 {
+		t.Fatalf("tunnel after the refused connection %+v", info)
+	}
+	held[0].Close()
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if got, _ := m.Get(i.TunnelID); got.Connections == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the closed connection was not released")
+		}
+	}
+	roundTrip(t, i, "again")
+}
+
+func TestConnectionsBeyondTheHostStreamLimitAreClosedAcrossTunnels(t *testing.T) {
+	lim := DefaultLimits
+	lim.StreamsPerHost = 2
+	m, h := newLimited(t, lim), newFakeHost(t)
+	remote := echoServer(t)
+	a, err := m.Open(h, OpenParams{RemotePort: remote, Owner: OwnerUser})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := m.Open(h, OpenParams{RemotePort: remote, Owner: OwnerUser})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, i := range []Info{a, b} {
+		c, err := net.Dial("tcp", localAddr(i))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		c.Write([]byte("x"))
+		io.ReadFull(c, make([]byte, 1))
+	}
+	extra, err := net.Dial("tcp", localAddr(a))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer extra.Close()
+	if !expectClosed(extra, 5*time.Second) {
+		t.Fatal("a connection beyond the host limit stayed open")
+	}
+	if info := waitFailed(t, m, a.TunnelID, 1); !strings.Contains(info.LastError, "2개") {
+		t.Fatalf("last_error %q", info.LastError)
+	}
+}
+
+func TestHalfClosedConnectionExpiresWhenTheOpenDirectionIsIdle(t *testing.T) {
+	lim := DefaultLimits
+	lim.HalfClosedIdle = 300 * time.Millisecond
+	m, h := newLimited(t, lim), newFakeHost(t)
+	i, err := m.Open(h, OpenParams{RemotePort: holdServer(t), Owner: OwnerUser})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := net.Dial("tcp", localAddr(i))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	c.Write([]byte("data"))
+	c.(*net.TCPConn).CloseWrite()
+	if !expectClosed(c, 5*time.Second) {
+		t.Fatal("a half-closed idle connection was not closed")
+	}
+}
+
+func TestFullyIdleConnectionIsNotExpired(t *testing.T) {
+	lim := DefaultLimits
+	lim.HalfClosedIdle = 100 * time.Millisecond
+	m, h := newLimited(t, lim), newFakeHost(t)
+	i, err := m.Open(h, OpenParams{RemotePort: echoServer(t), Owner: OwnerUser})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := net.Dial("tcp", localAddr(i))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	time.Sleep(700 * time.Millisecond)
+	c.SetDeadline(time.Now().Add(5 * time.Second))
+	if _, err := c.Write([]byte("late")); err != nil {
+		t.Fatal(err)
+	}
+	got := make([]byte, 4)
+	if _, err := io.ReadFull(c, got); err != nil || string(got) != "late" {
+		t.Fatalf("echo after the idle time: %q, %v", got, err)
 	}
 }

@@ -40,6 +40,24 @@ const (
 	copyBuffer = 64 << 10
 )
 
+// Limits bound what tunnels can use of a host's connection.
+type Limits struct {
+	// TunnelsPerHost is the most open tunnels of one host.
+	TunnelsPerHost int
+	// ConnsPerTunnel is the most connections one tunnel carries at once;
+	// further accepted connections are closed at once.
+	ConnsPerTunnel int
+	// StreamsPerHost is the most tunnel streams open at once on one host,
+	// over all its tunnels.
+	StreamsPerHost int
+	// HalfClosedIdle is how long a connection with one direction ended may
+	// see no bytes in the other direction before it is closed.
+	HalfClosedIdle time.Duration
+}
+
+// DefaultLimits are the limits of New.
+var DefaultLimits = Limits{TunnelsPerHost: 32, ConnsPerTunnel: 128, StreamsPerHost: 256, HalfClosedIdle: 2 * time.Minute}
+
 // Host is the PC connection a tunnel uses; *conn.Host is one.
 type Host interface {
 	ID() string
@@ -75,19 +93,43 @@ type Info struct {
 
 // Manager owns the tunnels.
 type Manager struct {
-	lg *log.Logger
+	lg  *log.Logger
+	lim Limits
 
 	mu      sync.Mutex
 	tunnels map[string]*tunnel
+	streams map[string]int
 	closed  bool
 }
 
-// New returns a Manager that logs to lg; nil discards the log.
-func New(lg *log.Logger) *Manager {
+// New returns a Manager with DefaultLimits that logs to lg; nil discards
+// the log.
+func New(lg *log.Logger) *Manager { return NewWithLimits(lg, DefaultLimits) }
+
+// NewWithLimits returns a Manager with the limits lim.
+func NewWithLimits(lg *log.Logger, lim Limits) *Manager {
 	if lg == nil {
 		lg = log.New(io.Discard, "", 0)
 	}
-	return &Manager{lg: lg, tunnels: map[string]*tunnel{}}
+	return &Manager{lg: lg, lim: lim, tunnels: map[string]*tunnel{}, streams: map[string]int{}}
+}
+
+// takeStream reserves one tunnel stream of host and reports whether the
+// host-wide limit allowed it.
+func (m *Manager) takeStream(hostID string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.streams[hostID] >= m.lim.StreamsPerHost {
+		return false
+	}
+	m.streams[hostID]++
+	return true
+}
+
+func (m *Manager) dropStream(hostID string) {
+	m.mu.Lock()
+	m.streams[hostID]--
+	m.mu.Unlock()
 }
 
 // tunnel is one listener with its connections.
@@ -161,6 +203,18 @@ func (m *Manager) Open(h Host, p OpenParams) (Info, error) {
 		m.mu.Unlock()
 		ln.Close()
 		return Info{}, apierr.Internal("데몬이 종료 중이라 터널을 열 수 없습니다. 데몬을 다시 시작한 뒤 시도하세요")
+	}
+	open := 0
+	for _, o := range m.tunnels {
+		if o.hostID == t.hostID {
+			open++
+		}
+	}
+	if open >= m.lim.TunnelsPerHost {
+		m.mu.Unlock()
+		ln.Close()
+		return Info{}, apierr.Invalid(fmt.Sprintf("%s PC에는 터널을 최대 %d개까지 열 수 있습니다. deskhand tunnel list로 확인하고 안 쓰는 터널을 deskhand tunnel close로 닫으세요",
+			h.Target().Name, m.lim.TunnelsPerHost))
 	}
 	m.tunnels[t.id] = t
 	m.mu.Unlock()
@@ -318,6 +372,19 @@ func (t *tunnel) fail(text string) {
 // serve carries one accepted connection over a new tunnel stream.
 func (t *tunnel) serve(c *net.TCPConn) {
 	name := t.host.Target().Name
+	t.active.Add(1)
+	defer t.active.Add(-1)
+	if int(t.active.Load()) > t.m.lim.ConnsPerTunnel {
+		c.Close()
+		t.fail(fmt.Sprintf("이 터널은 연결을 동시에 %d개까지 나릅니다. 안 쓰는 연결을 닫고 다시 접속하세요", t.m.lim.ConnsPerTunnel))
+		return
+	}
+	if !t.m.takeStream(t.hostID) {
+		c.Close()
+		t.fail(fmt.Sprintf("%s PC의 터널 연결이 모든 터널을 합쳐 %d개에 이르렀습니다. 안 쓰는 연결이나 터널을 닫고 다시 접속하세요", name, t.m.lim.StreamsPerHost))
+		return
+	}
+	defer t.m.dropStream(t.hostID)
 	if st := t.host.State(); st != conn.StateReady && st != conn.StateDegraded {
 		c.Close()
 		t.fail(fmt.Sprintf("%s PC와 연결돼 있지 않아 연결을 닫았습니다. 연결이 돌아오면 같은 포트로 다시 접속하세요", name))
@@ -335,9 +402,7 @@ func (t *tunnel) serve(c *net.TCPConn) {
 	t.mu.Lock()
 	t.conns[r] = struct{}{}
 	t.mu.Unlock()
-	t.active.Add(1)
 	defer func() {
-		t.active.Add(-1)
 		t.mu.Lock()
 		delete(t.conns, r)
 		t.mu.Unlock()
@@ -352,7 +417,7 @@ func (t *tunnel) serve(c *net.TCPConn) {
 		t.fail(refusal)
 		return
 	}
-	r.run(br, &t.toRemote, &t.fromRem)
+	r.run(br, &t.toRemote, &t.fromRem, t.m.lim.HalfClosedIdle)
 }
 
 // readAcceptance reads the agent's first line of a tunnel stream and
@@ -390,29 +455,70 @@ func (r *relay) abort() {
 }
 
 // run copies both directions, counting bytes, until both end; a failed
-// direction aborts the connection. Streams that ended cleanly are not reset.
-func (r *relay) run(from *bufio.Reader, toRemote, fromRemote *atomic.Int64) {
+// direction aborts the connection. Streams that ended cleanly are not
+// reset. When one direction has ended and the other moves no bytes for
+// halfIdle, the connection is aborted; a connection with both directions
+// open is never expired.
+func (r *relay) run(from *bufio.Reader, toRemote, fromRemote *atomic.Int64, halfIdle time.Duration) {
+	var up, down, halfAt atomic.Int64
+	now := time.Now().UnixNano()
+	up.Store(now)
+	down.Store(now)
+	var ended atomic.Int32
+	half := func() {
+		if ended.Add(1) == 1 {
+			halfAt.Store(time.Now().UnixNano())
+		}
+	}
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		_, err := io.CopyBuffer(counter{w: streamWriter{r.ds}, n: toRemote}, readerOnly{r.tc}, make([]byte, copyBuffer))
+		_, err := io.CopyBuffer(counter{w: streamWriter{r.ds}, n: toRemote, last: &up}, readerOnly{r.tc}, make([]byte, copyBuffer))
 		if err != nil {
 			r.abort()
 			return
 		}
 		_ = r.ds.CloseWrite()
+		half()
+		up.Store(0)
 	}()
 	go func() {
 		defer wg.Done()
-		_, err := io.CopyBuffer(counter{w: connWriter{r.tc}, n: fromRemote}, readerOnly{from}, make([]byte, copyBuffer))
+		_, err := io.CopyBuffer(counter{w: connWriter{r.tc}, n: fromRemote, last: &down}, readerOnly{from}, make([]byte, copyBuffer))
 		if err != nil {
 			r.abort()
 			return
 		}
 		_ = r.tc.CloseWrite()
+		half()
+		down.Store(0)
 	}()
-	wg.Wait()
+	finished := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(finished)
+	}()
+	if halfIdle > 0 {
+		tick := time.NewTicker(max(halfIdle/8, time.Millisecond))
+		defer tick.Stop()
+	watch:
+		for {
+			select {
+			case <-finished:
+				break watch
+			case <-tick.C:
+				if ended.Load() != 1 {
+					continue
+				}
+				last := max(up.Load(), down.Load(), halfAt.Load())
+				if time.Since(time.Unix(0, last)) > halfIdle {
+					r.abort()
+				}
+			}
+		}
+	}
+	<-finished
 	r.tc.Close()
 }
 
@@ -428,14 +534,17 @@ type connWriter struct{ c *net.TCPConn }
 
 func (w connWriter) Write(p []byte) (int, error) { return w.c.Write(p) }
 
-// counter adds the bytes written through it to n.
+// counter adds the bytes written through it to n and stamps the time of
+// the write in last.
 type counter struct {
-	w io.Writer
-	n *atomic.Int64
+	w    io.Writer
+	n    *atomic.Int64
+	last *atomic.Int64
 }
 
 func (c counter) Write(p []byte) (int, error) {
 	n, err := c.w.Write(p)
 	c.n.Add(int64(n))
+	c.last.Store(time.Now().UnixNano())
 	return n, err
 }

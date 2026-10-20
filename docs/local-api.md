@@ -111,6 +111,7 @@ Chrome DevTools Protocol(CDP) 디버거. 세부 규칙은 [§9](#9-디버깅-세
 - 이 Mac 쪽은 `127.0.0.1`에만 묶고(`0.0.0.0`·다른 인터페이스 없음) PC 쪽은 에이전트가 `127.0.0.1`·`::1`에만 연결한다. 받은 TCP 연결 하나가 `tunnel` 스트림 하나(protocol.md §2)이고 양쪽 반쪽 닫기를 그대로 전한다. 호스트가 연결돼 있고 에이전트 `caps.tunnel`이 `ready`일 때만 연다: 연결이 없으면 `OFFLINE`, 터널을 모르는 에이전트는 `CAPABILITY_UNSUPPORTED`, `local_port`가 이미 쓰이면 `PORT_CONFLICT`, 포트가 1–65535 밖(`local_port`는 0 허용)이거나 `host_id`가 없으면 `INVALID_ARGUMENT`.
 - `owner`는 `"user"`(이 API로 연 터널) 또는 `"debug:<debug_id>"`(디버그 세션이 연 터널). 디버그 세션의 터널은 그 세션이 `debug.close`·`connection_lost`·실패 정리에서 닫는다. `tunnel.close`는 `owner`가 `user`가 아닌 터널을 `INVALID_ARGUMENT`로 거절한다. 디버거는 `debug.ports`로 받은 PC 포트마다 자기 `owner`로 터널을 열고 자기 터널만 닫는다.
 - 호스트 연결이 끊겨도 리스너는 열려 있다. 그동안 들어온 연결은 바로 닫히고 `failed_connections`와 `last_error`에 이유가 남으며, 연결이 돌아오면 같은 포트로 다시 쓸 수 있다. 이미 열려 있던 연결은 호스트 연결과 함께 끊긴다. 호스트를 제거하거나(`host.remove`) 데몬이 끝나면 그 터널이 닫힌다. 데몬을 다시 시작해도 터널은 이어지지 않는다.
+- 한도: 호스트마다 터널 32개(넘으면 `tunnel.open`이 `INVALID_ARGUMENT`), 터널마다 동시 연결 128개, 호스트 전체 터널 스트림 256개. 넘어서 들어온 연결은 바로 닫히고 `failed_connections`와 `last_error`에 남는다. 한쪽 방향이 끝난 연결은 반대 방향이 2분 동안 바이트를 나르지 않으면 닫힌다(양쪽이 열려 있으면 오래 놀아도 유지된다).
 - PC의 포트에 받는 프로그램이 없으면 터널은 열리지만 그 포트로 들어온 연결이 바로 닫히고 `last_error`에 이유가 남는다.
 - 사람이 쓰는 CLI는 `deskhand tunnel <호스트> <포트> [--local P]`(실행하는 동안 열려 있고 Ctrl-C로 닫음), `deskhand tunnel list [호스트]`, `deskhand tunnel close <로컬포트|터널ID>`다. MCP는 `tunnel_open`·`tunnel_close`·`tunnel_list`.
 

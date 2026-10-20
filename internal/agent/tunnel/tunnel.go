@@ -107,7 +107,7 @@ func relay(st Stream, tc *net.TCPConn) {
 	wg.Wait()
 }
 
-// readerOnly hides every method of r but Read, so io.Copy uses its buffer.
+// readerOnly exposes only the Read method of r.
 type readerOnly struct{ r io.Reader }
 
 func (r readerOnly) Read(p []byte) (int, error) { return r.r.Read(p) }

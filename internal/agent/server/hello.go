@@ -56,8 +56,9 @@ const errNoShell = "no shell this agent can start is installed on this PC"
 
 // checkCaps returns the state of every capability key. exec, files and
 // processes follow Options.AllowExec, pty also the installed shells
-// (ptyShells), tunnel follows AllowExec, diag also its source (diagCap), uia the UI helper and
-// clipboard the clipboard's availability; the other keys are unsupported.
+// (ptyShells), tunnel follows AllowExec, diag also its source (diagCap),
+// uia the UI helper and clipboard the clipboard's availability; the other
+// keys are unsupported.
 func (s *Server) checkCaps() capStates {
 	ready := capState{State: capReady}
 	caps := capStates{"diag": s.diagCap()}
