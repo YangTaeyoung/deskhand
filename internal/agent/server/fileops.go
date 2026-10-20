@@ -20,8 +20,6 @@ import (
 const (
 	// fsCopyBuffer is the buffer fs.copy and fs.hash read files through.
 	fsCopyBuffer = 1 << 20
-	// fsRenameMax bounds the numbered names on_conflict rename tries.
-	fsRenameMax = 10000
 )
 
 // conflictPolicy returns the on_conflict of req, "fail" when it has none.
@@ -60,18 +58,10 @@ func randomBytes(n int) []byte {
 	return b
 }
 
-// numberedName returns path with " (k)" added to its name, before the
-// extension of a file name that has a name before its extension.
+// numberedName returns path with " (k)" added to its name (wire.NumberedName).
 func numberedName(path string, k int, folder bool) string {
 	dir, base := filepath.Split(path)
-	ext := ""
-	if !folder {
-		ext = filepath.Ext(base)
-		if ext == base {
-			ext = ""
-		}
-	}
-	return filepath.Join(dir, fmt.Sprintf("%s (%d)%s", base[:len(base)-len(ext)], k, ext))
+	return filepath.Join(dir, wire.NumberedName(base, k, folder))
 }
 
 // caseCollision is the error of a folder copy that met two names in the
@@ -352,7 +342,7 @@ func applyConflictPolicy(from, to string, folder bool, policy, what string) (boo
 // renameToFreeName renames tmp to to, or to the first numbered name of to
 // (numberedName) that does not exist, and returns the name it took.
 func renameToFreeName(tmp, to string, folder bool) (string, error) {
-	for k := 0; k <= fsRenameMax; k++ {
+	for k := 0; k <= wire.RenameMax; k++ {
 		name := to
 		if k > 0 {
 			name = numberedName(to, k, folder)
@@ -365,7 +355,7 @@ func renameToFreeName(tmp, to string, folder bool) (string, error) {
 			return "", err
 		}
 	}
-	return "", coded(wire.CodeTransferConflict, fmt.Sprintf("'%s' and its numbered names up to (%d) exist; pass another destination", to, fsRenameMax), false)
+	return "", coded(wire.CodeTransferConflict, fmt.Sprintf("'%s' and its numbered names up to (%d) exist; pass another destination", to, wire.RenameMax), false)
 }
 
 // fsTrash moves the file or folder path to the Recycle Bin (platformTrash).

@@ -25,3 +25,26 @@ func TestConflictPoliciesAreFailReplaceSkipRename(t *testing.T) {
 		t.Fatal("the caller changed the list")
 	}
 }
+
+func TestNumberedNameKeepsTheExtensionOfAFile(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		k      int
+		folder bool
+		want   string
+	}{
+		{"a.txt", 1, false, "a (1).txt"},
+		{"a.tar.gz", 2, false, "a.tar (2).gz"},
+		{".bashrc", 1, false, ".bashrc (1)"},
+		{"noext", 3, false, "noext (3)"},
+		{"v1.2", 1, true, "v1.2 (1)"},
+		{"보고서.hwp", 1, false, "보고서 (1).hwp"},
+	} {
+		if got := NumberedName(tc.name, tc.k, tc.folder); got != tc.want {
+			t.Errorf("NumberedName(%q, %d, %v) = %q, want %q", tc.name, tc.k, tc.folder, got, tc.want)
+		}
+	}
+	if RenameMax != 10000 {
+		t.Fatalf("RenameMax %d", RenameMax)
+	}
+}
