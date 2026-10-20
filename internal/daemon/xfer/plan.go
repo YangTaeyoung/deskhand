@@ -37,10 +37,23 @@ func (p StartParams) check() error {
 		return apierr.Invalid("local이 볼륨의 루트입니다. 옮길 파일이나 폴더의 전체 경로를 주세요")
 	case strings.TrimSpace(p.Remote) == "":
 		return apierr.Invalid("remote가 없습니다. PC 쪽 항목의 전체 경로를 주세요")
+	case dotElements(p.Remote):
+		return apierr.Invalid(fmt.Sprintf("remote %s에 . 이나 .. 원소가 있습니다. 그 원소 없이 항목의 전체 경로를 주세요", p.Remote))
 	case p.OnConflict != "" && !wire.IsConflictPolicy(p.OnConflict):
 		return apierr.Invalid("on_conflict는 fail, replace, skip, rename 중 하나여야 합니다. 그중 하나를 주세요")
 	}
 	return nil
+}
+
+// dotElements reports whether the host path p has a "." or ".." element
+// between its separators ('/' and '\').
+func dotElements(p string) bool {
+	for _, e := range strings.FieldsFunc(p, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if e == "." || e == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 // separator returns the path separator of the host h, whose stored row is
@@ -264,7 +277,9 @@ func (t *transfer) plan(ctx context.Context, h *conn.Host) error {
 
 // planPush lists the item of a push on this Mac: its files with their
 // size, modification time and SHA-256 and its folders. A link, a special
-// file and an entry that cannot be read are failed entries.
+// file, an entry that cannot be read and, in a folder, a name the host
+// cannot hold (manifest.screen; for a Windows host also the later of two
+// names that differ only in letter case) are failed entries.
 func (t *transfer) planPush(ctx context.Context) ([]store.TransferFile, error) {
 	root := t.row.Local
 	m := &manifest{id: t.row.TransferID}
@@ -317,6 +332,10 @@ func (t *transfer) planPush(ctx context.Context) ([]store.TransferFile, error) {
 			return nil, localError(err, fmt.Sprintf("이 Mac의 폴더 %s를 읽지 못했습니다", root), "권한을 확인한 뒤 transfer.resume으로 다시 시작하세요")
 		}
 	}
+	if t.row.Folder {
+		windows := t.row.Sep == `\`
+		m.screen(func(rel string) string { return filepath.Join(root, filepath.FromSlash(rel)) }, windows, windows)
+	}
 	if err := t.fingerprintAll(ctx, m.files); err != nil {
 		return nil, err
 	}
@@ -356,8 +375,9 @@ func (t *transfer) fingerprintAll(ctx context.Context, files []store.TransferFil
 }
 
 // planPull lists the item of a pull on the host: its files with their size
-// and modification time, and its folders. A link and an entry whose name
-// would leave the folder are failed entries.
+// and modification time, and its folders. A link, a name this Mac cannot
+// take (manifest.screen) and, on a volume that ignores letter case, the
+// later of two names that differ only in letter case are failed entries.
 func (t *transfer) planPull(ctx context.Context, h *conn.Host) ([]store.TransferFile, error) {
 	m := &manifest{id: t.row.TransferID}
 	sep := t.row.Sep
@@ -379,8 +399,6 @@ func (t *transfer) planPull(ctx context.Context, h *conn.Host) ([]store.Transfer
 	for _, e := range entries {
 		full := remoteJoin(t.row.Remote, e.rel, sep)
 		switch {
-		case !filepath.IsLocal(filepath.FromSlash(e.rel)) || strings.Contains(e.rel, `\`):
-			m.failed(e.rel, e.dir, apierr.Invalid(fmt.Sprintf("PC의 %s는 이 Mac에서 쓸 수 없는 이름이라 받지 않았습니다. 이름을 바꾼 뒤 다시 받으세요", full)))
 		case e.link:
 			m.failed(e.rel, false, linkRefused(full))
 		case e.dir:
@@ -389,6 +407,7 @@ func (t *transfer) planPull(ctx context.Context, h *conn.Host) ([]store.Transfer
 			m.add(store.TransferFile{Rel: e.rel, Size: e.size, MTime: e.mtime})
 		}
 	}
+	m.screen(func(rel string) string { return remoteJoin(t.row.Remote, rel, sep) }, false, caseInsensitive(filepath.Dir(t.row.Local)))
 	return m.files, nil
 }
 

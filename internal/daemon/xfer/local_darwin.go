@@ -46,3 +46,13 @@ func writable(dir string) error {
 	}
 	return nil
 }
+
+// pcCaseSensitive is _PC_CASE_SENSITIVE of <sys/unistd.h>.
+const pcCaseSensitive = 11
+
+// caseInsensitive reports whether the volume of the folder dir takes names
+// that differ only in letter case for one name.
+func caseInsensitive(dir string) bool {
+	v, err := unix.Pathconf(dir, pcCaseSensitive)
+	return err == nil && v == 0
+}

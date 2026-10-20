@@ -13,3 +13,7 @@ func renameNoReplace(from, to string) error { return linkRename(from, to) }
 // writable returns nil; the removal itself reports a folder that does not
 // let this process remove its entries.
 func writable(string) error { return nil }
+
+// caseInsensitive reports false: the volumes are taken as telling letter
+// case apart.
+func caseInsensitive(string) bool { return false }

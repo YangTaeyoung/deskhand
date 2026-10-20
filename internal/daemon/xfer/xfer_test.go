@@ -564,6 +564,8 @@ func TestStartRefusesWhatCannotStart(t *testing.T) {
 		{Direction: "push", Local: "relative/x", Remote: filepath.Join(h.agent.home, "x")},
 		{Direction: "push", Local: filepath.Join(h.mac, "x"), Remote: ""},
 		{Direction: "push", Local: filepath.Join(h.mac, "x"), Remote: filepath.Join(h.agent.home, "x"), OnConflict: "merge"},
+		{Direction: "push", Local: filepath.Join(h.mac, "x"), Remote: h.agent.home + "/sub/../x"},
+		{Direction: "pull", Local: filepath.Join(h.mac, "x"), Remote: h.agent.home + `\.\x`},
 	} {
 		if _, err := start(p); err == nil {
 			t.Fatalf("start %+v was accepted", p)
@@ -661,5 +663,37 @@ func TestTransferOfARemovedHostFails(t *testing.T) {
 	tr := h.waitFinished(id)
 	if tr.State != "failed" || tr.Error == nil || tr.Error.Code != wire.CodeNotFound {
 		t.Fatalf("transfer of a removed host: %s", describe(tr))
+	}
+}
+
+func TestPushRefusesNamesThatLeaveTheFolderAndKeepsTheMoveSource(t *testing.T) {
+	h := newHarness(t, xfer.Hooks{})
+	for _, direction := range []string{"push", "move_push"} {
+		src := filepath.Join(h.mac, direction)
+		writeFile(t, filepath.Join(src, "ok.txt"), []byte("ok"))
+		writeFile(t, filepath.Join(src, `..\..\evil.bat`), []byte("evil"))
+		writeFile(t, filepath.Join(src, "a", "b.txt"), []byte("slash"))
+		writeFile(t, filepath.Join(src, `a\b.txt`), []byte("backslash"))
+		dst := filepath.Join(h.agent.home, direction)
+		tr := h.waitFinished(h.start(direction, src, dst, "replace").TransferID)
+		if tr.State != "failed" || tr.Outcome != "partial" {
+			t.Fatalf("%s with names that leave the folder: %s", direction, describe(tr))
+		}
+		for _, rel := range []string{`..\..\evil.bat`, `a\b.txt`} {
+			if f := fileOf(t, tr, rel); f.State != "failed" || f.Error == nil || f.Error.Code != wire.CodeInvalidArgument {
+				t.Fatalf("%s %s: %s", direction, rel, describe(tr))
+			}
+		}
+		if got := tree(t, dst); len(got) != 3 || got["ok.txt"] != "ok" || got["a/b.txt"] != "slash" {
+			t.Fatalf("%s destination %v", direction, got)
+		}
+		if got := tree(t, src); got[`..\..\evil.bat`] != "evil" || got[`a\b.txt`] != "backslash" || got["a/b.txt"] != "slash" || got["ok.txt"] != "ok" {
+			t.Fatalf("%s source %v", direction, got)
+		}
+	}
+	for rel := range tree(t, h.agent.home) {
+		if !strings.HasPrefix(rel, "push/") && !strings.HasPrefix(rel, "move_push/") && rel != "push" && rel != "move_push" {
+			t.Fatalf("the transfers wrote %s outside their destination", rel)
+		}
 	}
 }
