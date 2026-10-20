@@ -168,3 +168,22 @@ func TestProcKillByNameAnswersTheRefusalWhenAProcessDeniesTermination(t *testing
 	}
 	expectEnded(t, wait, victim.Process.Pid)
 }
+
+// shellWithChild is an exec.start request whose shell runs a child process
+// for 30 s.
+func shellWithChild() proto.Message {
+	return proto.Message{"cmd": "ping -n 30 127.0.0.1 >nul & echo done", "shell": "cmd"}
+}
+
+// longCommand is an exec.start request of a process that runs for 30 s.
+func longCommand() proto.Message {
+	return proto.Message{"argv": []any{systemProgram("PING.EXE"), "-n", "30", "127.0.0.1"}}
+}
+
+// busyCommand is an exec.start request whose process keeps a processor busy.
+func busyCommand() proto.Message {
+	return proto.Message{"cmd": "for /L %i in (1,0,2) do @rem", "shell": "cmd"}
+}
+
+// unrelatedPID is a process the agent did not start.
+func unrelatedPID() int { return 4 }

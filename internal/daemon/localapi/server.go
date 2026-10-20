@@ -136,6 +136,7 @@ func New(d Deps) *Server {
 	s.registerProc()
 	s.registerTransfer()
 	s.registerPTY()
+	s.registerDiag()
 	return s
 }
 

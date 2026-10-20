@@ -51,24 +51,36 @@ func (r *run) procList(ctx context.Context, args []string) int {
 		pid, _ := p.num("pid")
 		mem, _ := p.num("mem_kb")
 		by := ""
-		if p.boolean("started_by_deskhand") {
-			by = "예"
+		switch {
+		case p.boolean("self"):
+			by = "에이전트"
+		case p.boolean("started_by_deskhand"):
+			by = "시작함"
 		}
-		rows = append(rows, []string{strconv.FormatInt(pid, 10), p.str("name"), humanSize(mem * 1024), dash(p.str("user")), dash(by)})
+		cpu := "-"
+		if c := p.str("cpu_pct"); c != "" {
+			cpu = c + "%"
+		}
+		started := "-"
+		if s := p.str("started"); s != "" {
+			started = localTime(s, "2006-01-02 15:04")
+		}
+		rows = append(rows, []string{strconv.FormatInt(pid, 10), p.str("name"), cpu, humanSize(mem * 1024), dash(p.str("user")), started, dash(by)})
 	}
-	writeTable(r.Stdout, []string{"PID", "이름", "메모리", "사용자", "Deskhand 시작"}, rows)
+	writeTable(r.Stdout, []string{"PID", "이름", "CPU", "메모리", "사용자", "시작", "Deskhand"}, rows)
 	return exitOK
 }
 
 func (r *run) procKill(ctx context.Context, args []string) int {
 	fs := newFlags("proc kill")
 	tree := fs.Bool("tree", false, "자식 프로세스까지 종료")
+	started := fs.String("started", "", "proc ls --json의 started 값(그 PID가 다른 프로세스면 종료하지 않음)")
 	pos, _, err := parseArgs(fs, args)
 	if err != nil {
 		return r.fail(err)
 	}
 	if len(pos) != 2 {
-		return r.fail(usagef("deskhand proc kill <호스트> <pid> [--tree] 형식으로 주세요"))
+		return r.fail(usagef("deskhand proc kill <호스트> <pid> [--tree] [--started T] 형식으로 주세요"))
 	}
 	pid, perr := strconv.Atoi(pos[1])
 	if perr != nil || pid <= 0 {
@@ -77,6 +89,9 @@ func (r *run) procKill(ctx context.Context, args []string) int {
 	params := map[string]any{"host_id": pos[0], "pid": pid}
 	if *tree {
 		params["tree"] = true
+	}
+	if *started != "" {
+		params["started"] = *started
 	}
 	res, err := r.simple(ctx, "proc.kill", params)
 	if err != nil {

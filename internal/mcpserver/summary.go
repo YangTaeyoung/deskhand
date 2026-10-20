@@ -130,7 +130,7 @@ func success(tool string, sp spec, params map[string]any, res any) *mcp.CallTool
 			lines = append(lines, "The job outcome is unknown. Check the target state directly (session_inspect, files_stat, proc_list) before any retry; do not resend blindly.")
 		}
 	}
-	if sp.Mutating && ((status == "failed" && errObj != nil) || status == "unknown") {
+	if (sp.Mutating && ((status == "failed" && errObj != nil) || status == "unknown")) || (sp.Envelope && status == "failed" && errObj != nil) {
 		out.IsError = true
 		if prev, ok := m["code"]; ok {
 			if _, isStr := prev.(string); !isStr {
@@ -258,6 +258,11 @@ func detail(tool string, params, m map[string]any) string {
 		return "trashed=false: nothing was removed"
 	case "files_hash":
 		return fmt.Sprintf("sha256=%v size=%v", m["sha256"], m["size"])
+	case "diag_system", "diag_services", "diag_events", "diag_crashes":
+		if str(m, "status") == "failed" {
+			return ""
+		}
+		return diagText(tool, m)
 	case "files_list":
 		entries, _ := m["entries"].([]any)
 		var names []string

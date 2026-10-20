@@ -534,6 +534,7 @@ func (s *Server) startPTY(n wire.PTYNew) (*ptySession, error) {
 	if err := s.ptys.add(p); err != nil {
 		return nil, err
 	}
+	notBefore := time.Now()
 	con, err := pty.Start(spec)
 	if err != nil {
 		s.ptys.mu.Lock()
@@ -544,6 +545,7 @@ func (s *Server) startPTY(n wire.PTYNew) (*ptySession, error) {
 	p.mu.Lock()
 	p.con, p.pid, p.started = con, con.Pid(), time.Now()
 	p.mu.Unlock()
+	s.trackStarted(con.Pid(), notBefore)
 	go s.runPTY(p)
 	return p, nil
 }
@@ -576,6 +578,7 @@ func (s *Server) runPTY(p *ptySession) {
 		}
 	}()
 	code, err := p.con.Wait()
+	s.started.exited(p.processID(), time.Now())
 	if err != nil {
 		s.opt.Logger.Printf("pty %s: wait for the shell: %v", p.id, err)
 	}

@@ -311,16 +311,19 @@ func (s *Server) execStart(_ context.Context, req proto.Message) (proto.Message,
 		store.remove(j.id)
 		return nil, startError(err)
 	}
+	notBefore := time.Now()
 	if err := c.Start(); err != nil {
 		s.jobs.release(j)
 		store.remove(j.id)
 		return nil, startError(err)
 	}
 	j.markStarted(c.Process.Pid)
+	s.trackStarted(c.Process.Pid, notBefore)
 	s.saveJob(j, nil)
 	go s.flushJob(j)
 	go func() {
 		_ = c.Wait()
+		s.started.exited(c.Process.Pid, time.Now())
 		flushOutput()
 		code := -1
 		if c.ProcessState != nil {

@@ -1,58 +1,285 @@
 package server
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/YangTaeyoung/deskhand/internal/agent/diag"
 	"github.com/YangTaeyoung/deskhand/internal/proto"
+	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
+// procInfo is a process as proc.list reports it. CPUPct is its share of
+// all logical processors between two samples, Started its creation time
+// (zero when unknown) and CPUTime the processor time it used up to the
+// listing where the listing reads it.
 type procInfo struct {
 	PID, PPID       int
 	Name, Path, Cmd string
 	MemKB           int
+	CPUPct          float64
+	User            string
+	Started         time.Time
+	CPUTime         time.Duration
 }
 
 func (s *Server) registerProcs() {
-	s.register("proc.list", true, procList)
-	s.register("proc.kill", true, procKill)
+	s.register("proc.list", true, s.procList)
+	s.register("proc.kill", true, s.procKill)
 }
 
-func procList(_ context.Context, req proto.Message) (proto.Message, error) {
-	procs, err := listProcesses()
+// procList lists the processes sampled over diag.SampleGap, marking the
+// agent itself and the processes it started.
+func (s *Server) procList(ctx context.Context, req proto.Message) (proto.Message, error) {
+	procs, err := sampleProcesses(ctx, diag.SampleGap)
 	if err != nil {
 		return nil, fmt.Errorf("cannot list processes: %v", err)
 	}
-	return proto.Message{"procs": procListEntries(procs, req.String("name"))}, nil
+	marked := startedByDeskhand(procs, s.started.list())
+	return proto.Message{"procs": procListEntries(procs, req.String("name"), marked, os.Getpid())}, nil
 }
 
 // procListEntries builds the proc.list reply entries for the processes whose
-// name contains filter, each command line cut to procListCmdChars characters.
-func procListEntries(procs []procInfo, filter string) []any {
+// name contains filter, each command line cut to procListCmdChars
+// characters; marked holds the processes the agent started and self is the
+// agent's pid.
+func procListEntries(procs []procInfo, filter string, marked map[int]bool, self int) []any {
 	filter = strings.ToLower(filter)
 	out := []any{}
 	for _, p := range procs {
 		if filter != "" && !strings.Contains(strings.ToLower(p.Name), filter) {
 			continue
 		}
-		out = append(out, map[string]any{
+		e := map[string]any{
 			"pid": p.PID, "ppid": p.PPID, "name": p.Name, "path": p.Path, "cmd": cutChars(p.Cmd, procListCmdChars), "mem_kb": p.MemKB,
-		})
+			"cpu_pct": p.CPUPct, "started_by_deskhand": marked[p.PID], "self": p.PID == self,
+		}
+		if p.User != "" {
+			e["user"] = p.User
+		}
+		if !p.Started.IsZero() {
+			e["started"] = wire.FormatDiagTime(p.Started)
+		}
+		out = append(out, e)
 	}
 	return out
 }
 
-func procKill(_ context.Context, req proto.Message) (proto.Message, error) {
+// cpuPercent returns used processor time over elapsed as a share of cpus
+// logical processors, 0–100 to one decimal.
+func cpuPercent(used, elapsed time.Duration, cpus int) float64 {
+	if used <= 0 || elapsed <= 0 || cpus < 1 {
+		return 0
+	}
+	return min(100, math.Round(1000*float64(used)/(float64(elapsed)*float64(cpus)))/10)
+}
+
+// maxStartedRoots bounds the processes a startedTable keeps.
+const maxStartedRoots = 1024
+
+// startSlack is how much earlier than its notBefore a root without a
+// creation time may be listed as created.
+const startSlack = time.Second
+
+// startedRoot is a process the agent started: its pid, its creation time
+// (zero when it could not be read), the time just before it was started and
+// the time its end was seen (zero while it runs).
+type startedRoot struct {
+	pid                        int
+	created, notBefore, exited time.Time
+}
+
+// start returns the creation time of r, or notBefore without one.
+func (r startedRoot) start() time.Time {
+	if !r.created.IsZero() {
+		return r.created
+	}
+	return r.notBefore
+}
+
+// is reports whether a process created at started is r: its creation time
+// to the millisecond, or without one a creation from notBefore less
+// startSlack up to its end.
+func (r startedRoot) is(started time.Time) bool {
+	if started.IsZero() {
+		return false
+	}
+	if !r.created.IsZero() {
+		return sameMillisecond(r.created, started)
+	}
+	return !started.Before(r.notBefore.Add(-startSlack)) && (r.exited.IsZero() || !started.After(r.exited))
+}
+
+// sameMillisecond reports whether a and b are the same time to the
+// millisecond.
+func sameMillisecond(a, b time.Time) bool {
+	return a.Truncate(time.Millisecond).Equal(b.Truncate(time.Millisecond))
+}
+
+// startedTable holds the processes exec, app.launch and pty started, the
+// running ones and the newest ended ones up to maxStartedRoots.
+type startedTable struct {
+	mu    sync.Mutex
+	roots []startedRoot
+}
+
+// add records pid, created at created (zero when unknown) and started after
+// notBefore. Over maxStartedRoots the oldest ended process is dropped, or
+// the oldest one when none ended.
+func (t *startedTable) add(pid int, created, notBefore time.Time) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.roots = append(t.roots, startedRoot{pid: pid, created: created, notBefore: notBefore})
+	if len(t.roots) <= maxStartedRoots {
+		return
+	}
+	drop := 0
+	for i, r := range t.roots {
+		if !r.exited.IsZero() {
+			drop = i
+			break
+		}
+	}
+	t.roots = append(t.roots[:drop], t.roots[drop+1:]...)
+}
+
+// exited records that the newest running process pid ended at at.
+func (t *startedTable) exited(pid int, at time.Time) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for i := len(t.roots) - 1; i >= 0; i-- {
+		if t.roots[i].pid == pid && t.roots[i].exited.IsZero() {
+			t.roots[i].exited = at
+			return
+		}
+	}
+}
+
+// list returns the recorded processes.
+func (t *startedTable) list() []startedRoot {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return append([]startedRoot(nil), t.roots...)
+}
+
+// trackStarted records pid, started by the agent after notBefore, as a
+// process of started_by_deskhand.
+func (s *Server) trackStarted(pid int, notBefore time.Time) {
+	created, _ := pidCreation(pid)
+	s.started.add(pid, created, notBefore)
+}
+
+// startedByDeskhand returns the pids of procs that are a root or descend
+// from one. A listed parent counts only when it was not created after the
+// child; a child whose parent pid is not listed, or is listed with a later
+// creation, descends from a root of that pid that is not listed when the
+// child was created from the root's start up to its end. A process without
+// a creation time is not marked.
+func startedByDeskhand(procs []procInfo, roots []startedRoot) map[int]bool {
+	byPID := make(map[int]procInfo, len(procs))
+	for _, p := range procs {
+		byPID[p.PID] = p
+	}
+	live := func(r startedRoot) bool {
+		p, ok := byPID[r.pid]
+		return ok && r.is(p.Started)
+	}
+	isRoot := func(p procInfo) bool {
+		for _, r := range roots {
+			if r.pid == p.PID && r.is(p.Started) {
+				return true
+			}
+		}
+		return false
+	}
+	deadParent := func(p procInfo) bool {
+		for _, r := range roots {
+			if r.pid == p.PPID && !live(r) && !p.Started.Before(r.start().Add(-startSlack)) && (r.exited.IsZero() || !p.Started.After(r.exited)) {
+				return true
+			}
+		}
+		return false
+	}
+	const visiting = 2
+	state := map[int]int{}
+	var marked func(p procInfo) bool
+	marked = func(p procInfo) bool {
+		switch state[p.PID] {
+		case 1:
+			return true
+		case -1, visiting:
+			return false
+		}
+		state[p.PID] = visiting
+		res := false
+		switch parent, ok := byPID[p.PPID]; {
+		case p.Started.IsZero():
+		case isRoot(p):
+			res = true
+		case ok && p.PPID != p.PID && !parent.Started.IsZero() && !parent.Started.After(p.Started):
+			res = marked(parent)
+		default:
+			res = deadParent(p)
+		}
+		state[p.PID] = -1
+		if res {
+			state[p.PID] = 1
+		}
+		return res
+	}
+	out := map[int]bool{}
+	for _, p := range procs {
+		if marked(p) {
+			out[p.PID] = true
+		}
+	}
+	return out
+}
+
+// treeHolds reports whether the process tree of root holds the process
+// self: whether root is self or one of its ancestors, following each parent
+// only when it was created before or with its child.
+func treeHolds(procs []procEntry, root, self int) bool {
+	byPID := make(map[int]procEntry, len(procs))
+	for _, p := range procs {
+		byPID[p.PID] = p
+	}
+	seen := map[int]bool{}
+	for cur := self; !seen[cur]; {
+		if cur == root {
+			return true
+		}
+		seen[cur] = true
+		p, ok := byPID[cur]
+		if !ok {
+			return false
+		}
+		parent, ok := byPID[p.PPID]
+		if !ok || p.Created.IsZero() || parent.Created.IsZero() || parent.Created.After(p.Created) {
+			return false
+		}
+		cur = p.PPID
+	}
+	return false
+}
+
+func (s *Server) procKill(_ context.Context, req proto.Message) (proto.Message, error) {
 	tree := req.Bool("tree")
+	started, err := optionalString(req, "started")
+	if err != nil {
+		return nil, err
+	}
 	if pid := req.Int("pid"); pid > 0 {
-		var err error
+		if err := checkKillTarget(pid, tree, started); err != nil {
+			return nil, err
+		}
 		if tree {
 			err = killTree(pid)
 		} else {
@@ -67,6 +294,9 @@ func procKill(_ context.Context, req proto.Message) (proto.Message, error) {
 	if name == "" {
 		return nil, fmt.Errorf("missing pid or name")
 	}
+	if started != "" {
+		return nil, invalidArgument("started applies to a kill by pid; pass pid with the started value of proc.list")
+	}
 	n, err := killNamed(name, tree)
 	var refused *killRefusedError
 	if errors.As(err, &refused) {
@@ -76,6 +306,41 @@ func procKill(_ context.Context, req proto.Message) (proto.Message, error) {
 		return nil, fmt.Errorf("cannot kill '%s': %v; call proc.list to check it", name, err)
 	}
 	return proto.Message{"killed": n}, nil
+}
+
+// checkKillTarget refuses a kill by pid that would end the agent, itself or
+// with tree through its tree, and one whose pid no longer runs the process
+// that proc.list listed as created at started when started is set.
+func checkKillTarget(pid int, tree bool, started string) error {
+	self := os.Getpid()
+	if pid == self {
+		return coded(wire.CodePermissionDenied, fmt.Sprintf("pid %d is deskhand-agent itself, which proc.kill does not end; restart the agent through its scheduled task instead", pid), false)
+	}
+	if tree {
+		procs, err := processEntries()
+		if err != nil {
+			return fmt.Errorf("the processes could not be listed to check the tree of pid %d (%v); retry", pid, err)
+		}
+		if treeHolds(procs, pid, self) {
+			return coded(wire.CodePermissionDenied, fmt.Sprintf("the process tree of pid %d holds deskhand-agent itself, which proc.kill does not end; end the processes of the tree one by one without tree", pid), false)
+		}
+	}
+	if started == "" {
+		return nil
+	}
+	want, err := wire.ParseDiagTime(started)
+	if err != nil {
+		return invalidArgument(fmt.Sprintf("started '%s' is not an RFC 3339 time; pass the started value of proc.list", cutChars(started, 64)))
+	}
+	cur, ok := processStarted(pid)
+	if !ok {
+		return coded(wire.CodeStaleTarget, fmt.Sprintf("no process with pid %d runs now; call proc.list again", pid), false)
+	}
+	if !sameMillisecond(cur, want) {
+		return coded(wire.CodeStaleTarget, fmt.Sprintf("pid %d now belongs to a process created at %s, not at %s; call proc.list again", pid,
+			wire.FormatDiagTime(cur), wire.FormatDiagTime(want)), false)
+	}
+	return nil
 }
 
 // killNamed kills the processes of a name for proc.kill.
@@ -233,46 +498,4 @@ func killPID(pid int) error {
 		return err
 	}
 	return p.Kill()
-}
-
-type windowsProcess struct {
-	ProcessId       int
-	ParentProcessId int
-	Name            string
-	ExecutablePath  *string
-	CommandLine     *string
-	WorkingSetSize  float64
-}
-
-// parseWindowsProcesses reads the Get-CimInstance JSON, which is a bare
-// object when exactly one process matched.
-func parseWindowsProcesses(data []byte) ([]procInfo, error) {
-	data = bytes.TrimSpace(bytes.TrimPrefix(bytes.TrimSpace(data), []byte("\xef\xbb\xbf")))
-	if len(data) == 0 {
-		return nil, nil
-	}
-	var raw []windowsProcess
-	if data[0] == '[' {
-		if err := json.Unmarshal(data, &raw); err != nil {
-			return nil, err
-		}
-	} else {
-		var one windowsProcess
-		if err := json.Unmarshal(data, &one); err != nil {
-			return nil, err
-		}
-		raw = []windowsProcess{one}
-	}
-	out := make([]procInfo, 0, len(raw))
-	for _, w := range raw {
-		p := procInfo{PID: w.ProcessId, PPID: w.ParentProcessId, Name: w.Name, MemKB: int(w.WorkingSetSize / 1024)}
-		if w.ExecutablePath != nil {
-			p.Path = *w.ExecutablePath
-		}
-		if w.CommandLine != nil {
-			p.Cmd = *w.CommandLine
-		}
-		out = append(out, p)
-	}
-	return out, nil
 }

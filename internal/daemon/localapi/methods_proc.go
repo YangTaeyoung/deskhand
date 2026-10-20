@@ -9,6 +9,7 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/daemon/conn"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
 	"github.com/YangTaeyoung/deskhand/internal/proto"
+	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
 func (s *Server) registerProc() {
@@ -18,10 +19,11 @@ func (s *Server) registerProc() {
 }
 
 type procParams struct {
-	HostID string `json:"host_id"`
-	Name   string `json:"name"`
-	PID    int    `json:"pid"`
-	Tree   bool   `json:"tree"`
+	HostID  string `json:"host_id"`
+	Name    string `json:"name"`
+	PID     int    `json:"pid"`
+	Started string `json:"started"`
+	Tree    bool   `json:"tree"`
 }
 
 func (s *Server) procList(ctx context.Context, _ *session, raw json.RawMessage) (any, error) {
@@ -47,6 +49,7 @@ func (s *Server) procList(ctx context.Context, _ *session, raw json.RawMessage) 
 	raws, _ := res["procs"].([]any)
 	procs := make([]model.ProcessInfo, 0, len(raws))
 	byPID := map[int]int{}
+	marked := true
 	for _, r := range raws {
 		m, ok := r.(map[string]any)
 		if !ok {
@@ -54,11 +57,24 @@ func (s *Server) procList(ctx context.Context, _ *session, raw json.RawMessage) 
 		}
 		e := proto.Message(m)
 		pi := model.ProcessInfo{PID: e.Int("pid"), PPID: e.Int("ppid"), Name: e.String("name"), Path: e.String("path"),
-			Cmd: e.String("cmd"), MemKB: e.Int("mem_kb")}
+			Cmd: e.String("cmd"), MemKB: e.Int("mem_kb"), User: e.String("user"), Started: e.String("started"),
+			StartedByDeskhand: e.Bool("started_by_deskhand"), Self: e.Bool("self")}
+		if cpu, ok := m["cpu_pct"].(float64); ok {
+			pi.CPUPct = &cpu
+		}
+		marked = marked && e.Has("started_by_deskhand")
 		byPID[pi.PID] = len(procs)
 		procs = append(procs, pi)
 	}
-	started := s.d.Jobs.StartedPIDs(row.HostID)
+	if !marked {
+		markStartedJobs(procs, byPID, s.d.Jobs.StartedPIDs(row.HostID))
+	}
+	return map[string]any{"host_id": row.HostID, "procs": procs}, nil
+}
+
+// markStartedJobs marks the processes of the running exec and pty jobs and
+// their descendants, for an agent whose proc.list does not mark them.
+func markStartedJobs(procs []model.ProcessInfo, byPID map[int]int, started map[int]bool) {
 	for i := range procs {
 		seen := map[int]bool{}
 		for pid := procs[i].PID; pid > 0 && !seen[pid]; {
@@ -74,7 +90,6 @@ func (s *Server) procList(ctx context.Context, _ *session, raw json.RawMessage) 
 			pid = procs[j].PPID
 		}
 	}
-	return map[string]any{"host_id": row.HostID, "procs": procs}, nil
 }
 
 func (s *Server) procKill(ctx context.Context, sess *session, raw json.RawMessage) (any, error) {
@@ -88,11 +103,22 @@ func (s *Server) procKill(ctx context.Context, sess *session, raw json.RawMessag
 	if p.PID <= 0 && p.Name == "" {
 		return nil, apierr.Invalid("proc.kill에는 pid나 name이 필요합니다. 끝낼 프로세스를 주세요")
 	}
+	if p.Started != "" {
+		if p.PID <= 0 {
+			return nil, apierr.Invalid("started는 pid로 끝낼 때만 씁니다. proc.list의 pid와 started를 함께 주세요")
+		}
+		if _, err := wire.ParseDiagTime(p.Started); err != nil {
+			return nil, apierr.Invalid(fmt.Sprintf("started %q는 RFC 3339 시각이 아닙니다. proc.list의 started 값을 그대로 주세요", p.Started))
+		}
+	}
 	params := proto.Message{}
 	target := p.Name
 	if p.PID > 0 {
 		params["pid"] = p.PID
 		target = fmt.Sprintf("pid %d", p.PID)
+		if p.Started != "" {
+			params["started"] = p.Started
+		}
 	} else {
 		params["name"] = p.Name
 	}

@@ -48,7 +48,7 @@ func TestProcListEntriesCutCommands(t *testing.T) {
 		{PID: 1, Name: "a", Cmd: strings.Repeat("x", 9000)},
 		{PID: 2, Name: "b", Cmd: "short"},
 	}
-	out := procListEntries(procs, "")
+	out := procListEntries(procs, "", nil, 0)
 	if len(out) != 2 {
 		t.Fatalf("entries %v", out)
 	}
@@ -58,7 +58,7 @@ func TestProcListEntriesCutCommands(t *testing.T) {
 	if got := out[1].(map[string]any)["cmd"].(string); got != "short" {
 		t.Fatalf("short cmd %q", got)
 	}
-	if only := procListEntries(procs, "B"); len(only) != 1 {
+	if only := procListEntries(procs, "B", nil, 0); len(only) != 1 {
 		t.Fatalf("filtered entries %v", only)
 	}
 }

@@ -348,6 +348,7 @@ func (s *Server) registerBuiltins() {
 	s.registerUI()
 	s.registerLaunch()
 	s.registerClipboard()
+	s.registerDiag()
 	if s.opt.Session != nil {
 		s.register("session.info", true, s.sessionInfo)
 	}

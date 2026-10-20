@@ -3,15 +3,18 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 )
 
 // childEnvironment returns the agent's own environment.
@@ -62,13 +65,97 @@ func killTree(pid int) error {
 	return syscall.Kill(pid, syscall.SIGKILL)
 }
 
+// psColumns are the ps columns listProcesses reads, args last.
+const psColumns = "pid=,ppid=,rss=,time=,user=,lstart=,args="
+
+// psOutput runs ps with args in the C locale, which prints lstart in
+// English.
+func psOutput(args ...string) (string, error) {
+	c := exec.Command("ps", args...)
+	c.Env = append(os.Environ(), "LC_ALL=C")
+	out, err := c.Output()
+	return string(out), err
+}
+
 func listProcesses() ([]procInfo, error) {
-	out, err := exec.Command("ps", "axo", "pid=,ppid=,rss=,args=").Output()
+	out, err := psOutput("-axo", psColumns)
 	if err != nil {
 		return nil, err
 	}
-	return parseProcesses(string(out), kernelName), nil
+	return parseProcesses(out, kernelName, time.Local), nil
 }
+
+// sampleProcesses lists the processes with the processor share each used
+// between a ps reading of the processor times and the listing gap later.
+func sampleProcesses(ctx context.Context, gap time.Duration) ([]procInfo, error) {
+	out, err := psOutput("-axo", "pid=,time=")
+	if err != nil {
+		return nil, err
+	}
+	first := map[int]time.Duration{}
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) != 2 {
+			continue
+		}
+		pid, err1 := strconv.Atoi(f[0])
+		used, err2 := parseCPUTime(f[1])
+		if err1 == nil && err2 == nil {
+			first[pid] = used
+		}
+	}
+	began := time.Now()
+	t := time.NewTimer(gap)
+	defer t.Stop()
+	select {
+	case <-t.C:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	procs, err := listProcesses()
+	if err != nil {
+		return nil, err
+	}
+	elapsed := time.Since(began)
+	for i, p := range procs {
+		procs[i].CPUPct = cpuPercent(p.CPUTime-first[p.PID], elapsed, runtime.NumCPU())
+	}
+	return procs, nil
+}
+
+// parseCPUTime reads a ps time: [[days-]hours:]minutes:seconds with an
+// optional fraction of a second.
+func parseCPUTime(s string) (time.Duration, error) {
+	var days int
+	if d, rest, ok := strings.Cut(s, "-"); ok {
+		n, err := strconv.Atoi(d)
+		if err != nil {
+			return 0, err
+		}
+		days, s = n, rest
+	}
+	parts := strings.Split(s, ":")
+	if len(parts) < 2 || len(parts) > 3 {
+		return 0, fmt.Errorf("time %q", s)
+	}
+	sec, err := strconv.ParseFloat(parts[len(parts)-1], 64)
+	if err != nil {
+		return 0, err
+	}
+	total := time.Duration(days) * 24 * time.Hour
+	units := []time.Duration{time.Minute, time.Hour}
+	for i := len(parts) - 2; i >= 0; i-- {
+		n, err := strconv.Atoi(parts[i])
+		if err != nil {
+			return 0, err
+		}
+		total += time.Duration(n) * units[len(parts)-2-i]
+	}
+	return total + time.Duration(sec*float64(time.Second)), nil
+}
+
+// lstartLayout is the layout of ps lstart in the C locale.
+const lstartLayout = "Mon Jan 2 15:04:05 2006"
 
 // kernelName returns the name the kernel keeps for pid (/proc/<pid>/comm,
 // at most 15 bytes), or false where there is none.
@@ -80,15 +167,15 @@ func kernelName(pid int) (string, bool) {
 	return strings.TrimSuffix(string(b), "\n"), true
 }
 
-// parseProcesses reads `ps axo pid=,ppid=,rss=,args=`. A process is named by
-// comm, its kernel name; when that name is the base name of its first
-// argument, or the first 15 bytes of it, by that base name; without a
+// parseProcesses reads ps with psColumns, lstart in loc. A process is
+// named by comm, its kernel name; when that name is the base name of its
+// first argument, or the first 15 bytes of it, by that base name; without a
 // kernel name by that base name.
-func parseProcesses(out string, comm func(int) (string, bool)) []procInfo {
+func parseProcesses(out string, comm func(int) (string, bool), loc *time.Location) []procInfo {
 	var procs []procInfo
 	for _, line := range strings.Split(out, "\n") {
 		f := strings.Fields(line)
-		if len(f) < 4 {
+		if len(f) < 11 {
 			continue
 		}
 		pid, err1 := strconv.Atoi(f[0])
@@ -97,19 +184,50 @@ func parseProcesses(out string, comm func(int) (string, bool)) []procInfo {
 		if err1 != nil || err2 != nil || err3 != nil {
 			continue
 		}
-		base := filepath.Base(f[3])
+		used, _ := parseCPUTime(f[3])
+		started, _ := time.ParseInLocation(lstartLayout, strings.Join(f[5:10], " "), loc)
+		args := f[10:]
+		base := filepath.Base(args[0])
 		name := base
 		if c, ok := comm(pid); ok && c != "" && c != base && !(len(c) == 15 && strings.HasPrefix(base, c)) {
 			name = c
 		}
-		p := procInfo{PID: pid, PPID: ppid, MemKB: rss, Name: name, Cmd: strings.Join(f[3:], " ")}
-		if filepath.IsAbs(f[3]) {
-			p.Path = f[3]
+		p := procInfo{PID: pid, PPID: ppid, MemKB: rss, Name: name, Cmd: strings.Join(args, " "), User: f[4], Started: started, CPUTime: used}
+		if filepath.IsAbs(args[0]) {
+			p.Path = args[0]
 		}
 		procs = append(procs, p)
 	}
 	return procs
 }
+
+// processEntries lists the running processes with their creation times.
+func processEntries() ([]procEntry, error) {
+	procs, err := listProcesses()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]procEntry, 0, len(procs))
+	for _, p := range procs {
+		out = append(out, procEntry{PID: p.PID, PPID: p.PPID, Name: p.Name, Created: p.Started})
+	}
+	return out, nil
+}
+
+// processStarted returns the creation time ps lists for pid, and false
+// when no process has it.
+func processStarted(pid int) (time.Time, bool) {
+	out, err := psOutput("-o", "lstart=", "-p", strconv.Itoa(pid))
+	if err != nil {
+		return time.Time{}, false
+	}
+	at, err := time.ParseInLocation(lstartLayout, strings.Join(strings.Fields(out), " "), time.Local)
+	return at, err == nil
+}
+
+// pidCreation reports false: outside Windows the creation time of a
+// started process is not read.
+func pidCreation(int) (time.Time, bool) { return time.Time{}, false }
 
 // killByName kills every process whose name equals name (case-insensitive)
 // and returns how many were signalled.

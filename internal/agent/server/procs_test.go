@@ -65,22 +65,6 @@ func TestProcListIncludesSelf(t *testing.T) {
 	t.Fatalf("pid %d not in %d listed processes", self, len(procs))
 }
 
-func TestParseWindowsProcesses(t *testing.T) {
-	one := `{"ProcessId":4,"ParentProcessId":0,"Name":"System","ExecutablePath":null,"CommandLine":null,"WorkingSetSize":8192}`
-	procs, err := parseWindowsProcesses([]byte("\xef\xbb\xbf" + one))
-	if err != nil || len(procs) != 1 || procs[0].PID != 4 || procs[0].Name != "System" || procs[0].MemKB != 8 {
-		t.Fatalf("single object: %+v %v", procs, err)
-	}
-	many := `[` + one + `,{"ProcessId":10,"ParentProcessId":4,"Name":"a.exe","ExecutablePath":"C:\\a.exe","CommandLine":"a.exe -x","WorkingSetSize":2048000}]`
-	procs, err = parseWindowsProcesses([]byte(many))
-	if err != nil || len(procs) != 2 || procs[1].PPID != 4 || procs[1].Path != `C:\a.exe` || procs[1].Cmd != "a.exe -x" || procs[1].MemKB != 2000 {
-		t.Fatalf("array: %+v %v", procs, err)
-	}
-	if procs, err = parseWindowsProcesses(nil); err != nil || len(procs) != 0 {
-		t.Fatalf("empty: %+v %v", procs, err)
-	}
-}
-
 // targetPIDs returns the pids of targets.
 func targetPIDs(targets []procEntry) []int {
 	pids := []int{}

@@ -56,7 +56,8 @@ Playbook:
 6. files_read returns at most 256 KiB of base64 per call; page with offset and length. files_list returns one page; pass next_cursor back as cursor for the next page.
    Copying between this Mac and the PC is files_push / files_pull / files_move; they return at once with transfer_id and job_id, then poll transfer_get until state is done, failed or cancelled. For a move, transfer_get's source field says whether the source was trashed (PC), deleted (Mac) or retained.
 7. Failures come back as tool errors (IsError) whose structured content always has top-level code, message, retryable and next_action; failed envelopes keep their full envelope as well. CONTROL_HELD_BY_HUMAN means a person is using the PC: wait for them, do not retry in a loop.
-8. Screen and input control tools arrive in a later version.`
+8. To find why a PC misbehaves, read diag_system, diag_services, diag_events (Windows event logs, newest first) and diag_crashes (crash dumps and error reports; copy a dump to this Mac with files_pull), and proc_list for CPU and memory per process.
+9. Screen and input control tools arrive in a later version.`
 
 // Server holds the lazily opened daemon connection shared by the tools.
 type Server struct {
@@ -75,6 +76,7 @@ func New(version string, dial Dialer) *mcp.Server {
 	s.registerFiles(srv)
 	s.registerTransfer(srv)
 	s.registerProc(srv)
+	s.registerDiag(srv)
 	return srv
 }
 
@@ -121,6 +123,9 @@ type spec struct {
 	Method string
 	// Mutating marks a call that changes the remote PC.
 	Mutating bool
+	// Envelope marks a read whose result is an envelope; a failed envelope
+	// is a tool error.
+	Envelope bool
 	// Extra holds fixed params added to every call.
 	Extra map[string]any
 	// Timeout returns the call timeout for the params.

@@ -33,6 +33,8 @@ const (
 	// KindPTY is an interactive shell on the agent; its remote job is the
 	// agent's pty.
 	KindPTY = "pty"
+	// KindDiag is a diagnostics result the daemon kept as an artifact.
+	KindDiag = "diag"
 )
 
 // earlyExitKeep is how long an exit reported before its job was known is

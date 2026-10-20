@@ -234,7 +234,9 @@ type ProcessInfo struct {
 	MemKB             int      `json:"mem_kb"`
 	CPUPct            *float64 `json:"cpu_pct,omitempty"`
 	User              string   `json:"user,omitempty"`
+	Started           string   `json:"started,omitempty"`
 	StartedByDeskhand bool     `json:"started_by_deskhand"`
+	Self              bool     `json:"self"`
 }
 
 // Timeline actors, kinds and outcomes.

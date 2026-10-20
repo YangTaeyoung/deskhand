@@ -67,3 +67,16 @@ func TestProcKillByNameTree(t *testing.T) {
 	}
 	waitJobExited(t, c, job)
 }
+
+// shellWithChild is an exec.start request whose shell runs a child process
+// for 30 s.
+func shellWithChild() proto.Message { return proto.Message{"cmd": "sleep 30; echo done"} }
+
+// longCommand is an exec.start request of a process that runs for 30 s.
+func longCommand() proto.Message { return proto.Message{"argv": []any{"sleep", "30"}} }
+
+// busyCommand is an exec.start request whose process keeps a processor busy.
+func busyCommand() proto.Message { return proto.Message{"cmd": "while :; do :; done"} }
+
+// unrelatedPID is a process the agent did not start.
+func unrelatedPID() int { return 1 }

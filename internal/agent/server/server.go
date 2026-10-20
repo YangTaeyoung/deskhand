@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/agent/clipboard"
+	"github.com/YangTaeyoung/deskhand/internal/agent/diag"
 	"github.com/YangTaeyoung/deskhand/internal/agent/session"
 	"github.com/YangTaeyoung/deskhand/internal/proto"
 	"github.com/YangTaeyoung/deskhand/internal/wire"
@@ -40,6 +41,8 @@ type Options struct {
 	DataDir string
 	// Version is the agent version the hello carries; empty means "dev".
 	Version string
+	// Diag reads the diagnostics of the diag ops; nil means diag.Local.
+	Diag diag.Source
 }
 
 // DeployRoot names a folder that the fs operations create through Lock when
@@ -67,6 +70,8 @@ type Server struct {
 	journal *journal
 	// receipts holds the outcomes of the transfers committed last.
 	receipts *receiptStore
+	// started holds the processes exec, app.launch and pty started.
+	started startedTable
 
 	// deployMu orders the creations of the deploy root.
 	deployMu sync.Mutex

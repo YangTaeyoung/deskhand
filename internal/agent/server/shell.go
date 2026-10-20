@@ -247,10 +247,12 @@ func (s *Server) execRun(ctx context.Context, req proto.Message) (proto.Message,
 	if ms := req.Int("timeout_ms"); ms > 0 {
 		timeout = time.Duration(ms) * time.Millisecond
 	}
+	notBefore := time.Now()
 	if err := c.Start(); err != nil {
 		return nil, startError(err)
 	}
 	pid := c.Process.Pid
+	s.trackStarted(pid, notBefore)
 	var timedOut atomic.Bool
 	timer := time.AfterFunc(timeout, func() {
 		timedOut.Store(true)
@@ -265,6 +267,7 @@ func (s *Server) execRun(ctx context.Context, req proto.Message) (proto.Message,
 		_ = killTree(pid)
 	})
 	_ = c.Wait()
+	s.started.exited(pid, time.Now())
 	waited.Store(true)
 	flushOutput()
 	timer.Stop()

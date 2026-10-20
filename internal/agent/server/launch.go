@@ -228,13 +228,16 @@ func (s *Server) appLaunch(ctx context.Context, req proto.Message) (proto.Messag
 		}
 	}
 
+	notBefore := time.Now()
 	if err := startProgram(c); err != nil {
 		return nil, fmt.Errorf("cannot start '%s': %v; check the path with fs.stat", path, err)
 	}
 	pid := c.Process.Pid
+	s.trackStarted(pid, notBefore)
 	exited := make(chan struct{})
 	go func() {
 		_ = c.Wait()
+		s.started.exited(pid, time.Now())
 		code := -1
 		if c.ProcessState != nil {
 			code = c.ProcessState.ExitCode()

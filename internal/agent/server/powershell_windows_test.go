@@ -57,22 +57,6 @@ func expectNotRun(t *testing.T, marker string) {
 	}
 }
 
-func TestProcListDoesNotLoadAModuleOfTheInheritedModulePath(t *testing.T) {
-	marker := filepath.Join(t.TempDir(), "ran.txt")
-	plantInEnvironment(t, plantModule(t, marker, "Get-CimInstance", "Select-Object", "ConvertTo-Json"))
-	procs, err := listProcesses()
-	if err != nil {
-		t.Fatalf("listProcesses: %v", err)
-	}
-	expectNotRun(t, marker)
-	for _, p := range procs {
-		if p.PID == os.Getpid() {
-			return
-		}
-	}
-	t.Fatalf("the %d listed processes lack this test, pid %d", len(procs), os.Getpid())
-}
-
 func TestExecPowerShellDoesNotLoadAModuleOfTheInheritedModulePath(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "ran.txt")
 	plant := plantModule(t, marker, "Join-Path")

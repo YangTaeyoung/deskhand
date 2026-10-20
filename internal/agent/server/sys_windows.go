@@ -3,7 +3,6 @@
 package server
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -39,9 +38,6 @@ func setRawCommandLine(c *exec.Cmd, line string) {
 }
 
 func prepareTree(*exec.Cmd) {}
-
-// listTimeout bounds the PowerShell run that lists the processes.
-const listTimeout = 30 * time.Second
 
 // systemCommand returns the command of the program name of the System32
 // folder of systemFolders, in the environment of the system folders only
@@ -95,28 +91,6 @@ func killTree(pid int) error {
 
 // windowsFolder returns the system's Windows folder.
 func windowsFolder() (string, error) { return sysfolder.WindowsFolder() }
-
-// listScript prints the running processes as JSON.
-const listScript = "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine,WorkingSetSize | ConvertTo-Json -Compress"
-
-// listProcesses runs listScript as a recipeCommand.
-func listProcesses() ([]procInfo, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), listTimeout)
-	defer cancel()
-	c, err := recipeCommand(ctx, windowsFolder, listScript)
-	if err != nil {
-		return nil, err
-	}
-	hideWindow(c)
-	out, err := c.Output()
-	if ctx.Err() != nil {
-		return nil, fmt.Errorf("listing the processes took longer than %d s; retry", int(listTimeout.Seconds()))
-	}
-	if err != nil {
-		return nil, err
-	}
-	return parseWindowsProcesses(out)
-}
 
 // killEndWait bounds the wait of killByName for the processes it terminated
 // to end.
