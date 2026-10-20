@@ -107,3 +107,117 @@ func TestListTransfersNewestFirstByHost(t *testing.T) {
 		t.Fatalf("every done transfer %+v, %v", every, err)
 	}
 }
+
+func TestTransferTotalsAndPruneOfFinishedTransfers(t *testing.T) {
+	s := openTemp(t)
+	old := time.Now().Add(-40 * 24 * time.Hour)
+	for i, tc := range []struct {
+		id, state string
+		finished  *time.Time
+		part      bool
+	}{
+		{"t-old", "done", &old, false},
+		{"t-old-part", "cancelled", &old, true},
+		{"t-recent", "failed", nil, false},
+		{"t-paused", "paused", nil, false},
+	} {
+		at := old.Add(time.Duration(i) * time.Second)
+		job := Job{JobID: "j-" + tc.id, HostID: "pc", Kind: "transfer", Status: "succeeded", CreatedAt: at, UpdatedAt: at, FinishedAt: tc.finished}
+		if err := s.CreateJob(job); err != nil {
+			t.Fatal(err)
+		}
+		tr := Transfer{TransferID: tc.id, HostID: "pc", Direction: "push", Local: "/l", Remote: "/r", OnConflict: "fail", State: tc.state,
+			JobID: job.JobID, CreatedAt: at, UpdatedAt: at, FinishedAt: tc.finished}
+		if tc.finished == nil && tc.state == "failed" {
+			now := time.Now()
+			tr.FinishedAt = &now
+		}
+		if err := s.CreateTransfer(tr); err != nil {
+			t.Fatal(err)
+		}
+		files := []TransferFile{
+			{Seq: 0, Rel: "d", Dir: true, State: "done"},
+			{Seq: 1, Rel: "d/a", Size: 10, BytesDone: 10, State: "done"},
+			{Seq: 2, Rel: "d/b", Size: 5, BytesDone: 2, State: "failed", Part: tc.part},
+			{Seq: 3, Rel: "c", Size: 7, State: "queued"},
+		}
+		if err := s.SaveTransfer(tr, files, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.TransferTotals([]string{"t-old", "t-recent", "t-none"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (TransferTotal{Files: 3, Done: 1, Failed: 1, Bytes: 22, BytesDone: 12}); got["t-old"] != want || got["t-recent"] != want || len(got) != 2 {
+		t.Fatalf("totals %+v", got)
+	}
+	if tr, _, err := s.GetTransfer("t-old"); err != nil || tr.JobID != "j-t-old" {
+		t.Fatalf("job of a transfer %+v, %v", tr, err)
+	}
+	n, err := s.PruneTransfers(time.Now().Add(-30 * 24 * time.Hour))
+	if err != nil || n != 1 {
+		t.Fatalf("pruned %d, %v", n, err)
+	}
+	if _, _, err := s.GetTransfer("t-old"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("the old transfer stays: %v", err)
+	}
+	if _, err := s.GetJob("j-t-old"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("the job of the old transfer stays: %v", err)
+	}
+	if files, _ := s.TransferFiles("t-old"); len(files) != 0 {
+		t.Fatalf("the files of the old transfer stay: %v", files)
+	}
+	for _, id := range []string{"t-old-part", "t-recent", "t-paused"} {
+		if _, _, err := s.GetTransfer(id); err != nil {
+			t.Fatalf("%s was pruned: %v", id, err)
+		}
+	}
+}
+
+func TestSetJobStateReopensAFinishedJob(t *testing.T) {
+	s := openTemp(t)
+	now := time.Now()
+	if err := s.CreateJob(Job{JobID: "j-1", HostID: "pc", Kind: "transfer", Status: "running", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetJobState("j-1", "failed", json.RawMessage(`{"state":"failed"}`), true, now); err != nil {
+		t.Fatal(err)
+	}
+	if j, _ := s.GetJob("j-1"); j.Status != "failed" || j.FinishedAt == nil {
+		t.Fatalf("finished job %+v", j)
+	}
+	if err := s.SetJobState("j-1", "running", json.RawMessage(`{"state":"queued"}`), false, now); err != nil {
+		t.Fatal(err)
+	}
+	if j, _ := s.GetJob("j-1"); j.Status != "running" || j.FinishedAt != nil || string(j.Result) != `{"state":"queued"}` {
+		t.Fatalf("reopened job %+v", j)
+	}
+	if err := s.SetJobState("j-missing", "running", nil, false, now); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a missing job: %v", err)
+	}
+}
+
+func TestOpenAddsTheJobColumnToAnOlderTransfersTable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "deskhand.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`ALTER TABLE transfers DROP COLUMN job_id`); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	have := false
+	for _, c := range columns(t, s, "transfers") {
+		have = have || c == "job_id"
+	}
+	if !have {
+		t.Fatalf("transfers has no job_id after opening: %v", columns(t, s, "transfers"))
+	}
+}

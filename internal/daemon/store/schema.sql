@@ -82,7 +82,8 @@ CREATE TABLE IF NOT EXISTS transfers (
 	client_name TEXT NOT NULL DEFAULT '',
 	created_at  TEXT NOT NULL,
 	updated_at  TEXT NOT NULL,
-	finished_at TEXT NOT NULL DEFAULT ''
+	finished_at TEXT NOT NULL DEFAULT '',
+	job_id      TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS transfers_host ON transfers (host_id, created_at);

@@ -10,7 +10,8 @@ import (
 // Transfer is a row of transfers: a file or folder transfer between this
 // Mac and a host. Planned says that its files are listed in
 // transfer_files; Folder that its item is a folder. Sep is the path
-// separator of the host. Actor, ClientID and ClientName name who started it.
+// separator of the host. Actor, ClientID and ClientName name who started it;
+// JobID is the job that mirrors it.
 type Transfer struct {
 	TransferID string
 	HostID     string
@@ -31,6 +32,7 @@ type Transfer struct {
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 	FinishedAt *time.Time
+	JobID      string
 }
 
 // TransferFile is a row of transfer_files: one file or folder of a
@@ -58,7 +60,7 @@ type TransferFile struct {
 }
 
 const transferColumns = `transfer_id, host_id, direction, local_path, remote_path, on_conflict, sep, state, planned, folder, outcome,
-	error_json, rev, actor, client_id, client_name, created_at, updated_at, finished_at`
+	error_json, rev, actor, client_id, client_name, created_at, updated_at, finished_at, job_id`
 
 const transferFileColumns = `transfer_id, seq, rel, dir, size, mtime, sha256, state, bytes_done, outcome, path, error_json, commit_rid, part,
 	refresh`
@@ -67,7 +69,7 @@ func scanTransfer(sc interface{ Scan(...any) error }) (Transfer, error) {
 	var t Transfer
 	var errJSON, created, updated, finished string
 	err := sc.Scan(&t.TransferID, &t.HostID, &t.Direction, &t.Local, &t.Remote, &t.OnConflict, &t.Sep, &t.State, &t.Planned, &t.Folder,
-		&t.Outcome, &errJSON, &t.Rev, &t.Actor, &t.ClientID, &t.ClientName, &created, &updated, &finished)
+		&t.Outcome, &errJSON, &t.Rev, &t.Actor, &t.ClientID, &t.ClientName, &created, &updated, &finished, &t.JobID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Transfer{}, ErrNotFound
 	}
@@ -94,9 +96,10 @@ func finishedText(t *time.Time) string {
 
 // CreateTransfer inserts t without files.
 func (s *Store) CreateTransfer(t Transfer) error {
-	_, err := s.db.Exec(`INSERT INTO transfers (`+transferColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err := s.db.Exec(`INSERT INTO transfers (`+transferColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.TransferID, t.HostID, t.Direction, t.Local, t.Remote, t.OnConflict, t.Sep, t.State, t.Planned, t.Folder, t.Outcome,
-		rawOr(t.Error, ""), t.Rev, t.Actor, t.ClientID, t.ClientName, FormatTime(t.CreatedAt), FormatTime(t.UpdatedAt), finishedText(t.FinishedAt))
+		rawOr(t.Error, ""), t.Rev, t.Actor, t.ClientID, t.ClientName, FormatTime(t.CreatedAt), FormatTime(t.UpdatedAt), finishedText(t.FinishedAt),
+		t.JobID)
 	return err
 }
 
@@ -111,10 +114,10 @@ func (s *Store) SaveTransfer(t Transfer, files []TransferFile, replace bool) err
 	}
 	defer tx.Rollback()
 	res, err := tx.Exec(`UPDATE transfers SET host_id = ?, direction = ?, local_path = ?, remote_path = ?, on_conflict = ?, sep = ?, state = ?,
-		planned = ?, folder = ?, outcome = ?, error_json = ?, rev = ?, actor = ?, client_id = ?, client_name = ?, updated_at = ?, finished_at = ?
-		WHERE transfer_id = ?`,
+		planned = ?, folder = ?, outcome = ?, error_json = ?, rev = ?, actor = ?, client_id = ?, client_name = ?, updated_at = ?, finished_at = ?,
+		job_id = ? WHERE transfer_id = ?`,
 		t.HostID, t.Direction, t.Local, t.Remote, t.OnConflict, t.Sep, t.State, t.Planned, t.Folder, t.Outcome, rawOr(t.Error, ""), t.Rev,
-		t.Actor, t.ClientID, t.ClientName, FormatTime(t.UpdatedAt), finishedText(t.FinishedAt), t.TransferID)
+		t.Actor, t.ClientID, t.ClientName, FormatTime(t.UpdatedAt), finishedText(t.FinishedAt), t.JobID, t.TransferID)
 	if err := affected(res, err); err != nil {
 		return err
 	}
@@ -256,4 +259,68 @@ func (s *Store) TransfersWithParts(hostID, state string) ([]string, error) {
 		out = append(out, id)
 	}
 	return out, rows.Err()
+}
+
+// TransferTotal counts the files (folders left out) of a transfer: all of
+// them, those done and those failed, and their bytes and bytes done.
+type TransferTotal struct {
+	Files, Done, Failed int
+	Bytes, BytesDone    int64
+}
+
+// TransferTotals returns the totals of the transfers ids that have files.
+func (s *Store) TransferTotals(ids []string) (map[string]TransferTotal, error) {
+	out := map[string]TransferTotal{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := s.db.Query(`SELECT transfer_id, COUNT(*), COALESCE(SUM(state = 'done'), 0), COALESCE(SUM(state = 'failed'), 0),
+		COALESCE(SUM(size), 0), COALESCE(SUM(bytes_done), 0) FROM transfer_files WHERE dir = 0 AND transfer_id IN (?`+repeatComma(len(ids)-1)+`)
+		GROUP BY transfer_id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var t TransferTotal
+		if err := rows.Scan(&id, &t.Files, &t.Done, &t.Failed, &t.Bytes, &t.BytesDone); err != nil {
+			return nil, err
+		}
+		out[id] = t
+	}
+	return out, rows.Err()
+}
+
+// PruneTransfers removes the transfers that finished (done, failed or
+// cancelled) before before and have no file with a part file, with their
+// files and jobs, and returns how many it removed.
+func (s *Store) PruneTransfers(before time.Time) (int64, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	const old = `SELECT transfer_id FROM transfers WHERE state IN ('done', 'failed', 'cancelled') AND finished_at != '' AND finished_at < ?
+		AND transfer_id NOT IN (SELECT transfer_id FROM transfer_files WHERE part = 1 AND dir = 0)`
+	at := FormatTime(before)
+	if _, err := tx.Exec(`DELETE FROM jobs WHERE job_id != '' AND job_id IN (SELECT job_id FROM transfers WHERE transfer_id IN (`+old+`))`, at); err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(`DELETE FROM transfer_files WHERE transfer_id IN (`+old+`)`, at); err != nil {
+		return 0, err
+	}
+	res, err := tx.Exec(`DELETE FROM transfers WHERE transfer_id IN (`+old+`)`, at)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return n, tx.Commit()
 }

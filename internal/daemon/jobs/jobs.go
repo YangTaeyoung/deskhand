@@ -27,6 +27,9 @@ import (
 const (
 	KindExec    = "exec"
 	KindInstall = "install"
+	// KindTransfer is the job that mirrors a transfer; its transfer
+	// manager sets its state (Mirror).
+	KindTransfer = "transfer"
 )
 
 // earlyExitKeep is how long an exit reported before its job was known is
@@ -168,6 +171,22 @@ func (r *Registry) Finish(jobID, status string, result any) (model.Job, error) {
 		return r.current(jobID)
 	}
 	if err != nil {
+		return model.Job{}, err
+	}
+	j, err := r.load(jobID)
+	if err != nil {
+		return model.Job{}, err
+	}
+	return r.publish(j), nil
+}
+
+// Mirror sets the status and result of the job jobID, finished or not,
+// also when it had finished, and publishes it.
+func (r *Registry) Mirror(jobID, status string, result any, finished bool) (model.Job, error) {
+	if err := r.st.SetJobState(jobID, status, raw(result), finished, time.Now()); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return model.Job{}, apierr.NotFound(fmt.Sprintf("job %s가 없습니다. jobs.list로 job ID를 확인하세요", jobID))
+		}
 		return model.Job{}, err
 	}
 	j, err := r.load(jobID)
@@ -364,8 +383,9 @@ func (r *Registry) List(f store.JobFilter) ([]model.Job, error) {
 
 // SettleInterrupted finishes, when the daemon starts, every job that had not
 // finished and has no remote job: an exec.run, an exec.start whose answer
-// had not come, or an install. Their outcome is unknown; each gets a
-// job.updated event and a timeline entry. It returns how many it finished.
+// had not come, or an install; a transfer job is its transfer manager's.
+// Their outcome is unknown; each gets a job.updated event and a timeline
+// entry. It returns how many it finished.
 func (r *Registry) SettleInterrupted() int {
 	rows, err := r.st.ListJobs(store.JobFilter{Unfinished: true, All: true})
 	if err != nil {
@@ -373,7 +393,7 @@ func (r *Registry) SettleInterrupted() int {
 	}
 	n := 0
 	for _, j := range rows {
-		if j.RemoteJob != "" {
+		if j.RemoteJob != "" || j.Kind == KindTransfer {
 			continue
 		}
 		e := apierr.New(wire.CodeExecutionOutcomeUnknown,

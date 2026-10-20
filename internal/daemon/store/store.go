@@ -92,10 +92,37 @@ func (s *Store) migrate() error {
 			return err
 		}
 	}
+	for _, c := range addedColumns {
+		have := false
+		rows, err := tx.Query(`SELECT name FROM pragma_table_info(?)`, c.table)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err != nil {
+				rows.Close()
+				return err
+			}
+			have = have || name == c.column
+		}
+		rows.Close()
+		if !have {
+			if _, err := tx.Exec(`ALTER TABLE ` + c.table + ` ADD COLUMN ` + c.column + ` ` + c.definition); err != nil {
+				return err
+			}
+		}
+	}
 	if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion)); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+// addedColumns are the columns of schema.sql that a table made by an older
+// schema lacks; migrate adds them.
+var addedColumns = []struct{ table, column, definition string }{
+	{"transfers", "job_id", "TEXT NOT NULL DEFAULT ''"},
 }
 
 // Close closes the database.
@@ -298,6 +325,18 @@ func (s *Store) FinishJob(jobID, status string, result json.RawMessage, now time
 	res, err := s.db.Exec(`UPDATE jobs SET status = ?, result_json = ?, updated_at = ?, finished_at = ? WHERE job_id = ? AND finished_at = ''`,
 		status, rawOr(result, ""), ts, ts, jobID)
 	return s.unfinished(jobID, res, err)
+}
+
+// SetJobState sets the status and result of the job jobID, finished or
+// not, also when it had finished.
+func (s *Store) SetJobState(jobID, status string, result json.RawMessage, finished bool, now time.Time) error {
+	fin := ""
+	if finished {
+		fin = FormatTime(now)
+	}
+	res, err := s.db.Exec(`UPDATE jobs SET status = ?, result_json = ?, updated_at = ?, finished_at = ? WHERE job_id = ?`,
+		status, rawOr(result, ""), FormatTime(now), fin, jobID)
+	return affected(res, err)
 }
 
 // GetJob returns the job with jobID.
