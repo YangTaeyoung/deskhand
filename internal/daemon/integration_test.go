@@ -567,6 +567,50 @@ func TestExecStartJobOutput(t *testing.T) {
 	}
 }
 
+// startedJobOutput runs exec.start with params and returns the job's output
+// and its last jobs.output once the job exited, failing after 10 s.
+func startedJobOutput(t *testing.T, e *env, params map[string]any) (string, map[string]any) {
+	t.Helper()
+	res := e.call(t, "exec.start", params)
+	jobID, _ := res["job_id"].(string)
+	if res["status"] != "running" || jobID == "" {
+		t.Fatalf("start %v", res)
+	}
+	var out strings.Builder
+	cursor := ""
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); {
+		last := e.call(t, "jobs.output", map[string]any{"job_id": jobID, "cursor": cursor})
+		for _, c := range last["chunks"].([]any) {
+			out.WriteString(c.(map[string]any)["data"].(string))
+		}
+		cursor = last["next_cursor"].(string)
+		if cursor == "end" {
+			return out.String(), last
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("job %s still running with output %q", jobID, out.String())
+	return "", nil
+}
+
+func TestExecStartGivesTheCommandItsStdinThenEOF(t *testing.T) {
+	e := setup(t, setupOpts{trustDaemon: true})
+	e.waitState(t, "ready")
+	out, last := startedJobOutput(t, e, map[string]any{"host_id": "pc", "cmd": "cat; echo end", "shell": "sh", "stdin": "x\ny\n"})
+	if out != "x\ny\nend\n" || last["code"] != float64(0) {
+		t.Fatalf("output %q, last %v", out, last)
+	}
+}
+
+func TestExecStartWithoutStdinGivesTheCommandEOF(t *testing.T) {
+	e := setup(t, setupOpts{trustDaemon: true})
+	e.waitState(t, "ready")
+	out, last := startedJobOutput(t, e, map[string]any{"host_id": "pc", "cmd": "cat; echo end", "shell": "sh"})
+	if out != "end\n" || last["code"] != float64(0) {
+		t.Fatalf("output %q, last %v", out, last)
+	}
+}
+
 func TestSessionInspectAndEvents(t *testing.T) {
 	e := setup(t, setupOpts{trustDaemon: true})
 	e.waitState(t, "ready")

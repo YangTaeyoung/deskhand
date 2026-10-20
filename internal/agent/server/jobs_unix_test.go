@@ -81,6 +81,30 @@ func TestJobStdinEOFEndsJob(t *testing.T) {
 	}
 }
 
+func TestJobStartWithStdinReadsItThenEOF(t *testing.T) {
+	c, _ := newRPCClient(t, Options{})
+	job := c.ok("exec.start", proto.Message{"cmd": "cat", "stdin": "a\nb\n"}).String("job")
+	t.Cleanup(func() { c.call("exec.kill", proto.Message{"job": job}) })
+	out, _, last := waitJobExited(t, c, job)
+	if out != "a\nb\n" || last.Int("code") != 0 {
+		t.Fatalf("out %q last %v", out, last)
+	}
+	res := c.call("exec.write", proto.Message{"job": job, "data": "more"})
+	if res["ok"] != false {
+		t.Fatalf("write to a job started with stdin: %v", res)
+	}
+}
+
+func TestJobStartWithEmptyStdinSeesEOFAtOnce(t *testing.T) {
+	c, _ := newRPCClient(t, Options{})
+	job := c.ok("exec.start", proto.Message{"cmd": "cat; echo end", "stdin": ""}).String("job")
+	t.Cleanup(func() { c.call("exec.kill", proto.Message{"job": job}) })
+	out, _, last := waitJobExited(t, c, job)
+	if out != "end\n" || last.Int("code") != 0 {
+		t.Fatalf("out %q last %v", out, last)
+	}
+}
+
 func TestJobBufferDropsOldest(t *testing.T) {
 	old := jobBufferBytes
 	jobBufferBytes = 1024

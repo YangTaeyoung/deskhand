@@ -223,6 +223,10 @@ func (s *Server) execStart(ctx context.Context, sess *session, raw json.RawMessa
 	rid := conn.NewRID()
 	params := p.agentParams()
 	delete(params, "timeout_ms")
+	// The job reads the stdin text, or nothing, and then end-of-file.
+	if p.Stdin == nil {
+		params["stdin"] = ""
+	}
 	if pe := requestProblem(conn.CheckRequest("exec.start", params, rid)); pe != nil {
 		return nil, pe
 	}

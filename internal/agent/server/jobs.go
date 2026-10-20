@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -306,7 +307,12 @@ func (s *Server) execStart(_ context.Context, req proto.Message) (proto.Message,
 		store.remove(j.id)
 		return nil, fmt.Errorf("the job was not started because it could not be recorded (%v); check that the agent's data folder is writable", err)
 	}
-	if j.stdin, err = c.StdinPipe(); err != nil {
+	if text, ok := req["stdin"].(string); ok {
+		// The child reads the stdin text from a pipe that ends after it, and
+		// exec.write refuses to add to it.
+		c.Stdin = strings.NewReader(text)
+		j.stdinOff = true
+	} else if j.stdin, err = c.StdinPipe(); err != nil {
 		s.jobs.release(j)
 		store.remove(j.id)
 		return nil, startError(err)
