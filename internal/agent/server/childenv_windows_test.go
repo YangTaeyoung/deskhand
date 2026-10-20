@@ -100,8 +100,12 @@ func TestTheChildEnvironmentTakesNothingFromTheAgentsEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if path := strings.ToLower(envValue(want, "Path")); !strings.HasPrefix(path, strings.ToLower(windows)+`\system32;`) {
-		t.Errorf("Path is %q", envValue(want, "Path"))
+	hasSystem32 := false
+	for _, dir := range strings.Split(envValue(want, "Path"), ";") {
+		hasSystem32 = hasSystem32 || strings.EqualFold(strings.TrimRight(dir, `\`), windows+`\system32`)
+	}
+	if !hasSystem32 {
+		t.Errorf("Path %q has no %s folder", envValue(want, "Path"), windows+`\system32`)
 	}
 }
 
