@@ -57,9 +57,15 @@ enum ProcessFormat {
         return (value / 100).formatted(.percent.precision(.fractionLength(1)).locale(locale))
     }
 
-    /// `412.3MB`, `1.6GB`.
+    /// `302.0 MB`, `1.6 GB`, `144.0 KB`: binary units, one decimal.
     static func memory(kb: Int) -> String {
-        Int64(kb * 1024).formatted(.byteCount(style: .memory).locale(locale))
+        let bytes = Double(kb) * 1024
+        let (value, unit): (Double, String) = switch bytes {
+        case 1_073_741_824...: (bytes / 1_073_741_824, "GB")
+        case 1_048_576...: (bytes / 1_048_576, "MB")
+        default: (bytes / 1024, "KB")
+        }
+        return value.formatted(.number.precision(.fractionLength(1)).grouping(.never).locale(locale)) + " " + unit
     }
 
     /// The user without the `NT AUTHORITY\` style prefix of service accounts.
@@ -87,6 +93,13 @@ struct ProcessTableView: View {
     let hostName: String
     var autosave = true
 
+    /// Columns of the list, with a wider name column in the tree.
+    static func columns(tree: Bool) -> [DataTableColumn] {
+        var columns = columns
+        columns[0].width = tree ? 380 : 270
+        return columns
+    }
+
     static let columns: [DataTableColumn] = [
         DataTableColumn(id: ProcessColumn.name.rawValue, title: ProcessColumn.name.title, width: 270, minWidth: 140,
                         firstSortAscending: ProcessColumn.name.firstSortAscending),
@@ -108,11 +121,11 @@ struct ProcessTableView: View {
 
     var body: some View {
         DataTable(
-            columns: Self.columns,
+            columns: Self.columns(tree: model.showsTree),
             rows: rows,
             selection: model.selectedPID,
             sort: DataTableSort(column: model.sort.column.rawValue, ascending: model.sort.ascending),
-            autosaveName: autosave ? "processes.table" : nil,
+            autosaveName: autosave ? (model.showsTree ? "processes.tree" : "processes.table") : nil,
             accessibilityLabel: String.ui("processes.a11y.table", "\(hostName)의 프로세스 목록"),
             cell: { [model] item, column, table in Self.cell(item, column: column, table: table, model: model) },
             onSelect: { [model] pid in model.selectedPID = pid },
@@ -125,6 +138,7 @@ struct ProcessTableView: View {
             },
             menu: { [model] item in ProcessMenu.entries(for: item.row.process, model: model) },
             onKey: { [model] key, item in Self.handle(key, item: item, model: model) })
+        .id(model.showsTree)
     }
 
     /// Rows with what their cells draw beyond the process, so a change redraws the row.
@@ -266,7 +280,7 @@ enum ProcessMenu {
 }
 
 /// Name cell: tree indentation and disclosure, the kind symbol, the name, the
-/// `Deskhand가 시작함` tag (`Deskhand` in the tree), and a lock or a spinner.
+/// `Deskhand가 시작함` tag (a dot when the name needs the room), and a lock or a spinner.
 final class ProcessNameCell: NSTableCellView {
     static let identifier = NSUserInterfaceItemIdentifier("process.name")
     static let indent: CGFloat = 16
@@ -299,9 +313,8 @@ final class ProcessNameCell: NSTableCellView {
         label.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(500), for: .horizontal)
         label.setContentHuggingPriority(.defaultLow, for: .horizontal)
         deskhandTag.text = String.ui("processes.tag.deskhand", "Deskhand가 시작함")
-        deskhandTag.compactText = "Deskhand"
         deskhandTag.tint = NSColor(DS.Color.accent)
-        deskhandTag.setContentCompressionResistancePriority(.required, for: .horizontal)
+        deskhandTag.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(400), for: .horizontal)
         deskhandTag.setContentHuggingPriority(.required, for: .horizontal)
         lock.image = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: String.ui("processes.a11y.protected", "보호된 프로세스"))
         lock.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 10, weight: .regular)
@@ -329,6 +342,7 @@ final class ProcessNameCell: NSTableCellView {
             stack.centerYAnchor.constraint(equalTo: centerYAnchor),
             icon.widthAnchor.constraint(equalToConstant: 16),
             disclosure.widthAnchor.constraint(equalToConstant: 13),
+            deskhandTag.widthAnchor.constraint(greaterThanOrEqualToConstant: TagView.dotWidth),
         ])
     }
 
@@ -343,10 +357,11 @@ final class ProcessNameCell: NSTableCellView {
         disclosure.alphaValue = row.hasChildren ? 1 : 0
         disclosure.isEnabled = row.hasChildren
         disclosure.state = row.isExpanded ? .on : .off
+        disclosure.setAccessibilityLabel(row.isExpanded ? String.ui("processes.a11y.collapse", "하위 프로세스 접기")
+                                                        : String.ui("processes.a11y.disclosure", "하위 프로세스 펼치기"))
         icon.image = NSImage(systemSymbolName: ProcessFormat.symbol(for: process), accessibilityDescription: nil)
         label.stringValue = process.name
         deskhandTag.isHidden = !process.startedByDeskhand
-        deskhandTag.compact = item.tree
         lock.isHidden = !item.protected || item.killing
         spinner.isHidden = !item.killing
         if item.killing { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }

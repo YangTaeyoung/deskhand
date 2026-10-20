@@ -133,7 +133,7 @@ private struct CrashDumpRow: View {
             VStack(alignment: .trailing, spacing: 3) {
                 Text(ProcessFormat.started(dump.time.date))
                     .font(DS.Font.caption.monospacedDigit())
-                Text(FileFormat.size(dump.sizeBytes))
+                Text(SummaryFormat.storage(dump.sizeBytes))
                     .font(DS.Font.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
@@ -149,7 +149,7 @@ private struct CrashDumpRow: View {
             Button(String.ui("logs.dump.copyPath", "원격 경로 복사")) { ProcessMenu.put(dump.path) }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(String.ui("logs.a11y.dump", "\(dump.app), \(kind?.title ?? dump.kind), \(ProcessFormat.started(dump.time.date)), \(FileFormat.size(dump.sizeBytes))"))
+        .accessibilityLabel(String.ui("logs.a11y.dump", "\(dump.app), \(kind?.title ?? dump.kind), \(ProcessFormat.started(dump.time.date)), \(SummaryFormat.storage(dump.sizeBytes))"))
     }
 
     private func errorText(transfer: Transfer?, startError: OperationError?) -> String? {

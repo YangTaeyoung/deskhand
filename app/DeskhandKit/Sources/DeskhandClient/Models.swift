@@ -505,9 +505,11 @@ public struct ProcessInfo: Codable, Sendable, Equatable {
     public var started: Timestamp?
     /// The agent started this process (`exec.*`, `app.launch`, `pty`) or one of its ancestors.
     public var startedByDeskhand: Bool
+    /// The agent's own process (`self`).
+    public var isSelf: Bool
 
     public init(pid: Int, ppid: Int, name: String, path: String? = nil, cmd: String? = nil, memKb: Int, cpuPct: Double? = nil,
-                user: String? = nil, started: Timestamp? = nil, startedByDeskhand: Bool) {
+                user: String? = nil, started: Timestamp? = nil, startedByDeskhand: Bool, isSelf: Bool = false) {
         self.pid = pid
         self.ppid = ppid
         self.name = name
@@ -518,6 +520,7 @@ public struct ProcessInfo: Codable, Sendable, Equatable {
         self.user = user
         self.started = started
         self.startedByDeskhand = startedByDeskhand
+        self.isSelf = isSelf
     }
 
     public init(from decoder: Decoder) throws {
@@ -532,6 +535,22 @@ public struct ProcessInfo: Codable, Sendable, Equatable {
         user = try c.decodeIfPresent(String.self, forKey: AnyKey("user"))
         started = try c.decodeIfPresent(Timestamp.self, forKey: AnyKey("started"))
         startedByDeskhand = try c.decodeIfPresent(Bool.self, forKey: AnyKey("startedByDeskhand")) ?? false
+        isSelf = try c.decodeIfPresent(Bool.self, forKey: AnyKey("self")) ?? false
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: AnyKey.self)
+        try c.encode(pid, forKey: AnyKey("pid"))
+        try c.encode(ppid, forKey: AnyKey("ppid"))
+        try c.encode(name, forKey: AnyKey("name"))
+        try c.encodeIfPresent(path, forKey: AnyKey("path"))
+        try c.encodeIfPresent(cmd, forKey: AnyKey("cmd"))
+        try c.encode(memKb, forKey: AnyKey("memKb"))
+        try c.encodeIfPresent(cpuPct, forKey: AnyKey("cpuPct"))
+        try c.encodeIfPresent(user, forKey: AnyKey("user"))
+        try c.encodeIfPresent(started, forKey: AnyKey("started"))
+        try c.encode(startedByDeskhand, forKey: AnyKey("startedByDeskhand"))
+        try c.encode(isSelf, forKey: AnyKey("self"))
     }
 }
 

@@ -22,7 +22,7 @@ final class PreviewFileStore: Sendable {
             guard let entries = folders[key] else {
                 let name = FilePath.lastComponent(path, style: .windows)
                 if let entry = entry(at: path), !entry.dir {
-                    throw RPCErrorInfo(message: "‘\(name)’은(는) 폴더가 아닙니다", code: "INVALID_ARGUMENT")
+                    throw RPCErrorInfo(message: "‘\(name)’ 항목은 폴더가 아닙니다", code: "INVALID_ARGUMENT")
                 }
                 throw RPCErrorInfo(message: "‘\(name)’ 폴더가 없습니다", code: "NOT_FOUND")
             }
@@ -259,7 +259,7 @@ extension PreviewBackend {
         _ = try readyHost(hostID)
         guard let entry = files.tree(hostID, { $0.entry(at: path) }) else {
             let name = FilePath.lastComponent(path, style: .windows)
-            throw RPCErrorInfo(message: "‘\(name)’이(가) 없습니다", code: "NOT_FOUND")
+            throw RPCErrorInfo(message: "‘\(name)’ 항목이 없습니다", code: "NOT_FOUND")
         }
         return entry
     }
@@ -282,9 +282,9 @@ extension PreviewBackend {
         await pause(fraction: 0.3)
         try files.tree(hostID) { tree in
             let name = FilePath.lastComponent(from, style: .windows)
-            guard tree.entry(at: from) != nil else { throw OperationError(code: "NOT_FOUND", message: "‘\(name)’이(가) 없습니다") }
+            guard tree.entry(at: from) != nil else { throw OperationError(code: "NOT_FOUND", message: "‘\(name)’ 항목이 없습니다") }
             if tree.locked.contains(PreviewFileStore.Tree.key(from)) {
-                throw OperationError(code: "PERMISSION_DENIED", message: "다른 프로세스가 ‘\(name)’을(를) 사용 중이라 이름을 바꿀 수 없습니다")
+                throw OperationError(code: "PERMISSION_DENIED", message: "다른 프로세스가 ‘\(name)’ 파일을 사용 중이라 이름을 바꿀 수 없습니다")
             }
             if let existing = tree.entry(at: to), !PathStyle.windows.sameName(existing.path, from) {
                 throw OperationError(code: "INVALID_ARGUMENT", message: "‘\(existing.name)’ 이름의 항목이 이미 있습니다")
@@ -306,9 +306,9 @@ extension PreviewBackend {
         await pause(fraction: 0.3)
         try files.tree(hostID) { tree in
             let name = FilePath.lastComponent(path, style: .windows)
-            guard tree.entry(at: path) != nil else { throw OperationError(code: "NOT_FOUND", message: "‘\(name)’이(가) 없습니다") }
+            guard tree.entry(at: path) != nil else { throw OperationError(code: "NOT_FOUND", message: "‘\(name)’ 항목이 없습니다") }
             if tree.locked.contains(PreviewFileStore.Tree.key(path)) {
-                throw OperationError(code: "PERMISSION_DENIED", message: "Shop.exe가 ‘\(name)’을(를) 사용 중입니다")
+                throw OperationError(code: "PERMISSION_DENIED", message: "Shop.exe가 ‘\(name)’ 파일을 사용 중입니다")
             }
             tree.remove(path)
         }
@@ -318,12 +318,12 @@ extension PreviewBackend {
         _ = try readyHost(hostID)
         await pause(fraction: 0.5)
         guard let entry = files.tree(hostID, { $0.entry(at: path) }) else {
-            throw OperationError(code: "NOT_FOUND", message: "‘\(FilePath.lastComponent(path, style: .windows))’이(가) 없습니다")
+            throw OperationError(code: "NOT_FOUND", message: "‘\(FilePath.lastComponent(path, style: .windows))’ 항목이 없습니다")
         }
         if entry.dir { throw OperationError(code: "INVALID_ARGUMENT", message: "폴더는 실행할 수 없습니다") }
         let extensionName = FileKind.pathExtension(of: entry.name)
         if extensionName == "dmp" || extensionName == "dat" {
-            throw OperationError(code: "INVALID_ARGUMENT", message: "‘\(entry.name)’을(를) 열 프로그램이 원격 PC에 없습니다")
+            throw OperationError(code: "INVALID_ARGUMENT", message: "원격 PC에 ‘\(entry.name)’ 파일을 열 프로그램이 없습니다")
         }
         return 4_000 + abs(entry.name.hashValue % 20_000)
     }
@@ -353,7 +353,7 @@ extension PreviewBackend {
             case .fail:
                 transfer.state = TransferState.failed.rawValue
                 transfer.outcome = TransferOutcome.failed.rawValue
-                transfer.error = EnvelopeError(code: "TRANSFER_CONFLICT", message: "대상에 ‘\(name)’이(가) 이미 있어 보내지 않았습니다")
+                transfer.error = EnvelopeError(code: "TRANSFER_CONFLICT", message: "대상에 같은 이름의 ‘\(name)’ 항목이 있어 보내지 않았습니다")
                 transfer.files = transfer.files.map { file in
                     var file = file
                     file.state = TransferState.failed.rawValue
@@ -396,7 +396,7 @@ extension PreviewBackend {
             let url = URL(fileURLWithPath: request.local)
             var isDirectory: ObjCBool = false
             guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
-                throw RPCErrorInfo(message: "이 Mac에 ‘\(url.lastPathComponent)’이(가) 없습니다", code: "NOT_FOUND")
+                throw RPCErrorInfo(message: "이 Mac에 ‘\(url.lastPathComponent)’ 항목이 없습니다", code: "NOT_FOUND")
             }
             guard isDirectory.boolValue else {
                 let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
@@ -413,7 +413,7 @@ extension PreviewBackend {
         }
         let name = FilePath.lastComponent(request.remote, style: .windows)
         guard let entry = files.tree(request.hostID, { $0.entry(at: request.remote) }) else {
-            throw RPCErrorInfo(message: "\(host.name)에 ‘\(name)’이(가) 없습니다", code: "NOT_FOUND")
+            throw RPCErrorInfo(message: "\(host.name)에 ‘\(name)’ 항목이 없습니다", code: "NOT_FOUND")
         }
         guard entry.dir else { return [(entry.name, entry.size)] }
         return files.tree(request.hostID) { $0.files(under: request.remote) }.map { ($0.rel, $0.entry.size) }
@@ -590,7 +590,7 @@ extension PreviewBackend {
 
     public func transferGet(transferID: String) async throws -> Transfer {
         guard let transfer = files.transfer(transferID) else {
-            throw RPCErrorInfo(message: "전송 \(transferID)을(를) 찾을 수 없습니다", code: "NOT_FOUND")
+            throw RPCErrorInfo(message: "전송 \(transferID) 항목을 찾을 수 없습니다", code: "NOT_FOUND")
         }
         return transfer
     }

@@ -633,7 +633,7 @@ public final class FilesModel {
         await remote.reload()
         report(items: items, failures: failures,
                success: { count in .ui("files.trashed", "\(count)개 항목을 휴지통으로 옮겼습니다") },
-               failure: { name in .ui("files.error.trash", "‘\(name)’을(를) 휴지통으로 옮기지 못했습니다") })
+               failure: { name in .ui("files.error.trash", "‘\(name)’ 항목을 휴지통으로 옮기지 못했습니다") })
     }
 
     /// Asks to confirm a permanent delete of remote items.
@@ -658,7 +658,7 @@ public final class FilesModel {
         await remote.reload()
         report(items: request.items, failures: failures,
                success: { count in .ui("files.deleted", "\(count)개 항목을 영구 삭제했습니다") },
-               failure: { name in .ui("files.error.delete", "‘\(name)’을(를) 삭제하지 못했습니다") })
+               failure: { name in .ui("files.error.delete", "‘\(name)’ 항목을 삭제하지 못했습니다") })
     }
 
     private func report(items: [FileItem], failures: [(FileItem, OperationError)],
@@ -679,19 +679,19 @@ public final class FilesModel {
     /// failure inline in the remote pane.
     public func launch(_ item: FileItem) async {
         let name = item.name
-        busyMessage = .ui("files.busy.launch", "‘\(name)’을(를) 원격 PC에서 여는 중…")
+        busyMessage = .ui("files.busy.launch", "‘\(name)’ 파일을 원격 PC에서 여는 중…")
         defer { busyMessage = nil }
         do {
             let pid = try await backend.appLaunch(hostID: hostID, path: item.path, args: nil, cwd: nil)
             let host = hostName
             if let pid {
                 let number = String(pid)
-                show(.success, .ui("files.launchedPID", "\(host)에서 ‘\(name)’을(를) 열었습니다 · PID \(number)"))
+                show(.success, .ui("files.launchedPID", "\(host)에서 ‘\(name)’ 파일을 열었습니다 · PID \(number)"))
             } else {
-                show(.success, .ui("files.launched", "\(host)에서 ‘\(name)’을(를) 열었습니다"))
+                show(.success, .ui("files.launched", "\(host)에서 ‘\(name)’ 파일을 열었습니다"))
             }
         } catch {
-            show(.error, .ui("files.error.launch", "‘\(name)’을(를) 열지 못했습니다"), error: OperationError(error), side: .remote)
+            show(.error, .ui("files.error.launch", "‘\(name)’ 파일을 열지 못했습니다"), error: OperationError(error), side: .remote)
         }
     }
 

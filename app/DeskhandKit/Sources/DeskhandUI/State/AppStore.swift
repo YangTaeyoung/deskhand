@@ -202,12 +202,13 @@ public final class AppStore {
 
     /// Stops and drops the files, terminal, processes and logs tab state of a host that left the list.
     private func forgetTabState(_ hostID: String) {
+        processModels[hostID]?.setVisible(false)
+        logModels[hostID]?.setVisible(false)
         filesModels[hostID]?.stop()
         filesModels[hostID] = nil
         if logSelection?.hostID == hostID { logSelection = nil }
         terminalWorkspaces[hostID]?.stop()
         terminalWorkspaces[hostID] = nil
-        processModels[hostID]?.setVisible(false)
         processModels[hostID] = nil
         logModels[hostID] = nil
     }

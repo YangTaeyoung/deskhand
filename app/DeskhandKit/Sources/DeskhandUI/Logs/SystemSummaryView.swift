@@ -2,25 +2,26 @@ import DeskhandClient
 import SwiftUI
 
 /// The system summary of `diag.system`: Windows edition and build, processor with its use,
-/// memory, each disk's free space, display adapters and uptime, as a row of cards. Placeholder
-/// cards while it loads and an inline error with retry when it fails.
+/// memory, each disk's free space, display adapters and uptime, as a row of cards under a line
+/// with the time of the summary, or that its last refresh failed. Placeholder cards while it
+/// loads and a one-line error with retry when it fails.
 struct SystemSummaryView: View {
     let model: LogsModel
 
     var body: some View {
         switch model.systemPhase {
         case .failed(let error) where model.system == nil:
-            ErrorBanner(message: String.ui("logs.system.failed", "시스템 요약을 불러오지 못했습니다"),
-                        fix: LogsModel.explanation(error), code: error.code) {
-                Task { await model.reloadSystem() }
-            }
+            SummaryErrorStrip(error: error) { Task { await model.reloadSystem() } }
         default:
-            if let system = model.system {
-                SummaryCards(system: system)
-            } else {
-                SummaryCards(system: Self.placeholder)
-                    .redacted(reason: .placeholder)
-                    .accessibilityLabel(String.ui("logs.system.loading", "시스템 요약을 불러오는 중"))
+            VStack(alignment: .leading, spacing: DS.Space.s) {
+                SummaryHeader(model: model)
+                if let system = model.system {
+                    SummaryCards(system: system)
+                } else {
+                    SummaryCards(system: Self.placeholder)
+                        .redacted(reason: .placeholder)
+                        .accessibilityLabel(String.ui("logs.system.loading", "시스템 요약을 불러오는 중"))
+                }
             }
         }
     }
@@ -32,6 +33,75 @@ struct SystemSummaryView: View {
         disks: [DiagDisk(root: "C:\\", label: "Windows", fs: "NTFS", totalBytes: 512 << 30, freeBytes: 256 << 30)],
         gpus: [DiagGPU(name: "Display adapter placeholder", driverVersion: "00.0.00.0000")],
         bootTime: Timestamp(date: .now), uptimeS: 3_600)
+}
+
+/// `시스템 요약` and the time of the summary, or a warning when its last refresh failed.
+private struct SummaryHeader: View {
+    let model: LogsModel
+
+    var body: some View {
+        HStack(spacing: DS.Space.xs) {
+            Text(String.ui("logs.summary.title", "시스템 요약"))
+                .font(DS.Font.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: DS.Space.s)
+            if let updated = model.systemUpdatedAt {
+                let time = updated.formatted(.dateTime.hour().minute().second().locale(EventFormat.locale))
+                if let error = model.systemRefreshError {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(DS.Color.warning)
+                        .accessibilityHidden(true)
+                    Text(String.ui("logs.summary.stale", "새로 고치지 못했습니다 · \(time) 기준"))
+                        .foregroundStyle(.secondary)
+                        .help(error.detail)
+                } else {
+                    Text(String.ui("logs.updated", "\(time) 기준"))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .font(DS.Font.caption)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The summary failed before any arrived: what failed, the reason, the code and retry, in one row.
+private struct SummaryErrorStrip: View {
+    let error: OperationError
+    let retry: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: DS.Space.m) {
+            Image(systemName: "exclamationmark.octagon.fill")
+                .foregroundStyle(DS.Color.danger)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(String.ui("logs.system.failed", "시스템 요약을 불러오지 못했습니다"))
+                    .font(DS.Font.body.weight(.semibold))
+                Text(LogsModel.explanation(error).replacingOccurrences(of: "\n", with: " "))
+                    .font(DS.Font.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .help(error.detail)
+            }
+            Spacer(minLength: DS.Space.s)
+            if let code = error.code {
+                ErrorCodeLine(code: code)
+            }
+            Button(action: retry) {
+                Label(String.ui("action.retry", "다시 시도"), systemImage: "arrow.clockwise")
+            }
+            .controlSize(.small)
+        }
+        .padding(.horizontal, DS.Space.m)
+        .padding(.vertical, DS.Space.s)
+        .background(DS.Color.danger.opacity(0.08), in: RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous)
+                .strokeBorder(DS.Color.danger.opacity(0.28), lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
+    }
 }
 
 /// Six cards that share a row when the tab is wide and wrap to two rows of three otherwise.
@@ -72,7 +142,7 @@ private struct SummaryCards: View {
     }
 
     private var osCard: some View {
-        SummaryCard(symbol: "pc", title: String.ui("logs.system.os", "Windows")) {
+        SummaryCard(symbol: "pc", title: String.ui("logs.system.os", "운영 체제")) {
             Text(system.os.name)
                 .font(DS.Font.headline)
                 .lineLimit(1)
@@ -103,6 +173,11 @@ private struct SummaryCards: View {
                     .foregroundStyle(.secondary)
             }
             UsageBar(fraction: usage / 100, tint: SummaryFormat.tint(usedFraction: usage / 100))
+            Text(system.cpu.name)
+                .font(DS.Font.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
             Text(String.ui("logs.system.cpu.cores", "\(cores)코어 · \(threads)스레드"))
                 .font(DS.Font.caption)
                 .foregroundStyle(.secondary)
@@ -273,16 +348,17 @@ private struct DiskRow: View {
     }
 }
 
-/// A thin bar of a used fraction.
+/// A thin bar of a used fraction, drawn in a neutral gray while its view is redacted.
 struct UsageBar: View {
     let fraction: Double
     let tint: Color
+    @Environment(\.redactionReasons) private var redaction
 
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
                 Capsule().fill(DS.Color.neutral.opacity(0.18))
-                Capsule().fill(tint)
+                Capsule().fill(redaction.isEmpty ? tint : DS.Color.neutral.opacity(0.3))
                     .frame(width: max(fraction > 0 ? 3 : 0, proxy.size.width * min(1, max(0, fraction))))
             }
         }
@@ -304,13 +380,20 @@ enum SummaryFormat {
         (value / 100).formatted(.percent.precision(.fractionLength(0)).locale(EventFormat.locale))
     }
 
-    /// `27.4GB` with binary units, as Windows reports memory.
+    /// `27.4 GB`: binary units, one decimal.
     static func memory(_ bytes: Int) -> String {
-        Int64(bytes).formatted(.byteCount(style: .memory).locale(EventFormat.locale))
+        ProcessFormat.memory(kb: bytes / 1024)
     }
 
-    /// `212.4GB`, `1TB` with decimal units, as disks are sold.
+    /// `212.4 GB`, `1.3 TB`, `41.9 KB`: decimal units, one decimal.
     static func storage(_ bytes: Int) -> String {
-        Int64(bytes).formatted(.byteCount(style: .file).locale(EventFormat.locale))
+        let value = Double(bytes)
+        let (amount, unit): (Double, String) = switch value {
+        case 1e12...: (value / 1e12, "TB")
+        case 1e9...: (value / 1e9, "GB")
+        case 1e6...: (value / 1e6, "MB")
+        default: (value / 1e3, "KB")
+        }
+        return amount.formatted(.number.precision(.fractionLength(1)).grouping(.never).locale(EventFormat.locale)) + " " + unit
     }
 }

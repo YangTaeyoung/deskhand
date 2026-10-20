@@ -271,7 +271,7 @@ public struct MoveConfirmSheet: View {
 
     private var title: String {
         if request.candidates.count == 1, let name = request.candidates.first?.name {
-            return .ui("move.title.one", "‘\(name)’을(를) 이동할까요?")
+            return .ui("move.title.one", "‘\(name)’ 항목을 이동할까요?")
         }
         let count = FileFormat.count(request.candidates.count)
         return .ui("move.title.many", "\(count)개 항목을 이동할까요?")

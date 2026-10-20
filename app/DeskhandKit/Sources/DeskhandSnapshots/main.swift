@@ -64,7 +64,7 @@ guard let outputDirectory = options.outputDirectory else {
 
 let selected = scenes.filter { options.only == nil || $0.name == options.only }
 if selected.isEmpty {
-    fail("장면 '\(options.only ?? "")'이(가) 없습니다. 등록된 장면: \(scenes.map(\.name).joined(separator: ", "))")
+    fail("'\(options.only ?? "")' 장면이 없습니다. 등록된 장면: \(scenes.map(\.name).joined(separator: ", "))")
 }
 
 NSApplication.shared.setActivationPolicy(.accessory)

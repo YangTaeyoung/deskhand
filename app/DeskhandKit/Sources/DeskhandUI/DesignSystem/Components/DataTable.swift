@@ -173,6 +173,7 @@ struct DataTable<Row: Identifiable & Equatable>: NSViewRepresentable where Row.I
                 let old = rows
                 rows = new.rows
                 table.usesAlternatingRowBackgroundColors = !rows.isEmpty
+                applyingSelection = true
                 if old.count == rows.count, zip(old, rows).allSatisfy({ $0.id == $1.id }) {
                     let changed = IndexSet(rows.indices.filter { old[$0] != rows[$0] })
                     if !changed.isEmpty {
@@ -181,6 +182,7 @@ struct DataTable<Row: Identifiable & Equatable>: NSViewRepresentable where Row.I
                 } else {
                     table.reloadData()
                 }
+                applyingSelection = false
             }
             applySelection()
             if let sort = new.sort,
@@ -404,7 +406,7 @@ final class DataTextCell: NSTableCellView {
     func configure(_ text: String, style: Style, help: String? = nil, weight: NSFont.Weight = .regular) {
         label.stringValue = text
         label.font = monospacedDigits
-            ? .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize - 1, weight: weight)
+            ? .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: weight)
             : .systemFont(ofSize: NSFont.systemFontSize, weight: weight)
         self.style = style
         toolTip = help
@@ -428,17 +430,16 @@ final class DataTextCell: NSTableCellView {
     }
 }
 
-/// A small rounded tag drawn in a table cell, such as `Deskhand가 시작함`, or `compactText` when
-/// `compact` is set. Its colors resolve for the cell's appearance and turn white on a selected row.
+/// A small rounded tag drawn in a table cell, such as `Deskhand가 시작함`. Narrower than its text,
+/// it draws as a dot. Its colors resolve for the cell's appearance and turn white on a selected row.
 final class TagView: NSView {
+    static let dotWidth: CGFloat = 10
+
     var text = "" {
-        didSet { changed() }
-    }
-    var compactText = "" {
-        didSet { changed() }
-    }
-    var compact = false {
-        didSet { if compact != oldValue { changed() } }
+        didSet {
+            invalidateIntrinsicContentSize()
+            needsDisplay = true
+        }
     }
     var tint: NSColor = .controlAccentColor {
         didSet { needsDisplay = true }
@@ -447,29 +448,31 @@ final class TagView: NSView {
         didSet { needsDisplay = true }
     }
 
-    private var shown: String { compact && !compactText.isEmpty ? compactText : text }
-
     private var attributes: [NSAttributedString.Key: Any] {
         [.font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize - 1, weight: .semibold),
          .foregroundColor: emphasized ? NSColor.alternateSelectedControlTextColor : tint]
     }
 
-    private func changed() {
-        invalidateIntrinsicContentSize()
-        needsDisplay = true
-    }
+    private var textWidth: CGFloat { ceil((text as NSString).size(withAttributes: attributes).width) + 12 }
 
     override var intrinsicContentSize: NSSize {
-        NSSize(width: ceil((shown as NSString).size(withAttributes: attributes).width) + 12, height: 16)
+        NSSize(width: textWidth, height: 16)
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        let ink = emphasized ? NSColor.alternateSelectedControlTextColor : tint
+        guard bounds.width >= textWidth - 0.5 else {
+            ink.setFill()
+            let side: CGFloat = 7
+            NSBezierPath(ovalIn: NSRect(x: (bounds.width - side) / 2, y: (bounds.height - side) / 2, width: side, height: side)).fill()
+            return
+        }
         let rect = bounds.insetBy(dx: 0.5, dy: 0.5)
         let fill = emphasized ? NSColor.alternateSelectedControlTextColor.withAlphaComponent(0.22) : tint.withAlphaComponent(0.14)
         fill.setFill()
         NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2).fill()
-        let size = (shown as NSString).size(withAttributes: attributes)
-        (shown as NSString).draw(at: NSPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2),
-                                 withAttributes: attributes)
+        let size = (text as NSString).size(withAttributes: attributes)
+        (text as NSString).draw(at: NSPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2),
+                                withAttributes: attributes)
     }
 }

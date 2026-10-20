@@ -103,9 +103,10 @@ public protocol TerminalBackend: Sendable {
 public protocol ProcessesBackend: Sendable {
     /// Every process of the computer.
     func procList(hostID: String) async throws -> [RemoteProcess]
-    /// Ends `pid`, and with `tree` its descendants. A `failed` or `unknown` envelope comes back
+    /// Ends `pid`, and with `tree` its descendants, when its start time is still `started`
+    /// (otherwise the agent answers `STALE_TARGET`). A `failed` or `unknown` envelope comes back
     /// as the receipt's status; request problems throw.
-    func procKill(hostID: String, pid: Int, tree: Bool) async throws -> KillReceipt
+    func procKill(hostID: String, pid: Int, started: Timestamp?, tree: Bool) async throws -> KillReceipt
 }
 
 /// `diag.system`, `diag.events` and `diag.crashes` (local-api.md §3 진단, protocol.md §3.1).

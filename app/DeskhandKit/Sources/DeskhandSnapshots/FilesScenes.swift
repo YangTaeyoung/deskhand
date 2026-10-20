@@ -121,8 +121,8 @@ enum FilesScenes {
             }),
             scene("files-action-error", Setup(selected: dev, tab: .files, inspector: nil), Files(
                 remotePath: "C:\\ProgramData\\Shop\\CrashDumps", remoteSelection: ["Shop.exe.4013.dmp"], transfers: running,
-                paneError: (.remote, "‘Shop.exe.4013.dmp’을(를) 열지 못했습니다",
-                            OperationError(code: "INVALID_ARGUMENT", message: "‘Shop.exe.4013.dmp’을(를) 열 프로그램이 원격 PC에 없습니다")))),
+                paneError: (.remote, "‘Shop.exe.4013.dmp’ 파일을 열지 못했습니다",
+                            OperationError(code: "INVALID_ARGUMENT", message: "원격 PC에 ‘Shop.exe.4013.dmp’ 파일을 열 프로그램이 없습니다")))),
             scene("files-empty", Setup(selected: dev, tab: .files, inspector: nil), Files(
                 localPath: "/Users/taeyoung/Desktop/새 빌드", localItems: [],
                 remotePath: home + "\\Downloads\\빈 폴더", remoteItems: [], remoteBack: [home + "\\Downloads"],

@@ -228,7 +228,8 @@ extension PreviewFixtures {
             let started = seed.start >= 0 ? boot.addingTimeInterval(seed.start) : anchor.addingTimeInterval(seed.start)
             list.append(RemoteProcess(pid: seed.pid, ppid: seed.ppid, name: seed.name, path: seed.path, cmd: seed.cmd ?? seed.path.map { "\"\($0)\"" },
                                       memKb: max(8, Int(memory)), cpuPct: cpu, user: seed.user,
-                                      started: seed.pid == 0 ? nil : Timestamp(date: started), startedByDeskhand: seed.deskhand))
+                                      started: seed.pid == 0 ? nil : Timestamp(date: started), startedByDeskhand: seed.deskhand,
+                                      isSelf: seed.pid == agentPID))
         }
         if let idle = list.firstIndex(where: { $0.pid == 0 }) {
             list[idle].cpuPct = max(0, (1000 - busy * 10).rounded() / 10)
@@ -321,7 +322,7 @@ extension PreviewFixtures {
             "Deskhand Agent 서비스가 실행 중 상태로 전환되었습니다.",
         ], count: 150),
         EventTemplate(level: .information, provider: "Service Control Manager", eventID: 7040, messages: [
-            "Background Intelligent Transfer Service 서비스의 시작 유형을 자동 시작에서 요청 시 시작(으)로 변경했습니다.",
+            "Background Intelligent Transfer Service 서비스의 시작 유형을 자동 시작에서 요청 시 시작으로 변경했습니다.",
         ], count: 8),
         EventTemplate(level: .error, provider: "Service Control Manager", eventID: 7031, messages: [
             "Shop Sync Service 서비스가 예기치 않게 종료되었습니다. 이 오류가 1번 발생했습니다. 다음 수정 작업이 60000밀리초 안에 수행됩니다: 서비스 다시 시작.",
@@ -340,19 +341,19 @@ extension PreviewFixtures {
             "설치 실패: Windows에서 0x800F0922 오류로 인해 다음 업데이트를 설치하지 못했습니다: 2026-10 x64 기반 시스템용 .NET Framework 3.5 및 4.8.1 누적 업데이트(KB5044033)",
         ], count: 2),
         EventTemplate(level: .warning, provider: "Microsoft-Windows-Time-Service", eventID: 134, messages: [
-            "NtpClient에서 수동 피어 'time.windows.com,0x9'을(를) 시간 원본으로 사용하도록 설정하는 중에 DNS 확인 오류가 발생했습니다. 15분 후에 다시 시도하며 그 후 다시 시도할 때마다 간격을 두 배로 늘립니다. 오류: 호스트를 알 수 없습니다. (0x80072AF9)",
+            "NtpClient에서 수동 피어 'time.windows.com,0x9' 서버를 시간 원본으로 사용하도록 설정하는 중에 DNS 확인 오류가 발생했습니다. 15분 후에 다시 시도하며 그 후 다시 시도할 때마다 간격을 두 배로 늘립니다. 오류: 호스트를 알 수 없습니다. (0x80072AF9)",
         ], count: 5),
         EventTemplate(level: .information, provider: "Microsoft-Windows-Kernel-General", eventID: 16, messages: [
             "액세스 기록 하이브가 존재하지 않는 레지스트리 키를 지우려고 했습니다.",
         ], count: 10),
         EventTemplate(level: .warning, provider: "Microsoft-Windows-Resource-Exhaustion-Detector", eventID: 2004, messages: [
-            "Windows에서 가상 메모리 부족 상태를 진단했습니다. 다음 프로그램이 가상 메모리를 가장 많이 사용했습니다: node.exe (7120)이(가) 6,412,881,920바이트, Code.exe (7064)이(가) 2,103,447,552바이트, vmmemWSL (9160)이(가) 1,904,312,320바이트를 사용했습니다.",
+            "Windows에서 가상 메모리 부족 상태를 진단했습니다. 다음 프로그램이 가상 메모리를 가장 많이 사용했습니다: node.exe (7120) 6,412,881,920바이트, Code.exe (7064) 2,103,447,552바이트, vmmemWSL (9160) 1,904,312,320바이트.",
         ], count: 2),
         EventTemplate(level: .warning, provider: "disk", eventID: 153, messages: [
             "디스크 2의 논리 블록 주소 0x1a4c2f80에서 IO 작업이 다시 시도되었습니다.",
         ], count: 4),
         EventTemplate(level: .warning, provider: "Display", eventID: 4101, messages: [
-            "디스플레이 드라이버 nvlddmkm이(가) 응답을 멈추었으나 복구되었습니다.",
+            "nvlddmkm 디스플레이 드라이버가 응답을 멈추었으나 복구되었습니다.",
         ], count: 2),
         EventTemplate(level: .critical, provider: "Microsoft-Windows-Kernel-Power", eventID: 41, messages: [
             "시스템이 정상적으로 종료되기 전에 다시 부팅되었습니다. 이 오류는 시스템이 응답을 멈추었거나, 충돌했거나, 예기치 않게 전원이 끊어졌을 때 발생할 수 있습니다.",
@@ -385,17 +386,17 @@ extension PreviewFixtures {
             "오류 버킷 1859482734906672113, 유형 4\n이벤트 이름: APPCRASH\n응답: 사용할 수 없음\nCab ID: 0\n\n문제 서명:\nP1: Shop.exe\nP2: 1.18.0.1188\nP3: 6712a3f0\nP4: KERNELBASE.dll\nP5: 10.0.26100.2314\nP6: 4f1a7a21\nP7: e0434352\nP8: 000000000005f39c\n\n다음 파일에 이 오류에 대한 추가 정보가 있을 수 있습니다:\nC:\\ProgramData\\Shop\\CrashDumps\\Shop.exe.4013.dmp\nC:\\ProgramData\\Microsoft\\Windows\\WER\\ReportArchive\\AppCrash_Shop.exe_3f2a9c1d\\Report.wer",
         ], count: 4),
         EventTemplate(level: .error, provider: "Application Hang", eventID: 1002, messages: [
-            "프로그램 Code.exe 버전 1.95.1이(가) Windows와의 상호 작용을 중지하여 닫혔습니다. 문제에 대한 추가 정보가 있는지 확인하려면 관리 센터 제어판에서 문제 기록을 확인하십시오.\n프로세스 ID: 1b88\n시작 시간: 01db22f1a6c04e3b\n종료 시간: 4294967295\n응용 프로그램 경로: C:\\Users\\taeyoung\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe\n보고서 ID: 5d2f8e7a-1c3b-4b8e-a0f4-7e9c2d6b1a33",
+            "Code.exe 프로그램(버전 1.95.1)이 Windows와의 상호 작용을 중지하여 닫혔습니다. 문제에 대한 추가 정보가 있는지 확인하려면 관리 센터 제어판에서 문제 기록을 확인하십시오.\n프로세스 ID: 1b88\n시작 시간: 01db22f1a6c04e3b\n종료 시간: 4294967295\n응용 프로그램 경로: C:\\Users\\taeyoung\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe\n보고서 ID: 5d2f8e7a-1c3b-4b8e-a0f4-7e9c2d6b1a33",
         ], count: 1),
         EventTemplate(level: .warning, provider: "Shop", eventID: 3102, messages: [
             "결제 승인 응답이 30초를 넘었습니다. 주문 2026-1020-0342, 카드사 KB, 응답 대기 31.8초.",
             "결제 승인 응답이 30초를 넘었습니다. 주문 2026-1020-0361, 카드사 신한, 응답 대기 34.2초.",
         ], count: 9),
         EventTemplate(level: .information, provider: "Shop", eventID: 1000, messages: [
-            "Shop 1.18.0.1188을(를) 시작했습니다. 환경: staging, 설정 파일: C:\\Shop\\bin\\appsettings.json",
+            "Shop 1.18.0.1188 버전을 시작했습니다. 환경: staging, 설정 파일: C:\\Shop\\bin\\appsettings.json",
         ], count: 8),
         EventTemplate(level: .information, provider: "Deskhand Agent", eventID: 1, messages: [
-            "에이전트 0.1.0을(를) 시작했습니다. UDP 47600에서 연결을 기다립니다.",
+            "에이전트 0.1.0 버전을 시작했습니다. UDP 47600에서 연결을 기다립니다.",
             "이 Mac(taeyoung-mbp)과 연결했습니다. 세대 4.",
         ], count: 6),
         EventTemplate(level: .information, provider: "MsiInstaller", eventID: 11707, messages: [
@@ -403,7 +404,7 @@ extension PreviewFixtures {
             "제품: Microsoft .NET Runtime - 9.0.0 (x64) -- 설치를 완료했습니다.",
         ], count: 3),
         EventTemplate(level: .information, provider: "SecurityCenter", eventID: 15, messages: [
-            "Windows Defender 상태를 SECURITY_PRODUCT_STATE_ON(으)로 업데이트했습니다.",
+            "Windows Defender 상태를 SECURITY_PRODUCT_STATE_ON 값으로 업데이트했습니다.",
         ], count: 6),
         EventTemplate(level: .information, provider: "VSS", eventID: 8224, messages: [
             "VSS 서비스를 유휴 시간 제한 때문에 종료하는 중입니다.",
@@ -412,7 +413,7 @@ extension PreviewFixtures {
             "SQL Server에서 데이터베이스 ID 7의 파일 [D:\\SQLData\\Shop.mdf]에 대한 I/O 요청이 15초 이상 걸린 경우가 1번 발생했습니다. OS 파일 핸들은 0x0000000000000C3C입니다.",
         ], count: 2),
         EventTemplate(level: .information, provider: "MSSQLSERVER", eventID: 17137, messages: [
-            "데이터베이스 'Shop'을(를) 시작하는 중입니다.",
+            "'Shop' 데이터베이스를 시작하는 중입니다.",
         ], count: 5),
         EventTemplate(level: .warning, provider: "Microsoft-Windows-User Profiles Service", eventID: 1530, messages: [
             "Windows에서 레지스트리 파일이 다른 응용 프로그램이나 서비스에서 아직 사용되고 있음을 감지했습니다. 이 파일은 이제 언로드됩니다. 레지스트리 파일을 사용 중인 응용 프로그램이나 서비스가 이후에 제대로 작동하지 않을 수 있습니다.",
@@ -421,7 +422,7 @@ extension PreviewFixtures {
             "소프트웨어 보호 서비스 다시 시작 예약 성공: 2026-10-21T04:12:09Z. 이유: RulesEngine.",
         ], count: 8),
         EventTemplate(level: .information, provider: "Microsoft-Windows-RestartManager", eventID: 10000, messages: [
-            "세션 0을(를) 2026-10-20 오전 9:41:02에 시작했습니다.",
+            "세션 0을 2026-10-20 오전 9:41:02에 시작했습니다.",
         ], count: 6),
     ]
 

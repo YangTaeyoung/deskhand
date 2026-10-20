@@ -156,6 +156,22 @@ final class ProcessListTests: XCTestCase {
         XCTAssertNil(forest.parent(of: 10))
     }
 
+    // MARK: Formatting
+
+    func testMemoryHasOneDecimalAndASpacedUnit() {
+        XCTAssertEqual(ProcessFormat.memory(kb: 302 * 1024), "302.0 MB")
+        XCTAssertEqual(ProcessFormat.memory(kb: 1_677_722), "1.6 GB")
+        XCTAssertEqual(ProcessFormat.memory(kb: 144), "144.0 KB")
+        XCTAssertEqual(ProcessFormat.memory(kb: 420_045), "410.2 MB")
+    }
+
+    func testStructuredEventMessagesUseMonospace() {
+        XCTAssertTrue(EventMessage.isStructured("응용 프로그램: Shop.exe\nCoreCLR 버전: 9.0\n설명: 처리되지 않은 예외\n   위치: A.B()\n   위치: C.D()"))
+        XCTAssertTrue(EventMessage.isStructured("오류 버킷 1859, 유형 4\n이벤트 이름: APPCRASH\n\n문제 서명:\nP1: Shop.exe\nP2: 1.18"))
+        XCTAssertFalse(EventMessage.isStructured("Windows Update 서비스가 실행 중 상태로 전환되었습니다."))
+        XCTAssertFalse(EventMessage.isStructured("시스템이 정상적으로 종료되기 전에 다시 부팅되었습니다. 이 오류는 시스템이 응답을 멈추었을 때 발생할 수 있습니다."))
+    }
+
     // MARK: Protection
 
     func testCriticalSystemProcessesAndTheAgentCannotBeKilled() {
@@ -171,6 +187,13 @@ final class ProcessListTests: XCTestCase {
         XCTAssertNil(ProcessGuard.block(for: proc(5520, "explorer.exe")))
         XCTAssertFalse(KillBlock.critical.reason.isEmpty)
         XCTAssertFalse(KillBlock.agent.reason.isEmpty)
+    }
+
+    func testTheAgentIsRecognizedBySelfBeforeItsName() {
+        var renamed = proc(4400, "agent-renamed.exe")
+        renamed.isSelf = true
+        XCTAssertEqual(ProcessGuard.block(for: renamed), .agent)
+        XCTAssertEqual(ProcessGuard.block(for: proc(3120, "deskhand-agent.exe")), .agent)
     }
 
     func testTreeKillIsBlockedWhenADescendantIsProtected() {

@@ -68,7 +68,7 @@ private struct ProcessesContent: View {
         }
         .background(DS.Color.surface)
         .sheet(item: $model.pendingKill) { request in
-            KillConfirmSheet(request: request, hostName: host.name) {
+            KillConfirmSheet(request: request, hostName: host.name, ended: model.pendingKillEnded) {
                 Task { await model.confirmKill(request) }
             } cancel: {
                 model.cancelKill()
@@ -130,7 +130,7 @@ private struct ProcessesContent: View {
                 .foregroundStyle(.tertiary)
                 .accessibilityHidden(true)
             Text(query.isEmpty ? String.ui("processes.empty", "프로세스가 없습니다")
-                               : String.ui("processes.search.none", "‘\(query)’와(과) 일치하는 프로세스가 없습니다"))
+                               : String.ui("processes.search.none", "‘\(query)’ 검색 결과가 없습니다"))
                 .font(DS.Font.headline)
             Text(String.ui("processes.search.hint", "이름, 경로 또는 PID로 찾습니다."))
                 .font(DS.Font.body)
@@ -170,7 +170,7 @@ private struct ProcessesToolbar: View {
             }
             .help(model.isPaused ? String.ui("processes.resume.help", "2초마다 새로 고치기를 다시 시작합니다")
                                  : String.ui("processes.pause.help", "목록을 멈춰 두고 살펴봅니다. 다시 누르면 이어서 새로 고칩니다."))
-            .accessibilityLabel(model.isPaused ? String.ui("processes.resume", "새로 고침 재개") : String.ui("processes.pause", "새로 고침 일시 정지"))
+            .accessibilityLabel(model.isPaused ? String.ui("processes.resume", "새로 고침 재개") : String.ui("processes.pause", "새로 고침 일시정지"))
             .disabled(!enabled)
             Button {
                 Task { await model.refresh() }
@@ -201,7 +201,7 @@ private struct ProcessesToolbar: View {
 
     @ViewBuilder
     private var killButtons: some View {
-        let pid = model.selectedPID
+        let pid = model.selected?.pid
         let single = pid.flatMap { model.killBlock(pid: $0, tree: false) }
         let tree = pid.flatMap { model.killBlock(pid: $0, tree: true) }
         let hasChildren = pid.map { !model.forest.children(of: $0).isEmpty } ?? false
@@ -275,6 +275,13 @@ private struct ProcessDetailBar: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
+                if let reason = blockReason {
+                    Label(reason, systemImage: "lock.fill")
+                        .font(DS.Font.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer(minLength: DS.Space.s)
             HStack(spacing: DS.Space.s) {
@@ -305,7 +312,16 @@ private struct ProcessDetailBar: View {
         .accessibilityLabel(String.ui("processes.a11y.detail", "선택한 프로세스"))
     }
 
-    /// `상위 explorer.exe (5520) · taeyoung · 오늘 오전 9:12 시작 · CPU 4.2% · 메모리 296MB`.
+    /// Why 종료 or 트리 종료 is off for this process: its own block, or for a parent whose tree holds
+    /// a protected process, the tree's.
+    private var blockReason: String? {
+        if let block = ProcessGuard.block(for: process) { return block.reason }
+        guard !model.forest.children(of: process.pid).isEmpty, let tree = model.killBlock(pid: process.pid, tree: true) else { return nil }
+        let reason = tree.reason
+        return .ui("processes.block.treeOnly", "트리 종료 불가: \(reason)")
+    }
+
+    /// `상위 explorer.exe (5520) · taeyoung · 오늘 오전 9:12 시작 · CPU 4.2% · 메모리 296.0 MB`.
     private var facts: String {
         var parts: [String] = []
         if let parent = model.forest.parent(of: process.pid) {
@@ -352,44 +368,49 @@ private struct ProcessesStatusBar: View {
     var body: some View {
         HStack(spacing: DS.Space.s) {
             Text(summary)
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: DS.Space.s)
             if let pid = model.killing.first, let process = model.forest.process(pid) {
                 ProgressView().controlSize(.mini)
-                Text(String.ui("processes.killing", "‘\(process.name)’을(를) 종료하는 중…"))
+                Text(String.ui("processes.killing", "‘\(process.name)’ 프로세스를 종료하는 중…"))
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
             } else if let error = model.refreshError {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(DS.Color.warning)
                     .accessibilityHidden(true)
-                Text(String.ui("processes.refreshFailed", "새로 고치지 못했습니다 · \(updated) 목록"))
+                Text(String.ui("processes.refreshFailed", "새로 고치지 못했습니다 · \(updated) 기준"))
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .help(error.detail)
                 Button(String.ui("action.retry", "다시 시도")) { Task { await model.refresh() } }
                     .buttonStyle(.link)
+                    .tint(DS.Color.accent)
             } else if model.isPaused {
                 Image(systemName: "pause.circle.fill")
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
-                Text(String.ui("processes.paused", "일시 정지됨 · \(updated) 목록"))
+                Text(String.ui("processes.paused", "일시정지됨 · \(updated) 기준"))
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
             } else {
                 LiveDot(live: model.isLive)
                 Text(model.isLive
-                     ? String.ui("processes.live", "2초마다 새로 고침 · \(updated)")
+                     ? String.ui("processes.live", "2초마다 새로 고침 · \(updated) 기준")
                      : String.ui("processes.updated", "\(updated) 기준"))
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
         }
         .font(DS.Font.caption)
-        .foregroundStyle(.secondary)
         .padding(.horizontal, DS.Space.m)
         .frame(height: 26)
         .overlay(alignment: .top) {
             Rectangle().fill(DS.Color.separator).frame(height: 1)
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 
     private var updated: String {
@@ -411,19 +432,16 @@ private struct ProcessesStatusBar: View {
     }
 }
 
-/// A green dot that pulses while the list refreshes live.
+/// A dot that is green and pulses while the list refreshes live, and gray otherwise.
 private struct LiveDot: View {
     let live: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var pulse = false
 
     var body: some View {
-        Circle()
-            .fill(live ? DS.Color.success : DS.Color.neutral)
-            .frame(width: 7, height: 7)
-            .opacity(live && pulse && !reduceMotion ? 0.35 : 1)
-            .animation(live && !reduceMotion ? .easeInOut(duration: 1).repeatForever(autoreverses: true) : nil, value: pulse)
-            .onAppear { pulse = true }
+        Image(systemName: "circle.fill")
+            .font(.system(size: 7))
+            .foregroundStyle(live ? DS.Color.success : DS.Color.neutral)
+            .symbolEffect(.pulse, options: .repeating, isActive: live && !reduceMotion)
             .accessibilityHidden(true)
     }
 }

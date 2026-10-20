@@ -198,7 +198,7 @@ struct FilePane: View {
     private func emptyMessage(searching: Bool) -> String {
         if searching {
             let query = browser.query
-            return .ui("files.search.noneMessage", "‘\(query)’이(가) 들어간 이름이 이 폴더에 없습니다.")
+            return .ui("files.search.noneMessage", "이 폴더에 ‘\(query)’ 검색어가 들어간 이름이 없습니다.")
         }
         if side == .remote {
             return .ui("files.empty.remote", "이 Mac 패널이나 Finder에서 파일을 끌어다 놓으면 여기에 보냅니다.")

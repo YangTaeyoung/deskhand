@@ -58,6 +58,7 @@ enum DiagnosticsScenes {
         var systemPhase: LoadPhase = .loaded
         var eventsPhase: LoadPhase = .loaded
         var crashesPhase: LoadPhase = .loaded
+        var systemRefreshError: OperationError?
         var transfers: [Transfer] = []
         var logFile: String?
     }
@@ -81,7 +82,7 @@ enum DiagnosticsScenes {
         let all = Set(PreviewFixtures.events(hostID: hostID, log: logs.filter.log).map(\.provider))
             .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
         model.seed(system: logs.systemPhase == .loaded ? PreviewFixtures.system(hostID: hostID, cpuUsage: (busy * 10).rounded() / 10) : nil,
-                   systemPhase: logs.systemPhase, filter: logs.filter, events: page.events, eventsPhase: logs.eventsPhase,
+                   systemPhase: logs.systemPhase, systemRefreshError: logs.systemRefreshError, filter: logs.filter, events: page.events, eventsPhase: logs.eventsPhase,
                    truncated: page.truncated, search: logs.search,
                    selectedRecordID: logs.selected.flatMap { page.events.first(where: $0)?.recordID }, providers: all,
                    crashes: logs.crashesPhase == .loaded ? PreviewFixtures.crashDumps(hostID: hostID, user: host.session?.user ?? "user") : [],
@@ -146,14 +147,21 @@ enum DiagnosticsScenes {
             processesScene("processes-kill-result", Setup(selected: dev, tab: .processes, inspector: nil), Processes(
                 sort: ProcessSort(column: .memory, ascending: false), selected: 2260,
                 refreshError: OperationError(code: "TIMEOUT", message: "에이전트가 5초 안에 답하지 않았습니다"),
-                notice: DiagnosticsNotice(tone: .error, message: "‘MsMpEng.exe’을(를) 종료하지 못했습니다",
-                                          detail: "Windows가 ‘MsMpEng.exe’의 종료를 거부했습니다. 보호된 프로세스라 관리자 권한으로도 끝낼 수 없습니다\nWindows가 보호하는 프로세스이거나 서비스입니다. 서비스라면 서비스 관리자에서 중지하세요.",
+                notice: DiagnosticsNotice(tone: .error, message: "‘MsMpEng.exe’ 프로세스를 종료하지 못했습니다",
+                                          detail: "Windows가 ‘MsMpEng.exe’의 종료를 거부했습니다. 보호된 프로세스라 관리자 권한으로도 끝낼 수 없습니다.\n서비스라면 서비스 관리자에서 중지하세요.",
                                           code: "PERMISSION_DENIED"))),
             processesScene("processes-unknown-outcome", Setup(selected: dev, tab: .processes, inspector: nil), Processes(
                 paused: true,
-                notice: DiagnosticsNotice(tone: .warning, message: "‘Code.exe’(PID 7000)이(가) 아직 실행 중입니다",
+                notice: DiagnosticsNotice(tone: .warning, message: "‘Code.exe’(PID 7000) 프로세스가 아직 실행 중입니다",
                                           detail: "종료 요청의 응답을 받지 못했고, 다시 읽은 목록에 그대로 있습니다. 다시 종료하거나 원격 PC에서 확인하세요.",
                                           code: "EXECUTION_OUTCOME_UNKNOWN"))),
+            processesScene("processes-protected", Setup(selected: dev, tab: .processes, inspector: nil),
+                           Processes(selected: PreviewFixtures.agentPID)),
+            processesScene("processes-kill-ended", Setup(selected: dev, tab: .processes, inspector: nil), Processes(selected: 6100),
+                           sheet: { store in
+                AnyView(KillConfirmSheet(request: KillRequest(process: chrome, tree: false, descendants: [], survivors: 8),
+                                         hostName: store.host(dev)?.name ?? "개발 PC", ended: true, confirm: {}, cancel: {}))
+            }),
             processesScene("processes-loading", Setup(selected: dev, tab: .processes, inspector: nil), Processes(phase: .loading)),
             processesScene("processes-error", Setup(selected: dev, tab: .processes, inspector: nil), Processes(
                 phase: .failed(OperationError(code: "CAPABILITY_UNSUPPORTED", message: "에이전트가 proc.list를 지원하지 않습니다"))))
@@ -173,7 +181,9 @@ enum DiagnosticsScenes {
                 systemPhase: .loading, eventsPhase: .loading, crashesPhase: .loading)),
             logsScene("logs-error", Setup(selected: dev, tab: .logs, inspector: nil), Logs(
                 systemPhase: .failed(OperationError(code: "TIMEOUT", message: "에이전트가 10초 안에 시스템 정보를 보내지 않았습니다")),
-                eventsPhase: .failed(OperationError(code: "PERMISSION_DENIED", message: "이벤트 로그 서비스가 응용 프로그램 로그 읽기를 거부했습니다")))),
+                eventsPhase: .failed(OperationError(code: "PERMISSION_DENIED", message: "이벤트 로그 서비스가 시스템 로그 읽기를 거부했습니다")))),
+            logsScene("logs-summary-stale", Setup(selected: dev, tab: .logs, inspector: nil), Logs(
+                systemRefreshError: OperationError(code: "TIMEOUT", message: "에이전트가 10초 안에 시스템 정보를 보내지 않았습니다"))),
             logsScene("logs-file", Setup(selected: dev, tab: .logs, inspector: nil), Logs(
                 filter: EventFilter(log: .application), logFile: PreviewFixtures.lockedLog)),
         ]

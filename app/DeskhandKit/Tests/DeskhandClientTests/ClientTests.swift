@@ -399,7 +399,7 @@ final class ClientTests: XCTestCase {
     func testDiagnosticsModelsDecodeProtocolFields() throws {
         let proc = try Wire.decode(ProcessInfo.self, from: Data(#"""
         {"pid":7712,"ppid":5520,"name":"node.exe","path":"C:\\Program Files\\nodejs\\node.exe","cmd":"node server.js",
-         "mem_kb":184320,"cpu_pct":12.5,"user":"DEV-PC\\taeyoung","started":"2026-10-20T09:12:00.000Z","started_by_deskhand":true}
+         "mem_kb":184320,"cpu_pct":12.5,"user":"DEV-PC\\taeyoung","started":"2026-10-20T09:12:00.000Z","started_by_deskhand":true,"self":false}
         """#.utf8))
         XCTAssertEqual(proc.memKb, 184_320)
         XCTAssertEqual(proc.cpuPct, 12.5)
@@ -411,6 +411,13 @@ final class ClientTests: XCTestCase {
         {"pid":4,"ppid":0,"name":"System","mem_kb":144,"cpu_pct":0.1,"started_by_deskhand":false}
         """#.utf8))
         XCTAssertNil(system.started)
+        XCTAssertFalse(system.isSelf)
+        XCTAssertFalse(proc.isSelf)
+        let agent = try Wire.decode(ProcessInfo.self, from: Data(#"""
+        {"pid":3120,"ppid":2032,"name":"deskhand-agent.exe","mem_kb":38000,"cpu_pct":0.4,"started":"2026-10-18T09:00:00.000Z",
+         "started_by_deskhand":false,"self":true}
+        """#.utf8))
+        XCTAssertTrue(agent.isSelf)
         XCTAssertNil(system.user)
         XCTAssertNil(system.path)
 

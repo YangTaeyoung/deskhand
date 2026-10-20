@@ -39,9 +39,10 @@ extension PreviewBackend {
         return currentProcesses(host)
     }
 
-    /// Ends the process and with `tree` its descendants, except the agent; `MsMpEng.exe` and
-    /// the critical system processes are refused, and `Shop.exe` ends but its reply is lost.
-    public func procKill(hostID: String, pid: Int, tree: Bool) async throws -> KillReceipt {
+    /// Ends the process and with `tree` its descendants, except the agent; a `started` that differs
+    /// from the listed start is refused with `STALE_TARGET`, the agent itself, `MsMpEng.exe` and the
+    /// critical system processes with `PERMISSION_DENIED`, and `Shop.exe` ends but its reply is lost.
+    public func procKill(hostID: String, pid: Int, started: Timestamp?, tree: Bool) async throws -> KillReceipt {
         let host = try listedHost(hostID)
         guard host.connection == .ready || host.connection == .degraded else {
             return KillReceipt(status: .failed, error: OperationError(code: "OFFLINE", message: "\(host.name)에 연결되어 있지 않습니다"))
@@ -52,6 +53,15 @@ extension PreviewBackend {
             let number = String(pid)
             return KillReceipt(status: .failed, error: OperationError(
                 code: "NOT_FOUND", message: "PID \(number) 프로세스가 없습니다. 이미 끝났을 수 있습니다", nextAction: "check_state"))
+        }
+        if let started, let current = target.started, started != current {
+            let number = String(pid)
+            return KillReceipt(status: .failed, error: OperationError(
+                code: "STALE_TARGET", message: "PID \(number) 프로세스의 시작 시각이 목록과 달라 종료하지 않았습니다", nextAction: "check_state"))
+        }
+        if target.isSelf {
+            return KillReceipt(status: .failed, error: OperationError(
+                code: "PERMISSION_DENIED", message: "에이전트는 자기 자신을 종료하지 않습니다"))
         }
         if ProcessGuard.block(for: target) != nil || target.name.caseInsensitiveCompare(PreviewFixtures.deniedKillName) == .orderedSame {
             let name = target.name

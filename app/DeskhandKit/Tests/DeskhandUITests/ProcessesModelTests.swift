@@ -203,13 +203,14 @@ final class ProcessesModelTests: XCTestCase {
         let request = try XCTUnwrap(model.pendingKill)
         XCTAssertEqual(request.process.name, "node.exe")
         XCTAssertFalse(request.tree)
+        let started = try XCTUnwrap(request.process.started)
         await model.confirmKill(request)
         XCTAssertNil(model.pendingKill)
-        XCTAssertEqual(backend.killCalls, [KillCall(hostID: dev, pid: 7120, tree: false)])
+        XCTAssertEqual(backend.killCalls, [KillCall(hostID: dev, pid: 7120, started: started, tree: false)])
         XCTAssertNil(model.processes.first { $0.pid == 7120 })
         XCTAssertNil(model.selectedPID)
         XCTAssertEqual(model.notice?.tone, .success)
-        XCTAssertEqual(model.notice?.message, "‘node.exe’(PID 7120)을(를) 종료했습니다")
+        XCTAssertEqual(model.notice?.message, "‘node.exe’(PID 7120) 프로세스를 종료했습니다")
         XCTAssertTrue(model.killing.isEmpty)
     }
 
@@ -219,10 +220,10 @@ final class ProcessesModelTests: XCTestCase {
         let request = try XCTUnwrap(model.pendingKill)
         XCTAssertEqual(request.descendants.count, 8)
         await model.confirmKill(request)
-        XCTAssertEqual(backend.killCalls, [KillCall(hostID: dev, pid: 6100, tree: true)])
+        XCTAssertEqual(backend.killCalls, [KillCall(hostID: dev, pid: 6100, started: request.process.started, tree: true)])
         XCTAssertFalse(model.processes.contains { $0.name == "chrome.exe" })
         XCTAssertEqual(model.notice?.tone, .success)
-        XCTAssertEqual(model.notice?.message, "‘chrome.exe’과(와) 하위 프로세스를 종료했습니다 · 9개")
+        XCTAssertEqual(model.notice?.message, "‘chrome.exe’ 및 하위 프로세스 8개를 종료했습니다")
     }
 
     func testKillFailureKeepsTheProcessAndShowsTheAgentError() async throws {
@@ -231,7 +232,7 @@ final class ProcessesModelTests: XCTestCase {
         await model.confirmKill(try XCTUnwrap(model.pendingKill))
         XCTAssertNotNil(model.processes.first { $0.pid == 2260 })
         XCTAssertEqual(model.notice?.tone, .error)
-        XCTAssertEqual(model.notice?.message, "‘MsMpEng.exe’을(를) 종료하지 못했습니다")
+        XCTAssertEqual(model.notice?.message, "‘MsMpEng.exe’ 프로세스를 종료하지 못했습니다")
         XCTAssertEqual(model.notice?.code, "PERMISSION_DENIED")
         XCTAssertTrue(model.notice?.detail?.contains("보호된 프로세스") ?? false)
     }
@@ -244,7 +245,7 @@ final class ProcessesModelTests: XCTestCase {
         XCTAssertGreaterThan(backend.procListCalls, calls)
         XCTAssertNil(model.processes.first { $0.pid == 8800 })
         XCTAssertEqual(model.notice?.tone, .success)
-        XCTAssertEqual(model.notice?.message, "‘Shop.exe’(PID 8800)이(가) 종료된 것을 확인했습니다")
+        XCTAssertEqual(model.notice?.message, "‘Shop.exe’(PID 8800) 프로세스가 종료된 것을 확인했습니다")
 
         backend.answerKill(with: KillReceipt(status: .unknown, error: OperationError(
             code: "EXECUTION_OUTCOME_UNKNOWN", message: "응답을 잃었습니다", nextAction: "check_state")))
@@ -252,14 +253,96 @@ final class ProcessesModelTests: XCTestCase {
         await model.confirmKill(try XCTUnwrap(model.pendingKill))
         XCTAssertNotNil(model.processes.first { $0.pid == 7000 })
         XCTAssertEqual(model.notice?.tone, .warning)
-        XCTAssertEqual(model.notice?.message, "‘Code.exe’(PID 7000)이(가) 아직 실행 중입니다")
+        XCTAssertEqual(model.notice?.message, "‘Code.exe’(PID 7000) 프로세스가 아직 실행 중입니다")
         XCTAssertEqual(model.notice?.code, "EXECUTION_OUTCOME_UNKNOWN")
 
         backend.failProcList(with: OperationError(code: "TIMEOUT", message: "응답이 없습니다"))
         model.requestKill(pid: 7036, tree: false)
         await model.confirmKill(try XCTUnwrap(model.pendingKill))
         XCTAssertEqual(model.notice?.tone, .warning)
-        XCTAssertEqual(model.notice?.message, "‘Code.exe’(PID 7036)을(를) 종료했는지 확인하지 못했습니다")
+        XCTAssertEqual(model.notice?.message, "‘Code.exe’(PID 7036) 프로세스를 종료했는지 확인하지 못했습니다")
+    }
+
+    func testStaleTargetKeepsTheProcessAndReadsTheListAgain() async throws {
+        let (model, backend) = await loaded()
+        model.requestKill(pid: 7120, tree: false)
+        var request = try XCTUnwrap(model.pendingKill)
+        request.process.started = Timestamp(date: Date(timeIntervalSince1970: 1_700_000_000))
+        let calls = backend.procListCalls
+        await model.confirmKill(request)
+        XCTAssertNotNil(model.processes.first { $0.pid == 7120 })
+        XCTAssertGreaterThan(backend.procListCalls, calls)
+        XCTAssertEqual(model.notice?.tone, .warning)
+        XCTAssertEqual(model.notice?.message, "프로세스 목록이 바뀌어 종료하지 않았습니다")
+        XCTAssertEqual(model.notice?.code, "STALE_TARGET")
+    }
+
+    func testALostReplyIsCheckedAgainstAFreshListAndARefusalIsAFailure() async throws {
+        let (model, backend) = await loaded()
+        backend.failKill(with: ClientError.disconnected)
+        model.requestKill(pid: 7120, tree: false)
+        await model.confirmKill(try XCTUnwrap(model.pendingKill))
+        XCTAssertEqual(model.notice?.tone, .warning)
+        XCTAssertEqual(model.notice?.message, "‘node.exe’(PID 7120) 프로세스가 아직 실행 중입니다")
+
+        backend.failKill(with: RPCErrorInfo(message: "pid가 정수가 아닙니다", code: "INVALID_ARGUMENT"))
+        model.requestKill(pid: 7120, tree: false)
+        await model.confirmKill(try XCTUnwrap(model.pendingKill))
+        XCTAssertEqual(model.notice?.tone, .error)
+        XCTAssertEqual(model.notice?.message, "‘node.exe’ 프로세스를 종료하지 못했습니다")
+        XCTAssertEqual(model.notice?.code, "INVALID_ARGUMENT")
+
+        backend.failKill(with: ClientError.notConnected)
+        model.requestKill(pid: 7120, tree: false)
+        await model.confirmKill(try XCTUnwrap(model.pendingKill))
+        XCTAssertEqual(model.notice?.tone, .error)
+    }
+
+    func testTheConfirmationStaysWhenItsProcessEnds() async throws {
+        let (model, backend) = await loaded()
+        model.requestKill(pid: 7120, tree: false)
+        XCTAssertFalse(model.pendingKillEnded)
+        _ = try await backend.base.procKill(hostID: dev, pid: 7120, started: nil, tree: false)
+        await model.refresh()
+        XCTAssertNotNil(model.pendingKill)
+        XCTAssertTrue(model.pendingKillEnded)
+        model.cancelKill()
+        XCTAssertNil(model.pendingKill)
+        XCTAssertFalse(model.pendingKillEnded)
+    }
+
+    func testASelectionHiddenBySearchOrCollapseShowsNoDetailOrKill() async throws {
+        let (model, _) = await loaded()
+        model.selectedPID = 7120
+        XCTAssertEqual(model.selected?.pid, 7120)
+        model.query = "chrome"
+        XCTAssertNil(model.selected)
+        model.query = ""
+        XCTAssertEqual(model.selected?.pid, 7120)
+        model.showsTree = true
+        model.toggleCollapsed(5520)
+        XCTAssertNil(model.selected)
+        model.toggleCollapsed(5520)
+        XCTAssertEqual(model.selected?.pid, 7120)
+    }
+
+    func testSortingAndFilteringAThousandProcessesStaysUnderFiftyMilliseconds() {
+        let base = Date(timeIntervalSince1970: 1_792_000_000)
+        let list = (0..<1_000).map { n in
+            RemoteProcess(pid: 1_000 + n, ppid: n < 20 ? 4 : 1_000 + n / 7, name: ["chrome.exe", "svchost.exe", "node.exe", "Code.exe", "dotnet.exe"][n % 5],
+                          path: "C:\\Program Files\\App\(n % 40)\\bin\\app.exe", cmd: "app.exe --id \(n)", memKb: 1_000 + (n * 7_919) % 900_000,
+                          cpuPct: Double((n * 37) % 100) / 10, user: n % 3 == 0 ? "NT AUTHORITY\\SYSTEM" : "DEV-PC\\taeyoung",
+                          started: Timestamp(date: base.addingTimeInterval(Double(n))), startedByDeskhand: n % 11 == 0)
+        }
+        for (sort, tree, query) in [(ProcessSort.standard, false, ""), (ProcessSort(column: .name, ascending: true), true, ""),
+                                    (ProcessSort(column: .path, ascending: false), false, "app1"), (ProcessSort.standard, true, "node")] {
+            let clock = ContinuousClock()
+            let start = clock.now
+            let rows = ProcessList.rows(list, query: query, sort: sort, tree: tree, collapsed: [])
+            let elapsed = clock.now - start
+            XCTAssertFalse(rows.isEmpty)
+            XCTAssertLessThan(elapsed, .milliseconds(50), "\(sort) tree \(tree) query \(query)")
+        }
     }
 
     func testKillOfAnEndedProcessReportsNotFound() async throws {

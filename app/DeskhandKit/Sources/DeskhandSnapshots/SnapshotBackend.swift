@@ -113,7 +113,9 @@ final class SnapshotBackend: Backend {
     /// Process and diagnostics reads come from the preview daemon; scenes seed those tabs, and
     /// a kill changes nothing.
     func procList(hostID: String) async throws -> [RemoteProcess] { try await base.procList(hostID: hostID) }
-    func procKill(hostID: String, pid: Int, tree: Bool) async throws -> KillReceipt { KillReceipt(status: .succeeded, killed: 1) }
+    func procKill(hostID: String, pid: Int, started: Timestamp?, tree: Bool) async throws -> KillReceipt {
+        KillReceipt(status: .succeeded, killed: 1)
+    }
     func diagSystem(hostID: String) async throws -> DiagSystem { try await base.diagSystem(hostID: hostID) }
     func diagEvents(_ query: EventLogQuery) async throws -> EventLogPage { try await base.diagEvents(query) }
     func diagCrashes(hostID: String, since: Date?) async throws -> [CrashDump] { try await base.diagCrashes(hostID: hostID, since: since) }

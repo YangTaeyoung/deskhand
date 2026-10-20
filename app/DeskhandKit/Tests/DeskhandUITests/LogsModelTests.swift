@@ -116,6 +116,71 @@ final class LogsModelTests: XCTestCase {
         XCTAssertFalse(model.eventsTruncated)
     }
 
+    func testAFilterChangeDuringMoreLetsPagingResume() async throws {
+        let (model, backend, _) = try await started()
+        var week = model.filter
+        week.range = .lastWeek
+        await model.setFilter(week)
+        XCTAssertTrue(model.eventsTruncated)
+        backend.holdEventQueries(true)
+        let more = Task { await model.loadMoreEvents() }
+        try await waitUntil { backend.pendingEventQueryCount == 1 }
+        XCTAssertTrue(model.isLoadingMore)
+        var noVerbose = week
+        noVerbose.levels = [.critical, .error, .warning, .information]
+        let change = Task { await model.setFilter(noVerbose) }
+        try await waitUntil { backend.pendingEventQueryCount == 2 }
+        backend.releaseEventQuery()
+        await more.value
+        backend.releaseEventQuery()
+        await change.value
+        backend.holdEventQueries(false)
+        XCTAssertFalse(model.isLoadingMore)
+        XCTAssertTrue(model.eventsTruncated)
+        let count = model.events.count
+        await model.loadMoreEvents()
+        XCTAssertGreaterThan(model.events.count, count)
+    }
+
+    func testMoreKeepsTheTimeRangeOfTheFirstPage() async throws {
+        let (model, backend, _) = try await started()
+        var week = model.filter
+        week.range = .lastWeek
+        await model.setFilter(week)
+        let first = try XCTUnwrap(backend.eventQueries.last)
+        try await Task.sleep(for: .milliseconds(20))
+        await model.loadMoreEvents()
+        let more = try XCTUnwrap(backend.eventQueries.last)
+        XCTAssertEqual(more.since, first.since)
+        XCTAssertNotEqual(more.until, first.until)
+    }
+
+    func testSummaryReloadsShareOneRequestAndAFailureKeepsTheLastSummary() async throws {
+        let (model, backend, _) = try await started()
+        let calls = backend.systemCalls
+        let loadedAt = try XCTUnwrap(model.systemUpdatedAt)
+        backend.holdSystem(true)
+        let first = Task { await model.reloadSystem() }
+        try await waitUntil { backend.pendingSystemCount == 1 }
+        let second = Task { await model.reloadSystem() }
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertEqual(backend.pendingSystemCount, 1)
+        backend.holdSystem(false)
+        backend.releaseSystem()
+        await first.value
+        await second.value
+        XCTAssertEqual(backend.systemCalls, calls + 1)
+
+        backend.failSystem(with: OperationError(code: "TIMEOUT", message: "응답이 없습니다"))
+        await model.reloadSystem()
+        XCTAssertNotNil(model.system)
+        XCTAssertEqual(model.systemRefreshError?.code, "TIMEOUT")
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(model.systemUpdatedAt), loadedAt)
+        backend.failSystem(with: nil)
+        await model.reloadSystem()
+        XCTAssertNil(model.systemRefreshError)
+    }
+
     func testLevelTogglesKeepAtLeastOneLevel() async throws {
         let (model, _, _) = try await started()
         await model.toggleLevel(.information)

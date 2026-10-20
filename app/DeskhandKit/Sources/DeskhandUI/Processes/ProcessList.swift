@@ -235,7 +235,7 @@ public enum KillBlock: Equatable, Sendable {
         case .critical:
             .ui("processes.block.critical", "Windows 핵심 프로세스라 끝낼 수 없습니다. 끝내면 컴퓨터가 멈추거나 다시 시작됩니다.")
         case .protectedDescendant(let name):
-            .ui("processes.block.descendant", "하위에 ‘\(name)’이(가) 있어 트리로 끝낼 수 없습니다. 이 프로세스만 종료하세요.")
+            .ui("processes.block.descendant", "하위에 ‘\(name)’ 프로세스가 있어 트리로 끝낼 수 없습니다. 이 프로세스만 종료하세요.")
         }
     }
 }
@@ -247,10 +247,11 @@ public enum ProcessGuard {
         "system", "system idle process", "idle", "registry", "secure system", "memory compression",
         "smss.exe", "csrss.exe", "wininit.exe", "services.exe", "lsass.exe", "lsaiso.exe", "winlogon.exe",
     ]
-    /// Lowercased executable names of the Deskhand agent.
+    /// Lowercased executable names of the Deskhand agent, for agents that do not report `self`.
     static let agentNames: Set<String> = ["deskhand-agent.exe"]
 
     public static func block(for process: RemoteProcess) -> KillBlock? {
+        if process.isSelf { return .agent }
         let name = process.name.lowercased()
         if agentNames.contains(name) { return .agent }
         if process.pid == 0 || process.pid == 4 || criticalNames.contains(name) { return .critical }

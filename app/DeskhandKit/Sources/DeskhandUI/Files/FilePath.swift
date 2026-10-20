@@ -123,7 +123,7 @@ public enum FileNameRule {
             let base = String(name.split(separator: ".", omittingEmptySubsequences: false).first ?? "").uppercased()
                 .trimmingCharacters(in: .whitespaces)
             if reserved.contains(base) {
-                return .ui("name.reserved", "‘\(base)’은(는) Windows가 예약한 이름이라 쓸 수 없습니다.")
+                return .ui("name.reserved", "‘\(base)’ 이름은 Windows가 예약해 두어 쓸 수 없습니다.")
             }
             if name.utf16.count > 255 { return .ui("name.tooLong", "이름은 255자를 넘을 수 없습니다.") }
         case .posix:

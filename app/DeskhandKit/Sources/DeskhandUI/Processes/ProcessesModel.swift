@@ -97,6 +97,8 @@ public final class ProcessesModel {
     }
     /// Tree rows whose children are hidden.
     public private(set) var collapsed: Set<Int> = []
+    /// PIDs of `rows`.
+    private var shownPIDs: Set<Int> = []
     public var selectedPID: Int?
     /// The kill waiting for confirmation.
     public var pendingKill: KillRequest?
@@ -132,8 +134,18 @@ public final class ProcessesModel {
     /// The live refresh runs.
     public var isLive: Bool { loop.isActive }
 
-    /// The selected process when it is still listed.
-    public var selected: RemoteProcess? { selectedPID.flatMap(forest.process) }
+    /// The selected process when its row is shown: still listed, matching the search and not
+    /// inside a collapsed tree row.
+    public var selected: RemoteProcess? {
+        guard let pid = selectedPID, shownPIDs.contains(pid) else { return nil }
+        return forest.process(pid)
+    }
+
+    /// The process of the kill waiting for confirmation is no longer listed.
+    public var pendingKillEnded: Bool {
+        guard let request = pendingKill else { return false }
+        return !Self.isListed(request.process, in: forest)
+    }
 
     // MARK: Refresh
 
@@ -193,19 +205,23 @@ public final class ProcessesModel {
         phase = .loaded
         rebuild()
         if let pid = selectedPID, forest.process(pid) == nil { selectedPID = nil }
-        if let request = pendingKill, !Self.isListed(request.process, in: forest) { pendingKill = nil }
     }
 
     private func rebuild() {
         forest = ProcessForest(processes)
         let pids = Set(processes.map(\.pid))
         collapsed = collapsed.intersection(pids)
+        rebuildRows()
+    }
+
+    private func rebuildRows() {
         rows = ProcessList.rows(processes, query: query, sort: sort, tree: showsTree, collapsed: collapsed)
+        shownPIDs = Set(rows.map(\.id))
     }
 
     public func toggleCollapsed(_ pid: Int) {
         if collapsed.contains(pid) { collapsed.remove(pid) } else { collapsed.insert(pid) }
-        rows = ProcessList.rows(processes, query: query, sort: sort, tree: showsTree, collapsed: collapsed)
+        rebuildRows()
     }
 
     /// The same process is still listed: same PID and, when both are known, the same start.
@@ -236,8 +252,9 @@ public final class ProcessesModel {
         pendingKill = nil
     }
 
-    /// Sends `proc.kill` and reports its envelope: a success removes the processes, a failure keeps
-    /// them with the agent's reason, and an unknown outcome is checked against a fresh list.
+    /// Sends `proc.kill` with the listed start time and reports its envelope: a success removes the
+    /// processes; `STALE_TARGET` reads the list again; another failure or a refused request keeps
+    /// them with the reason; an unknown outcome or a lost reply is checked against a fresh list.
     public func confirmKill(_ request: KillRequest) async {
         if pendingKill?.id == request.id { pendingKill = nil }
         let process = request.process
@@ -247,26 +264,41 @@ public final class ProcessesModel {
         let name = process.name
         let pid = String(process.pid)
         do {
-            let receipt = try await backend.procKill(hostID: hostID, pid: process.pid, tree: request.tree)
+            let receipt = try await backend.procKill(hostID: hostID, pid: process.pid, started: process.started, tree: request.tree)
             switch receipt.status {
             case .succeeded:
                 let ended = Set([process.pid] + request.descendants.map(\.pid))
                 processes.removeAll { ended.contains($0.pid) }
                 apply(processes)
                 if request.tree {
-                    let count = FileFormat.count(max(receipt.killed, ended.count))
-                    show(.success, .ui("processes.killed.tree", "‘\(name)’과(와) 하위 프로세스를 종료했습니다 · \(count)개"))
+                    let count = FileFormat.count(max(receipt.killed, ended.count) - 1)
+                    show(.success, .ui("processes.killed.tree", "‘\(name)’ 및 하위 프로세스 \(count)개를 종료했습니다"))
                 } else {
-                    show(.success, .ui("processes.killed", "‘\(name)’(PID \(pid))을(를) 종료했습니다"))
+                    show(.success, .ui("processes.killed", "‘\(name)’(PID \(pid)) 프로세스를 종료했습니다"))
                 }
                 await refresh()
             case .unknown:
                 await verifyUnknown(request, error: receipt.error)
             case .failed, .cancelled, .running, .waitingForUser:
-                showFailure(request, receipt.error ?? OperationError(message: .ui("error.unknown", "알 수 없는 오류가 발생했습니다")))
+                await refused(request, receipt.error ?? OperationError(message: .ui("error.unknown", "알 수 없는 오류가 발생했습니다")))
             }
         } catch {
-            showFailure(request, OperationError(error))
+            if Self.wasRefused(error) {
+                await refused(request, OperationError(error))
+            } else {
+                await verifyUnknown(request, error: OperationError(code: "EXECUTION_OUTCOME_UNKNOWN", message: OperationError(error).message))
+            }
+        }
+    }
+
+    /// The request did not reach the agent or the daemon refused it: a JSON-RPC error, or a call
+    /// that could not be sent.
+    static func wasRefused(_ error: any Error) -> Bool {
+        if error is RPCErrorInfo || error is OperationError { return true }
+        guard let error = error as? ClientError else { return false }
+        switch error {
+        case .notConnected, .daemonUnavailable, .socketPathTooLong, .connectFailed: return true
+        case .disconnected, .closed, .protocolViolation: return false
         }
     }
 
@@ -278,30 +310,47 @@ public final class ProcessesModel {
         await refresh()
         let code = error?.code ?? "EXECUTION_OUTCOME_UNKNOWN"
         if refreshError != nil || phase != .loaded {
-            show(.warning, .ui("processes.kill.unverified", "‘\(name)’(PID \(pid))을(를) 종료했는지 확인하지 못했습니다"),
+            show(.warning, .ui("processes.kill.unverified", "‘\(name)’(PID \(pid)) 프로세스를 종료했는지 확인하지 못했습니다"),
                  detail: .ui("processes.kill.unverified.detail", "종료 요청의 응답을 받지 못했고 목록도 다시 읽지 못했습니다. 연결이 돌아오면 목록을 새로 고쳐 확인하세요."),
                  code: code)
         } else if Self.isListed(process, in: forest) {
-            show(.warning, .ui("processes.kill.stillRunning", "‘\(name)’(PID \(pid))이(가) 아직 실행 중입니다"),
+            show(.warning, .ui("processes.kill.stillRunning", "‘\(name)’(PID \(pid)) 프로세스가 아직 실행 중입니다"),
                  detail: .ui("processes.kill.stillRunning.detail", "종료 요청의 응답을 받지 못했고, 다시 읽은 목록에 그대로 있습니다. 다시 종료하거나 원격 PC에서 확인하세요."),
                  code: code)
         } else {
-            show(.success, .ui("processes.kill.verified", "‘\(name)’(PID \(pid))이(가) 종료된 것을 확인했습니다"),
+            show(.success, .ui("processes.kill.verified", "‘\(name)’(PID \(pid)) 프로세스가 종료된 것을 확인했습니다"),
                  detail: .ui("processes.kill.verified.detail", "종료 요청의 응답을 받지 못해 목록을 다시 읽어 확인했습니다."))
         }
     }
 
+    /// A kill that did not run: `STALE_TARGET` reads the list again, anything else keeps the
+    /// process with the reason.
+    private func refused(_ request: KillRequest, _ error: OperationError) async {
+        guard error.code == "STALE_TARGET" else { return showFailure(request, error) }
+        show(.warning, .ui("processes.kill.stale", "프로세스 목록이 바뀌어 종료하지 않았습니다"),
+             detail: .ui("processes.kill.stale.detail", "같은 PID에 다른 프로세스가 실행 중입니다. 새로 읽은 목록에서 다시 선택하세요."),
+             code: error.code)
+        await refresh()
+    }
+
     private func showFailure(_ request: KillRequest, _ error: OperationError) {
         let name = request.process.name
-        show(.error, .ui("processes.kill.failed", "‘\(name)’을(를) 종료하지 못했습니다"),
-             detail: [error.message, Self.killFix(error)].compactMap { $0 }.joined(separator: "\n"), code: error.code)
+        show(.error, .ui("processes.kill.failed", "‘\(name)’ 프로세스를 종료하지 못했습니다"),
+             detail: [Self.sentence(error.message), Self.killFix(error)].compactMap { $0 }.joined(separator: "\n"), code: error.code)
+    }
+
+    /// `text` ending with a period when it ends without punctuation.
+    static func sentence(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let last = trimmed.last, !".!?…".contains(last) else { return trimmed }
+        return trimmed + "."
     }
 
     /// What to do after a refused kill.
     static func killFix(_ error: OperationError) -> String? {
         switch error.code {
         case "PERMISSION_DENIED", "ACCESS_DENIED", "ELEVATION_REQUIRED":
-            .ui("processes.fix.denied", "Windows가 보호하는 프로세스이거나 서비스입니다. 서비스라면 서비스 관리자에서 중지하세요.")
+            .ui("processes.fix.denied", "서비스라면 서비스 관리자에서 중지하세요.")
         case "NOT_FOUND":
             .ui("processes.fix.notFound", "이미 끝난 프로세스일 수 있습니다. 목록을 새로 고쳐 확인하세요.")
         default:

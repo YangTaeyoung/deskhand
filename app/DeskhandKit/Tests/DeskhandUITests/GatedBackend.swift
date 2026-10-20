@@ -15,8 +15,8 @@ struct ControlCall: Equatable {
 
 /// Backend that forwards to a `PreviewBackend`, counts `hostList` calls, can hold `hostList`
 /// replies until the test resumes them in any order, can fail `timelineList`, records, holds or
-/// fails `control.*` changes, counts or fails `procList`, records or answers `procKill`, and
-/// records or holds `diagEvents`.
+/// fails `control.*` changes, counts or fails `procList`, records, answers or fails `procKill`,
+/// records or holds `diagEvents`, and counts, holds or fails `diagSystem`.
 final class GatedBackend: Backend, LocalOverlayProviding {
     let base: PreviewBackend
 
@@ -42,6 +42,11 @@ final class GatedBackend: Backend, LocalOverlayProviding {
         var procListFailure: OperationError?
         var killCalls: [KillCall] = []
         var killReceipt: KillReceipt?
+        var killFailure: (any Error & Sendable)?
+        var systemCalls = 0
+        var systemFailure: OperationError?
+        var holdSystem = false
+        var heldSystems: [CheckedContinuation<Void, Never>] = []
         var eventQueries: [EventLogQuery] = []
         var heldEventQueries: [CheckedContinuation<Void, Never>] = []
         var holdEvents = false
@@ -257,6 +262,33 @@ final class GatedBackend: Backend, LocalOverlayProviding {
         state.withLock { $0.killReceipt = receipt }
     }
 
+    /// Makes `procKill` throw `error`, or answer again when nil.
+    func failKill(with error: (any Error & Sendable)?) {
+        state.withLock { $0.killFailure = error }
+    }
+
+    var systemCalls: Int { state.withLock { $0.systemCalls } }
+    var pendingSystemCount: Int { state.withLock { $0.heldSystems.count } }
+
+    /// Makes `diagSystem` throw `error`, or answer again when nil.
+    func failSystem(with error: OperationError?) {
+        state.withLock { $0.systemFailure = error }
+    }
+
+    /// Holds `diagSystem` calls until `releaseSystem()`.
+    func holdSystem(_ hold: Bool) {
+        state.withLock { $0.holdSystem = hold }
+    }
+
+    /// Lets every held `diagSystem` call continue.
+    func releaseSystem() {
+        let held = state.withLock { s -> [CheckedContinuation<Void, Never>] in
+            defer { s.heldSystems = [] }
+            return s.heldSystems
+        }
+        for continuation in held { continuation.resume() }
+    }
+
     /// Holds `diagEvents` calls until `releaseEventQuery()`.
     func holdEventQueries(_ hold: Bool) {
         state.withLock { $0.holdEvents = hold }
@@ -277,16 +309,29 @@ final class GatedBackend: Backend, LocalOverlayProviding {
         return try await base.procList(hostID: hostID)
     }
 
-    func procKill(hostID: String, pid: Int, tree: Bool) async throws -> KillReceipt {
-        let receipt = state.withLock { s -> KillReceipt? in
-            s.killCalls.append(KillCall(hostID: hostID, pid: pid, tree: tree))
-            return s.killReceipt
+    func procKill(hostID: String, pid: Int, started: Timestamp?, tree: Bool) async throws -> KillReceipt {
+        let (receipt, failure) = state.withLock { s -> (KillReceipt?, (any Error & Sendable)?) in
+            s.killCalls.append(KillCall(hostID: hostID, pid: pid, started: started, tree: tree))
+            return (s.killReceipt, s.killFailure)
         }
+        if let failure { throw failure }
         if let receipt { return receipt }
-        return try await base.procKill(hostID: hostID, pid: pid, tree: tree)
+        return try await base.procKill(hostID: hostID, pid: pid, started: started, tree: tree)
     }
 
-    func diagSystem(hostID: String) async throws -> DiagSystem { try await base.diagSystem(hostID: hostID) }
+    func diagSystem(hostID: String) async throws -> DiagSystem {
+        let (hold, failure) = state.withLock { s -> (Bool, OperationError?) in
+            s.systemCalls += 1
+            return (s.holdSystem, s.systemFailure)
+        }
+        if hold {
+            await withCheckedContinuation { continuation in
+                state.withLock { $0.heldSystems.append(continuation) }
+            }
+        }
+        if let failure { throw failure }
+        return try await base.diagSystem(hostID: hostID)
+    }
 
     func diagEvents(_ query: EventLogQuery) async throws -> EventLogPage {
         let hold = state.withLock { s -> Bool in
@@ -313,6 +358,7 @@ final class GatedBackend: Backend, LocalOverlayProviding {
 struct KillCall: Equatable {
     let hostID: String
     let pid: Int
+    let started: Timestamp?
     let tree: Bool
 }
 

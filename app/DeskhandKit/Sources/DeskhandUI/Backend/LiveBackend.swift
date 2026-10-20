@@ -434,6 +434,7 @@ extension LiveBackend {
 private struct ProcKillParams: Encodable {
     let hostID: String
     let pid: Int
+    let started: Timestamp?
     let tree: Bool
 }
 
@@ -478,8 +479,8 @@ extension LiveBackend {
         try await enveloped("proc.list", HostIDParams(hostID: hostID), as: ProcListResult.self).procs
     }
 
-    public func procKill(hostID: String, pid: Int, tree: Bool) async throws -> KillReceipt {
-        let value: JSONValue = try await client.call("proc.kill", ProcKillParams(hostID: hostID, pid: pid, tree: tree))
+    public func procKill(hostID: String, pid: Int, started: Timestamp?, tree: Bool) async throws -> KillReceipt {
+        let value: JSONValue = try await client.call("proc.kill", ProcKillParams(hostID: hostID, pid: pid, started: started, tree: tree))
         let envelope = try Self.decode(Envelope<ProcKillResult>.self, from: value)
         guard value["status"] != nil else {
             return KillReceipt(status: .succeeded, killed: envelope.payload.killed ?? 1)

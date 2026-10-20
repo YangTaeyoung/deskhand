@@ -17,6 +17,10 @@ final class RefreshLoop {
         self.action = action
     }
 
+    isolated deinit {
+        task?.cancel()
+    }
+
     /// Starts the loop with an immediate run, or stops it before its next run.
     func setActive(_ active: Bool) {
         guard active != isActive else { return }

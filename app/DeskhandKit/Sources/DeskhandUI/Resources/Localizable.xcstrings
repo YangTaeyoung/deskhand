@@ -2282,7 +2282,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "‘%@’을(를) 원격 PC에서 여는 중…"
+            "value": "‘%@’ 파일을 원격 PC에서 여는 중…"
           }
         }
       }
@@ -2403,7 +2403,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "‘%@’을(를) 영구 삭제할까요?"
+            "value": "‘%@’ 항목을 영구 삭제할까요?"
           }
         }
       }
@@ -2524,7 +2524,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "‘%@’을(를) 삭제하지 못했습니다"
+            "value": "‘%@’ 항목을 삭제하지 못했습니다"
           }
         }
       }
@@ -2535,7 +2535,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "‘%@’을(를) 열지 못했습니다"
+            "value": "‘%@’ 파일을 열지 못했습니다"
           }
         }
       }
@@ -2590,7 +2590,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "‘%@’을(를) 휴지통으로 옮기지 못했습니다"
+            "value": "‘%@’ 항목을 휴지통으로 옮기지 못했습니다"
           }
         }
       }
@@ -2678,7 +2678,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@에서 ‘%2$@’을(를) 열었습니다"
+            "value": "%1$@에서 ‘%2$@’ 파일을 열었습니다"
           }
         }
       }
@@ -2689,7 +2689,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@에서 ‘%2$@’을(를) 열었습니다 · PID %3$@"
+            "value": "%1$@에서 ‘%2$@’ 파일을 열었습니다 · PID %3$@"
           }
         }
       }
@@ -3140,7 +3140,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "‘%@’이(가) 들어간 이름이 이 폴더에 없습니다."
+            "value": "이 폴더에 ‘%@’ 검색어가 들어간 이름이 없습니다."
           }
         }
       }
@@ -5558,17 +5558,6 @@
         }
       }
     },
-    "logs.level.verbose.short": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "자세히"
-          }
-        }
-      }
-    },
     "logs.level.warning": {
       "extractionState": "manual",
       "localizations": {
@@ -5861,7 +5850,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "‘%@’을(를) 찾을 수 없습니다"
+            "value": "‘%@’ 파일을 찾을 수 없습니다"
           }
         }
       }
@@ -5960,7 +5949,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@ 로그 · %2$@ · 이벤트 %3$@개 · 행을 선택하면 전체 메시지를 봅니다"
+            "value": "%1$@ 로그 · %2$@ · 이벤트 %3$@개 · 행을 선택하면 전체 메시지를 볼 수 있습니다"
           }
         }
       }
@@ -5994,6 +5983,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "시스템 요약 보기"
+          }
+        }
+      }
+    },
+    "logs.summary.stale": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새로 고치지 못했습니다 · %@ 기준"
+          }
+        }
+      }
+    },
+    "logs.summary.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "시스템 요약"
           }
         }
       }
@@ -6224,7 +6235,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Windows"
+            "value": "운영 체제"
           }
         }
       }
@@ -6527,7 +6538,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "‘%@’을(를) 이동할까요?"
+            "value": "‘%@’ 항목을 이동할까요?"
           }
         }
       }
@@ -6571,7 +6582,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "‘%@’은(는) Windows가 예약한 이름이라 쓸 수 없습니다."
+            "value": "‘%@’ 이름은 Windows가 예약해 두어 쓸 수 없습니다."
           }
         }
       }
@@ -6913,6 +6924,17 @@
         }
       }
     },
+    "processes.a11y.collapse": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "하위 프로세스 접기"
+          }
+        }
+      }
+    },
     "processes.a11y.descendants": {
       "extractionState": "manual",
       "localizations": {
@@ -6996,7 +7018,18 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "하위에 ‘%@’이(가) 있어 트리로 끝낼 수 없습니다. 이 프로세스만 종료하세요."
+            "value": "하위에 ‘%@’ 프로세스가 있어 트리로 끝낼 수 없습니다. 이 프로세스만 종료하세요."
+          }
+        }
+      }
+    },
+    "processes.block.treeOnly": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "트리 종료 불가: %@"
           }
         }
       }
@@ -7106,7 +7139,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Deskhand가 시작한 프로세스가 들어 있습니다. 터미널 탭의 셸이나 AI가 실행한 작업이면 함께 끝납니다."
+            "value": "함께 끝나는 프로세스 중 %@개는 Deskhand가 터미널 탭이나 AI 작업으로 시작한 것입니다. 그 셸과 명령도 중단됩니다."
           }
         }
       }
@@ -7117,7 +7150,29 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Deskhand가 시작한 프로세스입니다. 터미널 탭의 셸이나 AI가 실행한 작업이면 함께 끝납니다."
+            "value": "Deskhand가 터미널 탭이나 AI 작업으로 시작한 프로세스입니다. 이 셸이나 명령이 중단됩니다."
+          }
+        }
+      }
+    },
+    "processes.confirm.ended": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미 종료된 프로세스입니다. 새로 읽은 목록에 더 이상 없습니다."
+          }
+        }
+      }
+    },
+    "processes.confirm.endedTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’ 프로세스가 이미 종료되었습니다"
           }
         }
       }
@@ -7150,7 +7205,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@에서 바로 끝냅니다. 저장하지 않은 작업은 사라지고 되돌릴 수 없습니다."
+            "value": "%@에서 즉시 종료합니다. 저장하지 않은 작업은 사라지고 되돌릴 수 없습니다."
           }
         }
       }
@@ -7183,7 +7238,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "‘%@’을(를) 종료할까요?"
+            "value": "‘%@’ 프로세스를 종료할까요?"
           }
         }
       }
@@ -7194,7 +7249,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "‘%1$@’과(와) 하위 프로세스 %2$@개를 종료할까요?"
+            "value": "‘%1$@’ 및 하위 프로세스 %2$@개를 종료할까요?"
           }
         }
       }
@@ -7337,7 +7392,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Windows가 보호하는 프로세스이거나 서비스입니다. 서비스라면 서비스 관리자에서 중지하세요."
+            "value": "서비스라면 서비스 관리자에서 중지하세요."
           }
         }
       }
@@ -7392,7 +7447,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "‘%@’을(를) 종료하지 못했습니다"
+            "value": "‘%@’ 프로세스를 종료하지 못했습니다"
           }
         }
       }
@@ -7419,13 +7474,35 @@
         }
       }
     },
+    "processes.kill.stale": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "프로세스 목록이 바뀌어 종료하지 않았습니다"
+          }
+        }
+      }
+    },
+    "processes.kill.stale.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "같은 PID에 다른 프로세스가 실행 중입니다. 새로 읽은 목록에서 다시 선택하세요."
+          }
+        }
+      }
+    },
     "processes.kill.stillRunning": {
       "extractionState": "manual",
       "localizations": {
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "‘%1$@’(PID %2$@)이(가) 아직 실행 중입니다"
+            "value": "‘%1$@’(PID %2$@) 프로세스가 아직 실행 중입니다"
           }
         }
       }
@@ -7447,7 +7524,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "‘%1$@’(PID %2$@)을(를) 종료했는지 확인하지 못했습니다"
+            "value": "‘%1$@’(PID %2$@) 프로세스를 종료했는지 확인하지 못했습니다"
           }
         }
       }
@@ -7469,7 +7546,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "‘%1$@’(PID %2$@)이(가) 종료된 것을 확인했습니다"
+            "value": "‘%1$@’(PID %2$@) 프로세스가 종료된 것을 확인했습니다"
           }
         }
       }
@@ -7535,7 +7612,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "‘%1$@’(PID %2$@)을(를) 종료했습니다"
+            "value": "‘%1$@’(PID %2$@) 프로세스를 종료했습니다"
           }
         }
       }
@@ -7546,7 +7623,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "‘%1$@’과(와) 하위 프로세스를 종료했습니다 · %2$@개"
+            "value": "‘%1$@’ 및 하위 프로세스 %2$@개를 종료했습니다"
           }
         }
       }
@@ -7557,7 +7634,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "‘%@’을(를) 종료하는 중…"
+            "value": "‘%@’ 프로세스를 종료하는 중…"
           }
         }
       }
@@ -7568,7 +7645,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "2초마다 새로 고침 · %@"
+            "value": "2초마다 새로 고침 · %@ 기준"
           }
         }
       }
@@ -7612,7 +7689,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "새로 고침 일시 정지"
+            "value": "새로 고침 일시정지"
           }
         }
       }
@@ -7634,7 +7711,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "일시 정지됨 · %@ 목록"
+            "value": "일시정지됨 · %@ 기준"
           }
         }
       }
@@ -7700,7 +7777,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "새로 고치지 못했습니다 · %@ 목록"
+            "value": "새로 고치지 못했습니다 · %@ 기준"
           }
         }
       }
@@ -7744,7 +7821,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "‘%@’와(과) 일치하는 프로세스가 없습니다"
+            "value": "‘%@’ 검색 결과가 없습니다"
           }
         }
       }

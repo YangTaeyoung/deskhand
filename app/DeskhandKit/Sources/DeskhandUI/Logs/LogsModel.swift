@@ -141,7 +141,10 @@ public final class LogsModel {
 
     public private(set) var system: DiagSystem?
     public private(set) var systemPhase: LoadPhase = .idle
+    /// When `system` arrived.
     public private(set) var systemUpdatedAt: Date?
+    /// Why the last summary refresh failed while an older summary is shown.
+    public private(set) var systemRefreshError: OperationError?
 
     public private(set) var filter = EventFilter()
     /// Loaded events of `filter`, newest first, each record once.
@@ -168,6 +171,8 @@ public final class LogsModel {
 
     public private(set) var crashes: [CrashDump] = []
     public private(set) var crashesPhase: LoadPhase = .idle
+    /// When `crashes` arrived.
+    public private(set) var crashesUpdatedAt: Date?
     /// Downloads whose `transfer.start` is in flight, by remote path.
     public private(set) var downloadStarting: Set<String> = []
     /// Downloads that did not start, by remote path.
@@ -178,6 +183,10 @@ public final class LogsModel {
     @ObservationIgnored private let backend: any DiagnosticsBackend
     @ObservationIgnored private var started = false
     @ObservationIgnored private var eventsToken = 0
+    @ObservationIgnored private var moreToken = 0
+    /// The query of the first page of `events`, with its time range fixed.
+    @ObservationIgnored private var firstPageQuery: EventLogQuery?
+    @ObservationIgnored private var systemInFlight: Task<Void, Never>?
     @ObservationIgnored private var knownProviders: [EventLogName: Set<String>] = [:]
     @ObservationIgnored private var noticeTask: Task<Void, Never>?
 
@@ -231,15 +240,37 @@ public final class LogsModel {
 
     // MARK: System
 
+    /// Reads the summary. A call while a read is in flight waits for that read. A failure keeps
+    /// an older summary with `systemRefreshError`.
     public func reloadSystem() async {
+        if let systemInFlight {
+            await systemInFlight.value
+            return
+        }
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await loadSystem()
+            systemInFlight = nil
+        }
+        systemInFlight = task
+        await task.value
+    }
+
+    private func loadSystem() async {
         if system == nil { systemPhase = .loading }
         do {
             system = try await backend.diagSystem(hostID: hostID)
             systemUpdatedAt = .now
             systemPhase = .loaded
+            systemRefreshError = nil
         } catch is CancellationError {
+            if system == nil { systemPhase = .idle }
         } catch {
-            systemPhase = .failed(OperationError(error))
+            if system == nil {
+                systemPhase = .failed(OperationError(error))
+            } else {
+                systemRefreshError = OperationError(error)
+            }
         }
     }
 
@@ -276,10 +307,13 @@ public final class LogsModel {
         let token = eventsToken
         let query = filter.query(hostID: hostID)
         if events.isEmpty { eventsPhase = .loading } else { isReloadingEvents = true }
+        moreToken += 1
+        isLoadingMore = false
         loadMoreError = nil
         do {
             let page = try await backend.diagEvents(query)
             guard token == eventsToken else { return }
+            firstPageQuery = query
             events = Self.merge([], page.events)
             eventsTruncated = page.truncated
             eventsUpdatedAt = .now
@@ -300,19 +334,27 @@ public final class LogsModel {
         if token == eventsToken { isReloadingEvents = false }
     }
 
-    /// Reads the page of events older than the oldest loaded one and adds the new records.
+    /// Reads the page of events older than the oldest loaded one, in the time range of the first
+    /// page, and adds the new records.
     public func loadMoreEvents() async {
-        guard eventsTruncated, !isLoadingMore, let oldest = events.last else { return }
+        guard eventsTruncated, !isLoadingMore, let oldest = events.last, let first = firstPageQuery else { return }
         let token = eventsToken
+        moreToken += 1
+        let mine = moreToken
         isLoadingMore = true
         loadMoreError = nil
-        defer { if token == eventsToken { isLoadingMore = false } }
+        defer { if mine == moreToken { isLoadingMore = false } }
+        func query(before date: Date) -> EventLogQuery {
+            var query = first
+            query.until = min(first.until ?? date, date)
+            return query
+        }
         do {
-            var page = try await backend.diagEvents(filter.query(hostID: hostID, before: oldest.time.date))
+            var page = try await backend.diagEvents(query(before: oldest.time.date))
             guard token == eventsToken else { return }
             let known = Set(events.map(\.recordID))
             if page.events.allSatisfy({ known.contains($0.recordID) }) {
-                page = try await backend.diagEvents(filter.query(hostID: hostID, before: oldest.time.date.addingTimeInterval(-0.001)))
+                page = try await backend.diagEvents(query(before: oldest.time.date.addingTimeInterval(-0.001)))
                 guard token == eventsToken else { return }
             }
             events = Self.merge(events, page.events)
@@ -366,6 +408,7 @@ public final class LogsModel {
         if crashes.isEmpty { crashesPhase = .loading }
         do {
             crashes = try await backend.diagCrashes(hostID: hostID, since: nil)
+            crashesUpdatedAt = .now
             crashesPhase = .loaded
         } catch is CancellationError {
         } catch {
@@ -451,7 +494,7 @@ public final class LogsModel {
             return
         }
         let name = FilePath.lastComponent(path, style: .posix)
-        show(.warning, .ui("logs.reveal.missing", "‘\(name)’을(를) 찾을 수 없습니다"),
+        show(.warning, .ui("logs.reveal.missing", "‘\(name)’ 파일을 찾을 수 없습니다"),
              detail: .ui("logs.reveal.missing.detail", "받은 뒤 옮기거나 지웠을 수 있습니다. 다시 받으세요."))
     }
 
@@ -487,23 +530,27 @@ public final class LogsModel {
     // MARK: Seeding
 
     /// Puts every section in place without asking the backend. Snapshot scenes use it.
-    public func seed(system: DiagSystem?, systemPhase: LoadPhase = .loaded, filter: EventFilter = EventFilter(),
+    public func seed(system: DiagSystem?, systemPhase: LoadPhase = .loaded, systemRefreshError: OperationError? = nil,
+                     filter: EventFilter = EventFilter(),
                      events: [EventLogEntry], eventsPhase: LoadPhase = .loaded, truncated: Bool = false, search: String = "",
                      selectedRecordID: Int? = nil, providers: [String]? = nil, crashes: [CrashDump], crashesPhase: LoadPhase = .loaded,
                      section: Section = .events, at date: Date = .now) {
         self.system = system
         self.systemPhase = systemPhase
-        systemUpdatedAt = date
+        self.systemRefreshError = systemRefreshError
+        systemUpdatedAt = system == nil ? nil : date
         self.filter = filter
         self.events = Self.merge([], events)
         self.eventsPhase = eventsPhase
         eventsTruncated = truncated
-        eventsUpdatedAt = date
+        eventsUpdatedAt = eventsPhase == .loaded ? date : nil
         self.search = search
         self.providers = providers ?? Set(events.map(\.provider)).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
         self.selectedRecordID = selectedRecordID
         self.crashes = crashes
         self.crashesPhase = crashesPhase
+        crashesUpdatedAt = crashesPhase == .loaded ? date : nil
+        firstPageQuery = filter.query(hostID: hostID, now: date)
         self.section = section
         rebuildVisible()
         started = true

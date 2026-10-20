@@ -39,27 +39,30 @@ final class DiagnosticsLiveBackendTests: XCTestCase {
         }
         let (backend, client) = try await backend(daemon)
 
-        let done = try await backend.procKill(hostID: dev, pid: 1, tree: true)
+        let started = try XCTUnwrap(Timestamp(string: "2026-10-20T09:12:00.000Z"))
+        let done = try await backend.procKill(hostID: dev, pid: 1, started: started, tree: true)
         XCTAssertEqual(done, KillReceipt(status: .succeeded, killed: 4))
         let request = try XCTUnwrap(daemon.requests(method: "proc.kill").first)
         XCTAssertEqual(request.params["host_id"] as? String, dev)
         XCTAssertEqual(request.params["tree"] as? Bool, true)
+        XCTAssertEqual(request.params["started"] as? String, "2026-10-20T09:12:00.000Z")
 
-        let refused = try await backend.procKill(hostID: dev, pid: 2, tree: false)
+        let refused = try await backend.procKill(hostID: dev, pid: 2, started: nil, tree: false)
         XCTAssertEqual(refused.status, .failed)
         XCTAssertEqual(refused.error?.code, "PERMISSION_DENIED")
         XCTAssertEqual(refused.error?.message, "Windows가 거부했습니다")
 
-        let lost = try await backend.procKill(hostID: dev, pid: 3, tree: false)
+        let lost = try await backend.procKill(hostID: dev, pid: 3, started: nil, tree: false)
         XCTAssertEqual(lost.status, .unknown)
         XCTAssertEqual(lost.error?.code, "EXECUTION_OUTCOME_UNKNOWN")
         XCTAssertEqual(lost.error?.nextAction, "check_state")
 
-        let bare = try await backend.procKill(hostID: dev, pid: 4, tree: false)
+        let bare = try await backend.procKill(hostID: dev, pid: 4, started: nil, tree: false)
         XCTAssertEqual(bare, KillReceipt(status: .succeeded, killed: 1))
+        XCTAssertNil(daemon.requests(method: "proc.kill").last?.params["started"])
 
         do {
-            _ = try await backend.procKill(hostID: dev, pid: 5, tree: false)
+            _ = try await backend.procKill(hostID: dev, pid: 5, started: nil, tree: false)
             XCTFail("JSON-RPC errors throw")
         } catch {
             XCTAssertEqual(OperationError(error).code, "NOT_FOUND")

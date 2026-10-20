@@ -74,6 +74,14 @@ final class StringCatalogTests: XCTestCase {
         }
     }
 
+    func testCatalogHasNoParticlePlaceholders() throws {
+        let placeholder = try NSRegularExpression(pattern: #"\((이|가|을|를|은|는|과|와|으|로|이나|나|이라|라|아|야)\)"#)
+        let offending = try catalog().filter { _, value in
+            placeholder.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)) != nil
+        }
+        XCTAssertTrue(offending.isEmpty, offending.keys.sorted().map { "\($0): \(offending[$0] ?? "")" }.joined(separator: "\n"))
+    }
+
     func testFormattedStringsResolveFromCatalog() {
         let current = 3
         let total = 5

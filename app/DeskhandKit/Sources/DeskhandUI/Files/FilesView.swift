@@ -107,7 +107,7 @@ private struct FilesContent: View {
     private var deletionTitle: String {
         guard let items = model.pendingDeletion?.items else { return "" }
         if items.count == 1, let name = items.first?.name {
-            return .ui("files.delete.titleOne", "‘\(name)’을(를) 영구 삭제할까요?")
+            return .ui("files.delete.titleOne", "‘\(name)’ 항목을 영구 삭제할까요?")
         }
         let count = FileFormat.count(items.count)
         return .ui("files.delete.titleMany", "\(count)개 항목을 영구 삭제할까요?")

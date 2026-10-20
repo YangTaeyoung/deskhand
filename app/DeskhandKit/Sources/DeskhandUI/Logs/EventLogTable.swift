@@ -43,6 +43,24 @@ extension EventLogName {
     }
 }
 
+/// How an event message reads.
+enum EventMessage {
+    /// Three or more lines, at least half of them indented or `key: value`, as in stack traces and
+    /// Windows Error Reporting summaries.
+    static func isStructured(_ message: String) -> Bool {
+        let lines = message.split(whereSeparator: \.isNewline).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        guard lines.count >= 3 else { return false }
+        let structured = lines.filter { line in
+            if line.first == " " || line.first == "\t" { return true }
+            guard let colon = line.firstIndex(of: ":") else { return false }
+            let key = line[..<colon]
+            let rest = line[line.index(after: colon)...]
+            return !key.isEmpty && key.count <= 40 && (rest.isEmpty || rest.first == " ")
+        }
+        return structured.count * 2 >= lines.count
+    }
+}
+
 extension EventLogEntry {
     /// The first non-empty line of the message.
     var preview: String {
@@ -317,12 +335,12 @@ private struct LevelChip: View {
                     .imageScale(.small)
                     .foregroundStyle(isOn ? AnyShapeStyle(level.tint) : AnyShapeStyle(.tertiary))
                 if style == .full {
-                    Text(level == .verbose ? String.ui("logs.level.verbose.short", "자세히") : level.title)
+                    Text(level.title)
                         .foregroundStyle(isOn ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
                         .fixedSize()
                 }
             }
-            .font(DS.Font.caption.weight(isOn ? .semibold : .regular))
+            .font(DS.Font.caption.weight(.medium))
             .padding(.horizontal, DS.Space.s)
             .frame(height: 22)
             .background(background, in: Capsule())
@@ -540,38 +558,43 @@ private struct EventStatusBar: View {
     var body: some View {
         HStack(spacing: DS.Space.s) {
             Text(summary)
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: DS.Space.s)
             if model.isLoadingMore {
                 ProgressView().controlSize(.mini)
                 Text(String.ui("logs.more.loading", "이전 이벤트를 불러오는 중…"))
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
             } else if let error = model.loadMoreError {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(DS.Color.warning)
                     .accessibilityHidden(true)
                 Text(String.ui("logs.more.failed", "이전 이벤트를 불러오지 못했습니다"))
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .help(error.detail)
                 Button(String.ui("action.retry", "다시 시도")) { Task { await model.loadMoreEvents() } }
                     .buttonStyle(.link)
+                    .tint(DS.Color.accent)
             } else if model.eventsTruncated {
                 Text(String.ui("logs.more.available", "이 기간에 이벤트가 더 있습니다"))
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Button(String.ui("logs.more", "더 보기")) { Task { await model.loadMoreEvents() } }
                     .buttonStyle(.link)
+                    .tint(DS.Color.accent)
                     .help(String.ui("logs.more.help", "불러온 것보다 오래된 이벤트를 200개 더 불러옵니다"))
             }
         }
         .font(DS.Font.caption)
-        .foregroundStyle(.secondary)
         .padding(.horizontal, DS.Space.m)
         .frame(height: 26)
         .overlay(alignment: .top) {
             Rectangle().fill(DS.Color.separator).frame(height: 1)
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 
     private var summary: String {
@@ -583,7 +606,7 @@ private struct EventStatusBar: View {
         }
         let log = model.filter.log.title
         if model.selectedEvent == nil, !model.visibleEvents.isEmpty {
-            return .ui("logs.status.summaryHint", "\(log) 로그 · \(range) · 이벤트 \(count)개 · 행을 선택하면 전체 메시지를 봅니다")
+            return .ui("logs.status.summaryHint", "\(log) 로그 · \(range) · 이벤트 \(count)개 · 행을 선택하면 전체 메시지를 볼 수 있습니다")
         }
         return .ui("logs.status.summary", "\(log) 로그 · \(range) · 이벤트 \(count)개")
     }
@@ -602,11 +625,13 @@ private struct EventDetailView: View {
             VStack(alignment: .leading, spacing: DS.Space.m) {
                 header(event)
                 Text(event.message.isEmpty ? String.ui("logs.detail.noMessage", "메시지가 없는 이벤트입니다") : event.message)
-                    .font(DS.Font.body)
+                    .font(EventMessage.isStructured(event.message) ? DS.Font.mono : DS.Font.body)
+                    .lineSpacing(2)
                     .foregroundStyle(event.message.isEmpty ? .secondary : .primary)
                     .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: 680, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(DS.Space.l)
         }

@@ -123,7 +123,9 @@ private struct LogsSectionBar: View {
             .labelsHidden()
             .fixedSize()
             Spacer(minLength: DS.Space.s)
-            if let updated = model.eventsUpdatedAt ?? model.systemUpdatedAt {
+            if let updated = model.section == .events
+                ? (model.eventsPhase == .loaded ? model.eventsUpdatedAt : nil)
+                : (model.crashesPhase == .loaded ? model.crashesUpdatedAt : nil) {
                 let time = updated.formatted(.dateTime.hour().minute().second().locale(EventFormat.locale))
                 Text(String.ui("logs.updated", "\(time) 기준"))
                     .font(DS.Font.caption)
