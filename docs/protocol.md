@@ -102,7 +102,7 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 전송(`put`·`get` 스트림, `xfer.*`)의 규칙:
 
 - 임시 파일은 대상과 같은 폴더의 `<대상 이름>.deskhand-part-<transfer_id>`이고 Windows에서는 숨김 속성을 갖는다. `transfer_id`는 영문자·숫자·`-`·`_` 1–64자이고, 임시 파일 이름이 255자(Windows는 UTF-16, 그 밖은 바이트)를 넘게 되는 대상 이름은 `INVALID_ARGUMENT`다.
-- 경로 검사와 `roots`는 파일 op와 같다. 쓰는 쪽(`put`, `xfer.prepare`, `xfer.commit`)은 대상 폴더가 있어야 하고(`NOT_FOUND`), Windows 밖 에이전트는 데스크톱 세션 사용자의 홈 안에 쓰지 않는다(`CAPABILITY_UNSUPPORTED`).
+- 경로 검사와 `roots`는 파일 op와 같다. 그 전에, 받은 그대로의 경로에 `/`·`\` 사이의 `.`이나 `..` 원소가 있으면(`put`, `get`, `xfer.*`) `INVALID_ARGUMENT`다. 쓰는 쪽(`put`, `xfer.prepare`, `xfer.commit`)은 대상 폴더가 있어야 하고(`NOT_FOUND`), Windows 밖 에이전트는 데스크톱 세션 사용자의 홈 안에 쓰지 않는다(`CAPABILITY_UNSUPPORTED`).
 - 한 임시 파일에는 한 번에 한 작업(`put`, `xfer.prepare`, `xfer.commit`, `xfer.abort`)만 돈다. 같은 파일을 가리키는 다른 표기(짧은 이름, 대소문자, 링크·junction을 지나는 폴더)도 같은 임시 파일로 본다. 다른 작업 중이면 `IN_PROGRESS`(`retryable:true`).
 - `xfer.prepare`: `on_conflict`를 commit처럼 미리 적용해 `fail`과 대소문자만 다른 이름(`fail`·`replace`)은 여기서 `TRANSFER_CONFLICT`다. 남은 바이트(`size` − `part_size`)가 볼륨 여유(`free_bytes`)보다 크면 아무것도 만들지 않고 `DISK_FULL`(`skip`이고 대상이 있을 때 제외). 임시 파일이 없으면 빈 파일로 만들고, `mtime`이 있으면 임시 파일에 준다. `part_sha256`은 임시 파일 전체의 SHA-256이다. 데몬은 원본 앞 `part_size`바이트의 SHA-256과 다르면 `xfer.abort` 뒤 0부터 보낸다.
 - `put`: 헤더 `offset`이 임시 파일 크기(없으면 0)와 다르면 쓰지 않고 두 수를 밝힌 `INVALID_ARGUMENT`다. 받은 바이트는 스트림이 끊겨도 남고(`INTERNAL`·`TIMEOUT` retryable, 결과 줄 `part_size`), 다음 put은 그 크기부터다. `size`를 넘는 바이트가 오면 그 put으로 쓴 바이트를 버리고 `INVALID_ARGUMENT`. 볼륨이 차면 실제로 쓴 바이트까지만 남겨 디스크에 내리고 `DISK_FULL`(결과 줄 `part_size`)이고, 공간을 비운 뒤 prepare가 그 크기와 SHA-256을 알려 준다. 어느 경우든 끝나면 임시 파일의 수정 시각을 헤더 `mtime`으로(없으면 그대로) 둔다.

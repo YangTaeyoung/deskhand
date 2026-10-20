@@ -792,3 +792,39 @@ func holdPut(t *testing.T, c *rpcClient, s *Server, id, dst string, during func(
 	}()
 	during()
 }
+
+func TestTransfersRefuseAPathWithADotElement(t *testing.T) {
+	c, s, home := xferHome(t)
+	if err := os.MkdirAll(filepath.Join(home, "dst", "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(home, "inside.txt"), "inside")
+	sep := string(filepath.Separator)
+	for _, p := range []string{
+		home + sep + "dst" + sep + ".." + sep + "evil.bat",
+		home + "/dst/../evil.bat",
+		home + sep + "dst" + sep + "." + sep + "x.txt",
+		home + `\dst\..\evil.bat`,
+	} {
+		acc, _ := put(t, s, wire.StreamHeader{TransferID: "td", Path: p, Size: 3}, strings.NewReader("abc"))
+		failsWith(t, acc, wire.CodeInvalidArgument, "'.' or '..'")
+		first, _, _ := get(t, s, wire.StreamHeader{Path: home + sep + "dst" + sep + ".." + sep + "inside.txt"})
+		failsWith(t, first, wire.CodeInvalidArgument, "'.' or '..'")
+		for _, op := range []proto.Message{
+			{"op": "xfer.prepare", "size": 3},
+			{"op": "xfer.commit", "sha256": sha([]byte("abc"))},
+			{"op": "xfer.abort"},
+		} {
+			req := proto.Message{"transfer_id": "td", "path": p, "rid": "r-dot-" + op.String("op")[5:] + fmt.Sprint(len(p))}
+			for k, v := range op {
+				if k != "op" {
+					req[k] = v
+				}
+			}
+			failsWith(t, c.call(op.String("op"), req), wire.CodeInvalidArgument, "'.' or '..'")
+		}
+	}
+	if got := names(t, home); len(got) != 2 {
+		t.Fatalf("refused transfers left %v", got)
+	}
+}

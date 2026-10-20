@@ -115,15 +115,30 @@ func nameLength(name string) int {
 	return len(name)
 }
 
+// dotElement returns the INVALID_ARGUMENT error of a transfer path p, as it
+// arrived, with a "." or ".." element between its separators ('/' and '\'),
+// and nil for any other path.
+func dotElement(p string) error {
+	for _, e := range strings.FieldsFunc(p, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if e == "." || e == ".." {
+			return invalidArgument(fmt.Sprintf("'%s' has a '.' or '..' element; pass the full path of the file without them", cutChars(p, 300)))
+		}
+	}
+	return nil
+}
+
 // transferPaths returns the destination path p of the transfer id, resolved
 // against the home of v and checked against roots like the paths of the
 // file ops, and its part file: <destination>.deskhand-part-<id> in the same
-// folder.
+// folder. A p with a "." or ".." element is an error (dotElement).
 func transferPaths(v homeView, id any, p string, roots []string) (target, part string, err error) {
 	sid, ok := id.(string)
 	if !ok || !validTransferID(sid) {
 		return "", "", invalidArgument(fmt.Sprintf("transfer_id %s is not a string of 1 to %d letters, digits, '-' or '_'; pass the ID of the transfer",
 			cutChars(fmt.Sprintf("%q", fmt.Sprint(id)), transferIDMax+2), transferIDMax))
+	}
+	if err := dotElement(p); err != nil {
+		return "", "", err
 	}
 	target, err = checkedPathArg(v, proto.Message{"path": p}, "path", roots)
 	if err != nil {
@@ -494,17 +509,21 @@ func (s *Server) ServePut(ctx context.Context, st TransferStream, h wire.StreamH
 	_ = writeLine(st, transferLine(err, proto.Message{"received": received, "part_size": partSize}))
 }
 
-// openGet checks the header h of a get stream: its path, checked like the
-// paths of the file ops, has to name a regular file whose size is h.Offset
-// or more; what is not a regular file is refused before it is opened. It returns the open file, its Lstat and the number of bytes the
-// stream carries: h.Length of them from h.Offset, or with h.Length 0 up to
-// the end.
+// openGet checks the header h of a get stream: its path, without a "." or
+// ".." element (dotElement) and checked like the paths of the file ops, has
+// to name a regular file whose size is h.Offset or more; what is not a
+// regular file is refused before it is opened. It returns the open file,
+// its Lstat and the number of bytes the stream carries: h.Length of them
+// from h.Offset, or with h.Length 0 up to the end.
 func (s *Server) openGet(h wire.StreamHeader) (*os.File, fs.FileInfo, int64, error) {
 	if !s.opt.AllowExec {
 		return nil, nil, 0, coded(wire.CodeCapabilityUnsupported, errExecDisabled, false)
 	}
 	roots, err := cleanRoots(h.Roots)
 	if err != nil {
+		return nil, nil, 0, err
+	}
+	if err := dotElement(h.Path); err != nil {
 		return nil, nil, 0, err
 	}
 	path, err := checkedPathArg(s.view(), proto.Message{"path": h.Path}, "path", roots)
