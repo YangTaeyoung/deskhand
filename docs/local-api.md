@@ -30,6 +30,8 @@
 }
 ```
 
+`error`는 실패했거나 결과를 모를 때 `{code, message, retryable, next_action?}` 객체이고 그 밖에는 `null`이다. `code`는 [protocol.md §8](protocol.md#8-오류-코드)의 상수, `message`는 다음 행동을 알려 주는 한 문장, `retryable`은 같은 요청을 그대로 다시 보내도 되는지, `next_action`은 `check_state`/`retry`/`fix_params`/`host_repair`/`host_connect`/`host_doctor`/`host_add_force`/`human_release` 같은 다음 단계 이름이다. 봉투의 `next_action`은 따로 정하지 않으면 `error.next_action`과 같다.
+
 ## 3. 메서드
 
 ### 호스트·연결
@@ -71,7 +73,7 @@
 ### 명령·터미널·프로세스
 | 메서드 | 결과 |
 |---|---|
-| `exec.run{host_id, argv|cmd, shell, cwd, env, stdin, timeout_ms}` | 봉투 + `code`, `stdout`, `stderr` (큰 출력은 artifact) |
+| `exec.run{host_id, argv|cmd, shell, cwd, env, stdin, timeout_ms}` | 봉투 + `code`, `stdout`, `stderr`, `timed_out`(시간 초과로 끝냈으면 true), `truncated`(스트림마다 끝 200000바이트만 남겼으면 true), `killed?`(§7) (큰 출력은 artifact) |
 | `exec.start{…, timeout_ms?}` | 봉투(job). `timeout_ms`는 데몬이 job을 만든 시각부터 잰다. 넘으면 `jobs.cancel`과 같은 길로 프로세스를 끝내고 job을 `failed` + `TIMEOUT`(`result.timed_out:true`)으로 끝낸다. 그때까지의 출력은 `jobs.output`으로 읽을 수 있다. 데몬이 다시 시작해도 남은 시간을 이어 재고, 연결이 끊긴 동안 시간이 다 된 job은 다시 연결될 때 끝낸다 |
 | `jobs.list{host_id?, kind?, status?}` / `jobs.get{job_id}` / `jobs.cancel{job_id}` | job 목록·상세 |
 | `jobs.output{job_id, cursor}` | `chunks`, `next_cursor`, `state` |
@@ -81,7 +83,10 @@
 ### 파일
 | 메서드 | 결과 |
 |---|---|
-| `files.list{host_id, path}` / `files.stat` / `files.read{path, offset, length}` / `files.write` | 원격 파일 작업 |
+| `files.list{host_id, path, recursive?}` | `{host_id, path(실제 경로), entries:[FileEntry], truncated, skipped?}` |
+| `files.stat{host_id, path, sha256?}` | `{host_id, exists, path, name, dir, size, link, mtime?, owner?, sha256?, locked?}` — 없는 경로는 `exists:false` |
+| `files.read{host_id, path, offset, length}` | `{host_id, path, data(base64), size(파일 전체), eof, encoding?}` |
+| `files.write` | 봉투 + `size` |
 | `files.copy` / `files.move` / `files.rename` / `files.mkdir` / `files.trash` / `files.delete{permanent:true}` | 봉투 |
 | `transfer.start{direction:"push"|"pull"|"move_push"|"move_pull", host_id, local, remote, on_conflict}` | `transfer_id` |
 | `transfer.list` / `transfer.get{transfer_id}` | 파일별 상태, 진행률, `outcome` |
@@ -171,6 +176,7 @@
 | `timeline.appended` | `entry`(TimelineEntry) |
 | `job.updated` | `job`(Job) |
 | `transfer.updated` | `transfer`(Transfer) |
+| `events.dropped` | `count`(이 연결이 읽지 못해 버린 이벤트 수). `seq`는 0이다. 받으면 필요한 상태를 `host.list`·`jobs.list` 등으로 다시 읽는다 |
 
 - `timeline.list{host_id, since?, limit?}` 결과: `{entries: [TimelineEntry], next_cursor?}`(최신순).
 - `host.doctor` 항목 `id`: `ssh_reachable`, `agent_version`, `quic_connect`, `fingerprint`, `session`, `firewall_rule`(규칙이 꺼져 있거나 호스트 `port`가 아닌 포트를 열면 `warn`).
