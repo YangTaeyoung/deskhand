@@ -41,6 +41,7 @@ type record struct {
 	Video       *videoRecord  `json:"video,omitempty"`
 	Inputs      []inputRecord `json:"inputs,omitempty"`
 	Keys        []keySample   `json:"keys,omitempty"`
+	GPU         []gpuSample   `json:"gpu,omitempty"`
 	Skipped     string        `json:"skipped,omitempty"`
 	Notes       []string      `json:"notes,omitempty"`
 }
@@ -151,8 +152,10 @@ type inputRecord struct {
 // options are the flags of run.
 type options struct {
 	addr, idDir, agentFP, out, name, scenario, fixture string
+	gpu                                                string
 	display, seconds, maxWidth, maxFPS, bitrate        int
 	clicks, keys, syncs, repeats, stillWidth           int
+	approachMS                                         int
 }
 
 func cmdRun(args []string, stdout, stderr io.Writer) int {
@@ -163,7 +166,8 @@ func cmdRun(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&o.agentFP, "agent-fp", "", "에이전트 인증서의 SHA-256 지문")
 	fs.StringVar(&o.out, "out", "", "결과(.json, .h264)를 쓸 폴더")
 	fs.StringVar(&o.name, "name", "", "결과 파일 이름")
-	fs.StringVar(&o.scenario, "scenario", "static", "static, motion, input 또는 keyframe")
+	fs.StringVar(&o.scenario, "scenario", "static", "static, motion, input, click 또는 keyframe")
+	fs.StringVar(&o.gpu, "gpu", "", "측정하는 동안 50 ms마다 GPU 클록을 읽을 nvidia-smi 경로(비우면 읽지 않는다)")
 	fs.StringVar(&o.fixture, "fixture", "", "에이전트 PC의 deskhand-fixture.exe 경로")
 	fs.IntVar(&o.display, "display", 0, "fixture 없이 측정할 디스플레이 인덱스")
 	fs.IntVar(&o.seconds, "seconds", 60, "static·motion 수신 시간(초)")
@@ -172,6 +176,7 @@ func cmdRun(args []string, stdout, stderr io.Writer) int {
 	fs.IntVar(&o.bitrate, "bitrate", 0, "video 헤더 bitrate(0은 기본값)")
 	fs.IntVar(&o.clicks, "clicks", 20, "input에서 누를 클릭 수")
 	fs.IntVar(&o.keys, "keys", 20, "input에서 누를 Space 키 수")
+	fs.IntVar(&o.approachMS, "approach-ms", 320, "click에서 클릭 전에 포인터를 움직이는 시간(ms, 16 ms마다 한 번)")
 	fs.IntVar(&o.syncs, "syncs", 50, "앞뒤로 보낼 time.sync 수")
 	fs.IntVar(&o.repeats, "repeats", 10, "keyframe에서 경우마다 받을 키프레임 수")
 	fs.IntVar(&o.stillWidth, "still-width", 1920, "keyframe에서 비교할 screen.capture의 max_width")
@@ -183,9 +188,9 @@ func cmdRun(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, "-addr, -id, -out, -name을 모두 주세요", nil)
 	case !validFingerprint(o.agentFP):
 		return fail(stderr, "-agent-fp는 deskhand-agent init이 출력한 64자리 16진수 지문이어야 합니다", nil)
-	case !slices.Contains([]string{"static", "motion", "input", "keyframe"}, o.scenario):
-		return fail(stderr, "-scenario는 static, motion, input, keyframe 중 하나여야 합니다", nil)
-	case (o.scenario == "input" || o.scenario == "keyframe") && o.fixture == "":
+	case !slices.Contains([]string{"static", "motion", "input", "click", "keyframe"}, o.scenario):
+		return fail(stderr, "-scenario는 static, motion, input, click, keyframe 중 하나여야 합니다", nil)
+	case (o.scenario == "input" || o.scenario == "click" || o.scenario == "keyframe") && o.fixture == "":
 		return fail(stderr, o.scenario+"은 -fixture가 있어야 합니다. 에이전트 PC의 deskhand-fixture.exe 경로를 주세요", nil)
 	}
 	rec, err := run(o)
@@ -268,6 +273,14 @@ func run(o options) (*record, error) {
 	if rec.SyncBefore, err = syncRounds(rpc, o.syncs); err != nil {
 		return rec, err
 	}
+	if o.gpu != "" {
+		g, err := startGPU(o.gpu, 50)
+		if err != nil {
+			rec.Notes = append(rec.Notes, "nvidia-smi: "+err.Error())
+		} else {
+			defer func() { rec.GPU = g.stop() }()
+		}
+	}
 
 	disp, err := pickDisplay(hello, o.display, nil)
 	if o.fixture != "" {
@@ -321,6 +334,10 @@ func run(o options) (*record, error) {
 	case "input":
 		time.Sleep(2 * time.Second)
 		runErr = runInput(ctx, conn, rpc, rec, o)
+		time.Sleep(1500 * time.Millisecond)
+	case "click":
+		time.Sleep(2 * time.Second)
+		runErr = runClick(ctx, conn, rpc, rec, o)
 		time.Sleep(1500 * time.Millisecond)
 	}
 	video.stop()
@@ -896,155 +913,260 @@ func (in *inputRun) close() {
 	in.st.CancelRead(0)
 }
 
-// Input timing of runInput.
+// Input timing of runInput and runClick.
 const (
 	pressHold   = 400 * time.Millisecond
 	pressRest   = 600 * time.Millisecond
 	warmupSleep = 1500 * time.Millisecond
 	vkSpace     = 0x20
+	// clickRest is the least time runClick lets pass between the last
+	// input and the first move of the next click.
+	clickRest = 2500 * time.Millisecond
+	// The pointer moves of a click, approachStep apart, take the pointer
+	// from approachFrom of the button's half width left of its centre to
+	// the centre.
+	approachStep = 16 * time.Millisecond
+	approachFrom = 0.7
 )
 
 // errGuard marks a run stopped by a guard; the record says why.
 var errGuard = errors.New("guard")
 
-// runInput clicks the fixture's Same button o.clicks times and presses
-// Space on it o.keys times, after a warm-up click that is not measured.
-func runInput(ctx context.Context, conn *quic.Conn, rpc *rpcClient, rec *record, o options) error {
+// inputSession is an input stream aimed at the centre (tx, ty) of the
+// fixture's first Same button, w×h, with the guards every input passes.
+type inputSession struct {
+	in      *inputRun
+	rec     *record
+	rpc     *rpcClient
+	tx, ty  int
+	w, h    int
+	display int
+	dispX   int
+	dispY   int
+}
+
+// openInputSession finds the fixture's first Same button and opens an
+// input stream; a nil session without an error means the run records why
+// it was skipped.
+func openInputSession(ctx context.Context, conn *quic.Conn, rpc *rpcClient, rec *record) (*inputSession, error) {
 	fx, disp := rec.Fixture, rec.Display
 	res, err := rpc.call("ui.find", proto.Message{"window": fx.Window, "name": "Same", "index": 0}, 20*time.Second)
 	if err != nil {
 		rec.Skipped = "the fixture's Same button was not found through ui.find: " + err.Error()
-		return nil
+		return nil, nil
 	}
 	nodes, _ := res["nodes"].([]any)
 	if len(nodes) == 0 {
 		rec.Skipped = "ui.find found no Same button in the fixture"
-		return nil
+		return nil, nil
 	}
 	node := proto.Message(nodes[0].(map[string]any))
 	tx, ty := node.Int("x")+node.Int("w")/2, node.Int("y")+node.Int("h")/2
 	if node.Int("w") <= 0 || tx < fx.X || ty < fx.Y || tx >= fx.X+fx.W || ty >= fx.Y+fx.H ||
 		tx < disp.X || ty < disp.Y || tx >= disp.X+disp.Width || ty >= disp.Y+disp.Height {
 		rec.Skipped = fmt.Sprintf("the Same button's centre (%d,%d) is outside the fixture window or its display", tx, ty)
-		return nil
+		return nil, nil
 	}
 	fx.TargetX, fx.TargetY = tx, ty
-
 	in, err := openInput(ctx, conn)
+	if err != nil {
+		return nil, err
+	}
+	return &inputSession{in: in, rec: rec, rpc: rpc, tx: tx, ty: ty, w: node.Int("w"), h: node.Int("h"),
+		display: disp.Index, dispX: disp.X, dispY: disp.Y}, nil
+}
+
+// foreground fails unless the fixture's window is in the foreground.
+func (s *inputSession) foreground() error {
+	id, title, err := foregroundWindow(s.rpc)
 	if err != nil {
 		return err
 	}
-	defer in.close()
-	foreground := func() error {
-		id, title, err := foregroundWindow(rpc)
-		if err != nil {
-			return err
-		}
-		if id != fx.Window {
-			return fmt.Errorf("%w: the foreground window is %s %q, not the fixture %s", errGuard, id, title, fx.Window)
-		}
-		return nil
+	if id != s.rec.Fixture.Window {
+		return fmt.Errorf("%w: the foreground window is %s %q, not the fixture %s", errGuard, id, title, s.rec.Fixture.Window)
 	}
-	overTarget := func() error {
-		at, err := rpc.call("ui.at", proto.Message{"x": tx, "y": ty}, 20*time.Second)
-		if err != nil {
-			return fmt.Errorf("%w: ui.at (%d,%d): %v", errGuard, tx, ty, err)
-		}
-		w, _ := at["window"].(map[string]any)
-		n, _ := at["node"].(map[string]any)
-		if w == nil || w["id"] != fx.Window || n == nil || n["name"] != "Same" {
-			return fmt.Errorf("%w: the element at (%d,%d) is %v in window %v, not the fixture's Same button", errGuard, tx, ty, n, w)
-		}
-		return nil
-	}
-	focusedOnTarget := func() error {
-		at, err := rpc.call("ui.focused", nil, 20*time.Second)
-		if err != nil {
-			return fmt.Errorf("%w: ui.focused: %v", errGuard, err)
-		}
-		w, _ := at["window"].(map[string]any)
-		n, _ := at["node"].(map[string]any)
-		if w == nil || w["id"] != fx.Window || n == nil || n["name"] != "Same" {
-			return fmt.Errorf("%w: the focused element is %v in window %v, not the fixture's Same button", errGuard, n, w)
-		}
-		node := proto.Message(n)
-		if x, y := node.Int("x"), node.Int("y"); tx < x || ty < y || tx >= x+node.Int("w") || ty >= y+node.Int("h") {
-			return fmt.Errorf("%w: the focused Same button at (%d,%d) %dx%d is not the one at (%d,%d)", errGuard, x, y, node.Int("w"), node.Int("h"), tx, ty)
-		}
-		return nil
-	}
-	send := func(ev wire.InputEvent, kind string) error {
-		r, err := in.send(ev, kind)
-		rec.Inputs = append(rec.Inputs, r)
-		return err
-	}
-	press := func(kind string, down, up wire.InputEvent, guardPoint bool, measured bool) error {
-		if err := foreground(); err != nil {
-			return err
-		}
-		if guardPoint {
-			if err := overTarget(); err != nil {
-				return err
-			}
-		} else if err := focusedOnTarget(); err != nil {
-			return err
-		}
-		suffix := ""
-		if !measured {
-			suffix = "_warmup"
-		}
-		if err := send(down, kind+"_down"+suffix); err != nil {
-			return err
-		}
-		time.Sleep(pressHold)
-		if err := foreground(); err != nil {
-			return err
-		}
-		if err := send(up, kind+"_up"+suffix); err != nil {
-			return err
-		}
-		time.Sleep(pressRest)
-		return nil
-	}
-	stop := func(err error) error {
-		if errors.Is(err, errGuard) {
-			rec.Skipped = fmt.Sprintf("stopped after %d inputs: %v", len(rec.Inputs), err)
-			return nil
-		}
-		return err
-	}
+	return nil
+}
 
-	if err := foreground(); err != nil {
-		return stop(err)
+// overTarget fails unless the element at the target point is the
+// fixture's Same button.
+func (s *inputSession) overTarget() error {
+	at, err := s.rpc.call("ui.at", proto.Message{"x": s.tx, "y": s.ty}, 20*time.Second)
+	if err != nil {
+		return fmt.Errorf("%w: ui.at (%d,%d): %v", errGuard, s.tx, s.ty, err)
 	}
-	if err := send(wire.InputEvent{K: "move", Display: disp.Index, X: tx - disp.X, Y: ty - disp.Y}, "move"); err != nil {
+	w, _ := at["window"].(map[string]any)
+	n, _ := at["node"].(map[string]any)
+	if w == nil || w["id"] != s.rec.Fixture.Window || n == nil || n["name"] != "Same" {
+		return fmt.Errorf("%w: the element at (%d,%d) is %v in window %v, not the fixture's Same button", errGuard, s.tx, s.ty, n, w)
+	}
+	return nil
+}
+
+// focusedOnTarget fails unless the focused element is the fixture's Same
+// button that holds the target point.
+func (s *inputSession) focusedOnTarget() error {
+	at, err := s.rpc.call("ui.focused", nil, 20*time.Second)
+	if err != nil {
+		return fmt.Errorf("%w: ui.focused: %v", errGuard, err)
+	}
+	w, _ := at["window"].(map[string]any)
+	n, _ := at["node"].(map[string]any)
+	if w == nil || w["id"] != s.rec.Fixture.Window || n == nil || n["name"] != "Same" {
+		return fmt.Errorf("%w: the focused element is %v in window %v, not the fixture's Same button", errGuard, n, w)
+	}
+	node := proto.Message(n)
+	if x, y := node.Int("x"), node.Int("y"); s.tx < x || s.ty < y || s.tx >= x+node.Int("w") || s.ty >= y+node.Int("h") {
+		return fmt.Errorf("%w: the focused Same button at (%d,%d) %dx%d is not the one at (%d,%d)", errGuard, x, y, node.Int("w"), node.Int("h"), s.tx, s.ty)
+	}
+	return nil
+}
+
+// send injects ev and records it as kind.
+func (s *inputSession) send(ev wire.InputEvent, kind string) error {
+	r, err := s.in.send(ev, kind)
+	s.rec.Inputs = append(s.rec.Inputs, r)
+	return err
+}
+
+// moveTo moves the pointer to (x, y) of the virtual desktop, recorded as
+// kind.
+func (s *inputSession) moveTo(x, y int, kind string) error {
+	return s.send(wire.InputEvent{K: "move", Display: s.display, X: x - s.dispX, Y: y - s.dispY}, kind)
+}
+
+// press checks the foreground and the point (guardPoint) or the focus,
+// sends down, waits pressHold, checks the foreground again and sends up;
+// a press that is not measured is recorded with the suffix _warmup.
+func (s *inputSession) press(kind string, down, up wire.InputEvent, guardPoint, measured bool) error {
+	if err := s.foreground(); err != nil {
+		return err
+	}
+	if guardPoint {
+		if err := s.overTarget(); err != nil {
+			return err
+		}
+	} else if err := s.focusedOnTarget(); err != nil {
+		return err
+	}
+	suffix := ""
+	if !measured {
+		suffix = "_warmup"
+	}
+	if err := s.send(down, kind+"_down"+suffix); err != nil {
+		return err
+	}
+	time.Sleep(pressHold)
+	if err := s.foreground(); err != nil {
+		return err
+	}
+	return s.send(up, kind+"_up"+suffix)
+}
+
+// stop turns a guard's error into the record's reason to skip the rest.
+func (s *inputSession) stop(err error) error {
+	if errors.Is(err, errGuard) {
+		s.rec.Skipped = fmt.Sprintf("stopped after %d inputs: %v", len(s.rec.Inputs), err)
+		return nil
+	}
+	return err
+}
+
+func clickEvents() (wire.InputEvent, wire.InputEvent) {
+	return wire.InputEvent{K: "button", B: "left", Down: true}, wire.InputEvent{K: "button", B: "left"}
+}
+
+// warmUp moves the pointer to the target and clicks once without
+// measuring, which gives the button the focus.
+func (s *inputSession) warmUp() error {
+	if err := s.foreground(); err != nil {
+		return err
+	}
+	if err := s.moveTo(s.tx, s.ty, "move"); err != nil {
 		return err
 	}
 	time.Sleep(300 * time.Millisecond)
-	click := func() (wire.InputEvent, wire.InputEvent) {
-		return wire.InputEvent{K: "button", B: "left", Down: true}, wire.InputEvent{K: "button", B: "left"}
+	d, u := clickEvents()
+	if err := s.press("click", d, u, true, false); err != nil {
+		return err
+	}
+	time.Sleep(pressRest + warmupSleep)
+	return nil
+}
+
+// runInput clicks the fixture's Same button o.clicks times and presses
+// Space on it o.keys times, after a warm-up click that is not measured.
+func runInput(ctx context.Context, conn *quic.Conn, rpc *rpcClient, rec *record, o options) error {
+	s, err := openInputSession(ctx, conn, rpc, rec)
+	if s == nil || err != nil {
+		return err
+	}
+	defer s.in.close()
+	if err := s.warmUp(); err != nil {
+		return s.stop(err)
 	}
 	space := func() (wire.InputEvent, wire.InputEvent) {
 		return wire.InputEvent{K: "key", VK: vkSpace, Down: true}, wire.InputEvent{K: "key", VK: vkSpace}
 	}
-	d, u := click()
-	if err := press("click", d, u, true, false); err != nil {
-		return stop(err)
-	}
-	time.Sleep(warmupSleep)
 	for range o.clicks {
-		d, u := click()
-		if err := press("click", d, u, true, true); err != nil {
-			return stop(err)
+		d, u := clickEvents()
+		if err := s.press("click", d, u, true, true); err != nil {
+			return s.stop(err)
 		}
+		time.Sleep(pressRest)
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 	}
 	for range o.keys {
 		d, u := space()
-		if err := press("key", d, u, false, true); err != nil {
-			return stop(err)
+		if err := s.press("key", d, u, false, true); err != nil {
+			return s.stop(err)
+		}
+		time.Sleep(pressRest)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+	}
+	return nil
+}
+
+// runClick clicks the fixture's Same button o.clicks times the way a
+// person does, after a warm-up click that is not measured: it lets
+// clickRest pass after the input before, moves the pointer for
+// o.approachMS in steps approachStep apart from the button's left part to
+// its centre, staying on the button, and then clicks.
+func runClick(ctx context.Context, conn *quic.Conn, rpc *rpcClient, rec *record, o options) error {
+	s, err := openInputSession(ctx, conn, rpc, rec)
+	if s == nil || err != nil {
+		return err
+	}
+	defer s.in.close()
+	if err := s.warmUp(); err != nil {
+		return s.stop(err)
+	}
+	fromX := s.tx - int(approachFrom*float64(s.w)/2)
+	moves := max(2, int(time.Duration(o.approachMS)*time.Millisecond/approachStep)+1)
+	for range o.clicks {
+		last := rec.Inputs[len(rec.Inputs)-1]
+		if wait := time.Duration(last.SentUS+int64(clickRest/time.Microsecond)-nowUS()) * time.Microsecond; wait > 0 {
+			time.Sleep(wait)
+		}
+		if err := s.foreground(); err != nil {
+			return s.stop(err)
+		}
+		for i := range moves {
+			x := fromX + (s.tx-fromX)*i/(moves-1)
+			if err := s.moveTo(x, s.ty, "pointer_move"); err != nil {
+				return err
+			}
+			if i < moves-1 {
+				time.Sleep(approachStep)
+			}
+		}
+		d, u := clickEvents()
+		if err := s.press("click", d, u, true, true); err != nil {
+			return s.stop(err)
 		}
 		if ctx.Err() != nil {
 			return ctx.Err()

@@ -86,8 +86,10 @@ type recordReport struct {
 	Decode      *decodeReport `json:"decode,omitempty"`
 	Input       *inputReport  `json:"input,omitempty"`
 	Keys        *keyReport    `json:"keys,omitempty"`
-	Skipped     string        `json:"skipped,omitempty"`
-	Notes       []string      `json:"notes,omitempty"`
+	// GPUStates counts the nvidia-smi readings of the run by gpuState.
+	GPUStates map[string]int `json:"gpu_states,omitempty"`
+	Skipped   string         `json:"skipped,omitempty"`
+	Notes     []string       `json:"notes,omitempty"`
 }
 
 type videoReport struct {
@@ -144,6 +146,19 @@ type inputReport struct {
 	MinPixels int                    `json:"min_pixels"`
 	Kinds     map[string]*inputKinds `json:"kinds"`
 	Order     []string               `json:"order"`
+	// Approach is the time from the first pointer move of each click to
+	// its click_down and Rest the time from the input before to that move;
+	// ApproachGPU counts the GPU states at the first moves.
+	Approach    summary        `json:"approach_ms"`
+	Rest        summary        `json:"rest_ms"`
+	ApproachGPU map[string]int `json:"approach_gpu,omitempty"`
+	// InputMbps is the bitrate of the access units received within
+	// inputWindowUS after an input was sent, over InputS seconds, and
+	// IdleMbps that of the rest of the stream, over IdleS seconds.
+	InputMbps float64 `json:"input_mbps"`
+	InputS    float64 `json:"input_s"`
+	IdleMbps  float64 `json:"idle_mbps"`
+	IdleS     float64 `json:"idle_s"`
 }
 
 type inputKinds struct {
@@ -156,6 +171,10 @@ type inputKinds struct {
 	DoneToCap  summary `json:"done_to_change_capture_ms"`
 	Pixels     summary `json:"changed_pixels"`
 	MaxBelow   int     `json:"max_below"`
+	// PStates counts the GPU performance states read last before each
+	// input was sent, and VideoMHz is the video clock of those readings.
+	PStates  map[string]int `json:"pstates,omitempty"`
+	VideoMHz summary        `json:"video_mhz"`
 }
 
 // analyze computes the report of rec; the .h264 next to it is decoded.
@@ -181,6 +200,12 @@ func analyze(rec *record, o reportOptions) (recordReport, error) {
 		return rep, nil
 	}
 	offset := before.OffsetUS
+	for _, g := range rec.GPU {
+		if rep.GPUStates == nil {
+			rep.GPUStates = map[string]int{}
+		}
+		rep.GPUStates[gpuState(g)]++
+	}
 	rep.Video = videoSummary(rec.Video, offset, keepaliveRepeats(rec.Video.AUs))
 	if len(rec.Video.AUs) > 0 {
 		d, err := decodeCheck(filepath.Join(o.dir, rec.Video.File))
@@ -319,6 +344,16 @@ func decodeCheck(path string) (*decodeReport, error) {
 // measuredKinds are the input kinds inputSummary reports, in order.
 var measuredKinds = []string{"click_down", "click_up", "key_down", "key_up"}
 
+const (
+	// inputWindowUS is the part of a stream after an input that counts as
+	// input time: the agent's 750 ms warm window (docs/protocol.md §4) and
+	// the time its last access unit takes to arrive.
+	inputWindowUS = 800_000
+	// gpuMaxAgeUS is the oldest nvidia-smi reading that describes the GPU
+	// at an input.
+	gpuMaxAgeUS = 200_000
+)
+
 // inputSummary matches every measured input of rec with the first decoded
 // frame after it whose crop of the fixture window changed.
 func inputSummary(rec *record, offset float64, o reportOptions) (*inputReport, error) {
@@ -376,6 +411,38 @@ func inputSummary(rec *record, offset float64, o reportOptions) (*inputReport, e
 		changes[i] = change{index: idx, pixels: pixels, below: below}
 	}
 	rep.Kinds = inputTimings(events, changes, v.AUs, measuredKinds, offset)
+	videos := map[string][]float64{}
+	for _, in := range events {
+		k := rep.Kinds[in.Kind]
+		g, ok := gpuAt(rec.GPU, in.SentUS, gpuMaxAgeUS)
+		if k == nil || !in.OK || !ok {
+			continue
+		}
+		if k.PStates == nil {
+			k.PStates = map[string]int{}
+		}
+		k.PStates[g.PState]++
+		videos[in.Kind] = append(videos[in.Kind], float64(g.VideoMHz))
+	}
+	for kind, mhz := range videos {
+		rep.Kinds[kind].VideoMHz = summarize(mhz)
+	}
+	var lead, rest []float64
+	for _, a := range approaches(rec.Inputs) {
+		lead = append(lead, a.leadMS)
+		if a.hasInputBack {
+			rest = append(rest, a.restMS)
+		}
+		if g, ok := gpuAt(rec.GPU, a.firstMoveUS, gpuMaxAgeUS); ok {
+			if rep.ApproachGPU == nil {
+				rep.ApproachGPU = map[string]int{}
+			}
+			rep.ApproachGPU[gpuState(g)]++
+		}
+	}
+	rep.Approach, rep.Rest = summarize(lead), summarize(rest)
+	inBPS, idleBPS, inS, idleS := splitBitrate(v.AUs, inputWindows(rec.Inputs, inputWindowUS, v.OpenedUS, v.ClosedUS), v.OpenedUS, v.ClosedUS)
+	rep.InputMbps, rep.IdleMbps, rep.InputS, rep.IdleS = inBPS/1e6, idleBPS/1e6, inS, idleS
 	return rep, nil
 }
 
@@ -445,7 +512,17 @@ func printReport(w io.Writer, rep recordReport) {
 			kd := in.Kinds[k]
 			fmt.Fprintf(w, "  - %s: %d개(실패 %d, 변화 찾음 %d), ACK 왕복 %s, 송신→주입 완료(보정) %s, 송신→변화 AU 수신 %s, 주입 완료→변화 캡처(에이전트 시계) %s, 변화 픽셀 %s, 변화 전 프레임 최대 %d픽셀\n",
 				k, kd.Events, kd.Failed, kd.Matched, dist(kd.AckRTT, 2), dist(kd.SendToDone, 2), dist(kd.ToChange, 1), dist(kd.DoneToCap, 1), dist(kd.Pixels, 0), kd.MaxBelow)
+			if len(kd.PStates) > 0 {
+				fmt.Fprintf(w, "    - 보낼 때 GPU: %v, 비디오 클록(MHz) %s\n", kd.PStates, dist(kd.VideoMHz, 0))
+			}
 		}
+		if in.Approach.N > 0 {
+			fmt.Fprintf(w, "  - 포인터 이동: 첫 이동→클릭 down %s ms, 앞 입력→첫 이동 %s ms, 첫 이동 때 GPU %v\n", dist(in.Approach, 1), dist(in.Rest, 1), in.ApproachGPU)
+		}
+		fmt.Fprintf(w, "  - 비트레이트: 입력 뒤 %d ms 안 %s Mbps(%s초), 나머지 %s Mbps(%s초)\n", inputWindowUS/1000, f(in.InputMbps, 3), f(in.InputS, 1), f(in.IdleMbps, 3), f(in.IdleS, 1))
+	}
+	if len(rep.GPUStates) > 0 {
+		fmt.Fprintf(w, "- GPU(nvidia-smi 50 ms 표본): %v\n", rep.GPUStates)
 	}
 	if rep.Keys != nil {
 		printKeys(w, rep.Keys)

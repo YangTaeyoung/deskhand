@@ -2,7 +2,7 @@
 // QUIC without the daemon (docs/acceptance/screen.md).
 //
 //	screen-probe keygen -dir DIR
-//	screen-probe run -addr HOST:PORT -id DIR -agent-fp FP -out DIR -name NAME -scenario static|motion|input|keyframe [flags]
+//	screen-probe run -addr HOST:PORT -id DIR -agent-fp FP -out DIR -name NAME -scenario static|motion|input|click|keyframe [flags]
 //	screen-probe report -dir DIR [-delta N] [-min-pixels N] [-key-mad N] [-key-lit N]
 //
 // keygen writes a throwaway identity (probe.crt, probe.key) to DIR and prints
@@ -13,12 +13,14 @@
 // -fixture through app.launch (with --animate for motion), opens a video
 // stream of the display that shows the fixture and records it for -seconds
 // (static, motion) or while it clicks and presses keys in the fixture
-// (input), or takes -repeats key frames of a new stream, of a keyframe
+// (input) or moves the pointer onto its button and clicks it after a rest
+// (click), or takes -repeats key frames of a new stream, of a keyframe
 // control, of a config control with the same settings and of one that
 // changes max_width, each with a screen.capture still right after it
 // (keyframe), measures the clock again, ends the fixture and
 // writes NAME.json and NAME.h264 to -out (keyframe adds one .h264 and one
-// .png per key frame). Input goes only to the fixture: before every event
+// .png per key frame). With -gpu it reads the GPU's performance state and
+// clocks through nvidia-smi every 50 ms while it measures. Input goes only to the fixture: before every event
 // the fixture's window has to be in the foreground, before every button
 // press the element under the target point and before every key press the
 // focused element has to be the fixture's Same button; otherwise the input
@@ -42,7 +44,7 @@ import (
 
 const usage = `사용법:
   screen-probe keygen -dir 폴더
-  screen-probe run -addr 호스트:포트 -id 폴더 -agent-fp 지문 -out 폴더 -name 이름 -scenario static|motion|input|keyframe [옵션]
+  screen-probe run -addr 호스트:포트 -id 폴더 -agent-fp 지문 -out 폴더 -name 이름 -scenario static|motion|input|click|keyframe [옵션]
   screen-probe report -dir 폴더 [-delta N] [-min-pixels N] [-key-mad N] [-key-lit N]
 `
 

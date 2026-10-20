@@ -204,3 +204,69 @@ func TestKeyFrameComparison(t *testing.T) {
 		t.Errorf("crop of the RGB image %v", got)
 	}
 }
+
+func TestInputWindowsMergeAndCut(t *testing.T) {
+	inputs := []inputRecord{{SentUS: 5000}, {SentUS: 1000}, {SentUS: 1500}, {SentUS: 9800}, {SentUS: 50}}
+	got := inputWindows(inputs, 1000, 100, 10_000)
+	want := [][2]int64{{100, 2500}, {5000, 6000}, {9800, 10_000}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("windows %v, expected %v", got, want)
+	}
+}
+
+func TestSplitBitrateCountsWhereEachAccessUnitArrived(t *testing.T) {
+	aus := []auRecord{{RecvUS: 500, Size: 999}, {RecvUS: 1000, Size: 1000}, {RecvUS: 1999, Size: 3000}, {RecvUS: 2000, Size: 250}, {RecvUS: 3500, Size: 250}, {RecvUS: 4000, Size: 77}}
+	inBPS, outBPS, inS, outS := splitBitrate(aus, [][2]int64{{1000, 2000}}, 1000, 4000)
+	if inS != 0.001 || outS != 0.002 || inBPS != 4000*8/0.001 || outBPS != 500*8/0.002 {
+		t.Fatalf("in %v bps over %v s, out %v bps over %v s", inBPS, inS, outBPS, outS)
+	}
+	if in, out, _, _ := splitBitrate(nil, nil, 0, 0); in != 0 || out != 0 {
+		t.Fatalf("rates %v, %v of no time", in, out)
+	}
+}
+
+func TestApproachesTimeTheMovesBeforeEachClick(t *testing.T) {
+	inputs := []inputRecord{
+		{Kind: "pointer_move", SentUS: 100},
+		{Kind: "click_down_warmup", SentUS: 200},
+		{Kind: "click_up_warmup", SentUS: 600},
+		{Kind: "pointer_move", SentUS: 3_000},
+		{Kind: "pointer_move", SentUS: 3_016},
+		{Kind: "click_down", SentUS: 3_400},
+		{Kind: "click_up", SentUS: 3_800},
+		{Kind: "click_down", SentUS: 6_000},
+		{Kind: "click_up", SentUS: 6_400},
+		{Kind: "pointer_move", SentUS: 9_000},
+		{Kind: "click_down", SentUS: 9_500},
+	}
+	got := approaches(inputs)
+	want := []approach{
+		{firstMoveUS: 3_000, leadMS: 0.4, restMS: 2.4, hasInputBack: true},
+		{firstMoveUS: 9_000, leadMS: 0.5, restMS: 2.6, hasInputBack: true},
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("approaches %+v, expected %+v", got, want)
+	}
+}
+
+func TestGPUAtTakesTheLastReadingNotTooOld(t *testing.T) {
+	samples := []gpuSample{{US: 100, PState: "P8"}, {US: 150, PState: "P5"}, {US: 400, PState: "P0"}}
+	for _, c := range []struct {
+		us    int64
+		want  string
+		found bool
+	}{{99, "", false}, {100, "P8", true}, {240, "P5", true}, {251, "", false}, {399, "", false}, {400, "P0", true}, {500, "P0", true}, {501, "", false}} {
+		s, ok := gpuAt(samples, c.us, 100)
+		if ok != c.found || s.PState != c.want {
+			t.Errorf("gpuAt(%d) = %+v %v, expected %q %v", c.us, s, ok, c.want, c.found)
+		}
+	}
+	if s, ok := parseGPULine("P8, 300, 540"); !ok || s.PState != "P8" || s.GraphicsMHz != 300 || s.VideoMHz != 540 {
+		t.Errorf("parse %+v %v", s, ok)
+	}
+	for _, bad := range []string{"", "pstate, clocks.gr, clocks.video", "P8, [N/A], 540", "P8, 300"} {
+		if _, ok := parseGPULine(bad); ok {
+			t.Errorf("parsed %q", bad)
+		}
+	}
+}

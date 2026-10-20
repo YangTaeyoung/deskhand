@@ -13,9 +13,12 @@
 #   - runs screen-probe on the PC over loopback for each scenario: static
 #     (60 s), motion (60 s, fixture --animate), motion1920 (30 s, max_width
 #     1920), input (20 clicks and 20 Space presses on the fixture's Same
-#     button), keyframe (10 key frames each of a new stream, a keyframe
-#     control, a config control with the same settings and one that changes
-#     max_width, each with a screen.capture still); the default is all five;
+#     button), click and click1000 (20 clicks on that button, each after a
+#     2.5 s rest and a pointer approach of 320 ms or 1 s), keyframe (10 key
+#     frames each of a new stream, a keyframe control, a config control with
+#     the same settings and one that changes max_width, each with a
+#     screen.capture still); the default is all seven; each run reads the GPU's state with nvidia-smi
+#     (DESKHAND_PROBE_GPU, default nvidia-smi; empty for none);
 #   - copies the results and the agent log into the local folder, ends the
 #     launcher's process tree, deletes the task and the folder and runs
 #     screen-probe report on the local folder.
@@ -23,25 +26,30 @@ set -euo pipefail
 cd "$(dirname "$0")/../../.."
 
 if [ $# -lt 1 ]; then
-  echo "사용법: scripts/e2e/screen-probe/run.sh <결과 폴더> [static|motion|motion1920|input|keyframe …]" >&2
+  echo "사용법: scripts/e2e/screen-probe/run.sh <결과 폴더> [static|motion|motion1920|input|click|click1000|keyframe …]" >&2
   exit 2
 fi
 local_out="$1"
 shift
 scenarios=("$@")
 if [ ${#scenarios[@]} -eq 0 ]; then
-  scenarios=(static motion motion1920 input keyframe)
+  scenarios=(static motion motion1920 input click click1000 keyframe)
 fi
 for s in "${scenarios[@]}"; do
   case "$s" in
-    static|motion|motion1920|input|keyframe) ;;
-    *) echo "screen-probe: 알 수 없는 시나리오 ${s}입니다. static, motion, motion1920, input, keyframe 중에서 고르세요." >&2; exit 2 ;;
+    static|motion|motion1920|input|click|click1000|keyframe) ;;
+    *) echo "screen-probe: 알 수 없는 시나리오 ${s}입니다. static, motion, motion1920, input, click, click1000, keyframe 중에서 고르세요." >&2; exit 2 ;;
   esac
 done
 
 host="${DESKHAND_WINTEST_HOST:-windows}"
 base_dir="${DESKHAND_WINTEST_DIR:-C:\Users\apxkf\dev\deskhand-test}"
 port="${DESKHAND_PROBE_PORT:-47601}"
+gpu="${DESKHAND_PROBE_GPU-nvidia-smi}"
+if ! [[ "$gpu" =~ ^[A-Za-z0-9._:\\-]*$ ]]; then
+  echo "screen-probe: DESKHAND_PROBE_GPU는 공백·따옴표 없는 nvidia-smi 경로여야 합니다." >&2
+  exit 2
+fi
 if ! [[ "$base_dir" =~ ^[A-Za-z]:(\\[A-Za-z0-9._-]+)+$ ]]; then
   echo "screen-probe: DESKHAND_WINTEST_DIR는 공백·따옴표 없는 Windows 절대 경로여야 합니다." >&2
   exit 2
@@ -156,8 +164,13 @@ for s in "${scenarios[@]}"; do
     motion) args=(-scenario motion -seconds 60) ;;
     motion1920) args=(-scenario motion -seconds 30 -max-width 1920) ;;
     input) args=(-scenario input -clicks 20 -keys 20) ;;
+    click) args=(-scenario click -clicks 20 -approach-ms 320) ;;
+    click1000) args=(-scenario click -clicks 20 -approach-ms 1000) ;;
     keyframe) args=(-scenario keyframe -repeats 10) ;;
   esac
+  if [ -n "$gpu" ]; then
+    args+=(-gpu "$gpu")
+  fi
   echo "screen-probe: ${s}" >&2
   if ! remote_ssh "\"${remote_dir}\\screen-probe.exe\" run -addr 127.0.0.1:${port} -id \"${remote_dir}\\probe\" -agent-fp ${agent_fp} -out \"${remote_dir}\\out\" -name ${s} -fixture \"${remote_dir}\\deskhand-fixture.exe\" ${args[*]}"; then
     status=1

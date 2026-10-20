@@ -319,3 +319,99 @@ func brightness(img []byte, level byte) (mean, above float64) {
 	}
 	return float64(sum) / float64(len(img)), float64(n) / float64(len(img))
 }
+
+// inputWindows returns the probe-clock ranges [start, end) that begin when
+// an input was sent and last windowUS, merged where they overlap and cut
+// to [from, to).
+func inputWindows(inputs []inputRecord, windowUS, from, to int64) [][2]int64 {
+	starts := make([]int64, 0, len(inputs))
+	for _, in := range inputs {
+		starts = append(starts, in.SentUS)
+	}
+	slices.Sort(starts)
+	var out [][2]int64
+	for _, s := range starts {
+		start, end := max(s, from), min(s+windowUS, to)
+		if start >= end {
+			continue
+		}
+		if n := len(out); n > 0 && start <= out[n-1][1] {
+			out[n-1][1] = max(out[n-1][1], end)
+			continue
+		}
+		out = append(out, [2]int64{start, end})
+	}
+	return out
+}
+
+// splitBitrate returns the bitrate in bits per second of the access units
+// received within windows and of those received outside them, within
+// [from, to), and the seconds of each part; a part of no time has rate 0.
+func splitBitrate(aus []auRecord, windows [][2]int64, from, to int64) (inBPS, outBPS, inS, outS float64) {
+	inside := func(us int64) bool {
+		for _, w := range windows {
+			if us >= w[0] && us < w[1] {
+				return true
+			}
+		}
+		return false
+	}
+	var inUS int64
+	for _, w := range windows {
+		inUS += w[1] - w[0]
+	}
+	outUS := to - from - inUS
+	var inBytes, outBytes float64
+	for _, au := range aus {
+		switch {
+		case au.RecvUS < from || au.RecvUS >= to:
+		case inside(au.RecvUS):
+			inBytes += float64(au.Size)
+		default:
+			outBytes += float64(au.Size)
+		}
+	}
+	if inUS > 0 {
+		inBPS = inBytes * 8 / (float64(inUS) / 1e6)
+	}
+	if outUS > 0 {
+		outBPS = outBytes * 8 / (float64(outUS) / 1e6)
+	}
+	return inBPS, outBPS, float64(inUS) / 1e6, float64(outUS) / 1e6
+}
+
+// approach is the pointer movement before one click: when its first move
+// was sent, the milliseconds from there to the click_down and the
+// milliseconds from the input before the moves to the first move.
+type approach struct {
+	firstMoveUS  int64
+	leadMS       float64
+	restMS       float64
+	hasInputBack bool
+}
+
+// approaches returns the approach of every click_down that pointer_move
+// inputs came right before.
+func approaches(inputs []inputRecord) []approach {
+	var out []approach
+	first := -1
+	for i, in := range inputs {
+		switch in.Kind {
+		case "pointer_move":
+			if first < 0 {
+				first = i
+			}
+			continue
+		case "click_down":
+			if first >= 0 {
+				a := approach{firstMoveUS: inputs[first].SentUS, leadMS: ms(float64(in.SentUS - inputs[first].SentUS))}
+				if first > 0 {
+					a.restMS, a.hasInputBack = ms(float64(inputs[first].SentUS-inputs[first-1].SentUS)), true
+				}
+				out = append(out, a)
+			}
+		}
+		first = -1
+	}
+	return out
+}
