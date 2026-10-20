@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 )
 
@@ -19,6 +18,7 @@ type reportOptions struct {
 	dir              string
 	delta, minPixels int
 	windowMS         int
+	keyMAD, keyLit   float64
 }
 
 func cmdReport(args []string, stdout, stderr io.Writer) int {
@@ -28,6 +28,8 @@ func cmdReport(args []string, stdout, stderr io.Writer) int {
 	fs.IntVar(&o.delta, "delta", 24, "바뀐 픽셀로 셀 밝기 차이(0–255)")
 	fs.IntVar(&o.minPixels, "min-pixels", 40, "화면 변화로 볼 바뀐 픽셀 수")
 	fs.IntVar(&o.windowMS, "window-ms", 1000, "입력 뒤 화면 변화를 찾는 시간(ms)")
+	fs.Float64Var(&o.keyMAD, "key-mad", 8, "키프레임과 screen.capture의 fixture 영역 평균 절대 차이 상한(0–255)")
+	fs.Float64Var(&o.keyLit, "key-lit", 0.01, "검은 화면이 아닌 키프레임의 밝기 24 넘는 값 비율 하한")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -83,6 +85,7 @@ type recordReport struct {
 	Video       *videoReport  `json:"video,omitempty"`
 	Decode      *decodeReport `json:"decode,omitempty"`
 	Input       *inputReport  `json:"input,omitempty"`
+	Keys        *keyReport    `json:"keys,omitempty"`
 	Skipped     string        `json:"skipped,omitempty"`
 	Notes       []string      `json:"notes,omitempty"`
 }
@@ -105,6 +108,8 @@ type videoReport struct {
 	Keyframes        int      `json:"keyframes"`
 	FPS              float64  `json:"fps"`
 	BitrateBPS       float64  `json:"bitrate_bps"`
+	Repeats          int      `json:"repeats"`
+	RepeatsChecked   bool     `json:"repeats_checked"`
 	FirstAUMS        float64  `json:"first_au_ms"`
 	FirstAUBytes     int      `json:"first_au_bytes"`
 	AUBytes          summary  `json:"au_bytes"`
@@ -177,13 +182,28 @@ func analyze(rec *record, o reportOptions) (recordReport, error) {
 		return rep, nil
 	}
 	offset := before.OffsetUS
-	rep.Video = videoSummary(rec.Video, offset)
+	var repeats map[int]bool
+	if rec.Scenario != "motion" && len(rec.Video.AUs) > 0 {
+		r, err := findRepeats(o.dir, rec.Video, o.delta)
+		if err != nil {
+			return rep, err
+		}
+		repeats = r
+	}
+	rep.Video = videoSummary(rec.Video, offset, repeats)
 	if len(rec.Video.AUs) > 0 {
 		d, err := decodeCheck(filepath.Join(o.dir, rec.Video.File))
 		if err != nil {
 			return rep, err
 		}
 		rep.Decode = d
+	}
+	if len(rec.Keys) > 0 {
+		k, err := keySummary(rec, o)
+		if err != nil {
+			return rep, err
+		}
+		rep.Keys = k
 	}
 	if len(rec.Inputs) > 0 && len(rec.Video.AUs) > 0 && rec.Fixture != nil && rec.Display != nil {
 		in, err := inputSummary(rec, offset, o)
@@ -198,9 +218,12 @@ func analyze(rec *record, o reportOptions) (recordReport, error) {
 func ms(us float64) float64 { return us / 1000 }
 
 // videoSummary describes v with the agent clock mapped to the probe clock
-// by offset.
-func videoSummary(v *videoRecord, offset float64) *videoReport {
-	r := &videoReport{Refusal: v.Refusal, Error: v.Error, Display: v.Header.Display}
+// by offset (probe = agent − offset). The latency distributions leave out
+// the first access unit and the access units in repeats, which encode the
+// image of the one before again; repeats nil means they were not looked
+// for.
+func videoSummary(v *videoRecord, offset float64, repeats map[int]bool) *videoReport {
+	r := &videoReport{Refusal: v.Refusal, Error: v.Error, Display: v.Header.Display, Repeats: len(repeats), RepeatsChecked: repeats != nil}
 	if len(v.Infos) > 0 {
 		i := v.Infos[0].Info
 		r.Encoder, r.Hardware, r.Capture, r.Width, r.Height, r.SrcWidth, r.SrcHeight, r.TargetBitrate =
@@ -225,6 +248,9 @@ func videoSummary(v *videoRecord, offset float64) *videoReport {
 		if i == 0 {
 			r.FirstAUMS = ms(float64(au.RecvUS - v.OpenedUS))
 			r.FirstAUBytes = au.Size
+			continue
+		}
+		if repeats[i] {
 			continue
 		}
 		c2r = append(c2r, ms(float64(au.RecvUS)-(float64(au.CaptureUS)-offset)))
@@ -323,28 +349,7 @@ func inputSummary(rec *record, offset float64, o reportOptions) (*inputReport, e
 	}
 	rep := &inputReport{Crop: [4]int{x0, y0, cw, ch}, Delta: o.delta, MinPixels: o.minPixels, Kinds: map[string]*inputKinds{}, Order: measuredKinds}
 
-	var events []inputRecord
-	var refs, last []int
-	for _, in := range rec.Inputs {
-		if !slices.Contains(measuredKinds, in.Kind) {
-			continue
-		}
-		ref, end := -1, -1
-		for k, au := range v.AUs {
-			if au.RecvUS < in.SentUS {
-				ref = k
-			}
-			if au.RecvUS <= in.SentUS+int64(o.windowMS)*1000 {
-				end = k
-			}
-		}
-		if !in.OK {
-			ref = -1
-		}
-		events = append(events, in)
-		refs = append(refs, ref)
-		last = append(last, end)
-	}
+	events, refs, last := measuredEvents(rec.Inputs, v.AUs, measuredKinds, o.windowMS)
 	finder := newChangeFinder(refs, last, o.delta, o.minPixels)
 	cmd := exec.Command("ffmpeg", "-nostdin", "-v", "error", "-i", v.File, "-vf",
 		fmt.Sprintf("crop=%d:%d:%d:%d,format=gray", cw, ch, x0, y0), "-fps_mode", "passthrough", "-f", "rawvideo", "pipe:1")
@@ -375,37 +380,52 @@ func inputSummary(rec *record, offset float64, o reportOptions) (*inputReport, e
 		return nil, fmt.Errorf("%s decoded to %d frames for %d access units; the frames cannot be matched to the AUs", v.File, n, len(v.AUs))
 	}
 
-	acc := map[string]*struct{ ack, done, change, cap, pixels []float64 }{}
-	for _, k := range measuredKinds {
-		rep.Kinds[k] = &inputKinds{}
-		acc[k] = &struct{ ack, done, change, cap, pixels []float64 }{}
-	}
-	for i, in := range events {
-		kind, a := rep.Kinds[in.Kind], acc[in.Kind]
-		kind.Events++
-		if !in.OK {
-			kind.Failed++
-			continue
-		}
-		a.ack = append(a.ack, ms(float64(in.AckUS-in.SentUS)))
-		a.done = append(a.done, ms(float64(in.DoneUS)-offset-float64(in.SentUS)))
+	changes := make([]change, len(events))
+	for i := range events {
 		idx, pixels, below := finder.result(i)
-		kind.MaxBelow = max(kind.MaxBelow, below)
-		if idx < 0 {
-			continue
-		}
-		kind.Matched++
-		au := v.AUs[idx]
-		a.change = append(a.change, ms(float64(au.RecvUS-in.SentUS)))
-		a.cap = append(a.cap, ms(float64(au.CaptureUS)-float64(in.DoneUS)))
-		a.pixels = append(a.pixels, float64(pixels))
+		changes[i] = change{index: idx, pixels: pixels, below: below}
 	}
-	for _, k := range measuredKinds {
-		kind, a := rep.Kinds[k], acc[k]
-		kind.AckRTT, kind.SendToDone, kind.ToChange, kind.DoneToCap, kind.Pixels =
-			summarize(a.ack), summarize(a.done), summarize(a.change), summarize(a.cap), summarize(a.pixels)
-	}
+	rep.Kinds = inputTimings(events, changes, v.AUs, measuredKinds, offset)
 	return rep, nil
+}
+
+// findRepeats decodes the video of v, scaled to 960 pixels wide in
+// grayscale, and returns the indexes of the access units whose image equals
+// the one before by repeatFinder with delta.
+func findRepeats(dir string, v *videoRecord, delta int) (map[int]bool, error) {
+	w, h := int(v.AUs[0].Width), int(v.AUs[0].Height)
+	sw := min(960, w)
+	sh := (h*sw/w + 1) &^ 1
+	cmd := exec.Command("ffmpeg", "-nostdin", "-v", "error", "-i", v.File, "-vf",
+		fmt.Sprintf("scale=%d:%d:flags=area,format=gray", sw, sh), "-fps_mode", "passthrough", "-f", "rawvideo", "pipe:1")
+	cmd.Dir = dir
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	br := bufio.NewReaderSize(stdout, 4<<20)
+	frame := make([]byte, sw*sh)
+	finder := newRepeatFinder(delta)
+	n := 0
+	for {
+		if _, err := io.ReadFull(br, frame); err != nil {
+			break
+		}
+		finder.frame(n, frame)
+		n++
+	}
+	if err := cmd.Wait(); err != nil {
+		return nil, fmt.Errorf("ffmpeg decode of %s: %v: %s", v.File, err, stderr.String())
+	}
+	if n != len(v.AUs) {
+		return nil, fmt.Errorf("%s decoded to %d frames for %d access units; repeats cannot be matched to the AUs", v.File, n, len(v.AUs))
+	}
+	return finder.repeats, nil
 }
 
 func clamp(v, lo, hi int) int { return min(max(v, lo), hi) }
@@ -454,6 +474,9 @@ func printReport(w io.Writer, rep recordReport) {
 			v.Encoder, v.Hardware, v.Capture, v.Display, v.Width, v.Height, v.SrcWidth, v.SrcHeight, f(float64(v.TargetBitrate)/1e6, 1))
 		fmt.Fprintf(w, "- %s초 동안 AU %d개(키프레임 %d), 평균 %s fps, %s Mbps\n", f(v.SpanS, 1), v.AUs, v.Keyframes, f(v.FPS, 1), f(v.BitrateBPS/1e6, 2))
 		fmt.Fprintf(w, "- 첫 AU: 스트림 연 뒤 %s ms, %d바이트\n", f(v.FirstAUMS, 1), v.FirstAUBytes)
+		if v.RepeatsChecked {
+			fmt.Fprintf(w, "- 앞 AU와 같은 이미지(밝기 차 %d 이상 픽셀 0개)를 다시 인코딩한 AU %d개는 지연 분포에서 뺐다\n", 24, v.Repeats)
+		}
 		fmt.Fprintf(w, "- AU 크기(키프레임 제외, 바이트) p50 / p95: %s; 키프레임: %s\n", dist(v.AUBytes, 0), dist(v.KeyBytes, 0))
 		fmt.Fprintf(w, "- 캡처→수신(시계 보정, 첫 AU 제외, ms) p50 / p95: %s\n", dist(v.CaptureToRecv, 2))
 		fmt.Fprintf(w, "- 캡처→인코딩 완료(에이전트 시계, ms): %s\n", dist(v.CaptureToEncoded, 2))
@@ -474,6 +497,9 @@ func printReport(w io.Writer, rep recordReport) {
 			fmt.Fprintf(w, "  - %s: %d개(실패 %d, 변화 찾음 %d), ACK 왕복 %s, 송신→주입 완료(보정) %s, 송신→변화 AU 수신 %s, 주입 완료→변화 캡처(에이전트 시계) %s, 변화 픽셀 %s, 변화 전 프레임 최대 %d픽셀\n",
 				k, kd.Events, kd.Failed, kd.Matched, dist(kd.AckRTT, 2), dist(kd.SendToDone, 2), dist(kd.ToChange, 1), dist(kd.DoneToCap, 1), dist(kd.Pixels, 0), kd.MaxBelow)
 		}
+	}
+	if rep.Keys != nil {
+		printKeys(w, rep.Keys)
 	}
 	if rep.Skipped != "" {
 		fmt.Fprintf(w, "- 건너뜀: %s\n", rep.Skipped)

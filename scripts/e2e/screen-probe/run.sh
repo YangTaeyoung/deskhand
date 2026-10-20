@@ -13,7 +13,9 @@
 #   - runs screen-probe on the PC over loopback for each scenario: static
 #     (60 s), motion (60 s, fixture --animate), motion1920 (30 s, max_width
 #     1920), input (20 clicks and 20 Space presses on the fixture's Same
-#     button); the default is all four;
+#     button), keyframe (10 key frames each of a new stream, a keyframe
+#     control and a config control, each with a screen.capture still); the
+#     default is all five;
 #   - copies the results and the agent log into the local folder, ends the
 #     launcher's process tree, deletes the task and the folder and runs
 #     screen-probe report on the local folder.
@@ -21,19 +23,19 @@ set -euo pipefail
 cd "$(dirname "$0")/../../.."
 
 if [ $# -lt 1 ]; then
-  echo "사용법: scripts/e2e/screen-probe/run.sh <결과 폴더> [static|motion|motion1920|input …]" >&2
+  echo "사용법: scripts/e2e/screen-probe/run.sh <결과 폴더> [static|motion|motion1920|input|keyframe …]" >&2
   exit 2
 fi
 local_out="$1"
 shift
 scenarios=("$@")
 if [ ${#scenarios[@]} -eq 0 ]; then
-  scenarios=(static motion motion1920 input)
+  scenarios=(static motion motion1920 input keyframe)
 fi
 for s in "${scenarios[@]}"; do
   case "$s" in
-    static|motion|motion1920|input) ;;
-    *) echo "screen-probe: 알 수 없는 시나리오 ${s}입니다. static, motion, motion1920, input 중에서 고르세요." >&2; exit 2 ;;
+    static|motion|motion1920|input|keyframe) ;;
+    *) echo "screen-probe: 알 수 없는 시나리오 ${s}입니다. static, motion, motion1920, input, keyframe 중에서 고르세요." >&2; exit 2 ;;
   esac
 done
 
@@ -154,6 +156,7 @@ for s in "${scenarios[@]}"; do
     motion) args=(-scenario motion -seconds 60) ;;
     motion1920) args=(-scenario motion -seconds 30 -max-width 1920) ;;
     input) args=(-scenario input -clicks 20 -keys 20) ;;
+    keyframe) args=(-scenario keyframe -repeats 10) ;;
   esac
   echo "screen-probe: ${s}" >&2
   if ! remote_ssh "\"${remote_dir}\\screen-probe.exe\" run -addr 127.0.0.1:${port} -id \"${remote_dir}\\probe\" -agent-fp ${agent_fp} -out \"${remote_dir}\\out\" -name ${s} -fixture \"${remote_dir}\\deskhand-fixture.exe\" ${args[*]}"; then

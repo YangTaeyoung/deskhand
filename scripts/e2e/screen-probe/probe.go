@@ -2,13 +2,16 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -37,6 +40,7 @@ type record struct {
 	Display     *displayInfo  `json:"display,omitempty"`
 	Video       *videoRecord  `json:"video,omitempty"`
 	Inputs      []inputRecord `json:"inputs,omitempty"`
+	Keys        []keySample   `json:"keys,omitempty"`
 	Skipped     string        `json:"skipped,omitempty"`
 	Notes       []string      `json:"notes,omitempty"`
 }
@@ -109,6 +113,28 @@ type auRecord struct {
 	Size         int    `json:"size"`
 }
 
+// keySample is one key frame of the keyframe scenario and the still image
+// taken right after it arrived. Case is start (the first access unit of a
+// new stream), keyframe (after a keyframe control) or recreate (after a
+// config control, which makes the encoder again); SentUS is when the stream
+// was opened or the control written.
+type keySample struct {
+	Case        string `json:"case"`
+	N           int    `json:"n"`
+	SentUS      int64  `json:"sent_us"`
+	Seq         uint64 `json:"seq"`
+	CaptureUS   uint64 `json:"capture_us"`
+	RecvUS      int64  `json:"recv_us"`
+	Size        int    `json:"size"`
+	AUFile      string `json:"au_file,omitempty"`
+	Still       string `json:"still_file,omitempty"`
+	StillMonoUS uint64 `json:"still_mono_us,omitempty"`
+	StillMethod string `json:"still_method,omitempty"`
+	StillW      int    `json:"still_w,omitempty"`
+	StillH      int    `json:"still_h,omitempty"`
+	Error       string `json:"error,omitempty"`
+}
+
 // inputRecord is one input event and its ack.
 type inputRecord struct {
 	Seq    uint64 `json:"seq"`
@@ -125,7 +151,7 @@ type inputRecord struct {
 type options struct {
 	addr, idDir, agentFP, out, name, scenario, fixture string
 	display, seconds, maxWidth, maxFPS, bitrate        int
-	clicks, keys, syncs                                int
+	clicks, keys, syncs, repeats, stillWidth           int
 }
 
 func cmdRun(args []string, stdout, stderr io.Writer) int {
@@ -136,7 +162,7 @@ func cmdRun(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&o.agentFP, "agent-fp", "", "에이전트 인증서의 SHA-256 지문")
 	fs.StringVar(&o.out, "out", "", "결과(.json, .h264)를 쓸 폴더")
 	fs.StringVar(&o.name, "name", "", "결과 파일 이름")
-	fs.StringVar(&o.scenario, "scenario", "static", "static, motion 또는 input")
+	fs.StringVar(&o.scenario, "scenario", "static", "static, motion, input 또는 keyframe")
 	fs.StringVar(&o.fixture, "fixture", "", "에이전트 PC의 deskhand-fixture.exe 경로")
 	fs.IntVar(&o.display, "display", 0, "fixture 없이 측정할 디스플레이 인덱스")
 	fs.IntVar(&o.seconds, "seconds", 60, "static·motion 수신 시간(초)")
@@ -146,6 +172,8 @@ func cmdRun(args []string, stdout, stderr io.Writer) int {
 	fs.IntVar(&o.clicks, "clicks", 20, "input에서 누를 클릭 수")
 	fs.IntVar(&o.keys, "keys", 20, "input에서 누를 Space 키 수")
 	fs.IntVar(&o.syncs, "syncs", 50, "앞뒤로 보낼 time.sync 수")
+	fs.IntVar(&o.repeats, "repeats", 10, "keyframe에서 경우마다 받을 키프레임 수")
+	fs.IntVar(&o.stillWidth, "still-width", 1920, "keyframe에서 비교할 screen.capture의 max_width")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -154,10 +182,10 @@ func cmdRun(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, "-addr, -id, -out, -name을 모두 주세요", nil)
 	case !validFingerprint(o.agentFP):
 		return fail(stderr, "-agent-fp는 deskhand-agent init이 출력한 64자리 16진수 지문이어야 합니다", nil)
-	case o.scenario != "static" && o.scenario != "motion" && o.scenario != "input":
-		return fail(stderr, "-scenario는 static, motion, input 중 하나여야 합니다", nil)
-	case o.scenario == "input" && o.fixture == "":
-		return fail(stderr, "input은 -fixture가 있어야 합니다. 에이전트 PC의 deskhand-fixture.exe 경로를 주세요", nil)
+	case !slices.Contains([]string{"static", "motion", "input", "keyframe"}, o.scenario):
+		return fail(stderr, "-scenario는 static, motion, input, keyframe 중 하나여야 합니다", nil)
+	case (o.scenario == "input" || o.scenario == "keyframe") && o.fixture == "":
+		return fail(stderr, o.scenario+"은 -fixture가 있어야 합니다. 에이전트 PC의 deskhand-fixture.exe 경로를 주세요", nil)
 	}
 	rec, err := run(o)
 	if rec != nil {
@@ -213,7 +241,7 @@ func run(o options) (*record, error) {
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(o.seconds+o.clicks*3+o.keys*3+180)*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(o.seconds+o.clicks*3+o.keys*3+o.repeats*20+180)*time.Second)
 	defer cancel()
 	rec := &record{Name: o.name, Scenario: o.scenario, Addr: o.addr, Started: time.Now().Format(time.RFC3339),
 		ClockSource: clockSource(), TimerResMS: []float64{timerResolutionMS()}}
@@ -266,7 +294,16 @@ func run(o options) (*record, error) {
 	rec.Display = disp
 
 	header := wire.StreamHeader{S: "video", Display: disp.Index, MaxWidth: o.maxWidth, MaxFPS: o.maxFPS, Bitrate: o.bitrate, Codec: "h264"}
-	video, err := startVideo(ctx, conn, header, filepath.Join(o.out, o.name+".h264"))
+	if o.scenario == "keyframe" {
+		time.Sleep(time.Second)
+		video, runErr := runKeys(ctx, conn, rpc, rec, o, header)
+		if video != nil {
+			rec.Video = video.rec
+			video.stop()
+		}
+		return rec, finish(rpc, rec, o, runErr)
+	}
+	video, err := startVideo(ctx, conn, header, filepath.Join(o.out, o.name+".h264"), false)
 	if err != nil {
 		return rec, err
 	}
@@ -286,13 +323,18 @@ func run(o options) (*record, error) {
 		time.Sleep(1500 * time.Millisecond)
 	}
 	video.stop()
+	return rec, finish(rpc, rec, o, runErr)
+}
+
+// finish measures the agent clock again after a run and returns runErr.
+func finish(rpc *rpcClient, rec *record, o options, runErr error) error {
 	if after, err := syncRounds(rpc, o.syncs); err == nil {
 		rec.SyncAfter = after
 	} else {
 		rec.Notes = append(rec.Notes, "time.sync after: "+err.Error())
 	}
 	rec.TimerResMS = append(rec.TimerResMS, timerResolutionMS())
-	return rec, runErr
+	return runErr
 }
 
 // syncRounds sends n time.sync requests one after another, 5 ms apart.
@@ -522,28 +564,78 @@ type videoRun struct {
 	f    *os.File
 	w    *bufio.Writer
 	done chan struct{}
+	// keys receives the key access units with their bytes when the run
+	// watches them, and is nil otherwise.
+	keys chan keyAU
+}
+
+// keyAU is a key access unit and its Annex-B bytes.
+type keyAU struct {
+	rec  auRecord
+	data []byte
 }
 
 // startVideo opens a video stream with header and records its frames, the
-// access units' bytes in order to path.
-func startVideo(ctx context.Context, conn *quic.Conn, header wire.StreamHeader, path string) (*videoRun, error) {
-	f, err := os.Create(path)
-	if err != nil {
-		return nil, err
+// access units' bytes in order to path unless it is empty; with keys the
+// key access units also go to the run's keys channel.
+func startVideo(ctx context.Context, conn *quic.Conn, header wire.StreamHeader, path string, keys bool) (*videoRun, error) {
+	v := &videoRun{rec: &videoRecord{Header: header}, done: make(chan struct{})}
+	if path != "" {
+		f, err := os.Create(path)
+		if err != nil {
+			return nil, err
+		}
+		v.f, v.w, v.rec.File = f, bufio.NewWriterSize(f, 1<<20), filepath.Base(path)
+	}
+	if keys {
+		v.keys = make(chan keyAU, 64)
+	}
+	closeFile := func() {
+		if v.f != nil {
+			v.f.Close()
+		}
 	}
 	st, err := conn.OpenStreamSync(ctx)
 	if err != nil {
-		f.Close()
+		closeFile()
 		return nil, err
 	}
-	v := &videoRun{rec: &videoRecord{Header: header, File: filepath.Base(path)}, st: st, f: f, w: bufio.NewWriterSize(f, 1<<20), done: make(chan struct{})}
+	v.st = st
 	v.rec.OpenedUS = nowUS()
 	if err := wire.WriteHeader(st, header); err != nil {
-		f.Close()
+		closeFile()
 		return nil, err
 	}
 	go v.loop(bufio.NewReaderSize(st, 1<<20))
 	return v, nil
+}
+
+// control writes c on the stream.
+func (v *videoRun) control(c wire.VideoControl) error {
+	b, err := json.Marshal(c)
+	if err != nil {
+		return err
+	}
+	return wire.WriteFrame(v.st, wire.KindClientControl, b)
+}
+
+// nextKey returns the first key access unit with a seq above after that
+// arrives within timeout.
+func (v *videoRun) nextKey(after uint64, timeout time.Duration) (keyAU, error) {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	for {
+		select {
+		case k := <-v.keys:
+			if k.rec.Seq > after {
+				return k, nil
+			}
+		case <-v.done:
+			return keyAU{}, fmt.Errorf("the video stream ended before a key frame after AU %d (%s%s)", after, v.rec.Refusal, v.rec.Error)
+		case <-timer.C:
+			return keyAU{}, fmt.Errorf("no key frame after AU %d within %v", after, timeout)
+		}
+	}
 }
 
 func (v *videoRun) loop(br *bufio.Reader) {
@@ -569,11 +661,20 @@ func (v *videoRun) loop(br *bufio.Reader) {
 				v.rec.Error = err.Error()
 				return
 			}
-			v.rec.AUs = append(v.rec.AUs, auRecord{Seq: au.Seq, Key: au.Key, Config: au.HasConfig, Width: au.Width, Height: au.Height,
-				CaptureUS: au.CaptureMonoUS, EncodeDoneUS: au.EncodeDoneMonoUS, RecvUS: now, Size: len(au.Data)})
-			if _, err := v.w.Write(au.Data); err != nil {
-				v.rec.Error = err.Error()
-				return
+			r := auRecord{Seq: au.Seq, Key: au.Key, Config: au.HasConfig, Width: au.Width, Height: au.Height,
+				CaptureUS: au.CaptureMonoUS, EncodeDoneUS: au.EncodeDoneMonoUS, RecvUS: now, Size: len(au.Data)}
+			v.rec.AUs = append(v.rec.AUs, r)
+			if v.w != nil {
+				if _, err := v.w.Write(au.Data); err != nil {
+					v.rec.Error = err.Error()
+					return
+				}
+			}
+			if v.keys != nil && au.Key {
+				select {
+				case v.keys <- keyAU{rec: r, data: bytes.Clone(au.Data)}:
+				default:
+				}
 			}
 		case wire.KindVideoInfo:
 			var info wire.VideoInfo
@@ -602,8 +703,104 @@ func (v *videoRun) stop() {
 		<-v.done
 	}
 	v.rec.ClosedUS = nowUS()
-	_ = v.w.Flush()
-	_ = v.f.Close()
+	if v.f != nil {
+		_ = v.w.Flush()
+		_ = v.f.Close()
+	}
+}
+
+// runKeys takes o.repeats key frames in each case of the keyframe scenario
+// and a still image with screen.capture right after each: the first access
+// unit of a new stream, then on one stream the key frame of a keyframe
+// control and the one after a config control with the stream's settings,
+// which makes the encoder again. It returns that stream, whose access units
+// go to NAME.h264; each key frame goes to NAME_<case>_<n>.h264 and its still
+// to NAME_<case>_<n>.png.
+func runKeys(ctx context.Context, conn *quic.Conn, rpc *rpcClient, rec *record, o options, header wire.StreamHeader) (*videoRun, error) {
+	keep := func(s *keySample, k keyAU) error {
+		s.Seq, s.CaptureUS, s.RecvUS, s.Size = k.rec.Seq, k.rec.CaptureUS, k.rec.RecvUS, k.rec.Size
+		s.AUFile = fmt.Sprintf("%s_%s_%02d.h264", o.name, s.Case, s.N)
+		if err := os.WriteFile(filepath.Join(o.out, s.AUFile), k.data, 0o644); err != nil {
+			return err
+		}
+		res, err := rpc.call("screen.capture", proto.Message{"display": header.Display, "format": "png", "max_width": o.stillWidth}, 30*time.Second)
+		if err != nil {
+			s.Error = err.Error()
+			return nil
+		}
+		data, err := base64.StdEncoding.DecodeString(res.String("data"))
+		if err != nil {
+			s.Error = "screen.capture data: " + err.Error()
+			return nil
+		}
+		s.Still = fmt.Sprintf("%s_%s_%02d.png", o.name, s.Case, s.N)
+		if mono, ok := res["mono_us"].(float64); ok {
+			s.StillMonoUS = uint64(mono)
+		}
+		s.StillMethod, s.StillW, s.StillH = res.String("method"), res.Int("width"), res.Int("height")
+		return os.WriteFile(filepath.Join(o.out, s.Still), data, 0o644)
+	}
+	for i := range o.repeats {
+		s := keySample{Case: "start", N: i, SentUS: nowUS()}
+		v, err := startVideo(ctx, conn, header, "", true)
+		if err != nil {
+			return nil, err
+		}
+		k, err := v.nextKey(0, 15*time.Second)
+		if err == nil {
+			err = keep(&s, k)
+		} else {
+			s.Error = err.Error()
+			err = nil
+		}
+		v.stop()
+		rec.Keys = append(rec.Keys, s)
+		if err != nil {
+			return nil, err
+		}
+		time.Sleep(700 * time.Millisecond)
+	}
+	v, err := startVideo(ctx, conn, header, filepath.Join(o.out, o.name+".h264"), true)
+	if err != nil {
+		return nil, err
+	}
+	first, err := v.nextKey(0, 15*time.Second)
+	if err != nil {
+		return v, err
+	}
+	last := first.rec.Seq
+	time.Sleep(1500 * time.Millisecond)
+	for _, c := range []struct {
+		name string
+		ctl  wire.VideoControl
+	}{
+		{"keyframe", wire.VideoControl{Op: wire.ControlKeyframe}},
+		{"recreate", wire.VideoControl{Op: wire.ControlConfig, MaxFPS: header.MaxFPS, MaxWidth: header.MaxWidth}},
+	} {
+		for i := range o.repeats {
+			if ctx.Err() != nil {
+				return v, ctx.Err()
+			}
+			s := keySample{Case: c.name, N: i, SentUS: nowUS()}
+			if err := v.control(c.ctl); err != nil {
+				return v, err
+			}
+			k, err := v.nextKey(last, 10*time.Second)
+			if err == nil {
+				last = k.rec.Seq
+				err = keep(&s, k)
+			} else {
+				s.Error = err.Error()
+				err = nil
+			}
+			rec.Keys = append(rec.Keys, s)
+			if err != nil {
+				return v, err
+			}
+			time.Sleep(time.Second)
+		}
+	}
+	return v, nil
 }
 
 // inputRun is an input stream that sends one event at a time and reads its
@@ -743,6 +940,22 @@ func runInput(ctx context.Context, conn *quic.Conn, rpc *rpcClient, rec *record,
 		}
 		return nil
 	}
+	focusedOnTarget := func() error {
+		at, err := rpc.call("ui.focused", nil, 20*time.Second)
+		if err != nil {
+			return fmt.Errorf("%w: ui.focused: %v", errGuard, err)
+		}
+		w, _ := at["window"].(map[string]any)
+		n, _ := at["node"].(map[string]any)
+		if w == nil || w["id"] != fx.Window || n == nil || n["name"] != "Same" {
+			return fmt.Errorf("%w: the focused element is %v in window %v, not the fixture's Same button", errGuard, n, w)
+		}
+		node := proto.Message(n)
+		if x, y := node.Int("x"), node.Int("y"); tx < x || ty < y || tx >= x+node.Int("w") || ty >= y+node.Int("h") {
+			return fmt.Errorf("%w: the focused Same button at (%d,%d) %dx%d is not the one at (%d,%d)", errGuard, x, y, node.Int("w"), node.Int("h"), tx, ty)
+		}
+		return nil
+	}
 	send := func(ev wire.InputEvent, kind string) error {
 		r, err := in.send(ev, kind)
 		rec.Inputs = append(rec.Inputs, r)
@@ -756,6 +969,8 @@ func runInput(ctx context.Context, conn *quic.Conn, rpc *rpcClient, rec *record,
 			if err := overTarget(); err != nil {
 				return err
 			}
+		} else if err := focusedOnTarget(); err != nil {
+			return err
 		}
 		suffix := ""
 		if !measured {

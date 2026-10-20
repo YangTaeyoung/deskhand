@@ -187,3 +187,133 @@ func (f *changeFinder) needs(r, k int) bool {
 func (f *changeFinder) result(i int) (index, pixels, below int) {
 	return f.found[i], f.pixels[i], f.below[i]
 }
+
+// repeatFinder marks the frames whose image equals the frame before it: no
+// pixel differs from it by delta or more. Frames are given in order
+// through frame.
+type repeatFinder struct {
+	prev    []byte
+	delta   int
+	repeats map[int]bool
+}
+
+func newRepeatFinder(delta int) *repeatFinder {
+	return &repeatFinder{delta: delta, repeats: map[int]bool{}}
+}
+
+// frame takes the image of frame k.
+func (r *repeatFinder) frame(k int, img []byte) {
+	if r.prev != nil && len(r.prev) == len(img) && changedPixels(r.prev, img, r.delta) == 0 {
+		r.repeats[k] = true
+	}
+	r.prev = append(r.prev[:0], img...)
+}
+
+// measuredEvents returns the inputs of kinds with, for each, the index of
+// the last access unit received before it was sent (−1 for none, and for
+// an input that failed) and of the last one received within windowMS after
+// it was sent.
+func measuredEvents(inputs []inputRecord, aus []auRecord, kinds []string, windowMS int) (events []inputRecord, refs, last []int) {
+	for _, in := range inputs {
+		if !slices.Contains(kinds, in.Kind) {
+			continue
+		}
+		ref, end := -1, -1
+		for k, au := range aus {
+			if au.RecvUS < in.SentUS {
+				ref = k
+			}
+			if au.RecvUS <= in.SentUS+int64(windowMS)*1000 {
+				end = k
+			}
+		}
+		if !in.OK {
+			ref = -1
+		}
+		events = append(events, in)
+		refs = append(refs, ref)
+		last = append(last, end)
+	}
+	return events, refs, last
+}
+
+// change is the access unit an input's screen change was found in: index
+// −1 for none, its count of changed pixels and the largest count of the
+// frames before it that stayed below the threshold.
+type change struct{ index, pixels, below int }
+
+// inputTimings summarizes events of kinds in milliseconds, with the agent
+// clock mapped to the probe clock by offset (probe = agent − offset):
+// ack round trip and send→change received on the probe clock, send→done
+// across the clocks, done→change captured on the agent clock.
+func inputTimings(events []inputRecord, changes []change, aus []auRecord, kinds []string, offset float64) map[string]*inputKinds {
+	out := map[string]*inputKinds{}
+	acc := map[string]*struct{ ack, done, change, cap, pixels []float64 }{}
+	for _, k := range kinds {
+		out[k] = &inputKinds{}
+		acc[k] = &struct{ ack, done, change, cap, pixels []float64 }{}
+	}
+	for i, in := range events {
+		kind, a := out[in.Kind], acc[in.Kind]
+		if kind == nil {
+			continue
+		}
+		kind.Events++
+		if !in.OK {
+			kind.Failed++
+			continue
+		}
+		a.ack = append(a.ack, ms(float64(in.AckUS-in.SentUS)))
+		a.done = append(a.done, ms(float64(in.DoneUS)-offset-float64(in.SentUS)))
+		c := changes[i]
+		kind.MaxBelow = max(kind.MaxBelow, c.below)
+		if c.index < 0 {
+			continue
+		}
+		kind.Matched++
+		au := aus[c.index]
+		a.change = append(a.change, ms(float64(au.RecvUS-in.SentUS)))
+		a.cap = append(a.cap, ms(float64(au.CaptureUS)-float64(in.DoneUS)))
+		a.pixels = append(a.pixels, float64(c.pixels))
+	}
+	for _, k := range kinds {
+		kind, a := out[k], acc[k]
+		kind.AckRTT, kind.SendToDone, kind.ToChange, kind.DoneToCap, kind.Pixels =
+			summarize(a.ack), summarize(a.done), summarize(a.change), summarize(a.cap), summarize(a.pixels)
+	}
+	return out
+}
+
+// meanAbsDiff returns the mean absolute difference of a and b over their
+// common length, NaN when it is 0.
+func meanAbsDiff(a, b []byte) float64 {
+	n := min(len(a), len(b))
+	if n == 0 {
+		return math.NaN()
+	}
+	sum := 0
+	for i := range n {
+		d := int(a[i]) - int(b[i])
+		if d < 0 {
+			d = -d
+		}
+		sum += d
+	}
+	return float64(sum) / float64(n)
+}
+
+// brightness returns the mean of img and the share of its values above
+// level, NaN and 0 for an empty img.
+func brightness(img []byte, level byte) (mean, above float64) {
+	if len(img) == 0 {
+		return math.NaN(), 0
+	}
+	sum, n := 0, 0
+	for _, v := range img {
+		sum += int(v)
+		if v > level {
+			n++
+		}
+	}
+	return float64(sum) / float64(len(img)), float64(n) / float64(len(img))
+}
