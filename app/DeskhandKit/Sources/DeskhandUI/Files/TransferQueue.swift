@@ -4,9 +4,9 @@ import Observation
 import os
 
 /// Transfers of one computer, newest first, kept current by `transfer.updated` events. Tracks
-/// the pause, resume and cancel calls in flight and their failures. Updates that arrive out of
-/// order are ignored: a finished or paused transfer does not go back to an active state unless
-/// its bytes moved past the known count or this app resumed it.
+/// the pause, resume and cancel calls in flight and their failures. An event, list entry or
+/// call reply is applied only when its `rev` is larger than the last applied one of that
+/// transfer (local-api.md §5).
 @MainActor
 @Observable
 public final class TransferQueue {
@@ -29,8 +29,8 @@ public final class TransferQueue {
     @ObservationIgnored var onFinish: ((Transfer) -> Void)?
     @ObservationIgnored private let backend: any Backend
     @ObservationIgnored private var eventsTask: Task<Void, Never>?
-    /// Transfers this app resumed, whose next active update is accepted after a stop.
-    @ObservationIgnored private var restarting: Set<String> = []
+    /// The last applied `rev` per transfer ID.
+    @ObservationIgnored private var revs: [String: Int] = [:]
     nonisolated static let log = Logger(subsystem: "io.github.yangtaeyoung.Deskhand", category: "files")
 
     init(hostID: String, backend: any Backend) {
@@ -101,38 +101,21 @@ public final class TransferQueue {
         }
     }
 
-    /// Inserts or replaces a transfer of this host unless it is older than the known state.
-    /// Newly seen transfers go to the top.
+    /// Inserts or replaces a transfer of this host when its `rev` is larger than the last
+    /// applied one. Newly seen transfers go to the top.
     func apply(_ transfer: Transfer, notify: Bool = true) {
         guard transfer.hostID == hostID else { return }
-        if let i = transfers.firstIndex(where: { $0.transferID == transfer.transferID }) {
-            guard !isStale(transfer, over: transfers[i]) else { return }
+        let id = transfer.transferID
+        if let last = revs[id], transfer.rev <= last { return }
+        revs[id] = transfer.rev
+        if let i = transfers.firstIndex(where: { $0.transferID == id }) {
             let wasFinished = transfers[i].transferState.isFinished
             transfers[i] = transfer
             if notify, !wasFinished, transfer.transferState.isFinished { onFinish?(transfer) }
         } else {
             transfers.insert(transfer, at: 0)
-            dismissed.remove(transfer.transferID)
+            dismissed.remove(id)
         }
-    }
-
-    /// Whether `incoming` describes an earlier moment than `current`.
-    private func isStale(_ incoming: Transfer, over current: Transfer) -> Bool {
-        let id = incoming.transferID
-        let new = incoming.transferState
-        let old = current.transferState
-        let active = new == .queued || new == .running || new == .verifying
-        if restarting.contains(id) {
-            if active { restarting.remove(id) }
-            return false
-        }
-        if active, old.isFinished || old == .paused {
-            return incoming.bytesDone <= current.bytesDone
-        }
-        if new == .paused, old.isFinished { return true }
-        if old == .verifying, new == .queued || new == .running { return true }
-        if old == .running, new == .running || new == .queued { return incoming.bytesDone < current.bytesDone }
-        return false
     }
 
     /// Reads a transfer the app just started so it shows before its first event.
@@ -146,9 +129,7 @@ public final class TransferQueue {
     public func perform(_ action: TransferAction, on id: String) {
         switch action {
         case .pause: call(action, id) { try await $0.transferPause(transferID: id) }
-        case .resume, .retry:
-            restarting.insert(id)
-            call(action, id) { try await $0.transferResume(transferID: id) }
+        case .resume, .retry: call(action, id) { try await $0.transferResume(transferID: id) }
         case .cancel: call(action, id) { try await $0.transferCancel(transferID: id) }
         case .dismiss:
             dismissed.insert(id)
@@ -191,6 +172,7 @@ public final class TransferQueue {
     /// Replaces the list without asking the backend. Snapshot scenes use it.
     public func seed(_ transfers: [Transfer], expanded: Set<String> = []) {
         self.transfers = transfers
+        revs = Dictionary(transfers.map { ($0.transferID, $0.rev) }, uniquingKeysWith: max)
         self.expanded = expanded
         loaded = true
     }

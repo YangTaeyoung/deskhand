@@ -419,8 +419,11 @@ public struct Transfer: Codable, Sendable, Equatable {
     /// `{code, message}` (local-api.md §8); a plain string is read as the message.
     public var error: EnvelopeError?
     public var files: [TransferFile]
+    /// Increases by one on every change of the transfer; only a larger `rev` is newer.
+    public var rev: Int
+    public var updatedAt: Timestamp
 
-    public init(transferID: String, hostID: String, direction: String, local: String, remote: String, onConflict: String, state: String, bytesDone: Int, bytesTotal: Int, filesDone: Int, filesTotal: Int, rateBps: Int, outcome: String? = nil, error: EnvelopeError? = nil, files: [TransferFile] = []) {
+    public init(transferID: String, hostID: String, direction: String, local: String, remote: String, onConflict: String, state: String, bytesDone: Int, bytesTotal: Int, filesDone: Int, filesTotal: Int, rateBps: Int, outcome: String? = nil, error: EnvelopeError? = nil, files: [TransferFile] = [], rev: Int = 1, updatedAt: Timestamp = Timestamp(date: .now)) {
         self.transferID = transferID
         self.hostID = hostID
         self.direction = direction
@@ -436,6 +439,8 @@ public struct Transfer: Codable, Sendable, Equatable {
         self.outcome = outcome
         self.error = error
         self.files = files
+        self.rev = rev
+        self.updatedAt = updatedAt
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -454,6 +459,8 @@ public struct Transfer: Codable, Sendable, Equatable {
         case outcome
         case error
         case files
+        case rev
+        case updatedAt
     }
 
     public init(from decoder: Decoder) throws {
@@ -473,6 +480,8 @@ public struct Transfer: Codable, Sendable, Equatable {
         outcome = try c.decodeIfPresent(String.self, forKey: .outcome)
         error = try c.decodeIfPresent(EnvelopeError.self, forKey: .error)
         files = try c.decodeIfPresent([TransferFile].self, forKey: .files) ?? []
+        rev = try c.decode(Int.self, forKey: .rev)
+        updatedAt = try c.decode(Timestamp.self, forKey: .updatedAt)
     }
 }
 

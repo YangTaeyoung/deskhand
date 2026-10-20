@@ -465,30 +465,52 @@ final class FilesTests: XCTestCase {
         XCTAssertEqual(backend.transferRequests.last?.direction, .push)
     }
 
-    private func transfer(_ state: TransferState, bytes: Int, id: String = "t-stale") -> Transfer {
+    private func transfer(_ state: TransferState, bytes: Int, rev: Int = 1, id: String = "t-rev") -> Transfer {
         Transfer(transferID: id, hostID: dev, direction: "push", local: "/a/b.zip", remote: "C:\\b.zip", onConflict: "fail",
-                 state: state.rawValue, bytesDone: bytes, bytesTotal: 100, filesDone: 0, filesTotal: 1, rateBps: 10)
+                 state: state.rawValue, bytesDone: bytes, bytesTotal: 100, filesDone: 0, filesTotal: 1, rateBps: 10, rev: rev)
     }
 
-    func testStaleTransferUpdatesAreIgnored() throws {
+    func testTransferUpdatesApplyByRev() throws {
         let backend = GatedBackend(PreviewBackend(stepDelay: .zero))
         let model = try model(makeStore(backend))
         let queue = model.transfers
-        queue.apply(transfer(.running, bytes: 50))
-        queue.apply(transfer(.paused, bytes: 50))
-        queue.apply(transfer(.running, bytes: 40))
-        XCTAssertEqual(queue.transfer("t-stale")?.transferState, .paused)
-        queue.apply(transfer(.running, bytes: 60))
-        XCTAssertEqual(queue.transfer("t-stale")?.bytesDone, 60)
-        queue.apply(transfer(.running, bytes: 55))
-        XCTAssertEqual(queue.transfer("t-stale")?.bytesDone, 60)
-        queue.apply(transfer(.cancelled, bytes: 60))
-        queue.apply(transfer(.running, bytes: 60))
-        XCTAssertEqual(queue.transfer("t-stale")?.transferState, .cancelled)
-        queue.apply(transfer(.done, bytes: 100, id: "t-done"))
-        queue.apply(transfer(.verifying, bytes: 100, id: "t-done"))
-        queue.apply(transfer(.paused, bytes: 100, id: "t-done"))
-        XCTAssertEqual(queue.transfer("t-done")?.transferState, .done)
+        queue.apply(transfer(.running, bytes: 50, rev: 4))
+        queue.apply(transfer(.paused, bytes: 50, rev: 5))
+        queue.apply(transfer(.running, bytes: 50, rev: 6))
+        XCTAssertEqual(queue.transfer("t-rev")?.transferState, .running, "resume from paused with the same bytes applies")
+        XCTAssertEqual(queue.transfer("t-rev")?.rev, 6)
+
+        queue.apply(transfer(.paused, bytes: 50, rev: 5))
+        XCTAssertEqual(queue.transfer("t-rev")?.transferState, .running, "an older rev arriving late is ignored")
+        queue.apply(transfer(.cancelled, bytes: 70, rev: 6))
+        XCTAssertEqual(queue.transfer("t-rev")?.transferState, .running, "an equal rev is ignored")
+
+        queue.apply(transfer(.failed, bytes: 80, rev: 7))
+        queue.apply(transfer(.queued, bytes: 0, rev: 8))
+        XCTAssertEqual(queue.transfer("t-rev")?.transferState, .queued, "a retry restarting at 0 bytes applies")
+        XCTAssertEqual(queue.transfer("t-rev")?.bytesDone, 0)
+    }
+
+    func testPreviewTransferRevsIncrease() async throws {
+        let base = PreviewBackend(stepDelay: .zero)
+        let url = try localFile("rev.bin", bytes: 4_096)
+        var revs: [Int] = []
+        let events = base.events(kinds: [EventKind.transferUpdated], hostID: dev)
+        let id = try await base.transferStart(TransferRequest(hostID: dev, direction: .push, local: url.path,
+                                                              remote: downloads + "\\rev.bin", onConflict: .fail))
+        for try await event in events {
+            guard let value = event.payload["transfer"], let t = try? LiveBackend.decode(Transfer.self, from: value),
+                  t.transferID == id else { continue }
+            revs.append(t.rev)
+            if t.transferState.isFinished { break }
+        }
+        XCTAssertGreaterThan(revs.count, 2)
+        XCTAssertEqual(revs, revs.sorted())
+        XCTAssertEqual(Set(revs).count, revs.count)
+        let paused = try await base.transferPause(transferID: id)
+        let stored = try await base.transferGet(transferID: id)
+        XCTAssertEqual(paused.rev, stored.rev)
+        XCTAssertEqual(stored.rev, revs.last)
     }
 
     func testUndecodableTransferEventIsCounted() throws {

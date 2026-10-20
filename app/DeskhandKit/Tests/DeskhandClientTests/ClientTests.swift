@@ -347,17 +347,19 @@ final class ClientTests: XCTestCase {
 
         let transfer = try Wire.decode(Transfer.self, from: Data(#"""
         {"transfer_id":"t","host_id":"h","direction":"push","local":"/a","remote":"C:\\a","on_conflict":"rename","state":"running",
-         "bytes_done":1,"bytes_total":2,"files_done":0,"files_total":1,"rate_bps":100,
+         "bytes_done":1,"bytes_total":2,"files_done":0,"files_total":1,"rate_bps":100,"rev":3,"updated_at":"2026-10-20T10:00:02.000Z",
          "files":[{"rel":"a","size":2,"bytes_done":1,"state":"running"}]}
         """#.utf8))
         XCTAssertEqual(transfer.onConflict, "rename")
         XCTAssertEqual(transfer.rateBps, 100)
         XCTAssertEqual(transfer.files.first?.rel, "a")
         XCTAssertNil(transfer.error)
+        XCTAssertEqual(transfer.rev, 3)
+        XCTAssertEqual(transfer.updatedAt, Timestamp(string: "2026-10-20T10:00:02.000Z"))
 
         let failed = try Wire.decode(Transfer.self, from: Data(#"""
         {"transfer_id":"t","host_id":"h","direction":"pull","local":"/a","remote":"C:\\a","on_conflict":"fail","state":"failed",
-         "bytes_done":0,"bytes_total":2,"files_done":0,"files_total":2,"rate_bps":0,"outcome":"partial",
+         "bytes_done":0,"bytes_total":2,"files_done":0,"files_total":2,"rate_bps":0,"outcome":"partial","rev":9,"updated_at":"2026-10-20T10:00:09.000Z",
          "error":{"code":"DISK_FULL","message":"공간이 부족합니다","next_action":"free_space"},
          "files":[{"rel":"a","size":1,"bytes_done":0,"state":"failed","error":{"code":"PERMISSION_DENIED","message":"거부됨"}},
                   {"rel":"b","size":1,"bytes_done":0,"state":"failed","error":"옛 형식"}]}

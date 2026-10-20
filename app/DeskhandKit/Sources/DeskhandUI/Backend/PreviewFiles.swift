@@ -173,16 +173,29 @@ final class PreviewFileStore: Sendable {
         state.withLock { s in s.order.compactMap { s.transfers[$0] }.filter { $0.hostID == hostID } }
     }
 
-    func add(_ transfer: Transfer, plan: Plan) {
+    /// Stores a new transfer at `rev` 1 and returns it as stored.
+    func add(_ transfer: Transfer, plan: Plan) -> Transfer {
+        var stamped = transfer
+        stamped.rev = 1
+        stamped.updatedAt = Timestamp(date: .now)
         state.withLock { s in
-            s.transfers[transfer.transferID] = transfer
-            s.order.insert(transfer.transferID, at: 0)
-            s.plans[transfer.transferID] = plan
+            s.transfers[stamped.transferID] = stamped
+            s.order.insert(stamped.transferID, at: 0)
+            s.plans[stamped.transferID] = plan
         }
+        return stamped
     }
 
-    func update(_ transfer: Transfer) {
-        state.withLock { $0.transfers[transfer.transferID] = transfer }
+    /// Stores a change with the next `rev` and the current time, and returns it as stored.
+    @discardableResult
+    func update(_ transfer: Transfer) -> Transfer {
+        state.withLock { s in
+            var stamped = transfer
+            stamped.rev = max(s.transfers[transfer.transferID]?.rev ?? 0, transfer.rev) + 1
+            stamped.updatedAt = Timestamp(date: .now)
+            s.transfers[transfer.transferID] = stamped
+            return stamped
+        }
     }
 
     func nextID() -> String {
@@ -371,7 +384,7 @@ extension PreviewBackend {
                 break
             }
         }
-        files.add(transfer, plan: plan)
+        transfer = files.add(transfer, plan: plan)
         emitTransfer(transfer)
         if !transfer.transferState.isFinished { runTransfer(id) }
         return id
@@ -453,7 +466,7 @@ extension PreviewBackend {
                 if transfer.files[i].bytesDone < transfer.files[i].size { break }
             }
             transfer.filesDone = transfer.files.filter { $0.bytesDone >= $0.size }.count
-            files.update(transfer)
+            transfer = files.update(transfer)
             emitTransfer(transfer)
             if transfer.bytesDone >= transfer.bytesTotal { break }
             await simulatedSleep(tick)
@@ -461,7 +474,7 @@ extension PreviewBackend {
         guard !Task.isCancelled, var transfer = files.transfer(id), transfer.transferState == .running else { return }
         transfer.state = TransferState.verifying.rawValue
         transfer.rateBps = 0
-        files.update(transfer)
+        transfer = files.update(transfer)
         emitTransfer(transfer)
         await simulatedSleep(0.8)
         guard !Task.isCancelled, files.transfer(id)?.transferState == .verifying else { return }
@@ -538,7 +551,7 @@ extension PreviewBackend {
             transfer.state = TransferState.done.rawValue
             transfer.outcome = plan.renamed ? TransferOutcome.renamed.rawValue : TransferOutcome.written.rawValue
         }
-        files.update(transfer)
+        transfer = files.update(transfer)
         files.setTask(nil, for: id)
         emitTransfer(transfer)
     }
@@ -592,7 +605,7 @@ extension PreviewBackend {
         for i in transfer.files.indices where transfer.files[i].transferState == .running {
             transfer.files[i].state = TransferState.paused.rawValue
         }
-        files.update(transfer)
+        transfer = files.update(transfer)
         emitTransfer(transfer)
         return transfer
     }
@@ -611,7 +624,7 @@ extension PreviewBackend {
             transfer.files[i].error = nil
         }
         transfer.bytesDone = transfer.files.reduce(0) { $0 + $1.bytesDone }
-        files.update(transfer)
+        transfer = files.update(transfer)
         emitTransfer(transfer)
         runTransfer(transferID)
         return transfer
@@ -627,7 +640,7 @@ extension PreviewBackend {
             transfer.files[i].state = TransferState.cancelled.rawValue
         }
         transfer.filesDone = transfer.files.filter { $0.transferState == .done }.count
-        files.update(transfer)
+        transfer = files.update(transfer)
         emitTransfer(transfer)
         return transfer
     }
