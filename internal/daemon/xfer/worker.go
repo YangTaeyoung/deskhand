@@ -345,7 +345,7 @@ func (t *transfer) failFile(seq int, e *apierr.Error) {
 func (t *transfer) doneFile(seq int, path, outcome string) {
 	t.update(seq, func(f *store.TransferFile) {
 		f.State, f.Outcome, f.Path, f.Error = StateDone, outcome, path, nil
-		f.BytesDone, f.CommitRID, f.Part = f.Size, "", false
+		f.BytesDone, f.CommitRID, f.Part, f.Refresh = f.Size, "", false, false
 	})
 	t.mu.Lock()
 	delete(t.strikes, seq)

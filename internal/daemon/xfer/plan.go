@@ -236,8 +236,11 @@ func specialRefused(path string) *apierr.Error {
 	return apierr.Invalid(fmt.Sprintf("%s는 일반 파일이 아니라 옮기지 않았습니다. 필요하면 내용을 파일로 저장해 옮기세요", path))
 }
 
-// plan lists the files of the transfer and stores them as its manifest; a
-// file that was done before with the same fingerprint stays done.
+// plan lists the files of the transfer and stores them as its manifest.
+// A file of the manifest before stays done when its fingerprint is the
+// same, keeps its commit whose outcome is not known with its fingerprint
+// (taken again after the commit settles when it changed), and keeps its
+// part file.
 func (t *transfer) plan(ctx context.Context, h *conn.Host) error {
 	var files []store.TransferFile
 	var err error
@@ -251,18 +254,28 @@ func (t *transfer) plan(ctx context.Context, h *conn.Host) error {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	done := map[string]store.TransferFile{}
+	before := map[string]store.TransferFile{}
 	for _, f := range t.files {
-		if f.State == StateDone && !f.Dir {
-			done[f.Rel] = f
+		if !f.Dir {
+			before[f.Rel] = f
 		}
 	}
 	for i := range files {
 		f := &files[i]
-		if o, ok := done[f.Rel]; ok && !f.Dir && f.State == StateQueued && o.Size == f.Size && sameSecond(o.MTime, f.MTime) &&
-			(f.SHA256 == "" || o.SHA256 == f.SHA256) {
+		o, ok := before[f.Rel]
+		if !ok || f.Dir || f.State != StateQueued {
+			continue
+		}
+		same := o.Size == f.Size && sameSecond(o.MTime, f.MTime) && (f.SHA256 == "" || o.SHA256 == f.SHA256)
+		switch {
+		case o.State == StateDone && same:
 			o.Seq = f.Seq
 			*f = o
+		case o.CommitRID != "":
+			o.Seq, o.State, o.Error, o.Refresh = f.Seq, StateQueued, nil, !same
+			*f = o
+		case o.Part:
+			f.Part, f.BytesDone = true, o.BytesDone
 		}
 	}
 	t.row.Planned = true
