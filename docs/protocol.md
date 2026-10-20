@@ -47,6 +47,8 @@ Alcove 에이전트 프로토콜 2층과 같은 NDJSON(`t`로 구분, 한 줄 �
 
 ### 3.1 op 목록
 
+`proc.list`의 각 항목에는 Alcove 필드(`pid`, `ppid`, `name`, `path`, `cmd`, `mem_kb`)에 더해 `cpu_pct`(0.5초 간격 두 표본, 논리 코어 합 기준 0–100), `user?`, `started`(RFC 3339), `started_by_deskhand`(이 에이전트가 `exec.*`·`app.launch`·`pty`로 띄운 프로세스와 그 자손이면 true)가 있다.
+
 Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `exec.start`, `exec.read`, `exec.write`, `exec.kill`, `exec.list`, `proc.list`, `proc.kill`, `fs.stat`, `fs.list`, `fs.read`, `fs.tail`, `fs.write`, `fs.rename`, `fs.mkdir`, `fs.delete`, `app.launch`, `win.list`, `win.action`, `ui.tree`, `ui.find`, `ui.text`, `ui.rect`, `ui.act`, `ui.focused`, `ui.at`, `ui.ping`, `clipboard.get`, `clipboard.set`.
 
 새 op:
@@ -69,10 +71,10 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 | `xfer.abort` | `transfer_id`, `path` | `removed` — 임시 파일만 지운다 |
 | `pty.list` | — | `ptys`: [{`job`, `pid`, `cols`, `rows`, `state`}] |
 | `debug.ports` | `count` | `ports` — 루프백 빈 포트 |
-| `diag.system` | — | OS, 빌드, CPU, 메모리, 디스크, GPU, 가동 시간 |
-| `diag.services` | `name` | `services` |
-| `diag.events` | `log`(`Application`/`System`), `since`, `level`, `provider`, `max` | `events` |
-| `diag.crashes` | `since` | `dumps`(WER 덤프 목록) |
+| `diag.system` | — | `os`{`name`, `version`, `build`, `edition`}, `computer_name`, `cpu`{`name`, `cores`, `threads`, `usage_pct`}, `memory`{`total_bytes`, `used_bytes`}, `disks`: [{`root`, `label?`, `fs`, `total_bytes`, `free_bytes`}], `gpus`: [{`name`, `driver_version?`, `memory_bytes?`}], `boot_time`(RFC 3339), `uptime_s` |
+| `diag.services` | `name?`(부분 일치, 대소문자 무시) | `services`: [{`name`, `display_name`, `state`(`running`/`stopped`/`paused`/`start_pending`/`stop_pending`/`unknown`), `start_type`(`auto`/`delayed_auto`/`manual`/`disabled`/`unknown`), `pid?`}] |
+| `diag.events` | `log`(`Application`/`System`, 기본 `System`), `since?`(RFC 3339, 기본 24시간 전), `until?`, `levels?`([`critical`/`error`/`warning`/`information`/`verbose`], 기본 전부), `provider?`(정확히 일치), `max?`(기본 200, 최대 1000) | `events`: [{`record_id`, `time`, `level`, `provider`, `event_id`, `message`}](최신 먼저), `truncated`(`max`에서 잘렸으면 true) |
+| `diag.crashes` | `since?`(기본 30일 전) | `dumps`: [{`path`, `app`, `time`, `size_bytes`, `kind`(`minidump`/`full`/`report`)}](최신 먼저). 파일은 `get` 스트림으로 받는다 |
 | `agent.update` | `path`(이미 put한 새 실행 파일), `sha256` | 자기 교체 후 재시작 예약 |
 
 이벤트(`ev`): Alcove의 `job.exited`, `process.exited`, 창 이벤트, `events.dropped`에 더해 `session.changed`, `display.changed`, `caps.changed`, `input.preempted`.
