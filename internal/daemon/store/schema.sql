@@ -106,3 +106,18 @@ CREATE TABLE IF NOT EXISTS transfer_files (
 	refresh     INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (transfer_id, seq)
 );
+
+CREATE TABLE IF NOT EXISTS qa_runs (
+	run_id      TEXT PRIMARY KEY,
+	job_id      TEXT NOT NULL,
+	host_id     TEXT NOT NULL,
+	name        TEXT NOT NULL,
+	status      TEXT NOT NULL,
+	rev         INTEGER NOT NULL DEFAULT 0,
+	run_json    TEXT NOT NULL,
+	created_at  TEXT NOT NULL,
+	updated_at  TEXT NOT NULL,
+	finished_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS qa_runs_host ON qa_runs (host_id, run_id);

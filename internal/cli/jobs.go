@@ -32,7 +32,7 @@ func (r *run) jobs(ctx context.Context, args []string) int {
 func (r *run) jobsList(ctx context.Context, args []string) int {
 	fs := newFlags("jobs list")
 	host := fs.String("host", "", "호스트")
-	kind := fs.String("kind", "", "종류(exec, pty, transfer, install)")
+	kind := fs.String("kind", "", "종류(exec, pty, transfer, install, diag, qa)")
 	status := fs.String("status", "", "상태(running, succeeded, failed, cancelled, unknown)")
 	pos, _, err := parseArgs(fs, args)
 	if err != nil {

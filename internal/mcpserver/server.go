@@ -58,7 +58,8 @@ Playbook:
 7. Failures come back as tool errors (IsError) whose structured content always has top-level code, message, retryable and next_action; failed envelopes keep their full envelope as well. CONTROL_HELD_BY_HUMAN means a person is using the PC: wait for them, do not retry in a loop.
 8. To find why a PC misbehaves, read diag_system, diag_services, diag_events (Windows event logs, newest first) and diag_crashes (crash dumps and error reports; copy a dump to this Mac with files_pull), and proc_list for CPU and memory per process.
 9. To reach a service that listens only on the PC's loopback (a Node inspector, DevTools, a dev server), open a tunnel with tunnel_open and connect to 127.0.0.1:<local_port> on this Mac; tunnels are loopback-only on both ends. Close it with tunnel_close when done.
-10. Screen and input control tools arrive in a later version.`
+10. To test an app on the PC, run a QA scenario with qa_run (a scenario file on this Mac, or YAML text for a short check while exploring) and follow it with qa_get until finished_at is set; read each step's assertions and evidence and the report bundle. Steps that drive the UI are blocked, never forced, while a person holds control.
+11. Screen and input control tools arrive in a later version.`
 
 // Server holds the lazily opened daemon connection shared by the tools.
 type Server struct {
@@ -79,6 +80,7 @@ func New(version string, dial Dialer) *mcp.Server {
 	s.registerProc(srv)
 	s.registerDiag(srv)
 	s.registerTunnel(srv)
+	s.registerQA(srv)
 	return srv
 }
 

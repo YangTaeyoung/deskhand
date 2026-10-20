@@ -1,0 +1,45 @@
+# deskhand-fixture 스모크 시나리오 (형식: docs/local-api.md §10)
+#
+#   scripts/build.sh                       # build/deskhand-fixture-windows-amd64.exe를 만든다
+#   deskhand qa run docs/examples/qa/fixture-smoke.yaml --host <PC 이름>
+#
+# PC 쪽 폴더는 --var qa_root='C:\다른\폴더'로, fixture 실행 파일은 --var fixture=/경로/fixture.exe로 바꾼다.
+# 버튼은 UI Automation(ui_act invoke)으로 누른다. 마우스 입력(click)은 입력을 보내는 데몬에서 쓴다.
+name: fixture-smoke
+description: deskhand-fixture를 PC에 올려 실행하고 메시지 보내기, 한글 라벨, 로그 파일을 확인한다
+vars:
+  fixture: ../../../build/deskhand-fixture-windows-amd64.exe
+  qa_root: 'C:\deskhand-qa'
+  qa_dir: '${qa_root}\${run_id}'
+  message: 안녕 QA
+setup:
+  - name: fixture 올리기
+    push: {from: '${fixture}', to: '${qa_dir}\deskhand-fixture.exe'}
+  - name: fixture 실행
+    launch:
+      path: '${qa_dir}\deskhand-fixture.exe'
+      args: [--log, '${qa_dir}\fixture.log']
+steps:
+  - name: 창 기다리기
+    wait_window: {title: Deskhand Fixture}
+  - name: 한글 라벨 확인
+    assert_ui: {name: 한글 라벨, role: text}
+  - name: 메시지 쓰기
+    ui_act: {name: Message, role: edit, action: set_value, value: '${message}'}
+  - name: Send 누르기
+    ui_act: {name: Send, role: button, action: invoke}
+  - name: 대답이 끝날 때까지 기다리기
+    assert_ui: {name: Transcript, text_contains: '[done]', text_matches: 'Bot: echo ${message}'}
+    timeout_ms: 15000
+  - name: 화면 글 확인
+    assert_screen_text: {contains: [Send, 한글 라벨, Transcript]}
+  - name: 화면 남기기
+    screenshot: 대답 뒤
+    optional: true
+  - name: 로그 파일 확인
+    assert_file: {path: '${qa_dir}\fixture.log', contains: ['send ${message}', done]}
+  - name: 로그 모으기
+    collect: {file: '${qa_dir}\fixture.log'}
+teardown:
+  - name: fixture 닫기
+    close:

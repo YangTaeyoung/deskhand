@@ -26,6 +26,7 @@ const (
 	TimelineAppended = "timeline.appended"
 	JobUpdated       = "job.updated"
 	TransferUpdated  = "transfer.updated"
+	QAUpdated        = "qa.updated"
 	EventsDropped    = "events.dropped"
 )
 

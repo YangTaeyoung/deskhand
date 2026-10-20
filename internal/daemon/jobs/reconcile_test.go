@@ -37,6 +37,7 @@ func TestStartupSettlesJobsThatHadNoRemoteJobAsUnknown(t *testing.T) {
 	install, _ := before.Create("pc", KindInstall, "", "PC 추가: pc", nil)
 	remote, _ := before.Create("pc", KindExec, "r-2", "exec.start", nil)
 	before.SetRemote(remote.JobID, "j1", map[string]any{"job": "j1"})
+	qa, _ := before.Create("pc", KindQA, "", "QA: smoke", map[string]any{"run_id": "q-1"})
 	done, _ := before.Create("pc", KindExec, "r-3", "done", nil)
 	before.Finish(done.JobID, model.StatusSucceeded, map[string]any{"code": 0})
 
@@ -56,6 +57,9 @@ func TestStartupSettlesJobsThatHadNoRemoteJobAsUnknown(t *testing.T) {
 	}
 	if j, _ := r.current(remote.JobID); j.Status != model.StatusRunning {
 		t.Fatalf("remote job %+v", j)
+	}
+	if j, _ := r.current(qa.JobID); j.Status != model.StatusRunning {
+		t.Fatalf("qa job %+v", j)
 	}
 	if j, _ := r.current(done.JobID); j.Status != model.StatusSucceeded {
 		t.Fatalf("finished job %+v", j)

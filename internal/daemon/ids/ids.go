@@ -19,6 +19,7 @@ const (
 	Transfer = "t-"
 	PTY      = "p-"
 	Tunnel   = "tn-"
+	QARun    = "q-"
 )
 
 // crockford is the base32 alphabet of ULIDs.

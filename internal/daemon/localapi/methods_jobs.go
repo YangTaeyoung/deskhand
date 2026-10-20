@@ -95,6 +95,9 @@ func (s *Server) jobsCancel(ctx context.Context, sess *session, raw json.RawMess
 	if before.Kind == jobs.KindTransfer && s.d.Transfers != nil {
 		return s.cancelTransferJob(ctx, sess, before)
 	}
+	if before.Kind == jobs.KindQA && s.d.QA != nil {
+		return s.cancelQAJob(sess, before)
+	}
 	if before.Kind == jobs.KindPTY && before.FinishedAt != "" {
 		o := outcome{status: model.StatusSucceeded, action: model.Executed()}
 		return s.envelope(before.HostID, before.JobID, conn.CallInfo{}, o, nil).Map(map[string]any{"job": before}), nil
@@ -151,4 +154,19 @@ func (s *Server) cancelTransferJob(ctx context.Context, sess *session, j model.J
 	}
 	o := outcome{status: job.Status, action: model.Executed()}
 	return s.envelope(job.HostID, job.JobID, conn.CallInfo{}, o, nil).Map(map[string]any{"job": job}), nil
+}
+
+// cancelQAJob cancels the run that the job j follows, as qa.cancel does.
+func (s *Server) cancelQAJob(sess *session, j model.Job) (any, error) {
+	var p struct {
+		RunID string `json:"run_id"`
+	}
+	stored, err := s.d.Store.GetJob(j.JobID)
+	if err != nil {
+		return nil, apierr.Internal(fmt.Sprintf("job %s를 읽지 못했습니다(%v). 데몬 로그를 확인하세요", j.JobID, err))
+	}
+	if err := json.Unmarshal(stored.Params, &p); err != nil || p.RunID == "" {
+		return nil, apierr.Internal(fmt.Sprintf("job %s에 QA 실행 ID가 없습니다. qa.list로 실행을 찾아 qa.cancel을 쓰세요", j.JobID))
+	}
+	return s.cancelRun(p.RunID, sess)
 }

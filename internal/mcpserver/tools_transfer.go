@@ -147,6 +147,14 @@ func annotate(tool string, m map[string]any) {
 				m["next_action"] = "transfer_get"
 			}
 		}
+	case "qa_run", "qa_cancel":
+		if str(m, "status") == "running" && m["next_action"] == nil {
+			m["next_action"] = "qa_get"
+		}
+	case "qa_get":
+		if str(m, "run_id") != "" && str(m, "finished_at") == "" && m["next_action"] == nil {
+			m["next_action"] = "qa_get"
+		}
 	case "transfer_get", "transfer_pause", "transfer_resume", "transfer_cancel":
 		if s := sourceOutcome(m); s != "" {
 			m["source"] = s

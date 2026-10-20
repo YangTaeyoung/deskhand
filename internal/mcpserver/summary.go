@@ -26,6 +26,7 @@ var nextActionHints = map[string]string{
 	"retry":          "retry the same call shortly",
 	"fix_params":     "fix the arguments and call again",
 	"human_release":  "a person controls the PC; wait for them to release control and do not retry in a loop",
+	"qa_get":         "the QA run goes on in the background; call qa_get with its run_id until finished_at is set, then read the steps and the report",
 }
 
 // hint explains a next_action; for job tools "check_state" must not send
@@ -318,6 +319,30 @@ func detail(tool string, params, m map[string]any) string {
 		if m["pid"] != nil {
 			return fmt.Sprintf("pid=%v", m["pid"])
 		}
+	case "qa_run":
+		run, _ := m["run"].(map[string]any)
+		steps, _ := run["steps"].([]any)
+		return fmt.Sprintf("QA run %v started with %d steps; it runs in the background: call qa_get with run_id %v until finished_at is set", m["run_id"], len(steps), m["run_id"])
+	case "qa_get":
+		return qaText(m)
+	case "qa_list":
+		runs, _ := m["runs"].([]any)
+		var parts []string
+		for _, r := range runs {
+			rm, _ := r.(map[string]any)
+			parts = append(parts, fmt.Sprintf("%v %q %v", rm["run_id"], str(rm, "name"), rm["status"]))
+		}
+		out := fmt.Sprintf("%d runs: %s", len(runs), strings.Join(parts, "; "))
+		if c := str(m, "next_cursor"); c != "" {
+			out += "; more follow: pass next_cursor as cursor"
+		}
+		return out
+	case "qa_cancel":
+		run, _ := m["run"].(map[string]any)
+		if str(run, "finished_at") != "" {
+			return fmt.Sprintf("QA run %v has ended %v", m["run_id"], run["status"])
+		}
+		return fmt.Sprintf("cancel requested for QA run %v: the running step stops, the teardown runs, then the run ends cancelled; poll qa_get", m["run_id"])
 	}
 	return ""
 }

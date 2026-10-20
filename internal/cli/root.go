@@ -39,13 +39,15 @@ type App struct {
 	Progress func() bool
 	// Term is the terminal deskhand shell connects to the remote shell.
 	Term Terminal
+	// Open shows a file in its default app; nil means it cannot.
+	Open func(path string) error
 }
 
 // New returns an App on the process's standard streams.
 func New(version string) *App {
 	return &App{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Version: version,
 		Interactive: stdinIsTerminal, PollInterval: 500 * time.Millisecond,
-		Progress: func() bool { return fileIsTerminal(os.Stderr) }, Term: stdinTerminal{}}
+		Progress: func() bool { return fileIsTerminal(os.Stderr) }, Term: stdinTerminal{}, Open: openFile}
 }
 
 // run is the state of one invocation: the App and the global flags.
@@ -79,6 +81,7 @@ const usageText = `사용법: deskhand [--json] [--quiet] <명령> ...
   tunnel list|close                    열린 터널 조회와 닫기
   proc ls|kill                         원격 프로세스
   diag system|services|events|crashes  원격 PC 진단 (--save로 결과를 산출물로 저장)
+  qa run|list|get|report|cancel        QA 시나리오 실행과 결과 묶음 (deskhand qa --help)
   daemon run|start|stop|status         데몬 관리
   mcp                                  MCP 서버(표준 입출력, AI 에이전트용)
   version                              버전 보기
@@ -111,6 +114,8 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		code = r.proc(ctx, args[1:])
 	case "diag":
 		code = r.diag(ctx, args[1:])
+	case "qa":
+		code = r.qa(ctx, args[1:])
 	case "tunnel":
 		code = r.tunnel(ctx, args[1:])
 	case "shell":
@@ -205,6 +210,7 @@ var nextSteps = map[string]string{
 	"retry":          "잠시 뒤 같은 명령을 다시 실행하세요",
 	"fix_params":     "입력을 고쳐 다시 실행하세요",
 	"human_release":  "사람이 제어권을 놓은 뒤 다시 실행하세요",
+	"qa_get":         "deskhand qa get <실행-id> 로 결과를 확인하세요",
 }
 
 // nextStep returns the sentence of the next action: the one of r.steps, or

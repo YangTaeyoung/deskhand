@@ -22,6 +22,7 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/daemon/localapi"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/paths"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/pty"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/qa"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/store"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/tunnel"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/xfer"
@@ -70,6 +71,7 @@ type Daemon struct {
 	xfer  *xfer.Manager
 	ptys  *pty.Hub
 	tuns  *tunnel.Manager
+	qa    *qa.Manager
 	ln    net.Listener
 	lg    *log.Logger
 	Hosts *hosts.Registry
@@ -175,10 +177,14 @@ func New(opt Options) (*Daemon, error) {
 	hub = pty.New(pty.Options{Store: d.st, Conns: d.mgr, Jobs: jreg, Logger: lg})
 	d.ptys = hub
 	d.tuns = tunnel.New(lg)
+	d.qa = qa.New(qa.Options{Store: d.st, Bus: bus, Jobs: jreg, Hosts: qa.HostsFrom(reg), Push: qa.XferPusher(xmgr), Version: opt.Version, Logger: lg})
+	if n := d.qa.Load(); n > 0 {
+		lg.Printf("%d QA runs were running when the daemon stopped; they are recorded as interrupted", n)
+	}
 	if d.ln, err = localapi.Listen(paths.Socket()); err != nil {
 		return nil, err
 	}
-	d.srv = localapi.New(localapi.Deps{Store: d.st, Bus: bus, Hosts: reg, Jobs: jreg, Transfers: xmgr, PTYs: hub, Tunnels: d.tuns, Version: opt.Version, Logger: lg})
+	d.srv = localapi.New(localapi.Deps{Store: d.st, Bus: bus, Hosts: reg, Jobs: jreg, Transfers: xmgr, PTYs: hub, Tunnels: d.tuns, QA: d.qa, Version: opt.Version, Logger: lg})
 	if err := reg.Load(); err != nil {
 		return nil, fmt.Errorf("저장된 PC 목록을 읽지 못했습니다. %s를 확인하세요: %w", paths.DB(), err)
 	}
@@ -218,6 +224,10 @@ func (d *Daemon) Close() {
 	if d.tuns != nil {
 		d.tuns.Shutdown()
 		d.tuns = nil
+	}
+	if d.qa != nil {
+		d.qa.Close()
+		d.qa = nil
 	}
 	if d.xfer != nil {
 		d.xfer.Close()

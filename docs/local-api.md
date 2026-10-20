@@ -344,7 +344,7 @@ YAML 1.2의 부분집합이다: 블록 매핑·블록 시퀀스, 흐름 시퀀�
 | `type` | 글, 또는 `{text, method?(auto/unicode/paste)}` | 키보드 글자 입력 | 30000 | 예 | `input` |
 | `key` | `ctrl+s` 같은 글, 또는 `{keys}` | 키 입력 | 30000 | 예 | `input` |
 | `ui_act` | `{action, value?, <선택자>}` — `action`은 `invoke`/`toggle`/`expand`/`collapse`/`select`/`set_value`(`value` 필요)/`focus`/`scroll_into_view` | `ui.act` | 30000 | 예 | `uia` |
-| `assert_ui` | `{<선택자>, exists?(기본 true), text?, text_contains?, text_matches?, enabled?, count?}` | `ui.find`(최대 200개)와, 글 기준이 있으면 `ui.text`. 모두 맞을 때까지 300 ms마다 다시 본다 | 5000 | — | `uia` |
+| `assert_ui` | `{<선택자>, exists?(count가 없으면 기본 true), text?, text_contains?, text_matches?, enabled?, count?}` | `ui.find`(최대 200개)와, 글 기준이 있으면 `ui.text`. 모두 맞을 때까지 300 ms마다 다시 본다 | 5000 | — | `uia` |
 | `assert_screen_text` | 포함할 글, 또는 `{contains?, not_contains?, matches?, window?}`(`contains`·`not_contains`는 글 또는 글 목록, 하나 이상) | 창의 `ui.tree{filter:"interactive", max:2000}` 항목의 이름·값(값은 항목마다 앞 200자)을 줄로 이은 글. 맞을 때까지 300 ms마다 | 5000 | — | `uia` |
 | `assert_file` | `{path, exists?(기본 true), contains?, not_contains?, matches?, sha256?, size?}` | `fs.stat`(`sha256`이 있으면 해시 포함)과, 내용 기준이 있으면 `fs.read`(앞 8 MiB, UTF-16LE 파일은 UTF-8로 바꿔 비교). 맞을 때까지 300 ms마다 | 5000 | — | `files` |
 | `exec` | 명령 글(`cmd`, 셸 기본값), 또는 `{argv? \| cmd?, shell?, cwd?, expect_code?(기본 0), stdout_contains?, stderr_contains?}` | `exec.run{timeout_ms}` | 120000 | — | `exec` |
@@ -368,7 +368,7 @@ YAML 1.2의 부분집합이다: 블록 매핑·블록 시퀀스, 흐름 시퀀�
 - 흐름: `optional`도 `continue_on_fail`도 아닌 단계가 `fail`·`blocked`면 그 뒤의 setup·steps 단계는 `not_run`이다. teardown 단계는 앞의 결과와 상관없이 모두 차례로 실행한다. `optional` 단계는 결과를 그대로 남기지만 흐름과 실행 상태 계산에서 빠진다.
 - 실행 `status`: 취소면 `cancelled`, 데몬이 멈춰 끊겼으면 `error`, 그 밖에는 `optional`이 아닌 단계(teardown 포함) 중 `fail`이 있으면 `failed`, 아니면 `blocked`가 있으면 `blocked`, 아니면 `passed`. 실행 제한(`timeout_ms`)을 넘으면 그때 실행 중인 단계가 `fail`(`TIMEOUT`), 남은 setup·steps는 `not_run`, teardown을 실행하고 실행은 `failed` + `error`(`TIMEOUT`).
 - **제어권**: `launch`·`click`·`type`·`key`·`ui_act`·`close`는 단계마다 실행 직전에 제어권(§3 제어권, design §5.1)을 확인한다. 사람이 쥐고 있으면 PC에 아무것도 보내지 않고 `blocked` + `CONTROL_HELD_BY_HUMAN`("사람이 조작 중입니다 …")이다. 실행기는 제어권을 가져오거나 기다리지 않는다. 다른 단계(관찰·확인·명령·파일)는 제어권과 상관없이 실행한다.
-- **기능**: 단계에 필요한 caps(호스트 `caps`)가 `ready`가 아니면 PC에 보내지 않고 `blocked` + `CAPABILITY_UNSUPPORTED`(caps의 `reason`)이고 `run.unsupported`에 남는다. 이 데몬은 아직 마우스·키보드 입력을 보내지 못해 `click`·`type`·`key`는 항상 `blocked` + `CAPABILITY_UNSUPPORTED`이고, `screenshot`과 실패 스크린샷은 에이전트의 `screen`이 `ready`일 때만 찍는다.
+- **기능**: 단계에 필요한 caps(호스트 `caps`, 에이전트가 알린 기능만)가 `ready`가 아니면 PC에 보내지 않고 `blocked` + `CAPABILITY_UNSUPPORTED`(caps의 `reason`)이고 `run.unsupported`에 남는다. 이 데몬은 아직 마우스·키보드 입력을 보내지 못해 `click`·`type`·`key`는 항상 `blocked` + `CAPABILITY_UNSUPPORTED`이고, `screenshot`과 실패 스크린샷은 에이전트의 `screen`이 `ready`일 때만 찍는다.
 - **취소**: `qa.cancel`은 바로 답한다(`run.cancel_requested:true`, 봉투 `running`). 실행 중인 단계의 요청을 멈춰 그 단계는 `blocked`("취소로 멈췄습니다"), 남은 setup·steps는 `not_run`, 그다음 teardown을 실행하고 실행은 `cancelled`, job은 `cancelled`로 끝난다. teardown 중에 다시 `qa.cancel`하면 teardown도 멈춘다. 이미 `cancelled`인 실행은 그대로 돌려주고(봉투 `cancelled`), 다른 상태로 끝난 실행은 JSON-RPC `INVALID_ARGUMENT`다. 진행 중 `push`의 전송은 함께 취소한다.
 - **데몬 재시작**: 끝나지 않은 실행은 데몬이 시작할 때 `error` + `error`(`EXECUTION_OUTCOME_UNKNOWN`)로 끝낸다. 실행 중이던 단계는 `blocked`(`EXECUTION_OUTCOME_UNKNOWN`), 남은 단계(teardown 포함)는 `not_run`이고 결과 묶음을 그때 쓴다. 데몬은 단계를 다시 보내지 않는다.
 - `qa.list`: `limit` 기본 50·최대 500(0이면 기본값, 그 밖은 `INVALID_ARGUMENT`), `cursor`는 이전 결과의 `next_cursor`(불투명 문자열), 다음 페이지가 있을 때만 `next_cursor`.
@@ -391,7 +391,7 @@ evidence/      단계 증거
 - `report.json`: `{schema_version:1, generated_at, run(QARun, steps 포함), scenario:{path?, sha256, source}, vars(secret_ 가림), host:{host_id, name, os, arch, address, agent_version?}, environment?(실행 시작 때 읽은 diag.system 결과 필드, 읽지 못하면 없음), daemon_version}`.
 - `manifest.json`: `{schema_version:1, run_id, job_id, generated_at, files:[{path(묶음 안 상대 경로, / 구분), artifact_id, kind, mime, size, sha256}]}`(경로 순).
 - `artifacts.list{job_id}`: job 폴더에 `manifest.json`이 있으면 그 파일들(`path`는 절대 경로), 없으면 job `result.artifacts`, 그것도 없으면 폴더의 파일(그때 `sha256`을 계산). 모르는 job은 `NOT_FOUND`, 산출물이 없는 job은 빈 목록.
-- `artifacts.export{job_id, dir}`: `dir`은 이 Mac의 있는 폴더 절대 경로(아니면 `INVALID_ARGUMENT`). job 폴더 전체를 `<dir>/<job_id>`(있으면 `<job_id> (1)`…)로 복사하고, 복사본의 sha256이 manifest·Artifact와 다르면 복사본을 지우고 `HASH_MISMATCH`다. 결과 `{job_id, dir(만든 폴더), files(파일 수), bytes, manifest?(복사한 manifest.json 경로)}`. 상대 경로 이미지 덕분에 복사한 `report.html`도 그대로 열린다.
+- `artifacts.export{job_id, dir}`: `dir`은 이 Mac의 있는 폴더 절대 경로(아니면 `INVALID_ARGUMENT`). job 폴더 전체를 `<dir>/<job_id>`(있으면 `<job_id> (1)`…)로 복사하고, 복사본의 sha256이 manifest·Artifact와 다르면 복사본을 지우고 `HASH_MISMATCH`, 산출물이 없는 job은 `NOT_FOUND`다. 결과 `{job_id, dir(만든 폴더), files(파일 수), bytes, manifest?(복사한 manifest.json 경로)}`. 상대 경로 이미지 덕분에 복사한 `report.html`도 그대로 열린다.
 
 ### CLI·MCP
 

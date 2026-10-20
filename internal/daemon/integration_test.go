@@ -79,12 +79,13 @@ type testAgent struct {
 // retrying for up to 5 s while the port is still bound.
 func startAgent(t *testing.T, port int, id transport.Identity, dataDir string, controllers ...string) *testAgent {
 	t.Helper()
-	return startAgentWith(t, port, id, dataDir, nil, controllers...)
+	return startAgentWith(t, port, id, dataDir, nil, nil, controllers...)
 }
 
 // startAgentWith is startAgent with the agent's diagnostics read from src,
-// or from the agent's own system when src is nil.
-func startAgentWith(t *testing.T, port int, id transport.Identity, dataDir string, src diag.Source, controllers ...string) *testAgent {
+// or from the agent's own system when src is nil, and its ui and win ops
+// served by ui when it is set.
+func startAgentWith(t *testing.T, port int, id transport.Identity, dataDir string, src diag.Source, ui server.UI, controllers ...string) *testAgent {
 	t.Helper()
 	home := t.TempDir()
 	cfg := config.Agent{Listen: fmt.Sprintf("127.0.0.1:%d", port), ControllerFingerprints: controllers, DataDir: dataDir, Name: "pc"}
@@ -94,7 +95,7 @@ func startAgentWith(t *testing.T, port int, id transport.Identity, dataDir strin
 		done   chan error
 	)
 	for deadline := time.Now().Add(5 * time.Second); ; {
-		srv = server.New(server.Options{Clipboard: fakeClipboard{}, HomeDir: home, AllowExec: true, DataDir: dataDir, Version: "test", Logger: quiet, Diag: src})
+		srv = server.New(server.Options{Clipboard: fakeClipboard{}, HomeDir: home, AllowExec: true, DataDir: dataDir, Version: "test", Logger: quiet, Diag: src, UI: ui})
 		var ctx context.Context
 		ctx, cancel = context.WithCancel(context.Background())
 		done = make(chan error, 1)
@@ -151,6 +152,9 @@ type setupOpts struct {
 	jobs []store.Job
 	// agentDiag is the agent's diagnostics; nil reads the agent's system.
 	agentDiag diag.Source
+	// agentUI serves the agent's ui and win ops; nil leaves the agent
+	// without them.
+	agentUI server.UI
 }
 
 func newID(t *testing.T, cn string) transport.Identity {
@@ -182,7 +186,7 @@ func setup(t *testing.T, o setupOpts) *env {
 	if !o.trustDaemon {
 		trusted = []string{newID(t, "other").Fingerprint}
 	}
-	agent := startAgentWith(t, freeUDPPort(t), agentID, t.TempDir(), o.agentDiag, trusted...)
+	agent := startAgentWith(t, freeUDPPort(t), agentID, t.TempDir(), o.agentDiag, o.agentUI, trusted...)
 	fp := agentID.Fingerprint
 	if o.storedFP != nil {
 		fp = o.storedFP(agentID)

@@ -25,6 +25,7 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/paths"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/pty"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/qa"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/store"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/tunnel"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/xfer"
@@ -91,6 +92,8 @@ type Deps struct {
 	PTYs *pty.Hub
 	// Tunnels serves the tunnel methods; nil leaves them out.
 	Tunnels *tunnel.Manager
+	// QA serves the qa methods; nil leaves them out.
+	QA      *qa.Manager
 	Version string
 	Logger  *log.Logger
 }
@@ -141,6 +144,7 @@ func New(d Deps) *Server {
 	s.registerPTY()
 	s.registerTunnel()
 	s.registerDiag()
+	s.registerQA()
 	return s
 }
 

@@ -35,6 +35,8 @@ const (
 	KindPTY = "pty"
 	// KindDiag is a diagnostics result the daemon kept as an artifact.
 	KindDiag = "diag"
+	// KindQA is a QA scenario run; its run manager sets its state.
+	KindQA = "qa"
 )
 
 // earlyExitKeep is how long an exit reported before its job was known is
@@ -389,7 +391,8 @@ func (r *Registry) List(f store.JobFilter) ([]model.Job, error) {
 
 // SettleInterrupted finishes, when the daemon starts, every job that had not
 // finished and has no remote job: an exec.run, an exec.start whose answer
-// had not come, or an install; a transfer job is its transfer manager's.
+// had not come, or an install; a transfer job is its transfer manager's and
+// a qa job its run manager's.
 // Their outcome is unknown; each gets a job.updated event and a timeline
 // entry. It returns how many it finished.
 func (r *Registry) SettleInterrupted() int {
@@ -399,7 +402,7 @@ func (r *Registry) SettleInterrupted() int {
 	}
 	n := 0
 	for _, j := range rows {
-		if j.RemoteJob != "" || j.Kind == KindTransfer {
+		if j.RemoteJob != "" || j.Kind == KindTransfer || j.Kind == KindQA {
 			continue
 		}
 		e := apierr.New(wire.CodeExecutionOutcomeUnknown,

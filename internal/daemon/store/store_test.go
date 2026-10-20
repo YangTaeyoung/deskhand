@@ -64,7 +64,7 @@ func TestStoreMigrates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"events", "hosts", "jobs", "requests", "timeline", "transfer_files", "transfers"}
+	want := []string{"events", "hosts", "jobs", "qa_runs", "requests", "timeline", "transfer_files", "transfers"}
 	if got := tables(t, s); !reflect.DeepEqual(got, want) {
 		t.Fatalf("tables after the first open = %v, want %v", got, want)
 	}
@@ -73,6 +73,7 @@ func TestStoreMigrates(t *testing.T) {
 		"jobs":     {"job_id", "host_id", "kind", "request_id", "status", "params_json", "result_json", "created_at", "updated_at"},
 		"events":   {"seq", "ts", "host_id", "job_id", "kind", "payload_json"},
 		"requests": {"request_id", "host_id", "op", "state", "result_json", "created_at"},
+		"qa_runs":  {"run_id", "job_id", "host_id", "name", "status", "rev", "run_json", "created_at", "updated_at", "finished_at"},
 	} {
 		have := map[string]bool{}
 		for _, c := range columns(t, s, table) {

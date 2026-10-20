@@ -249,6 +249,7 @@ const (
 	TimelineFile       = "file"
 	TimelineConnection = "connection"
 	TimelineInstall    = "install"
+	TimelineQA         = "qa"
 
 	TimelineOK      = "ok"
 	TimelineFailed  = "failed"
