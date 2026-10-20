@@ -4,4 +4,7 @@ package cli
 
 import "golang.org/x/sys/unix"
 
-const ioctlReadTermios = unix.TIOCGETA
+const (
+	ioctlReadTermios  = unix.TIOCGETA
+	ioctlWriteTermios = unix.TIOCSETA
+)

@@ -425,7 +425,12 @@ func (s *Server) execWrite(_ context.Context, req proto.Message) (proto.Message,
 	return proto.Message{}, nil
 }
 
+// execKill ends the process tree of an exec.start job or of a pty's shell
+// and waits for it to end.
 func (s *Server) execKill(_ context.Context, req proto.Message) (proto.Message, error) {
+	if p := s.ptys.get(req.String("job")); p != nil {
+		return s.killPTY(p)
+	}
 	j, err := s.jobs.get(req.String("job"))
 	if err != nil {
 		return nil, err

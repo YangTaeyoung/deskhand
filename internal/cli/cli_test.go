@@ -191,6 +191,7 @@ func runCLI(t *testing.T, interactive bool, stdin string, args ...string) result
 	app.Stdin, app.Stdout, app.Stderr = strings.NewReader(stdin), &out, &errb
 	app.Interactive = func() bool { return interactive }
 	app.PollInterval = time.Millisecond
+	app.Term = noTerm{}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	code := app.Run(ctx, args)

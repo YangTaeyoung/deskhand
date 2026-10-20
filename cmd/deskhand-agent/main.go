@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -233,6 +234,7 @@ func cmdRun(args []string, stderr io.Writer) int {
 	logger.Printf("deskhand-agent %s listening on udp %s for %d controller(s), name %q, key %s", version, cfg.Listen,
 		len(cfg.ControllerFingerprints), cfg.Name, id.Fingerprint)
 	streams := quicserve.TransferStreams(s)
+	maps.Copy(streams, quicserve.PTYStreams(s))
 	pause := serveFirstPause
 	for {
 		err := quicserve.Run(ctx, cfg, id, s, streams)

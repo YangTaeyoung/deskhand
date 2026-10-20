@@ -75,10 +75,12 @@ func Journaled(op string) bool { return wire.Journaled(op) }
 // NewRID returns a new request id: "r-" and a ULID.
 func NewRID() string { return ids.New(ids.Request) }
 
-// Capability is the state of one agent capability.
+// Capability is the state of one agent capability; Shells lists the shells
+// of the pty capability.
 type Capability struct {
-	State  string `json:"state"`
-	Reason string `json:"reason,omitempty"`
+	State  string   `json:"state"`
+	Reason string   `json:"reason,omitempty"`
+	Shells []string `json:"shells,omitempty"`
 }
 
 // Hello is what the agent's hello announced.
@@ -118,7 +120,15 @@ func parseCaps(v any) map[string]Capability {
 		}
 		state, _ := cm["state"].(string)
 		reason, _ := cm["reason"].(string)
-		out[k] = Capability{State: state, Reason: reason}
+		var shells []string
+		if list, ok := cm["shells"].([]any); ok {
+			for _, v := range list {
+				if sh, ok := v.(string); ok {
+					shells = append(shells, sh)
+				}
+			}
+		}
+		out[k] = Capability{State: state, Reason: reason, Shells: shells}
 	}
 	return out
 }

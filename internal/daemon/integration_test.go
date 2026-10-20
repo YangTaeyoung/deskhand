@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net"
 	"os"
 	"os/signal"
@@ -89,7 +90,9 @@ func startAgent(t *testing.T, port int, id transport.Identity, dataDir string, c
 		var ctx context.Context
 		ctx, cancel = context.WithCancel(context.Background())
 		done = make(chan error, 1)
-		go func() { done <- quicserve.Run(ctx, cfg, id, srv, quicserve.TransferStreams(srv)) }()
+		streams := quicserve.TransferStreams(srv)
+		maps.Copy(streams, quicserve.PTYStreams(srv))
+		go func() { done <- quicserve.Run(ctx, cfg, id, srv, streams) }()
 		select {
 		case err := <-done:
 			cancel()

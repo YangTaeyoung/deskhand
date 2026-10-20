@@ -63,6 +63,7 @@ type Server struct {
 	connMu  sync.Mutex
 	conns   map[*conn]struct{}
 	jobs    *jobTable
+	ptys    *ptyTable
 	journal *journal
 	// receipts holds the outcomes of the transfers committed last.
 	receipts *receiptStore
@@ -110,7 +111,7 @@ func New(opt Options) *Server {
 	if opt.Clipboard == nil {
 		opt.Clipboard = newClipboard(opt.Session)
 	}
-	s := &Server{opt: opt, ops: map[string]opEntry{}, conns: map[*conn]struct{}{}, jobs: newJobTable(), ownHome: agentHome(),
+	s := &Server{opt: opt, ops: map[string]opEntry{}, conns: map[*conn]struct{}{}, jobs: newJobTable(), ptys: newPTYTable(), ownHome: agentHome(),
 		clipKick: make(chan struct{}, 1)}
 	s.timing.caps, s.timing.pollMin, s.timing.pollMax = capsCheckInterval, clipboardPollMin, clipboardPollMax
 	journalDir := ""
@@ -124,10 +125,16 @@ func New(opt Options) *Server {
 	return s
 }
 
-// Close shuts the UI helper down when the server has one.
+// Close shuts the UI helper down when the server has one and ends the
+// process trees of the running ptys.
 func (s *Server) Close() {
 	if c, ok := s.opt.UI.(interface{ Close() }); ok {
 		c.Close()
+	}
+	for _, p := range s.ptys.list() {
+		if pid := p.processID(); pid > 0 && !p.hasExited() {
+			_ = killTree(pid)
+		}
 	}
 }
 

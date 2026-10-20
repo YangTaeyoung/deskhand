@@ -21,6 +21,7 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/daemon/jobs"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/localapi"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/paths"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/pty"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/store"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/xfer"
 	"github.com/YangTaeyoung/deskhand/internal/install"
@@ -66,6 +67,7 @@ type Daemon struct {
 	srv   *localapi.Server
 	jobs  *jobs.Registry
 	xfer  *xfer.Manager
+	ptys  *pty.Hub
 	ln    net.Listener
 	lg    *log.Logger
 	Hosts *hosts.Registry
@@ -148,11 +150,13 @@ func New(opt Options) (*Daemon, error) {
 	var reg *hosts.Registry
 	var jreg *jobs.Registry
 	var xmgr *xfer.Manager
+	var hub *pty.Hub
 	d.mgr = conn.NewManager(conn.Options{Identity: id, Controller: controller, Dial: opt.Dial, Requests: d.st,
 		OnEvent: func(ev conn.Event) { reg.HandleConnEvent(ev) },
 		OnReady: func(hostID string, _ uint64) {
 			go jreg.Reconcile(hostID)
 			go xmgr.HostReady(hostID)
+			go hub.Refresh(context.Background(), hostID)
 		},
 		DropAfterSend: drop, Logger: lg})
 	jreg = jobs.New(d.st, bus, d.mgr)
@@ -166,10 +170,12 @@ func New(opt Options) (*Daemon, error) {
 	d.Hosts = reg
 	xmgr = xfer.New(xfer.Options{Store: d.st, Bus: bus, Conns: d.mgr, Jobs: jreg, Logger: lg})
 	d.xfer = xmgr
+	hub = pty.New(pty.Options{Store: d.st, Conns: d.mgr, Jobs: jreg, Logger: lg})
+	d.ptys = hub
 	if d.ln, err = localapi.Listen(paths.Socket()); err != nil {
 		return nil, err
 	}
-	d.srv = localapi.New(localapi.Deps{Store: d.st, Bus: bus, Hosts: reg, Jobs: jreg, Transfers: xmgr, Version: opt.Version, Logger: lg})
+	d.srv = localapi.New(localapi.Deps{Store: d.st, Bus: bus, Hosts: reg, Jobs: jreg, Transfers: xmgr, PTYs: hub, Version: opt.Version, Logger: lg})
 	if err := reg.Load(); err != nil {
 		return nil, fmt.Errorf("저장된 PC 목록을 읽지 못했습니다. %s를 확인하세요: %w", paths.DB(), err)
 	}

@@ -10,6 +10,7 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/daemon/jobs"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/store"
+	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
 func (s *Server) registerJobs() {
@@ -94,10 +95,23 @@ func (s *Server) jobsCancel(ctx context.Context, sess *session, raw json.RawMess
 	if before.Kind == jobs.KindTransfer && s.d.Transfers != nil {
 		return s.cancelTransferJob(ctx, sess, before)
 	}
+	if before.Kind == jobs.KindPTY && before.FinishedAt != "" {
+		o := outcome{status: model.StatusSucceeded, action: model.Executed()}
+		return s.envelope(before.HostID, before.JobID, conn.CallInfo{}, o, nil).Map(map[string]any{"job": before}), nil
+	}
 	cctx, cancel := s.detached(remoteTimeout)
 	defer cancel()
 	info := conn.CallInfo{}
 	job, err := s.d.Jobs.Cancel(cctx, p.JobID, &info)
+	if err != nil && before.Kind == jobs.KindPTY {
+		if apierr.CodeOf(err) == wire.CodeNotFound && s.d.PTYs != nil {
+			s.d.PTYs.Refresh(cctx, before.HostID)
+		}
+		if cur, gerr := s.d.Jobs.Get(ctx, p.JobID); gerr == nil && cur.FinishedAt != "" {
+			o := outcome{status: model.StatusSucceeded, action: model.Executed()}
+			return s.envelope(before.HostID, before.JobID, info, o, nil).Map(map[string]any{"job": cur}), nil
+		}
+	}
 	if err != nil && info.RID == "" {
 		return nil, err
 	}
@@ -107,6 +121,9 @@ func (s *Server) jobsCancel(ctx context.Context, sess *session, raw json.RawMess
 	}
 	if err == nil {
 		o.status = job.Status
+		if job.Kind == jobs.KindPTY && job.Status != model.StatusCancelled {
+			o.status = model.StatusSucceeded
+		}
 	}
 	_, _ = s.d.Bus.Record(sess.Caller().Entry(before.HostID, model.TimelineExec, "job 취소: "+before.Summary, timelineOutcome(o.status), before.JobID))
 	return s.envelope(before.HostID, before.JobID, info, o, nil).Map(map[string]any{"job": job}), nil

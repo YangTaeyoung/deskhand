@@ -143,7 +143,7 @@ func (r *Registry) Model(row store.Host) model.Host {
 	if hello.Agent != "" {
 		m.AgentVersion = hello.Agent
 		for k, c := range hello.Caps {
-			m.Caps[k] = model.Capability{State: c.State, Reason: c.Reason}
+			m.Caps[k] = model.Capability{State: c.State, Reason: c.Reason, Shells: c.Shells}
 		}
 		if hello.Displays != nil {
 			m.Displays = hello.Displays
@@ -535,7 +535,7 @@ func (r *Registry) agentEvent(ev conn.Event) {
 		caps := map[string]model.Capability{}
 		if h != nil {
 			for k, c := range h.Hello().Caps {
-				caps[k] = model.Capability{State: c.State, Reason: c.Reason}
+				caps[k] = model.Capability{State: c.State, Reason: c.Reason, Shells: c.Shells}
 			}
 		}
 		r.opt.Bus.Publish(ev.HostID, "", events.CapsChanged, map[string]any{"caps": caps})
@@ -552,7 +552,7 @@ func (r *Registry) agentEvent(ev conn.Event) {
 			displays = []any{}
 		}
 		r.opt.Bus.Publish(ev.HostID, "", events.DisplayChanged, map[string]any{"displays": displays})
-	case "job.exited":
+	case "job.exited", "pty.exited":
 		r.opt.Jobs.HandleAgentEvent(ev.HostID, ev.Payload)
 	}
 }

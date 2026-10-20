@@ -78,7 +78,7 @@
 | `jobs.list{host_id?, kind?, status?}` / `jobs.get{job_id}` / `jobs.cancel{job_id}` | job 목록·상세 |
 | `jobs.output{job_id, cursor}` | `chunks`, `next_cursor`, `state` |
 | `proc.list` / `proc.kill` / `app.launch` | 에이전트 op와 동일 + 봉투 |
-| `pty.open{host_id, shell, cols, rows}` | 봉투(job, kind `pty`) + `pty_id`. `shell`은 `powershell`/`cmd`/`pwsh`(`caps.pty.shells`에 있는 것). 이후 `stream.attach{kind:"pty", pty_id}`. 셸 목록은 `jobs.list{host_id, kind:"pty", status:"running"}`, 끝내기는 `jobs.cancel{job_id}`(봉투 `cancelled`; 셸이 먼저 끝났으면 `succeeded`). pty job의 `result`는 `{shell, pid, client_name?}` |
+| `pty.open{host_id, shell?, cols?, rows?}` | 봉투(job, kind `pty`) + `pty_id` + `job`(Job). `shell`은 `powershell`/`cmd`/`pwsh`(`caps.pty.shells`에 있는 것, Windows 밖 PC는 `sh`), 생략하면 `caps.pty.shells`의 첫 셸. `cols`·`rows`는 함께 1–1000(둘 다 생략하면 80×24). 이후 `stream.attach{kind:"pty", pty_id}`. 셸 목록은 `jobs.list{host_id, kind:"pty", status:"running"}`, 끝내기는 `jobs.cancel{job_id}`(봉투 `cancelled`; 셸이 먼저 끝났으면 `succeeded`). pty job의 `result`는 `{shell, pid, client_name?}`(§5) |
 
 ### 파일
 | 메서드 | 결과 |
@@ -131,7 +131,12 @@
 - 사람 입력(`0x41`)의 `gen`은 데몬이 현재 writer generation으로 덮어쓴다. 앱은 0을 보내도 된다.
 - 단축키: 화면 입력을 잡고 있어도 ⌘Q·⌘H·⌘Tab·⌘⇧.·⌘1–⌘7·⌘⌥0·⌘K·⌘,는 Mac에 남는다(설정 "시스템 단축키도 원격으로 보내기"로 ⌘Q·⌘H·⌘Tab만 원격 전달 가능, 기본 끔). 그 밖의 ⌘ 조합은 Cmd↔Ctrl 설정에 따라 원격으로 간다.
 
-`kind:"pty"` (`pty_id` 또는 `job_id`): `0x20`–`0x23` (protocol.md §7과 동일). `pty_id`는 방금 연 셸, `job_id`는 실행 중인 pty job에 다시 붙는다(분리했거나 연결이 끊긴 셸). 붙으면 데몬이 `0x23`{`job`(데몬 job_id), `pid`}을 보내고 이어서 스크롤백을 `0x20`으로 다시 보낸다. 앱은 `0x23`을 받을 때마다 현재 크기를 `0x21`로 보낸다. 끝난 job에 붙으면 `NOT_FOUND`.
+`kind:"pty"` (`pty_id` 또는 `job_id`): `0x20`–`0x23` (protocol.md §7과 동일). `pty_id`는 방금 연 셸, `job_id`는 실행 중인 pty job에 다시 붙는다(분리했거나 연결이 끊긴 셸). 붙으면 데몬이 `0x23`{`job`(데몬 job_id), `pid`}을 보내고 이어서 스크롤백(셸의 마지막 출력 최대 1 MiB, protocol.md §7)을 `0x20`으로 다시 보낸다. 앱은 `0x23`을 받을 때마다 현재 크기를 `0x21`로 보낸다. 끝난 job에 붙으면 `NOT_FOUND`.
+- 성공 응답의 `result`는 `{job_id, pid, host_id}`. 실패는 JSON-RPC 오류다: 없는 job·pty나 끝난 셸 `NOT_FOUND`, PC에 연결돼 있지 않음 `OFFLINE`(`retryable:true` — 다시 연결되면 붙는다), 셸이 아직 열리는 중 `IN_PROGRESS`, `pty_id`와 `job_id`를 함께 주거나 둘 다 없으면 `INVALID_ARGUMENT`.
+- 앱 → 데몬은 `0x20`(입력, 한 프레임 최대 1 MiB)과 `0x21`(`cols`·`rows` 각 1–1000, 범위 밖은 버린다)만 전달되고 다른 종류는 버린다. 데몬 → 앱은 `0x23`, `0x20`, `0x22`다.
+- 셸이 끝나면 `0x22`{`code`} 뒤 데몬이 연결을 닫는다. `0x22` 없이 닫히면(PC 연결 끊김) 셸은 PC에서 계속 돌고 있으니 `job_id`로 다시 붙는다. 앱이 연결을 닫으면(분리) 셸은 계속 돈다. 한 셸에 여러 연결이 함께 붙을 수 있고 출력은 모두에게 간다.
+
+스트림 연결 규칙: `stream.attach`는 `hello` 다음 아무 때나 부를 수 있지만 `events.subscribe`를 부른 연결에서는 `INVALID_ARGUMENT`다. 데몬은 그 연결에서 먼저 받은 요청의 응답을 모두 쓴 뒤 attach를 처리하고, 성공 응답 줄 바로 다음 바이트부터 프레임이다(응답 줄 뒤에 앱이 미리 보낸 바이트도 프레임으로 읽는다). 거절된 attach는 오류 응답만 쓰고 연결은 JSON-RPC 그대로 남는다. 모르는 `kind`는 `INVALID_ARGUMENT`, `kind:"screen"`은 화면 스트림 구현 전까지 `CAPABILITY_UNSUPPORTED`다.
 
 ## 5. 모델
 
@@ -140,12 +145,12 @@
 | 모델 | 필드 |
 |---|---|
 | Host | `host_id`, `name`, `os`, `arch`, `address`, `port`, `ssh_alias`, `state`(연결 상태), `caps`(기능 이름 → Capability), `session?`(SessionInfo), `displays`([DisplayInfo]), `owner`(`none`/`human`/`ai`), `owner_client?`, `agent_version?`, `connection_generation`, `last_seen?` |
-| Capability | `state`(`ready`/`unavailable`/`unsupported`/`needs_user`), `reason?`, `shells?`(`pty` 기능만: 띄울 수 있는 셸 `powershell`/`cmd`/`pwsh`) |
+| Capability | `state`(`ready`/`unavailable`/`unsupported`/`needs_user`), `reason?`, `shells?`(`pty` 기능만: 띄울 수 있는 셸, 첫 항목이 기본. Windows는 `powershell`, `pwsh`(PowerShell 7이 설치돼 있을 때), `cmd` 순서, Windows 밖 PC는 `sh`) |
 | SessionInfo | `session_id`(정수), `user`, `sid?`, `connect_state`(`active`/`connected`/`disconnected`/`other`/`unknown`), `protocol`(`console`/`rdp`/`unknown`), `locked?`(에이전트가 잠금 상태를 보고하지 않으면 없음), `input_desktop`(`Default`/`Winlogon`/`unknown`), `integrity?` |
 | DisplayInfo | `index`, `name`, `adapter`, `x`, `y`, `width`, `height`, `dpi`(정수), `scale`(실수), `primary`, `refresh_hz`(정수) |
 | ControlState | `owner`, `owner_client?`, `gen`(호스트별 제어권 상태가 바뀔 때마다 — owner 또는 ai_paused — 1씩 오르는 값. 클라이언트는 더 큰 gen만 반영한다), `ai_paused` |
 | SessionInspect (`session.inspect` 결과) | SessionInfo의 모든 필드 + ControlState의 모든 필드 + `displays`([DisplayInfo]) + `caps` + `connection_generation` — 한 단계 평평한 객체 |
-| Job | `job_id`, `host_id`, `kind`(`exec`/`transfer`/`qa`/`install`/`debug`/`pty`), `status`(봉투 status 값), `request_id?`, `summary`, `progress?`(0–1), `created_at`, `updated_at`, `finished_at?`, `result?`(객체, 명령 출력 `stdout`·`stderr`는 넣지 않는다), `output_bytes?`(데몬이 기록한 stdout·stderr 바이트 수. 출력은 `jobs.output`과 artifact로만 읽는다). `kind:"transfer"` job은 전송 하나를 따른다: `status`는 전송이 `queued`·`running`·`verifying`·`paused`면 `running`(`paused`면 `result.paused:true`), `done`이면 `succeeded`, `failed`·`cancelled`면 그대로이고, `result`는 `{transfer_id, state, outcome?, paused?, error?}`다. `failed`·`cancelled` 전송을 `transfer.resume`하면 job도 다시 `running`(`finished_at` 없음)이 된다 |
+| Job | `job_id`, `host_id`, `kind`(`exec`/`transfer`/`qa`/`install`/`debug`/`pty`), `status`(봉투 status 값), `request_id?`, `summary`, `progress?`(0–1), `created_at`, `updated_at`, `finished_at?`, `result?`(객체, 명령 출력 `stdout`·`stderr`는 넣지 않는다), `output_bytes?`(데몬이 기록한 stdout·stderr 바이트 수. 출력은 `jobs.output`과 artifact로만 읽는다). `kind:"transfer"` job은 전송 하나를 따른다: `status`는 전송이 `queued`·`running`·`verifying`·`paused`면 `running`(`paused`면 `result.paused:true`), `done`이면 `succeeded`, `failed`·`cancelled`면 그대로이고, `result`는 `{transfer_id, state, outcome?, paused?, error?}`다. `failed`·`cancelled` 전송을 `transfer.resume`하면 job도 다시 `running`(`finished_at` 없음)이 된다. `kind:"pty"` job은 셸 하나를 따른다: 셸이 도는 동안 `running`, 끝나면 종료 코드 0은 `succeeded`·그 밖은 `failed`(`result.code`), `jobs.cancel`로 끝내면 `cancelled`, 열지 못했으면 `failed`, PC 에이전트가 다시 시작돼 셸이 사라졌으면 `unknown`(`result.state:"lost"`, `error.code` `EXECUTION_OUTCOME_UNKNOWN`)이다. `result`는 `{shell, pid, client_name?}`이고 끝나면 `state`·`code`가 더해진다. `summary`는 `PowerShell 터미널`처럼 셸 이름이다 |
 | FileEntry | `name`, `path`, `dir`, `size`, `mtime`, `link`, `hidden?`, `readonly?` |
 | Transfer | `transfer_id`, `host_id`, `direction`(`push`/`pull`/`move_push`/`move_pull`), `local`, `remote`, `on_conflict`, `state`(`queued`/`running`/`paused`/`verifying`/`done`/`failed`/`cancelled`), `bytes_done`, `bytes_total`, `files_done`, `files_failed`, `files_total`, `rate_bps`, `outcome?`(`written`/`skipped`/`renamed`/`copied_source_retained`/`partial`/`failed`), `error?`, `rev`(전송마다 바뀔 때마다 1씩 오르는 정수 — 클라이언트는 더 큰 rev만 반영), `updated_at` |
 | TransferDetail | Transfer의 모든 필드 + `files`([TransferFile]) — 한 단계 평평한 객체 |
@@ -192,7 +197,8 @@
 - `exec.run`의 0이 아닌 종료 코드는 `status:"failed"`, `error:null`, `code`에 종료 코드. 명령 시간 초과는 `failed` + `TIMEOUT`. 실행 중에 PC와의 연결이 끊겨 에이전트가 명령을 끝냈으면(재연결 뒤 `req.status`로 확인) `failed` + `OFFLINE` + `next_action:"check_state"`, `killed:"connection_closed"`, `code:-1`이다. 명령이 일부만 실행됐을 수 있다.
 - `host.add`/`host.repair`는 동기 호출이다(진행은 `host.install.progress` 이벤트). 결과는 봉투 + `host`(Host) + `job`(Job, kind `install`). 이미 페어링된 PC에 `force` 없는 `host.add`는 봉투 `failed` + `INVALID_ARGUMENT` + `next_action:"host_add_force"`(오류 문장에 `deskhand host add <이름> --ssh <별칭> --force`)이고, `host.add{force:true}`는 그 PC를 새 에이전트 키로 다시 페어링하며, `host.remove{uninstall:true}`는 PC의 에이전트 키·설정·데이터까지 지운다(`uninstall --purge`). 같은 이름 중복은 JSON-RPC `INVALID_ARGUMENT`.
 - `host.connect`/`host.disconnect` 결과는 Host. `host.remove` 결과 `{host_id, removed, uninstalled}`. `host.doctor` 결과 `{host_id, checks}`.
-- `jobs.list` → `{jobs}`, `jobs.get` → Job, `jobs.cancel` → 봉투(`cancelled`) + `job`, `jobs.output{job_id, cursor?}` → `{chunks:[{stream:"stdout"|"stderr", data}], next_cursor, state, status, code?, dropped?, timed_out?, error?}`(`timed_out`·`error`는 끝난 job의 결과에 있을 때 `"end"` 쪽에 붙는다) (`next_cursor`는 `"<out>:<err>"` 바이트 위치. 프로세스가 끝나고 출력을 모두 돌려준 뒤에만 `"end"`다. 프로세스가 끝난 뒤에도 출력이 남아 있으면 `state:"exited"`인 채로 바이트 위치를 계속 주므로, 클라이언트는 `"end"`가 나올 때까지 읽는다. exec job이 아닌 job은 끝나면 출력 없이 `"end"`).
+- `pty.open`이 셸을 열지 못하면 봉투 `failed`/`not_started` + `pty_id:null`이다: PC가 `pty`를 지원하지 않거나 그 셸이 없음 `CAPABILITY_UNSUPPORTED`, 오프라인 `OFFLINE`, 에이전트 거절은 그 코드. 셸을 여는 사이 연결이 끊기면 데몬이 다시 연결해 `pty.list`의 `rid`로 확인한다: 열렸으면 `running`, 같은 에이전트 실행에서 없으면 `failed` + `OFFLINE`(`retryable:true`), 확인하지 못하면 `unknown` + `EXECUTION_OUTCOME_UNKNOWN`(`next_action:"check_state"`). 데몬은 셸 시작을 다시 보내지 않는다. PC가 ready가 될 때마다 데몬은 `pty.list`를 한 번 불러 그 PC의 실행 중 pty job 가운데 끝난 셸은 종료 코드로, 목록에 없는 셸은 `unknown`(`result.state:"lost"`)으로 끝낸다.
+- `jobs.list` → `{jobs}`, `jobs.get` → Job, `jobs.cancel` → 봉투(`cancelled`) + `job`(pty job은 셸이 이미 끝났으면 봉투 `succeeded`), `jobs.output{job_id, cursor?}` → `{chunks:[{stream:"stdout"|"stderr", data}], next_cursor, state, status, code?, dropped?, timed_out?, error?}`(`timed_out`·`error`는 끝난 job의 결과에 있을 때 `"end"` 쪽에 붙는다) (`next_cursor`는 `"<out>:<err>"` 바이트 위치. 프로세스가 끝나고 출력을 모두 돌려준 뒤에만 `"end"`다. 프로세스가 끝난 뒤에도 출력이 남아 있으면 `state:"exited"`인 채로 바이트 위치를 계속 주므로, 클라이언트는 `"end"`가 나올 때까지 읽는다. exec job이 아닌 job은 끝나면 출력 없이 `"end"`).
 - 데몬이 시작할 때 끝나지 않았고 원격 job id가 없는 job(진행 중이던 `exec.run`, 응답 전의 `exec.start`, `install`)은 `status:"unknown"`(`result.state:"interrupted"`, `error.code` `EXECUTION_OUTCOME_UNKNOWN`, `next_action:"check_state"`)으로 끝내고 `job.updated`와 행위자 `system`의 타임라인 항목을 남긴다. 호스트가 ready가 될 때마다 데몬은 `exec.list`를 한 번 불러 그 호스트의 실행 중 exec job 가운데 에이전트가 `exited`로 보고한 것은 종료 코드로, `lost`이거나 목록에 없는 것은 `unknown`(`result.state:"lost"`)으로 끝낸다.
 - `timeline.list`는 `cursor`(이전 결과의 `next_cursor`, seq)도 받는다. `since`는 RFC 3339. 행위자: `mcp` 클라이언트 → `ai`, `app`/`cli` → `human`, 데몬 자신 → `system`.
 - Host에는 준비되지 않은 이유 `reason?`이 있다. `hello` 결과 `{client_id, daemon_version, api_version}`, `events.subscribe` 결과 `{subscribed, host_id, kinds}`.

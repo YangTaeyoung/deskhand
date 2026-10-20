@@ -32,16 +32,24 @@ func (r *run) jobs(ctx context.Context, args []string) int {
 func (r *run) jobsList(ctx context.Context, args []string) int {
 	fs := newFlags("jobs list")
 	host := fs.String("host", "", "호스트")
+	kind := fs.String("kind", "", "종류(exec, pty, transfer, install)")
+	status := fs.String("status", "", "상태(running, succeeded, failed, cancelled, unknown)")
 	pos, _, err := parseArgs(fs, args)
 	if err != nil {
 		return r.fail(err)
 	}
 	if len(pos) != 0 {
-		return r.fail(usagef("deskhand jobs list [--host H] 형식으로 주세요"))
+		return r.fail(usagef("deskhand jobs list [--host H] [--kind K] [--status S] 형식으로 주세요"))
 	}
 	params := map[string]any{}
 	if *host != "" {
 		params["host_id"] = *host
+	}
+	if *kind != "" {
+		params["kind"] = *kind
+	}
+	if *status != "" {
+		params["status"] = *status
 	}
 	res, err := r.simple(ctx, "jobs.list", params)
 	if err != nil {

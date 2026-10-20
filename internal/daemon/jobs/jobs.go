@@ -30,6 +30,9 @@ const (
 	// KindTransfer is the job that mirrors a transfer; its transfer
 	// manager sets its state (Mirror).
 	KindTransfer = "transfer"
+	// KindPTY is an interactive shell on the agent; its remote job is the
+	// agent's pty.
+	KindPTY = "pty"
 )
 
 // earlyExitKeep is how long an exit reported before its job was known is
@@ -328,9 +331,10 @@ func (r *Registry) expire(jobID string) {
 // killTimeout bounds the exec.kill of a timeout.
 const killTimeout = 2 * time.Minute
 
-// HandleAgentEvent applies the job.exited event of hostID's agent.
+// HandleAgentEvent applies the job.exited and pty.exited events of
+// hostID's agent.
 func (r *Registry) HandleAgentEvent(hostID string, ev proto.Message) {
-	if ev.String("name") != "job.exited" {
+	if name := ev.String("name"); name != "job.exited" && name != "pty.exited" {
 		return
 	}
 	remote := remoteID(ev["job"])
@@ -658,10 +662,10 @@ func (r *Registry) remoteOutput(ctx context.Context, j store.Job, cursor string,
 	return out, nil
 }
 
-// Cancel kills the remote process of a running exec.start job and records
-// it cancelled, also when its exit arrives before the answer to exec.kill.
-// A job that finished before the cancel keeps its status. info receives
-// what happened to the exec.kill request.
+// Cancel kills the remote process of a running exec.start or pty job and
+// records it cancelled, also when its exit arrives before the answer to
+// exec.kill. A job that finished before the cancel keeps its status. info
+// receives what happened to the exec.kill request.
 func (r *Registry) Cancel(ctx context.Context, jobID string, info *conn.CallInfo) (model.Job, error) {
 	j, err := r.load(jobID)
 	if err != nil {
@@ -670,7 +674,7 @@ func (r *Registry) Cancel(ctx context.Context, jobID string, info *conn.CallInfo
 	if j.FinishedAt != nil {
 		return model.Job{}, apierr.Invalid(fmt.Sprintf("job %s는 이미 %s 상태로 끝났습니다. 취소할 필요가 없습니다", jobID, j.Status))
 	}
-	if j.Kind != KindExec || j.RemoteJob == "" {
+	if j.Kind != KindExec && j.Kind != KindPTY || j.RemoteJob == "" {
 		return model.Job{}, apierr.Invalid(fmt.Sprintf("job %s는 취소할 수 없는 종류입니다. 끝날 때까지 기다리세요", jobID))
 	}
 	return r.kill(ctx, j, reasonCancel, info)
@@ -722,13 +726,30 @@ func (r *Registry) kill(ctx context.Context, j store.Job, reason string, info *c
 	return r.Finish(j.JobID, status, mergeResult(j, extra))
 }
 
-// StartedPIDs returns the process ids of the running exec.start jobs of a
-// host.
-func (r *Registry) StartedPIDs(hostID string) map[int]bool {
-	rows, err := r.st.ListJobs(store.JobFilter{HostID: hostID, Kind: KindExec, Status: model.StatusRunning})
-	out := map[int]bool{}
+// Exited finishes the job jobID whose remote process exited with code, as
+// its exit event does.
+func (r *Registry) Exited(jobID string, code int) (model.Job, error) {
+	j, err := r.load(jobID)
 	if err != nil {
-		return out
+		return model.Job{}, err
+	}
+	if j.FinishedAt != nil {
+		return model.JobFrom(j), nil
+	}
+	return r.finishExit(j, code)
+}
+
+// StartedPIDs returns the process ids of the running exec.start and pty
+// jobs of a host.
+func (r *Registry) StartedPIDs(hostID string) map[int]bool {
+	out := map[int]bool{}
+	var rows []store.Job
+	for _, kind := range []string{KindExec, KindPTY} {
+		list, err := r.st.ListJobs(store.JobFilter{HostID: hostID, Kind: kind, Status: model.StatusRunning})
+		if err != nil {
+			return out
+		}
+		rows = append(rows, list...)
 	}
 	for _, j := range rows {
 		res := mergeResult(j, nil)

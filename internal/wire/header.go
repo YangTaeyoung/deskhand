@@ -8,13 +8,15 @@ import (
 	"io"
 )
 
-// PTYNew describes a new pseudo-terminal session.
+// PTYNew describes a new pseudo-terminal session. RID names the start for
+// pty.list, which reports it with the session.
 type PTYNew struct {
 	Shell string            `json:"shell,omitempty"`
 	Cwd   string            `json:"cwd,omitempty"`
 	Cols  int               `json:"cols,omitempty"`
 	Rows  int               `json:"rows,omitempty"`
 	Env   map[string]string `json:"env,omitempty"`
+	RID   string            `json:"rid,omitempty"`
 }
 
 // StreamHeader is the first line of every non-rpc stream.

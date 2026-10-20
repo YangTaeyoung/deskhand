@@ -37,13 +37,15 @@ type App struct {
 	// Progress reports whether stderr is a terminal that can show a
 	// progress bar.
 	Progress func() bool
+	// Term is the terminal deskhand shell connects to the remote shell.
+	Term Terminal
 }
 
 // New returns an App on the process's standard streams.
 func New(version string) *App {
 	return &App{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Version: version,
 		Interactive: stdinIsTerminal, PollInterval: 500 * time.Millisecond,
-		Progress: func() bool { return fileIsTerminal(os.Stderr) }}
+		Progress: func() bool { return fileIsTerminal(os.Stderr) }, Term: stdinTerminal{}}
 }
 
 // run is the state of one invocation: the App and the global flags.
@@ -72,13 +74,14 @@ const usageText = `사용법: deskhand [--json] [--quiet] <명령> ...
   files push|pull|move                 Mac과 PC 사이 파일 전송
   transfer list|get|watch|pause|resume|cancel
                                        전송 조회와 제어
+  shell <호스트> [--shell S]             원격 대화형 셸 (Ctrl-]로 분리, --attach <job>으로 다시 연결)
   proc ls|kill                         원격 프로세스
   daemon run|start|stop|status         데몬 관리
   mcp                                  MCP 서버(표준 입출력, AI 에이전트용)
   version                              버전 보기
 
 종료 코드: 0 성공, 1 실패, 2 사용법 오류, 3 사람 확인 필요, 4 결과 불명, 5 오프라인·차단
-exec는 원격 명령의 종료 코드를 그대로 돌려줍니다.
+exec와 shell은 원격 명령·셸의 종료 코드를 그대로 돌려줍니다.
 `
 
 // Run executes args (without the program name) and returns the exit code.
@@ -103,6 +106,8 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		code = r.transfer(ctx, args[1:])
 	case "proc":
 		code = r.proc(ctx, args[1:])
+	case "shell":
+		code = r.shell(ctx, args[1:])
 	case "daemon":
 		code = r.daemon(ctx, args[1:])
 	case "mcp":

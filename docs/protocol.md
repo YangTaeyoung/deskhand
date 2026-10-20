@@ -26,7 +26,7 @@
 | `video` | 데몬 | `display`(인덱스, 기본 0), `max_fps`(기본 60), `bitrate`(bps), `max_width`(0=원본), `codec`(`h264`) | 프레임(§4) |
 | `cursor` | 데몬 | `display` | 프레임(§5) |
 | `input` | 데몬 | `gen`(writer generation) | 프레임(§6) |
-| `pty` | 데몬 | `job`(재부착) 또는 `new`: {`shell`, `cwd`, `cols`, `rows`, `env`} | 프레임(§7) |
+| `pty` | 데몬 | `job`(재부착) 또는 `new`: {`shell`, `cwd`, `cols`, `rows`, `env`, `rid`} | 수락 줄 `{"ok":true,"job":…,"pid":…}` 뒤 프레임(§7) |
 | `tunnel` | 데몬 | `port`(1–65535, 루프백만) | 원시 바이트 |
 | `put` | 데몬 | `transfer_id`, `path`(최종 경로), `offset`(임시 파일 크기), `size`(전체), `mtime`(RFC 3339), `roots` | 수락 줄 `{"ok":true,"part_size":…}` 뒤 데몬이 원시 바이트를 쓰고 FIN, 에이전트가 결과 줄 `{"ok":true,"received":n,"part_size":…}`(실패면 `ok:false`·`code`·`error`·`retryable`에 같은 두 필드)을 쓰고 FIN |
 | `get` | 데몬 | `path`, `offset`, `length`(0=끝까지), `roots` | 수락 줄 `{"ok":true,"size":…,"offset":…,"length":n,"mtime":…}` 뒤 에이전트가 원시 바이트 n개를 쓰고 FIN. 다 쓰기 전에 실패하면 FIN 대신 스트림을 리셋한다 |
@@ -53,7 +53,7 @@ Alcove 에이전트 프로토콜 2층과 같은 NDJSON(`t`로 구분). 한 줄 �
 - 에이전트가 실행 중에 멈췄던 `rid`는 다시 실행하지 않고 `{"ok":false,"code":"EXECUTION_OUTCOME_UNKNOWN"}`를 저장한 응답으로 삼는다.
 - `req.status{rid}` 응답: 기록이 없으면 `{"ok":true,"state":"unknown"}`, 실행 중이면 `{"ok":true,"state":"running"}`, 끝났으면 저장한 응답의 필드(`ok`·`code`·`error` 또는 결과 필드)에 `"state":"done"`을 더한 것.
 - 오류: `ok:false`, `code`(대문자 상수), `error`(다음 행동을 알려 주는 문장), `retryable`. Alcove에서 가져온 op의 오류에는 아직 `code`가 없는 것이 있다.
-- `caps`: 기능별 `{"state":"ready|unavailable|unsupported|needs_user","reason":"…"}`(`ready`면 `reason` 없음). 키: `screen`, `input`, `uia`, `exec`, `files`, `processes`, `pty`, `tunnel`, `diag`, `clipboard`. 바뀌면 에이전트가 `{"t":"ev","name":"caps.changed","caps":{…전체…}}`를 보낸다(welcome 직후 hello와 다를 때 포함).
+- `caps`: 기능별 `{"state":"ready|unavailable|unsupported|needs_user","reason":"…"}`(`ready`면 `reason` 없음). 키: `screen`, `input`, `uia`, `exec`, `files`, `processes`, `pty`, `tunnel`, `diag`, `clipboard`. `pty`에는 `shells`(띄울 수 있는 셸, 첫 항목이 기본 셸)가 있다: Windows는 `powershell`(Windows PowerShell), `pwsh`(PowerShell 7이 설치돼 있을 때 — 기계 PATH·App Paths·`Program Files\PowerShell\7`), `cmd` 순서이고 Windows 밖은 `sh`(`/bin/sh`). 띄울 셸이 없으면 `unsupported`, exec가 꺼진 에이전트는 `unavailable`이다. 바뀌면 에이전트가 `{"t":"ev","name":"caps.changed","caps":{…전체…}}`를 보낸다(welcome 직후 hello와 다를 때 포함).
 - `exec.run` 결과: `code`, `stdout`, `stderr`(각각 끝 200000바이트), `timed_out`, `truncated`, 그리고 요청이 온 연결이 닫혀 프로세스 트리를 끝냈을 때 `killed:"connection_closed"`(이때와 시간 초과 때 `code`는 -1).
 - `exec.read{job, out_offset, err_offset, max}` 결과: `state`(`running`/`exited`/`lost`), `pid`, `out`, `err`, `out_next`, `err_next`, `dropped`, `code`(`exited`일 때), `eof`(프로세스가 끝났고 이번 읽기로 두 스트림 끝까지 읽었을 때만 true). 한 번에 스트림마다 최대 256 KiB이므로 `eof`가 true가 될 때까지 `*_next`로 이어 읽는다. 모르는 job은 `NOT_FOUND`.
 - exec job: `exec.start` job은 메타와 stdout·stderr 끝 1 MiB를 `DataDir/jobs/<job>/`에 기록한다. 에이전트가 다시 시작하면 그 job이 `exec.list`·`exec.read`에 `state:"exited"`(종료 코드 기록 시 `code` 포함) 또는 `state:"lost"`(실행 중에 에이전트가 멈춤, `code` 없음)로 남는다.
@@ -82,7 +82,7 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 | `xfer.prepare` | `transfer_id`, `path`, `size`, `mtime`, `sha256`(전체, push일 때), `on_conflict`(`fail`/`replace`/`skip`/`rename`), `roots` | `part_size`(이미 받은 바이트), `part_sha256`, `free_bytes`, `dest_exists` |
 | `xfer.commit` | `transfer_id`, `path`, `sha256`, `on_conflict`, `roots` | `path`(실제 반영 경로), `outcome`(`written`/`skipped`/`renamed`) |
 | `xfer.abort` | `transfer_id`, `path`, `roots` | `removed` — 임시 파일만 지운다 |
-| `pty.list` | — | `ptys`: [{`job`, `pid`, `cols`, `rows`, `state`}] |
+| `pty.list` | — | `ptys`: [{`job`, `pid`, `cols`, `rows`, `state`(`starting`/`running`/`exited`), `shell`, `started?`(RFC 3339), `rid?`(시작 헤더의 `rid`), `code?`(`exited`일 때)}] — 시작 순서. 끝난 pty는 최근 32개만 남는다 |
 | `debug.ports` | `count` | `ports` — 루프백 빈 포트 |
 | `diag.system` | — | `os`{`name`, `version`, `build`, `edition`}, `computer_name`, `cpu`{`name`, `cores`, `threads`, `usage_pct`}, `memory`{`total_bytes`, `used_bytes`}, `disks`: [{`root`, `label?`, `fs`, `total_bytes`, `free_bytes`}], `gpus`: [{`name`, `driver_version?`, `memory_bytes?`}], `boot_time`(RFC 3339), `uptime_s` |
 | `diag.services` | `name?`(부분 일치, 대소문자 무시) | `services`: [{`name`, `display_name`, `state`(`running`/`stopped`/`paused`/`start_pending`/`stop_pending`/`unknown`), `start_type`(`auto`/`delayed_auto`/`manual`/`disabled`/`unknown`), `pid?`}] |
@@ -111,7 +111,7 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 - `get`: 일반 파일만 읽는다. 폴더와 FIFO 같은 특수 파일은 열지 않고 `INVALID_ARGUMENT`다.
 - `xfer.abort`: 임시 파일만 지운다. 없으면 `removed:false`이고, 그 이름의 폴더·링크는 건드리지 않고 `INVALID_ARGUMENT`다.
 
-이벤트(`ev`): Alcove의 `job.exited`, `process.exited`, 창 이벤트, `events.dropped`에 더해 `clipboard.changed`(`text`: 에이전트가 쓰지 않은 PC 클립보드 변경, 700000바이트까지), `session.changed`, `display.changed`, `caps.changed`, `input.preempted`.
+이벤트(`ev`): Alcove의 `job.exited`, `process.exited`, 창 이벤트, `events.dropped`에 더해 `clipboard.changed`(`text`: 에이전트가 쓰지 않은 PC 클립보드 변경, 700000바이트까지), `session.changed`, `display.changed`, `caps.changed`, `input.preempted`, `pty.exited`(`job`, `code`: pty의 셸이 끝남).
 
 ## 4. `video` 프레임
 
@@ -154,12 +154,18 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 
 | 종류 | 방향 | 형식 |
 |---|---|---|
-| `0x20` data | 양방향 | 원시 바이트(UTF-8) |
-| `0x21` resize | 데몬→에이전트 | JSON `cols`, `rows` |
-| `0x22` exit | 에이전트→데몬 | JSON `code` |
-| `0x23` attached | 에이전트→데몬 | JSON `job`, `pid`, 이후 스크롤백(최대 1 MiB)이 data 프레임으로 이어진다 |
+| `0x20` data | 양방향 | 원시 바이트(UTF-8). 에이전트는 한 프레임에 최대 32 KiB를 쓰고 UTF-8 문자를 프레임 사이에서 자르지 않는다 |
+| `0x21` resize | 데몬→에이전트 | JSON `cols`, `rows`(각 1–1000) |
+| `0x22` exit | 에이전트→데몬 | JSON `code`(셸의 종료 코드. Windows 밖에서 신호로 끝나면 128+신호 번호) |
+| `0x23` attached | 에이전트→데몬 | JSON `job`, `pid`, 이후 스크롤백이 data 프레임으로 이어진다 |
 
-스트림이 끊겨도 ConPTY 프로세스는 남고 `job`으로 재부착한다. `exec.kill`로 끝낸다.
+- `new`는 셸을 시작한다: `shell`(`caps.pty.shells`의 하나, 없으면 첫 항목. 목록 밖이면 `INVALID_ARGUMENT`, 이 에이전트가 아는 셸이지만 설치되지 않았으면 `CAPABILITY_UNSUPPORTED`), `cols`·`rows`(둘 다 0이면 80×24, 그 밖에는 각 1–1000, 어기면 `INVALID_ARGUMENT`), `cwd`(홈 폴더 기준, 없으면 홈 폴더), `env`(자식 환경 뒤에 더한다), `rid`(`pty.list`가 그 pty와 함께 돌려주는 시작 ID, `rid` 형식 규칙은 §3과 같다). 셸은 에이전트 계정·세션에서 exec와 같은 자식 환경(`childenv`)으로 돈다: Windows는 ConPTY 의사 콘솔(`CreatePseudoConsole`, 핸들 상속 없음) 위의 `powershell.exe -NoLogo -NoExit -Command <UTF-8 설정>`·`pwsh.exe`(같은 인수)·`cmd.exe /K chcp 65001>nul`이어서 콘솔 입출력 코드 페이지가 UTF-8(65001)이고, Windows 밖은 의사 터미널의 `/bin/sh`(환경에 `TERM`이 없으면 `TERM=xterm-256color`)이다. 프로필·AutoRun은 평소처럼 돈다.
+- `job`은 실행 중인 pty에 붙는다. 없거나 끝난 pty는 `NOT_FOUND`, 아직 시작 중이면 `IN_PROGRESS`(`retryable:true`)다.
+- 수락하면 에이전트는 수락 줄, `0x23`(`job`, `pid`), 스크롤백을 차례로 쓰고 그 뒤 출력을 오는 대로 쓴다. 스크롤백은 pty의 마지막 출력 1 MiB(`ptyScrollbackBytes`)다. 앞부분이 잘렸으면 잘린 문자를 버리고 첫 4 KiB 안의 첫 줄바꿈 다음부터 보낸다. 스크롤백과 이어지는 출력 사이에 빠지거나 겹치는 바이트는 없다.
+- 한 pty에 스트림 여럿이 함께 붙을 수 있다. 출력은 모두에게 가고 입력·크기 변경은 어느 스트림에서 오든 셸에 간다. 스트림마다 보내지 못한 출력이 4 MiB(또는 16384프레임)를 넘으면 에이전트가 그 스트림만 닫는다(데몬이 다시 붙으면 스크롤백부터 받는다).
+- 셸이 끝나면 에이전트는 남은 출력을 보낸 뒤 붙은 스트림마다 `0x22`를 쓰고 FIN으로 닫으며, 모든 연결에 `pty.exited` 이벤트를 보낸다. 끝난 pty는 `pty.list`에 `exited`·`code`로 남는다.
+- 스트림이 끝나거나 연결이 끊겨도 셸은 계속 돌고 출력은 스크롤백에 쌓인다. `job`으로 다시 붙는다. 에이전트가 다시 시작하면 셸도 끝나고 `pty.list`에서 사라진다.
+- `exec.kill{job}`에 pty의 `job`을 주면 셸의 프로세스 트리를 끝내고(Windows `taskkill /T /F`, 그 밖은 프로세스 그룹에 SIGKILL) pty가 끝날 때까지 기다린다. 결과 `{state:"exited"}`, 시작 중이면 `IN_PROGRESS`.
 
 ## 8. 오류 코드
 

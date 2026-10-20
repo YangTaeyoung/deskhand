@@ -5,15 +5,23 @@ import (
 	"encoding/hex"
 	"os"
 	"runtime"
+	"slices"
 
 	"github.com/YangTaeyoung/deskhand/internal/proto"
 )
 
 // capState is the state of one capability in hello.caps and caps.changed:
 // ready, unavailable, unsupported or needs_user, with a reason unless ready.
+// Shells lists the shells of the pty capability.
 type capState struct {
-	State  string `json:"state"`
-	Reason string `json:"reason,omitempty"`
+	State  string   `json:"state"`
+	Reason string   `json:"reason,omitempty"`
+	Shells []string `json:"shells,omitempty"`
+}
+
+// equal reports whether c and o have the same state, reason and shells.
+func (c capState) equal(o capState) bool {
+	return c.State == o.State && c.Reason == o.Reason && slices.Equal(c.Shells, o.Shells)
 }
 
 // capStates maps each capability key of docs/protocol.md §3 to its state.
@@ -43,13 +51,17 @@ func newBootID() string {
 	return hex.EncodeToString(b)
 }
 
+// errNoShell is the reason of a pty capability without a shell to start.
+const errNoShell = "no shell this agent can start is installed on this PC"
+
 // checkCaps returns the state of every capability key. exec, files and
-// processes follow Options.AllowExec, uia the UI helper and clipboard the
-// clipboard's availability; the other keys are unsupported.
+// processes follow Options.AllowExec, pty also the installed shells
+// (ptyShells), uia the UI helper and clipboard the clipboard's
+// availability; the other keys are unsupported.
 func (s *Server) checkCaps() capStates {
 	ready := capState{State: capReady}
 	caps := capStates{}
-	for _, k := range []string{"screen", "input", "pty", "tunnel", "diag"} {
+	for _, k := range []string{"screen", "input", "tunnel", "diag"} {
 		caps[k] = capState{State: capUnsupported, Reason: notImplemented}
 	}
 	for _, k := range []string{"exec", "files", "processes"} {
@@ -58,6 +70,14 @@ func (s *Server) checkCaps() capStates {
 		} else {
 			caps[k] = capState{State: capUnavailable, Reason: errExecDisabled}
 		}
+	}
+	switch shells := ptyShells(); {
+	case !s.opt.AllowExec:
+		caps["pty"] = capState{State: capUnavailable, Reason: errExecDisabled}
+	case len(shells) == 0:
+		caps["pty"] = capState{State: capUnsupported, Reason: errNoShell}
+	default:
+		caps["pty"] = capState{State: capReady, Shells: shells}
 	}
 	switch {
 	case s.opt.UI != nil:

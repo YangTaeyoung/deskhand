@@ -24,6 +24,7 @@ type rig struct {
 	socket string
 	bus    *events.Bus
 	st     *store.Store
+	srv    *Server
 }
 
 func newRig(t *testing.T) rig {
@@ -60,7 +61,7 @@ func newRig(t *testing.T) rig {
 	srv := New(Deps{Store: st, Bus: bus, Hosts: reg, Jobs: jreg, Version: "test"})
 	go srv.Serve(ln)
 	t.Cleanup(srv.Close)
-	return rig{socket: socket, bus: bus, st: st}
+	return rig{socket: socket, bus: bus, st: st, srv: srv}
 }
 
 type wireConn struct {

@@ -41,10 +41,12 @@ func Time(t time.Time) string {
 	return store.FormatTime(t)
 }
 
-// Capability is the state of one host capability.
+// Capability is the state of one host capability; Shells lists the shells
+// of the pty capability.
 type Capability struct {
-	State  string `json:"state"`
-	Reason string `json:"reason,omitempty"`
+	State  string   `json:"state"`
+	Reason string   `json:"reason,omitempty"`
+	Shells []string `json:"shells,omitempty"`
 }
 
 // SessionInfo is the desktop session of a host. Locked is nil when the

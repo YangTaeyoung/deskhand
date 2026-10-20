@@ -24,6 +24,7 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/daemon/jobs"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/paths"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/pty"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/store"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/xfer"
 	"github.com/YangTaeyoung/deskhand/internal/wire"
@@ -85,17 +86,26 @@ type Deps struct {
 	Jobs  *jobs.Registry
 	// Transfers serves the transfer methods; nil leaves them out.
 	Transfers *xfer.Manager
-	Version   string
-	Logger    *log.Logger
+	// PTYs serves pty.open and the pty streams; nil leaves them out.
+	PTYs    *pty.Hub
+	Version string
+	Logger  *log.Logger
 }
 
 // handler serves one method for a session.
 type handler func(ctx context.Context, s *session, params json.RawMessage) (any, error)
 
+// streamHandler serves one kind of stream.attach: it checks the params and
+// prepares the stream, and returns the result of the attach and the
+// function that then runs the stream on the connection, which it owns and
+// closes.
+type streamHandler func(ctx context.Context, s *session, params json.RawMessage) (result any, run func(rw io.ReadWriteCloser), err error)
+
 // Server serves local API connections.
 type Server struct {
 	d       Deps
 	methods map[string]handler
+	streams map[string]streamHandler
 
 	// base outlives the connections and ends with Close; operations that
 	// change the PC run under it.
@@ -117,6 +127,7 @@ func New(d Deps) *Server {
 	s := &Server{d: d, sessions: map[*session]struct{}{}}
 	s.base, s.stop = context.WithCancel(context.Background())
 	s.methods = map[string]handler{}
+	s.streams = map[string]streamHandler{}
 	s.registerSession()
 	s.registerHosts()
 	s.registerExec()
@@ -124,6 +135,7 @@ func New(d Deps) *Server {
 	s.registerFiles()
 	s.registerProc()
 	s.registerTransfer()
+	s.registerPTY()
 	return s
 }
 
@@ -243,8 +255,37 @@ type request struct {
 	Params  json.RawMessage `json:"params"`
 }
 
-// serve reads requests until the connection ends. hello and
-// events.subscribe run in order; other methods run concurrently.
+// errLineTooLong ends a connection whose request line exceeds
+// maxRequestLine.
+var errLineTooLong = errors.New("request line too long")
+
+// readLine returns the next line of r with its newline, or the bytes before
+// the end of r; a line longer than max is errLineTooLong. Nothing after the
+// line is consumed beyond what r buffers.
+func readLine(r *bufio.Reader, max int) ([]byte, error) {
+	var line []byte
+	for {
+		chunk, err := r.ReadSlice('\n')
+		if len(line)+len(chunk) > max {
+			return nil, errLineTooLong
+		}
+		line = append(line, chunk...)
+		switch {
+		case err == nil:
+			return line, nil
+		case errors.Is(err, bufio.ErrBufferFull):
+			continue
+		case errors.Is(err, io.EOF) && len(line) > 0:
+			return line, nil
+		}
+		return nil, err
+	}
+}
+
+// serve reads requests until the connection ends. hello, events.subscribe
+// and stream.attach run in order; other methods run concurrently. A
+// stream.attach that succeeds hands the connection over to its stream,
+// which runs until it ends.
 func (s *session) serve() {
 	defer func() {
 		s.close()
@@ -256,10 +297,13 @@ func (s *session) serve() {
 			sub.Close()
 		}
 	}()
-	sc := bufio.NewScanner(s.c)
-	sc.Buffer(make([]byte, 64<<10), maxRequestLine)
-	for sc.Scan() {
-		line := bytes.TrimSpace(sc.Bytes())
+	br := bufio.NewReaderSize(s.c, 64<<10)
+	for {
+		raw, err := readLine(br, maxRequestLine)
+		if err != nil {
+			return
+		}
+		line := bytes.TrimSpace(raw)
 		if len(line) == 0 {
 			continue
 		}
@@ -276,6 +320,10 @@ func (s *session) serve() {
 		greeted := s.hello
 		s.mu.Unlock()
 		switch {
+		case req.Method == "stream.attach" && greeted:
+			if s.attach(req, br) {
+				return
+			}
 		case req.Method == "hello" || !greeted || req.Method == "events.subscribe":
 			s.dispatch(req)
 		default:
@@ -313,6 +361,74 @@ func (s *session) dispatch(req request) {
 		return
 	}
 	s.reply(req.ID, res, nil)
+}
+
+// rawConn is the connection of a session after stream.attach: reads take
+// what the session's reader buffered first.
+type rawConn struct {
+	r *bufio.Reader
+	net.Conn
+}
+
+func (c rawConn) Read(p []byte) (int, error) { return c.r.Read(p) }
+
+// attachParams are the params of stream.attach that pick its handler.
+type attachParams struct {
+	Kind string `json:"kind"`
+}
+
+// attach serves stream.attach: once the requests in flight on the session
+// have been answered, the handler of params.kind prepares the stream, the
+// reply goes out and the stream runs on the connection with what br
+// buffered. It reports whether the connection was handed over; a refused
+// attach is answered with its error and the session goes on.
+func (s *session) attach(req request, br *bufio.Reader) bool {
+	s.mu.Lock()
+	subscribed := s.sub != nil
+	s.mu.Unlock()
+	if subscribed {
+		s.reply(req.ID, nil, rpcErr(codeServer, apierr.Invalid("events.subscribe를 부른 연결에서는 stream.attach를 쓸 수 없습니다. 새 연결에서 hello 다음 stream.attach를 부르세요")))
+		return false
+	}
+	s.wg.Wait()
+	var p attachParams
+	if err := decode(req.Params, &p); err != nil {
+		s.reply(req.ID, nil, rpcErr(codeInvalidParams, apierr.As(err)))
+		return false
+	}
+	h, ok := s.srv.streams[p.Kind]
+	if !ok {
+		e := apierr.Invalid(fmt.Sprintf("stream.attach의 kind %q를 모릅니다. kind는 pty입니다", p.Kind))
+		if p.Kind == "screen" {
+			e = apierr.New(wire.CodeCapabilityUnsupported, "이 데몬은 아직 화면 스트림을 지원하지 않습니다. deskhand를 업데이트하세요", false, "")
+		}
+		s.reply(req.ID, nil, rpcErr(codeInvalidParams, e))
+		return false
+	}
+	result, run, err := s.callStream(h, req)
+	if err != nil {
+		code := codeServer
+		var pe *paramError
+		if errors.As(err, &pe) {
+			code = codeInvalidParams
+		}
+		s.reply(req.ID, nil, rpcErr(code, apierr.As(err)))
+		return false
+	}
+	s.reply(req.ID, result, nil)
+	run(rawConn{r: br, Conn: s.c})
+	return true
+}
+
+// callStream runs a stream handler, turning a panic into an INTERNAL error.
+func (s *session) callStream(h streamHandler, req request) (result any, run func(io.ReadWriteCloser), err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.srv.d.Logger.Printf("stream.attach panicked: %v", r)
+			result, run, err = nil, nil, apierr.Internal(fmt.Sprintf("stream.attach 처리 중 데몬 내부 오류가 났습니다. %s 로그를 확인하세요", paths.DaemonLog()))
+		}
+	}()
+	return h(s.ctx, s, req.Params)
 }
 
 func (s *session) call(h handler, req request) (res any, err error) {

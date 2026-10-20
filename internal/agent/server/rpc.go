@@ -90,7 +90,7 @@ func (c *conn) capsFollowedYet() bool {
 func (c *conn) replaceCaps(caps capStates) bool {
 	c.capsMu.Lock()
 	defer c.capsMu.Unlock()
-	if maps.Equal(c.caps, caps) {
+	if maps.EqualFunc(c.caps, caps, capState.equal) {
 		return false
 	}
 	c.caps = caps
@@ -343,6 +343,7 @@ func (s *Server) registerBuiltins() {
 		return proto.Message{"pong": true}, nil
 	})
 	s.registerShell()
+	s.registerPTY()
 	s.registerFiles()
 	s.registerUI()
 	s.registerLaunch()
