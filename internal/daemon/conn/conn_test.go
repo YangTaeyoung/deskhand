@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -522,5 +523,66 @@ func TestWaitReadyNamesNextStepWhenContextEnds(t *testing.T) {
 	e := apierr.As(err)
 	if e == nil || e.Code != wire.CodeOffline || strings.Contains(e.Message, "context deadline") || e.NextAction == "" {
 		t.Fatalf("error %#v", err)
+	}
+}
+
+func TestNoAnswerAfterReadyRetriesAtTheFirstWait(t *testing.T) {
+	first := 500 * time.Millisecond
+	flat := []time.Duration{first, first, first, first, first}
+	growing := []time.Duration{first, time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second}
+	for _, tc := range []struct {
+		name string
+		err  error
+		want []time.Duration
+	}{
+		{"handshake idle timeout", &quic.IdleTimeoutError{}, flat},
+		{"handshake timeout", &quic.HandshakeTimeoutError{}, flat},
+		{"dial deadline", context.DeadlineExceeded, flat},
+		{"refused", syscall.ECONNREFUSED, flat},
+		{"other error", errors.New("network is unreachable"), growing},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFakeAgent(t)
+			f.dialErr = func(n int) error {
+				if n == 1 {
+					return nil
+				}
+				return fmt.Errorf("dial 127.0.0.1:47600: %w", tc.err)
+			}
+			var mu sync.Mutex
+			var delays []time.Duration
+			enough := make(chan struct{})
+			m, _, _ := testManager(t, f, func(o *Options) {
+				o.Backoff = BackoffConfig{Initial: first, Max: 10 * time.Second, Jitter: -1}
+				o.Sleep = func(ctx context.Context, d time.Duration) error {
+					mu.Lock()
+					delays = append(delays, d)
+					n := len(delays)
+					mu.Unlock()
+					if n == len(tc.want) {
+						close(enough)
+					}
+					if n >= len(tc.want) {
+						<-ctx.Done()
+						return ctx.Err()
+					}
+					return nil
+				}
+			})
+			h := connected(t, m)
+			f.closeConns()
+			select {
+			case <-enough:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the host did not retry")
+			}
+			h.Disconnect()
+			mu.Lock()
+			got := append([]time.Duration(nil), delays...)
+			mu.Unlock()
+			if !reflect.DeepEqual(got[:len(tc.want)], tc.want) {
+				t.Fatalf("delays %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

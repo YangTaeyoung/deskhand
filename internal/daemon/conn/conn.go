@@ -459,11 +459,14 @@ func (h *Host) Disconnect() {
 }
 
 // loop connects, serves the connection until it ends and reconnects with
-// backoff until ctx ends or the host is blocked.
+// backoff until ctx ends or the host is blocked. Once a connection of the
+// loop was ready, a dial that nothing answers (noAnswer) waits the first
+// backoff wait again instead of a longer one.
 func (h *Host) loop(ctx context.Context, done chan struct{}) {
 	defer close(done)
 	defer h.endLoop(done)
 	b := newBackoff(h.m.opt.Backoff)
+	wasReady := false
 	for {
 		rpc, hello, err := h.establish(ctx)
 		if ctx.Err() != nil {
@@ -490,12 +493,16 @@ func (h *Host) loop(ctx context.Context, done chan struct{}) {
 		if err != nil {
 			h.m.opt.Logger.Printf("host %s: connect: %v", h.id, err)
 			h.setState(StateReconnecting, unreachable(h.Target().Name, err))
+			if wasReady && noAnswer(err) {
+				b.Reset()
+			}
 			if h.m.opt.Sleep(ctx, b.Next()) != nil {
 				return
 			}
 			continue
 		}
 		b.Reset()
+		wasReady = true
 		h.becomeReady(rpc, hello)
 		h.serve(ctx, rpc)
 		if ctx.Err() != nil {

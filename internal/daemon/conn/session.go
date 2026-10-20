@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/transport"
@@ -94,6 +95,15 @@ func rejected(err error, sess Session) bool {
 		}
 	}
 	return false
+}
+
+// noAnswer reports whether a dial error means that nothing answered: the
+// QUIC handshake or the dial ran out of time, or the port refused.
+func noAnswer(err error) bool {
+	var idle *quic.IdleTimeoutError
+	var handshake *quic.HandshakeTimeoutError
+	return errors.As(err, &idle) || errors.As(err, &handshake) || errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, syscall.ECONNREFUSED)
 }
 
 func sessErr(sess Session) error {

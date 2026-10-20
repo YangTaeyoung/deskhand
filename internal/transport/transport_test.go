@@ -176,3 +176,10 @@ func TestListenRefusesNilAllowedPeers(t *testing.T) {
 		t.Fatal("Listen without allowedPeers succeeded")
 	}
 }
+
+func TestQUICKeepAliveAndIdleTimeout(t *testing.T) {
+	c := quicConfig()
+	if c.KeepAlivePeriod != 2*time.Second || c.MaxIdleTimeout != 8*time.Second {
+		t.Fatalf("keep-alive %s, idle timeout %s", c.KeepAlivePeriod, c.MaxIdleTimeout)
+	}
+}

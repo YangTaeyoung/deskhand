@@ -101,6 +101,15 @@ func (f *fakeAgent) dial(_ context.Context, _ Target, _ transport.Identity) (Ses
 	return &pipeSession{c: a}, nil
 }
 
+// closeConns ends every connection of the fake agent.
+func (f *fakeAgent) closeConns() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, c := range f.conns {
+		c.Close()
+	}
+}
+
 func (f *fakeAgent) dialCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()

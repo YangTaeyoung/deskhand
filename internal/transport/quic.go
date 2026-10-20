@@ -18,8 +18,8 @@ var ErrPeerMismatch = errors.New("peer certificate fingerprint does not match th
 
 func quicConfig() *quic.Config {
 	return &quic.Config{
-		KeepAlivePeriod:    5 * time.Second,
-		MaxIdleTimeout:     20 * time.Second,
+		KeepAlivePeriod:    2 * time.Second,
+		MaxIdleTimeout:     8 * time.Second,
 		MaxIncomingStreams: 1024,
 	}
 }

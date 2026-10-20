@@ -7,7 +7,7 @@
 - QUIC(quic-go), UDP 47600(기본), ALPN `deskhand/1`, TLS 1.3.
 - 양쪽 모두 자체 서명 Ed25519 인증서를 쓴다. 상대 인증서의 SHA-256 지문(DER 기준, 소문자 hex)이 페어링 때 저장한 값과 같을 때만 연결을 유지한다. 일반 CA 검증은 쓰지 않는다.
 - 데몬이 연결하고(클라이언트), 에이전트가 듣는다(서버).
-- keep-alive 5초, idle timeout 20초. 데몬은 연결이 끊기면 지수 backoff(0.5초에서 시작, 최대 10초, ±20% jitter)로 재연결하고 `connection_generation`을 1 올린다.
+- keep-alive 2초, idle timeout 8초. 데몬은 연결이 끊기면 지수 backoff(0.5초에서 시작, 최대 10초, ±20% jitter)로 재연결하고 `connection_generation`을 1 올린다. 한 번 ready였던 호스트에 다시 걸 때 아무것도 답하지 않으면(핸드셰이크·다이얼 시간 초과, 연결 거부) backoff를 처음 값(0.5초)으로 되돌린다.
 
 ## 2. 스트림
 
