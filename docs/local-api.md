@@ -185,3 +185,14 @@
 - `timeline.list`는 `cursor`(이전 결과의 `next_cursor`, seq)도 받는다. `since`는 RFC 3339. 행위자: `mcp` 클라이언트 → `ai`, `app`/`cli` → `human`, 데몬 자신 → `system`.
 - Host에는 준비되지 않은 이유 `reason?`이 있다. `hello` 결과 `{client_id, daemon_version, api_version}`, `events.subscribe` 결과 `{subscribed, host_id, kinds}`.
 - 봉투의 `session_id`는 알면 `s-<host_id>-<session_id>`, 모르면 null.
+
+## 8. 파일·전송 세부 계약
+
+- `files.list{host_id, path, cursor?, limit?}` → `{entries:[FileEntry], next_cursor?, total?, truncated?}`. `limit` 기본 500·최대 5000, `cursor`는 이전 결과의 `next_cursor`(불투명 문자열). 에이전트 한 번 목록이 5,000개를 넘으면 `truncated:true`.
+- `files.stat{host_id, path}` → FileEntry, 없으면 JSON-RPC `NOT_FOUND`.
+- `files.mkdir{host_id, path}`, `files.rename{host_id, from, to}`(전체 경로), `files.copy{host_id, from, to, on_conflict, recursive}`, `files.trash{host_id, path}`, `files.delete{host_id, path, permanent:true}`, `files.hash{host_id, path, offset?, length?}` → 모두 §2 봉투(`files.hash`는 봉투 + `sha256`).
+- `transfer.start{direction, host_id, local, remote, on_conflict}`: `local`·`remote`는 옮길 항목의 전체 경로(대상 폴더가 아님). 결과는 봉투 + `transfer_id`. 폴더는 `on_conflict`를 폴더 안 파일마다 적용한다.
+- `transfer.list{host_id?}` → `{transfers:[Transfer]}`(최신순). `transfer.get{transfer_id}` → Transfer.
+- `transfer.pause{transfer_id}` → Transfer(`paused`). `transfer.resume{transfer_id}`는 `paused`·`failed`·`cancelled` 모두 다시 시작한다 → Transfer. `transfer.cancel{transfer_id}` → Transfer(`cancelled`, 끝난 파일은 남긴다).
+- `Transfer.rate_bps`와 진행 값은 **초당 바이트**다(비트 아님).
+- `Transfer.error`·`TransferFile.error`는 `{code, message}` 객체다(§2 error 객체와 같은 형태, `retryable`·`next_action`은 선택).
