@@ -8,15 +8,17 @@ import (
 )
 
 // window gathers the figures of the stats frame of one interval: the
-// access units sent with their bytes, encode times and capture times, and
-// the frames the encoder had no room for.
+// access units written with their bytes, encode times and capture times,
+// the pacing slots skipped while access units waited for the network, and
+// those the encoder had no room for.
 type window struct {
-	mu        sync.Mutex
-	aus       int
-	bytes     int
-	dropped   int
-	encodeMS  []float64
-	captureMS []float64
+	mu          sync.Mutex
+	aus         int
+	bytes       int
+	dropped     int
+	encoderBusy int
+	encodeMS    []float64
+	captureMS   []float64
 	// submitted maps the capture reading of a frame given to the encoder
 	// to the reading when it was given.
 	submitted map[uint64]uint64
@@ -39,11 +41,19 @@ func (w *window) forget(captureUS uint64) {
 	delete(w.submitted, captureUS)
 }
 
-// drop counts a frame the encoder had no room for.
+// drop counts a pacing slot skipped while access units waited for the
+// network.
 func (w *window) drop() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.dropped++
+}
+
+// busy counts a pacing slot the encoder had no room for.
+func (w *window) busy() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.encoderBusy++
 }
 
 // sent counts the access unit au: its encode time runs from the frame's
@@ -78,11 +88,12 @@ func (w *window) take(elapsedUS, nowUS, staleUS uint64) wire.VideoStats {
 		FPS:          round2(float64(w.aus) / secs),
 		Bitrate:      int(float64(w.bytes*8) / secs),
 		Dropped:      w.dropped,
+		EncoderBusy:  w.encoderBusy,
 		EncodeMSP50:  percentile(w.encodeMS, 50),
 		EncodeMSP95:  percentile(w.encodeMS, 95),
 		CaptureMSP50: percentile(w.captureMS, 50),
 	}
-	w.aus, w.bytes, w.dropped = 0, 0, 0
+	w.aus, w.bytes, w.dropped, w.encoderBusy = 0, 0, 0, 0
 	w.encodeMS, w.captureMS = w.encodeMS[:0], w.captureMS[:0]
 	for capture, at := range w.submitted {
 		if nowUS > at+staleUS {

@@ -177,8 +177,10 @@ type fakeEncoder struct {
 	// the wait.
 	hold chan struct{}
 	stop chan struct{}
-	// drop is the number of first frames that give no access unit.
+	// drop is the number of first frames that give no access unit; busy
+	// makes Encode refuse every frame with encode.ErrBusy.
 	drop int
+	busy bool
 
 	mu       sync.Mutex
 	frames   int
@@ -195,6 +197,9 @@ func (e *fakeEncoder) Encode(f capture.Frame, forceKey bool) error {
 	}
 	if f.Width != e.srcW || f.Height != e.srcH {
 		return fmt.Errorf("frame %dx%d for a %dx%d encoder", f.Width, f.Height, e.srcW, e.srcH)
+	}
+	if e.busy {
+		return encode.ErrBusy
 	}
 	key := forceKey || e.frames == 0
 	e.frames++
@@ -276,15 +281,21 @@ type encoders struct {
 	written chan struct{}
 	hold    chan struct{}
 	drop    int
-	mu      sync.Mutex
-	made    []*fakeEncoder
+	busy    bool
+	// firstOnly gives hold, drop and busy to the first encoder only.
+	firstOnly bool
+	mu        sync.Mutex
+	made      []*fakeEncoder
 }
 
 func (es *encoders) new(_ *d3d.Device, srcW, srcH, outW, outH, fps, bps int) (encode.Encoder, error) {
-	e := &fakeEncoder{clk: es.clk, srcW: srcW, srcH: srcH, outW: outW, outH: outH, fps: fps, bps: bps, out: make(chan wire.AU, 4096),
-		written: es.written, hold: es.hold, stop: make(chan struct{}), drop: es.drop}
 	es.mu.Lock()
 	defer es.mu.Unlock()
+	e := &fakeEncoder{clk: es.clk, srcW: srcW, srcH: srcH, outW: outW, outH: outH, fps: fps, bps: bps, out: make(chan wire.AU, 4096),
+		written: es.written, stop: make(chan struct{})}
+	if !es.firstOnly || len(es.made) == 0 {
+		e.hold, e.drop, e.busy = es.hold, es.drop, es.busy
+	}
 	es.made = append(es.made, e)
 	return e, nil
 }
@@ -823,7 +834,7 @@ func TestNetworkBackpressureSkipsFrames(t *testing.T) {
 	hs := newHarness(periodic(time.Second/60), 1920, 1080)
 	hs.rec.block = make(chan struct{})
 	atRelease := 0
-	hs.run(t, wire.StreamHeader{S: "video"}, 2_000_000, map[uint64]func(){1_000_000: func() {
+	hs.run(t, wire.StreamHeader{S: "video"}, 6_000_000, map[uint64]func(){5_000_000: func() {
 		atRelease = hs.encs.list()[0].encoded()
 		close(hs.rec.block)
 		for deadline := time.Now().Add(time.Second); len(hs.rec.aus(t)) < atRelease && time.Now().Before(deadline); {
@@ -834,19 +845,68 @@ func TestNetworkBackpressureSkipsFrames(t *testing.T) {
 	if atRelease > maxInFlight+1 {
 		t.Fatalf("%d frames given to the encoder while no access unit could be written", atRelease)
 	}
-	after, dropped := 0, 0
+	after, dropped, busy := 0, 0, 0
 	for _, au := range hs.rec.aus(t) {
-		if au.CaptureMonoUS >= 1_200_000 {
+		if au.CaptureMonoUS >= 5_200_000 {
 			after++
 		}
 	}
 	for _, f := range hs.rec.all(true) {
 		if f.kind == wire.KindVideoStats {
-			dropped += decode[wire.VideoStats](t, f).Dropped
+			s := decode[wire.VideoStats](t, f)
+			dropped, busy = dropped+s.Dropped, busy+s.EncoderBusy
 		}
 	}
-	if after < 40 || dropped == 0 || len(hs.encs.list()) != 1 {
-		t.Fatalf("%d access units after the stall, %d dropped, %d encoders", after, dropped, len(hs.encs.list()))
+	if after < 40 || dropped == 0 || busy != 0 || len(hs.encs.list()) != 1 {
+		t.Fatalf("%d access units after a stall of the network longer than %v, %d dropped, %d encoder busy, %d encoders",
+			after, busyLimit, dropped, busy, len(hs.encs.list()))
+	}
+}
+
+func TestEncoderStallIsRebuilt(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		set  func(*encoders)
+	}{
+		{"frames held", func(es *encoders) { es.hold, es.firstOnly = make(chan struct{}), true }},
+		{"every frame refused", func(es *encoders) { es.busy, es.firstOnly = true, true }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			hs := newHarness(periodic(time.Second/30), 1920, 1080)
+			c.set(hs.encs)
+			hs.run(t, wire.StreamHeader{S: "video"}, 4_500_000, nil)
+			got := hs.rec.all(false)
+			t.Logf("frames:%s", describe(t, got))
+			encs := hs.encs.list()
+			if len(encs) != 2 || !encs[0].closed {
+				t.Fatalf("%d encoders, the first closed %v", len(encs), len(encs) > 0 && encs[0].closed)
+			}
+			infos := 0
+			for i, f := range got {
+				if f.kind != wire.KindVideoInfo {
+					continue
+				}
+				if infos++; infos == 2 {
+					if i+1 >= len(got) || got[i+1].kind != wire.KindAU {
+						t.Fatal("no access unit after the info of the new encoder")
+					}
+					au, _ := wire.UnmarshalAU(got[i+1].payload)
+					if !au.Key || !au.HasConfig || au.CaptureMonoUS < 2_900_000 || au.CaptureMonoUS > 3_500_000 {
+						t.Fatalf("the first access unit of the new encoder: %+v", au)
+					}
+				}
+			}
+			dropped, busy := 0, 0
+			for _, f := range hs.rec.all(true) {
+				if f.kind == wire.KindVideoStats {
+					s := decode[wire.VideoStats](t, f)
+					dropped, busy = dropped+s.Dropped, busy+s.EncoderBusy
+				}
+			}
+			if infos != 2 || busy == 0 || dropped != 0 {
+				t.Fatalf("%d info frames, %d encoder busy, %d dropped", infos, busy, dropped)
+			}
+		})
 	}
 }
 

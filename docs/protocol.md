@@ -103,7 +103,7 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 |---|---|
 | `0x01` AU | `u8 flags`(bit0 키프레임, bit1 SPS/PPS 포함), `u32 width`, `u32 height`, `u64 seq`, `u64 capture_mono_us`, `u64 encode_done_mono_us`, 이후 Annex-B 바이트 |
 | `0x02` info | JSON: `codec`, `width`, `height`, `src_width`, `src_height`, `fps`, `bitrate`, `encoder`(MFT 이름), `hardware`(bool), `capture`(`dd`/`gdi`), `display` |
-| `0x03` stats | JSON: `fps`, `bitrate`, `dropped`, `encode_ms_p50`, `encode_ms_p95`, `capture_ms_p50` (1초마다) |
+| `0x03` stats | JSON: `fps`, `bitrate`, `dropped`, `encoder_busy`, `encode_ms_p50`, `encode_ms_p95`, `capture_ms_p50` (1초마다) |
 | `0x04` paused | JSON: `reason` — `no_viewer` 또는 캡처 사유 고정 문자열 `session0`/`rdp_output_suppressed`/`secure_desktop`/`session_locked`/`session_disconnected`/`access_lost`/`no_output`/`no_encoder` |
 
 데몬 → 에이전트(같은 스트림 반대 방향): 종류 `0x40` 프레임 + JSON — `{"op":"keyframe"}`, `{"op":"bitrate","bps":…}`, `{"op":"config","max_fps":…,"max_width":…}`, `{"op":"pause"}`, `{"op":"resume"}`.
@@ -112,7 +112,7 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 - `info`: 이후 AU의 인코딩. 인코더를 새로 만들 때(출력 크기·`max_fps` 변경, 원본 크기 변경, 인코더 장애) 그리고 `paused` 뒤에 영상이 다시 흐를 때 보내고, 그 다음 AU는 SPS/PPS를 가진 IDR이다. `width`·`height`는 짝수이고 원본의 종횡비를 따른다(`max_width`보다 좁으면 원본 크기). 커서는 영상에 그리지 않는다(§5).
 - AU: `seq`는 스트림 안에서 1부터 1씩 는다. flags는 Annex-B의 NAL 종류로 정한다(5가 있으면 키프레임, 7과 8이 모두 있으면 SPS/PPS). 모든 IDR에 SPS/PPS가 들어 있다. 주기 IDR은 없다(하드웨어 MFT는 GOP 0, 소프트웨어 MFT는 GOP 2^32−1; 키프레임은 첫 프레임·`keyframe` 요청·`info` 뒤에만). `capture_mono_us`는 이미지를 얻은 시각(`time.sync`와 같은 시계), 같은 이미지를 다시 인코딩한 AU는 그 인코딩을 시작한 시각이다.
 - 속도: `max_fps`가 상한이다(어느 1초에도 `max_fps`+1개 이하). 화면이 바뀌지 않으면 AU를 보내지 않고, 10초 동안 AU가 없으면 마지막 이미지를 키프레임이 아닌 AU로 한 번 다시 보낸다. 데몬의 주기 키프레임 요청은 데몬 몫이다.
-- `stats`: 영상이 흐르는 동안(`paused` 아님) 1초마다. `fps`는 그 1초에 쓴 AU 수, `bitrate`는 AU Annex-B 바이트의 bps, `dropped`는 프레임을 보내지 못하고 넘긴 속도 조절 칸 수(인코더에 자리가 없을 때, 그리고 인코더에 넣고 아직 쓰지 못한 AU가 2개 이상일 때 — 네트워크가 막히면 지연을 쌓지 않고 프레임을 건너뛴다), `encode_ms`는 인코더에 넘기기 시작한 때부터 AU가 나온 때까지(NV12 변환 포함), `capture_ms`는 이미지를 얻은 때부터 인코더에 넘기기 시작한 때까지(속도 조절 대기 포함). 값이 없으면 0.
+- `stats`: 영상이 흐르는 동안(`paused` 아님) 1초마다. `fps`는 그 1초에 쓴 AU 수, `bitrate`는 AU Annex-B 바이트의 bps, `dropped`는 아직 쓰지 못한 AU가 있어(네트워크 혼잡) 프레임을 보내지 못하고 넘긴 속도 조절 칸 수(인코더에 넣고 아직 쓰지 못한 프레임이 2개 이상이면 지연을 쌓지 않고 건너뛴다), `encoder_busy`는 네트워크가 아니라 인코더가 프레임을 받을 자리가 없어 넘긴 칸 수(인코더가 그렇게 AU를 하나도 내지 않은 채 3초가 지나면 에이전트가 인코더를 새로 만들어 `info`와 IDR을 보낸다; 네트워크 혼잡으로는 다시 만들지 않는다), `encode_ms`는 인코더에 넘기기 시작한 때부터 AU가 나온 때까지(NV12 변환 포함), `capture_ms`는 이미지를 얻은 때부터 인코더에 넘기기 시작한 때까지(속도 조절 대기 포함). 값이 없으면 0.
 - `paused`: `reason`은 캡처 장애의 고정 사유(§3.1) 그대로이고(없는 디스플레이는 `no_output`, 사유 없는 캡처 실패는 `access_lost`), 인코더를 만들지 못하면 `no_encoder`, `pause` 요청이면 `no_viewer`. 사유가 바뀔 때만 보낸다. 보내기 전에 인코더를 닫고 아직 쓰지 않은 AU를 버리므로 `paused` 뒤 다음 `info` 전에는 AU가 없다. 에이전트는 회복을 스스로 재시도한다(디스플레이 다시 열기는 0.5초부터 두 배씩 최대 5초 간격).
 - 역방향 제어: `keyframe`은 다음 AU를 IDR로 만든다(화면이 그대로여도 곧바로 마지막 이미지를 IDR로 보낸다). `bitrate`(`bps` 100000–200000000)는 인코더에 바로 적용하고, 적용하지 못하면 인코더를 새로 만들어 `info`와 IDR을 보낸다. `config`는 `max_fps`·`max_width`를 헤더와 같은 뜻(0은 기본값)으로 둘 다 바꾸고 `info`와 IDR을 보낸다. `pause`는 캡처·인코더를 닫고 `paused`(`no_viewer`)를 보내며, `resume`은 다시 열어 `info`와 IDR부터 보낸다. 범위 밖 값, 알 수 없는 `op`, `0x40`이 아닌 종류의 프레임은 무시한다. 데몬이 자기 쪽 방향을 닫으면(FIN) 에이전트는 파이프라인을 멈추고 스트림을 닫는다.
 

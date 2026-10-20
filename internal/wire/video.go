@@ -78,6 +78,7 @@ type VideoStats struct {
 	FPS          float64 `json:"fps"`
 	Bitrate      int     `json:"bitrate"`
 	Dropped      int     `json:"dropped"`
+	EncoderBusy  int     `json:"encoder_busy"`
 	EncodeMSP50  float64 `json:"encode_ms_p50"`
 	EncodeMSP95  float64 `json:"encode_ms_p95"`
 	CaptureMSP50 float64 `json:"capture_ms_p50"`

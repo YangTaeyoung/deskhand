@@ -54,7 +54,8 @@ const (
 	// failure in a row.
 	firstRetry = 500 * time.Millisecond
 	maxRetry   = 5 * time.Second
-	// busyLimit is how long the encoder may refuse every frame before it
+	// busyLimit is how long the encoder may hold or refuse frames without
+	// giving an access unit, while none waits for the network, before it
 	// is made again.
 	busyLimit = 3 * time.Second
 	// staleSubmission is how long a submission waits for its access unit
@@ -315,10 +316,11 @@ type run struct {
 	wrote      atomic.Bool
 	failed     atomic.Pointer[error]
 	// epoch numbers the encoder sessions; the writer drops the access units
-	// of an earlier one. unwritten counts the access units taken from the
-	// encoder and not written yet. seq, of the writer, numbers the access
-	// units written.
+	// of an earlier one. received counts the access units taken from the
+	// encoders and unwritten those of them not written yet. seq, of the
+	// writer, numbers the access units written.
 	epoch     atomic.Uint64
+	received  atomic.Uint64
 	unwritten atomic.Int64
 	seq       uint64
 
@@ -342,7 +344,11 @@ type run struct {
 	forceKey          bool
 	needInfo          bool
 	lastEncodeUS      uint64
-	busySinceUS       uint64
+	// busy reports that the encoder has held or refused frames since
+	// busySinceUS, when received was busyReceived.
+	busy         bool
+	busySinceUS  uint64
+	busyReceived uint64
 	// tokens is the pacing bucket, frames that may be encoded now, as it
 	// was at tokensAtUS.
 	tokens     float64
@@ -724,7 +730,8 @@ func (r *run) timeout(now uint64) time.Duration {
 
 // encode encodes the pending image, making the encoder first when there
 // is none for the image's size and the settings. With maxInFlight frames
-// in flight the pacing slot passes without a frame, counted as dropped.
+// in flight the pacing slot passes without a frame: dropped while access
+// units wait for the network, encoder busy otherwise.
 func (r *run) encode(now uint64) error {
 	f := r.last
 	if r.repeat {
@@ -737,8 +744,13 @@ func (r *run) encode(now uint64) error {
 		}
 	}
 	if r.inFlight() >= maxInFlight {
-		r.stats.drop()
 		r.tokens--
+		if r.unwritten.Load() > 0 {
+			r.stats.drop()
+		} else {
+			r.stats.busy()
+		}
+		r.checkStall(now)
 		return nil
 	}
 	if r.needInfo {
@@ -751,22 +763,13 @@ func (r *run) encode(now uint64) error {
 	switch {
 	case err == nil:
 		r.pending, r.repeat, r.forceKey = false, false, false
-		r.lastEncodeUS, r.busySinceUS, r.encRetry = now, 0, 0
+		r.lastEncodeUS, r.busy, r.encRetry = now, false, 0
 		r.tokens--
 	case errors.Is(err, encode.ErrBusy):
 		r.stats.forget(f.MonoUS)
-		r.stats.drop()
+		r.stats.busy()
 		r.tokens--
-		switch {
-		case r.unwritten.Load() > 0:
-			r.busySinceUS = 0
-		case r.busySinceUS == 0:
-			r.busySinceUS = now
-		case now-r.busySinceUS > uint64(busyLimit/time.Microsecond):
-			r.log.Printf("video: %s took no frame for %v; making it again", r.enc.Info().Name, busyLimit)
-			r.closeEncoder()
-			r.busySinceUS = 0
-		}
+		r.checkStall(now)
 	default:
 		r.stats.forget(f.MonoUS)
 		r.log.Printf("video: %s failed: %v; making it again", r.enc.Info().Name, err)
@@ -774,6 +777,24 @@ func (r *run) encode(now uint64) error {
 		r.encAtUS = now + uint64(backoff(&r.encRetry)/time.Microsecond)
 	}
 	return nil
+}
+
+// checkStall makes the encoder again once it has held or refused frames
+// for busyLimit without giving an access unit while none waited for the
+// network; the next frame then goes to a new encoder after an info frame
+// as an IDR.
+func (r *run) checkStall(now uint64) {
+	got := r.received.Load()
+	switch {
+	case r.unwritten.Load() > 0:
+		r.busy = false
+	case !r.busy || got != r.busyReceived:
+		r.busy, r.busySinceUS, r.busyReceived = true, now, got
+	case now-r.busySinceUS > uint64(busyLimit/time.Microsecond):
+		r.log.Printf("video: %s gave no access unit for %v; making it again", r.enc.Info().Name, busyLimit)
+		r.closeEncoder()
+		r.busy = false
+	}
 }
 
 // makeEncoder replaces the encoder with one for f at outW×outH. A PC
@@ -816,6 +837,7 @@ func (r *run) forward(enc encode.Encoder, epoch uint64, stop, done chan struct{}
 			if !ok {
 				return
 			}
+			r.received.Add(1)
 			r.unwritten.Add(1)
 			select {
 			case r.queue <- queued{au: &au, epoch: epoch}:

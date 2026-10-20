@@ -113,12 +113,12 @@ func TestPipelineStreamsADisplay(t *testing.T) {
 				}
 			}
 			var encP50, encP95, capP50 []float64
-			stats, dropped := 0, 0
+			stats, dropped, busy := 0, 0, 0
 			for _, f := range frames {
 				if f.kind == wire.KindVideoStats {
 					s := decode[wire.VideoStats](t, f)
 					stats++
-					dropped += s.Dropped
+					dropped, busy = dropped+s.Dropped, busy+s.EncoderBusy
 					if s.FPS > 0 {
 						encP50, encP95, capP50 = append(encP50, s.EncodeMSP50), append(encP95, s.EncodeMSP95), append(capP50, s.CaptureMSP50)
 					}
@@ -131,10 +131,10 @@ func TestPipelineStreamsADisplay(t *testing.T) {
 			span := ran.Seconds() - 1
 			fps := float64(ausAfter) / span
 			t.Logf("%s: display %d %dx%d → %dx%d, %s (hardware %v), capture %s: %d access units in %v (%.1f fps after the first second), "+
-				"%.2f Mbps, key frames %d, longest gap %v, capture→access unit p50 %.2f ms p95 %.2f ms; stats frames %d: encode p50 %.2f ms p95 %.2f ms, capture p50 %.2f ms (medians of the seconds with frames), dropped %d",
+				"%.2f Mbps, key frames %d, longest gap %v, capture→access unit p50 %.2f ms p95 %.2f ms; stats frames %d: encode p50 %.2f ms p95 %.2f ms, capture p50 %.2f ms (medians of the seconds with frames), dropped %d, encoder busy %d",
 				sc.name, d.Index, d.Width, d.Height, info.Width, info.Height, info.Encoder, info.Hardware, info.Capture, len(aus), ran.Round(time.Millisecond),
 				fps, float64(bytesAfter)*8/span/1e6, countKeys(aus), maxGap.Round(time.Millisecond), lat[len(lat)/2], lat[len(lat)*95/100],
-				stats, median(encP50), median(encP95), median(capP50), dropped)
+				stats, median(encP50), median(encP95), median(capP50), dropped, busy)
 			if maxGap > keepalive+500*time.Millisecond {
 				t.Errorf("%v without an access unit", maxGap)
 			}
