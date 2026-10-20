@@ -92,8 +92,8 @@
 | `files.hash{host_id, path, offset?, length?}` | 봉투 + `sha256`, `offset`, `length`(읽은 바이트 수), `size`(파일 크기). `length` 0이면 끝까지 |
 | `files.move` / `files.rename` / `files.mkdir` / `files.delete{permanent:true}` | 봉투 |
 | `transfer.start{direction:"push"|"pull"|"move_push"|"move_pull", host_id, local, remote, on_conflict}` | `transfer_id` |
-| `transfer.list` / `transfer.get{transfer_id}` | 파일별 상태, 진행률, `outcome` |
-| `transfer.pause` / `transfer.resume` / `transfer.cancel` | Transfer(§8) |
+| `transfer.list` / `transfer.get{transfer_id}` | 전송 목록(파일 수·바이트 합계) / TransferDetail(파일별 상태) — §8 |
+| `transfer.pause` / `transfer.resume` / `transfer.cancel` | TransferDetail(§8) |
 
 ### 진단
 `diag.system{host_id}`, `diag.services{host_id, name?}`, `diag.events{host_id, …}`, `diag.crashes{host_id, since?}` — 에이전트 op(protocol.md §3.1)와 같은 파라미터·결과 + 봉투, `save:true`면 결과 JSON을 artifact로 저장해 `artifact_id`를 붙인다. 크래시 덤프 받기는 `transfer.start{direction:"pull"}`. 프로세스 표는 `proc.list{host_id, name?}`(protocol.md §3.1의 확장 필드 포함), 종료는 `proc.kill{host_id, pid, tree?}`.
@@ -145,9 +145,10 @@
 | DisplayInfo | `index`, `name`, `adapter`, `x`, `y`, `width`, `height`, `dpi`(정수), `scale`(실수), `primary`, `refresh_hz`(정수) |
 | ControlState | `owner`, `owner_client?`, `gen`(호스트별 제어권 상태가 바뀔 때마다 — owner 또는 ai_paused — 1씩 오르는 값. 클라이언트는 더 큰 gen만 반영한다), `ai_paused` |
 | SessionInspect (`session.inspect` 결과) | SessionInfo의 모든 필드 + ControlState의 모든 필드 + `displays`([DisplayInfo]) + `caps` + `connection_generation` — 한 단계 평평한 객체 |
-| Job | `job_id`, `host_id`, `kind`(`exec`/`transfer`/`qa`/`install`/`debug`/`pty`), `status`(봉투 status 값), `request_id?`, `summary`, `progress?`(0–1), `created_at`, `updated_at`, `finished_at?`, `result?`(객체, 명령 출력 `stdout`·`stderr`는 넣지 않는다), `output_bytes?`(데몬이 기록한 stdout·stderr 바이트 수. 출력은 `jobs.output`과 artifact로만 읽는다) |
+| Job | `job_id`, `host_id`, `kind`(`exec`/`transfer`/`qa`/`install`/`debug`/`pty`), `status`(봉투 status 값), `request_id?`, `summary`, `progress?`(0–1), `created_at`, `updated_at`, `finished_at?`, `result?`(객체, 명령 출력 `stdout`·`stderr`는 넣지 않는다), `output_bytes?`(데몬이 기록한 stdout·stderr 바이트 수. 출력은 `jobs.output`과 artifact로만 읽는다). `kind:"transfer"` job은 전송 하나를 따른다: `status`는 전송이 `queued`·`running`·`verifying`·`paused`면 `running`(`paused`면 `result.paused:true`), `done`이면 `succeeded`, `failed`·`cancelled`면 그대로이고, `result`는 `{transfer_id, state, outcome?, paused?, error?}`다. `failed`·`cancelled` 전송을 `transfer.resume`하면 job도 다시 `running`(`finished_at` 없음)이 된다 |
 | FileEntry | `name`, `path`, `dir`, `size`, `mtime`, `link`, `hidden?`, `readonly?` |
-| Transfer | `transfer_id`, `host_id`, `direction`(`push`/`pull`/`move_push`/`move_pull`), `local`, `remote`, `on_conflict`, `state`(`queued`/`running`/`paused`/`verifying`/`done`/`failed`/`cancelled`), `bytes_done`, `bytes_total`, `files_done`, `files_total`, `rate_bps`, `outcome?`(`written`/`skipped`/`renamed`/`copied_source_retained`/`partial`/`failed`), `error?`, `files`([TransferFile]), `rev`(전송마다 바뀔 때마다 1씩 오르는 정수 — 클라이언트는 더 큰 rev만 반영), `updated_at` |
+| Transfer | `transfer_id`, `host_id`, `direction`(`push`/`pull`/`move_push`/`move_pull`), `local`, `remote`, `on_conflict`, `state`(`queued`/`running`/`paused`/`verifying`/`done`/`failed`/`cancelled`), `bytes_done`, `bytes_total`, `files_done`, `files_failed`, `files_total`, `rate_bps`, `outcome?`(`written`/`skipped`/`renamed`/`copied_source_retained`/`partial`/`failed`), `error?`, `rev`(전송마다 바뀔 때마다 1씩 오르는 정수 — 클라이언트는 더 큰 rev만 반영), `updated_at` |
+| TransferDetail | Transfer의 모든 필드 + `files`([TransferFile]) — 한 단계 평평한 객체 |
 | TransferFile | `rel`(폴더 전송은 폴더 안 상대 경로, `/` 구분. 파일 하나는 그 이름), `size`, `bytes_done`, `state`, `outcome?`, `sha256?`, `path?`(반영된 실제 경로 — `rename`이면 바뀐 이름), `error?` |
 | ProcessInfo | `pid`, `ppid`, `name`, `path?`, `cmd?`, `mem_kb`, `cpu_pct?`, `user?`, `started_by_deskhand` |
 | DiagSystem | `os`, `version`, `build`, `arch`, `hostname`, `cpu`{`name`, `cores`, `threads`, `load_pct`}, `memory`{`total_bytes`, `available_bytes`}, `disks`[{`name`, `total_bytes`, `free_bytes`}], `gpus`[{`name`, `driver`}], `uptime_s`, `boot_time` |
@@ -178,7 +179,7 @@
 | `control.changed` | ControlState 필드 |
 | `timeline.appended` | `entry`(TimelineEntry) |
 | `job.updated` | `job`(Job) |
-| `transfer.updated` | `transfer`(Transfer) |
+| `transfer.updated` | `transfer`(Transfer — 파일 목록 없음), `changed_files?`([TransferFile] — 앞 이벤트 뒤 `state`·`outcome`·`path`·`error`가 바뀐 파일. 진행 바이트만 바뀐 파일은 넣지 않는다) |
 | `events.dropped` | `count`(이 연결이 읽지 못해 버린 이벤트 수). `seq`는 0이다. 받으면 필요한 상태를 `host.list`·`jobs.list` 등으로 다시 읽는다 |
 
 - `timeline.list{host_id, since?, limit?}` 결과: `{entries: [TimelineEntry], next_cursor?}`(최신순).
@@ -202,9 +203,9 @@
 - `files.list{host_id, path, cursor?, limit?}` → `{entries:[FileEntry], next_cursor?, total?, truncated?}`. `limit` 기본 500·최대 5000, `cursor`는 이전 결과의 `next_cursor`(불투명 문자열). 에이전트 한 번 목록이 5,000개를 넘으면 `truncated:true`.
 - `files.stat{host_id, path}` → FileEntry, 없으면 JSON-RPC `NOT_FOUND`.
 - `files.mkdir{host_id, path}`, `files.rename{host_id, from, to}`(전체 경로), `files.copy{host_id, from, to, on_conflict, recursive}`, `files.trash{host_id, path}`, `files.delete{host_id, path, permanent:true}`, `files.hash{host_id, path, offset?, length?}` → 모두 §2 봉투(`files.hash`는 봉투 + `sha256`·`offset`·`length`·`size`).
-- `transfer.start{direction, host_id, local, remote, on_conflict}`: `local`·`remote`는 옮길 항목의 전체 경로(대상 폴더가 아님). 결과는 봉투 + `transfer_id`. 폴더는 `on_conflict`를 폴더 안 파일마다 적용한다.
-- `transfer.list{host_id?}` → `{transfers:[Transfer]}`(최신순). `transfer.get{transfer_id}` → Transfer.
-- `transfer.pause{transfer_id}` → Transfer(`paused`). `transfer.resume{transfer_id}`는 `paused`·`failed`·`cancelled` 모두 다시 시작한다 → Transfer. `transfer.cancel{transfer_id}` → Transfer(`cancelled`, 끝난 파일은 남긴다).
+- `transfer.start{direction, host_id, local, remote, on_conflict}`: `local`·`remote`는 옮길 항목의 전체 경로(대상 폴더가 아님). 결과는 봉투 + `transfer_id`이고 봉투 `job_id`는 그 전송을 따르는 job(§5 Job `kind:"transfer"`)이다. 그 job의 `jobs.cancel`은 `transfer.cancel`과 같다. 폴더는 `on_conflict`를 폴더 안 파일마다 적용한다. `remote`에 `.`이나 `..` 원소가 있으면 JSON-RPC `INVALID_ARGUMENT`다.
+- `transfer.list{host_id?}` → `{transfers:[Transfer]}`(최신순, 파일 목록 없이 `files_total`·`files_done`·`files_failed`·`bytes_total`·`bytes_done`). `transfer.get{transfer_id}` → TransferDetail(파일 목록 포함). 앱은 목록과 이벤트로 합계를 보이고, 파일 목록은 `transfer.get`으로 읽은 뒤 `transfer.updated`의 `changed_files`를 `rel`로 맞춰 반영한다.
+- `transfer.pause{transfer_id}` → TransferDetail(`paused`). `transfer.resume{transfer_id}`는 `paused`·`failed`·`cancelled` 모두 다시 시작한다 → TransferDetail. `transfer.cancel{transfer_id}` → TransferDetail(`cancelled`, 끝난 파일은 남긴다).
 - `Transfer.rate_bps`와 진행 값은 **초당 바이트**다(비트 아님).
 - `app.launch{host_id, path, args?, cwd?, wait_window_ms?}` → 봉투 + `pid`, `window?`.
 - `Transfer.error`·`TransferFile.error`는 `{code, message}` 객체다(§2 error 객체와 같은 형태, `retryable`·`next_action`은 선택).
@@ -214,5 +215,6 @@
 - 원본 지문은 계획 때 잡은 크기·수정 시각(push는 sha256도)이다. 전송 중에 원본이 바뀌면 그 파일만 `TRANSFER_CONFLICT`로 실패하고 대상은 그대로다. `transfer.resume`은 실패한 파일의 지문을 다시 잡는다.
 - 전송 `outcome`: 파일이 모두 같은 결과면 그 값, 섞이면 `written`. 일부 파일이 실패하면 `state:"failed"` + `partial`, 모두 실패하면 `failed`. `transfer.resume`은 끝난 파일을 다시 보내지 않는다.
 - 이동(`move_*`)은 모든 파일이 반영·검증된 뒤에만 원본을 지운다: PC의 원본은 휴지통(`fs.trash`)으로, 이 Mac의 원본은 지운다. 폴더는 원본 폴더의 항목이 계획 때와 같을 때만 통째로 지운다. 원본을 남기면(삭제 실패, 바뀌거나 새로 생긴 항목, 건너뛴 파일) `state:"done"` + `outcome:"copied_source_retained"` + `error`(남긴 이유)다.
-- 취소하면 끝난 파일은 남고 나머지 파일은 `cancelled`이며 임시 파일은 지운다(PC가 연결돼 있지 않으면 다음 연결 때). `transfer.pause`는 끝난 전송에, `transfer.resume`·`transfer.cancel`은 `done` 전송에 JSON-RPC `INVALID_ARGUMENT`이고, 이미 그 상태인 전송은 그대로 돌려준다.
-- pull은 이 Mac의 `<대상>.deskhand-part-<transfer_id>`(숨김 플래그)에 받아 PC가 계산한 sha256과 맞춘 뒤 이름을 바꾼다. 충돌 정책과 `이름 (1).확장자` 규칙은 PC 쪽(protocol.md §3.1)과 같다. 옮기는 메타데이터는 내용과 수정 시각뿐이다. 폴더 안의 링크·특수 파일은 옮기지 않고 그 항목만 `INVALID_ARGUMENT`로 실패한다. PC가 읽지 못한 항목이 있는 폴더의 pull은 `PERMISSION_DENIED`로 실패한다.
+- 취소하면 끝난 파일은 남고 나머지 파일은 `cancelled`이며 임시 파일은 지운다(PC가 연결돼 있지 않으면 다음 연결 때). `transfer.pause`는 끝난 전송에, `transfer.resume`·`transfer.cancel`은 `done` 전송에 JSON-RPC `INVALID_ARGUMENT`이고(멈추는 사이에 그렇게 끝난 전송도 같다), 이미 그 상태인 전송은 그대로 돌려준다. 이동이 받은 쪽 검증을 마치고 원본을 정리하기 시작하면 `transfer.pause`·`transfer.cancel`은 `INVALID_ARGUMENT`("원본 정리 중")이고 그 이동은 끝까지 간다.
+- 끝난(`done`·`failed`·`cancelled`) 지 30일이 지났고 PC에 임시 파일이 남지 않은 전송은 데몬이 시작할 때와 24시간마다 파일 기록·job과 함께 지운다.
+- pull은 이 Mac의 `<대상>.deskhand-part-<transfer_id>`(숨김 플래그)에 받아 PC가 계산한 sha256과 맞춘 뒤 이름을 바꾼다. 충돌 정책과 `이름 (1).확장자` 규칙은 PC 쪽(protocol.md §3.1)과 같다. 옮기는 메타데이터는 내용과 수정 시각뿐이다. 폴더 안의 링크·특수 파일은 옮기지 않고 그 항목만 `INVALID_ARGUMENT`로 실패한다. 폴더 안 이름에 빈 원소·`.`·`..`·`\`가 있거나, Windows로 보낼 때 Windows가 받지 못하는 이름(`< > : " | ? *`·제어 문자, 점이나 공백으로 끝남, `CON`·`NUL`·`COM1` 같은 장치 이름 — 확장자가 붙어도)이면 그 항목만 `INVALID_ARGUMENT`이고, Windows로 보낼 때와 대소문자를 가리지 않는 Mac 볼륨으로 받을 때 대소문자만 다른 두 이름은 뒤의 것이 `TRANSFER_CONFLICT`다. PC가 읽지 못한 항목이 있는 폴더의 pull은 `PERMISSION_DENIED`로 실패한다.
