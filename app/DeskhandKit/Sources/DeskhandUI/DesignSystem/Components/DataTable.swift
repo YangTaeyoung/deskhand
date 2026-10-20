@@ -18,6 +18,29 @@ struct DataTableColumn {
     var hideBelow: CGFloat?
 }
 
+/// Width of a table's first column: the person's preferred width, narrowed only as far as the
+/// table needs to fit its other columns, and never below the column's minimum.
+struct FirstColumnWidth: Equatable {
+    /// The last width the person dragged to, or the saved or default width.
+    private(set) var preferred: CGFloat
+    let minimum: CGFloat
+
+    init(preferred: CGFloat, minimum: CGFloat) {
+        self.minimum = minimum
+        self.preferred = max(minimum, preferred)
+    }
+
+    /// The width when `available` points are left for the column.
+    func width(available: CGFloat) -> CGFloat {
+        max(minimum, min(preferred, available))
+    }
+
+    /// Records a width the person dragged the column to.
+    mutating func userResized(to width: CGFloat) {
+        preferred = max(minimum, width)
+    }
+}
+
 /// Column and direction a `DataTable` sorts by.
 struct DataTableSort: Equatable {
     var column: String
@@ -113,6 +136,10 @@ struct DataTable<Row: Identifiable & Equatable>: NSViewRepresentable where Row.I
             table.autosaveName = autosaveName
             table.autosaveTableColumns = true
         }
+        if let first = table.tableColumns.first {
+            let saved = autosaveName.map { UserDefaults.standard.double(forKey: Coordinator.preferredKey($0)) } ?? 0
+            coordinator.firstWidth = FirstColumnWidth(preferred: saved > 0 ? CGFloat(saved) : first.width, minimum: first.minWidth)
+        }
         let menu = NSMenu()
         menu.delegate = coordinator
         menu.autoenablesItems = false
@@ -133,6 +160,8 @@ struct DataTable<Row: Identifiable & Equatable>: NSViewRepresentable where Row.I
         scroll.postsFrameChangedNotifications = true
         NotificationCenter.default.addObserver(coordinator, selector: #selector(Coordinator.frameChanged(_:)),
                                                name: NSView.frameDidChangeNotification, object: scroll)
+        NotificationCenter.default.addObserver(coordinator, selector: #selector(Coordinator.columnResized(_:)),
+                                               name: NSTableView.columnDidResizeNotification, object: table)
         coordinator.table = table
         coordinator.scroll = scroll
         coordinator.rows = rows
@@ -161,6 +190,13 @@ struct DataTable<Row: Identifiable & Equatable>: NSViewRepresentable where Row.I
         private var applyingSort = false
         /// The selection last shown, to scroll only when it changes.
         private var shownSelection: Row.ID?
+        /// Preferred and minimum width of the first column.
+        var firstWidth: FirstColumnWidth?
+        /// Column widths are being set by `fitColumns`.
+        private var fitting = false
+
+        /// UserDefaults key of the preferred first-column width of the table saved as `autosaveName`.
+        static func preferredKey(_ autosaveName: String) -> String { "DataTable.\(autosaveName).firstColumnWidth" }
 
         init(_ parent: DataTable) {
             self.parent = parent
@@ -218,25 +254,37 @@ struct DataTable<Row: Identifiable & Equatable>: NSViewRepresentable where Row.I
             fitColumns()
         }
 
-        /// Hides the columns the table is too narrow for, narrows the first column down to its
-        /// minimum when the rest still do not fit, and lets the last column fill the rest.
+        /// Hides the columns the table is too narrow for, sets the first column to its preferred
+        /// width narrowed only as far as the others need, and lets the last column fill the rest.
         func fitColumns() {
             guard let table, let scroll else { return }
             let width = scroll.contentSize.width
             guard width > 0 else { return }
+            fitting = true
+            defer { fitting = false }
             for column in table.tableColumns {
                 guard let spec = parent.columns.first(where: { $0.id == column.identifier.rawValue }), let limit = spec.hideBelow else { continue }
                 let hidden = width < limit
                 if column.isHidden != hidden { column.isHidden = hidden }
             }
             let visible = table.tableColumns.filter { !$0.isHidden }
-            if let first = visible.first, let last = visible.last, first !== last {
+            if let first = visible.first, let last = visible.last, first !== last, let firstWidth {
                 let spacing = table.intercellSpacing.width * CGFloat(visible.count) + 24
                 let others = visible.dropFirst().reduce(0) { $0 + ($1 === last ? $1.minWidth : $1.width) }
-                let room = width - others - spacing
-                if first.width > room { first.width = max(first.minWidth, room) }
+                let target = firstWidth.width(available: width - others - spacing)
+                if abs(first.width - target) > 0.5 { first.width = target }
             }
             table.sizeLastColumnToFit()
+        }
+
+        /// A drag of the first column's edge sets its preferred width, saved with the table's columns.
+        @objc func columnResized(_ notification: Notification) {
+            guard !fitting, let table, let column = notification.userInfo?["NSTableColumn"] as? NSTableColumn,
+                  column === table.tableColumns.first else { return }
+            firstWidth?.userResized(to: column.width)
+            if let name = parent.autosaveName, let preferred = firstWidth?.preferred {
+                UserDefaults.standard.set(Double(preferred), forKey: Self.preferredKey(name))
+            }
         }
 
         // MARK: Data source and delegate
