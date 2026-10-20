@@ -1,0 +1,822 @@
+package main
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/YangTaeyoung/deskhand/internal/proto"
+	"github.com/YangTaeyoung/deskhand/internal/transport"
+	"github.com/YangTaeyoung/deskhand/internal/wire"
+	"github.com/quic-go/quic-go"
+)
+
+// record is what one run saw; report reads it back. Times ending in _us
+// without "agent" are on the probe clock (nowUS), capture_us,
+// encode_done_us, done_us and agent_us on the agent's mono_us.
+type record struct {
+	Name        string        `json:"name"`
+	Scenario    string        `json:"scenario"`
+	Addr        string        `json:"addr"`
+	Started     string        `json:"started"`
+	ClockSource string        `json:"clock_source"`
+	TimerResMS  []float64     `json:"timer_resolution_ms"`
+	Hello       proto.Message `json:"hello"`
+	Session     proto.Message `json:"session,omitempty"`
+	SyncBefore  []syncSample  `json:"sync_before"`
+	SyncAfter   []syncSample  `json:"sync_after"`
+	Fixture     *fixtureInfo  `json:"fixture,omitempty"`
+	Display     *displayInfo  `json:"display,omitempty"`
+	Video       *videoRecord  `json:"video,omitempty"`
+	Inputs      []inputRecord `json:"inputs,omitempty"`
+	Skipped     string        `json:"skipped,omitempty"`
+	Notes       []string      `json:"notes,omitempty"`
+}
+
+// fixtureInfo is the fixture a run started: its window's frame in virtual
+// desktop pixels and, for input, the point it clicks.
+type fixtureInfo struct {
+	Path    string   `json:"path"`
+	Args    []string `json:"args"`
+	PID     int      `json:"pid"`
+	Window  string   `json:"window"`
+	X       int      `json:"x"`
+	Y       int      `json:"y"`
+	W       int      `json:"w"`
+	H       int      `json:"h"`
+	TargetX int      `json:"target_x,omitempty"`
+	TargetY int      `json:"target_y,omitempty"`
+}
+
+// displayInfo is the display a run streamed, in virtual desktop pixels.
+type displayInfo struct {
+	Index  int    `json:"index"`
+	Name   string `json:"name"`
+	X      int    `json:"x"`
+	Y      int    `json:"y"`
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
+}
+
+// videoRecord is one video stream: its header, the frames it carried and
+// the .h264 file that holds the access units in order.
+type videoRecord struct {
+	Header   wire.StreamHeader `json:"header"`
+	File     string            `json:"file"`
+	OpenedUS int64             `json:"opened_us"`
+	ClosedUS int64             `json:"closed_us"`
+	Infos    []timedInfo       `json:"infos"`
+	Stats    []timedStats      `json:"stats"`
+	Paused   []timedPaused     `json:"paused"`
+	AUs      []auRecord        `json:"aus"`
+	Refusal  string            `json:"refusal,omitempty"`
+	Error    string            `json:"error,omitempty"`
+}
+
+type timedInfo struct {
+	RecvUS int64          `json:"recv_us"`
+	Info   wire.VideoInfo `json:"info"`
+}
+
+type timedStats struct {
+	RecvUS int64           `json:"recv_us"`
+	Stats  wire.VideoStats `json:"stats"`
+}
+
+type timedPaused struct {
+	RecvUS int64            `json:"recv_us"`
+	Paused wire.VideoPaused `json:"paused"`
+}
+
+// auRecord is one access unit without its bytes.
+type auRecord struct {
+	Seq          uint64 `json:"seq"`
+	Key          bool   `json:"key"`
+	Config       bool   `json:"config"`
+	Width        uint32 `json:"width"`
+	Height       uint32 `json:"height"`
+	CaptureUS    uint64 `json:"capture_us"`
+	EncodeDoneUS uint64 `json:"encode_done_us"`
+	RecvUS       int64  `json:"recv_us"`
+	Size         int    `json:"size"`
+}
+
+// inputRecord is one input event and its ack.
+type inputRecord struct {
+	Seq    uint64 `json:"seq"`
+	Kind   string `json:"kind"`
+	SentUS int64  `json:"sent_us"`
+	AckUS  int64  `json:"ack_us"`
+	DoneUS uint64 `json:"done_us"`
+	OK     bool   `json:"ok"`
+	Code   string `json:"code,omitempty"`
+	Error  string `json:"error,omitempty"`
+}
+
+// options are the flags of run.
+type options struct {
+	addr, idDir, agentFP, out, name, scenario, fixture string
+	display, seconds, maxWidth, maxFPS, bitrate        int
+	clicks, keys, syncs                                int
+}
+
+func cmdRun(args []string, stdout, stderr io.Writer) int {
+	fs := newFlags("run", stderr)
+	var o options
+	fs.StringVar(&o.addr, "addr", "", "에이전트의 QUIC 주소(호스트:포트)")
+	fs.StringVar(&o.idDir, "id", "", "keygen으로 만든 인증서·키 폴더")
+	fs.StringVar(&o.agentFP, "agent-fp", "", "에이전트 인증서의 SHA-256 지문")
+	fs.StringVar(&o.out, "out", "", "결과(.json, .h264)를 쓸 폴더")
+	fs.StringVar(&o.name, "name", "", "결과 파일 이름")
+	fs.StringVar(&o.scenario, "scenario", "static", "static, motion 또는 input")
+	fs.StringVar(&o.fixture, "fixture", "", "에이전트 PC의 deskhand-fixture.exe 경로")
+	fs.IntVar(&o.display, "display", 0, "fixture 없이 측정할 디스플레이 인덱스")
+	fs.IntVar(&o.seconds, "seconds", 60, "static·motion 수신 시간(초)")
+	fs.IntVar(&o.maxWidth, "max-width", 0, "video 헤더 max_width(0은 원본)")
+	fs.IntVar(&o.maxFPS, "max-fps", 0, "video 헤더 max_fps(0은 60)")
+	fs.IntVar(&o.bitrate, "bitrate", 0, "video 헤더 bitrate(0은 기본값)")
+	fs.IntVar(&o.clicks, "clicks", 20, "input에서 누를 클릭 수")
+	fs.IntVar(&o.keys, "keys", 20, "input에서 누를 Space 키 수")
+	fs.IntVar(&o.syncs, "syncs", 50, "앞뒤로 보낼 time.sync 수")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	switch {
+	case o.addr == "" || o.idDir == "" || o.out == "" || o.name == "":
+		return fail(stderr, "-addr, -id, -out, -name을 모두 주세요", nil)
+	case !validFingerprint(o.agentFP):
+		return fail(stderr, "-agent-fp는 deskhand-agent init이 출력한 64자리 16진수 지문이어야 합니다", nil)
+	case o.scenario != "static" && o.scenario != "motion" && o.scenario != "input":
+		return fail(stderr, "-scenario는 static, motion, input 중 하나여야 합니다", nil)
+	case o.scenario == "input" && o.fixture == "":
+		return fail(stderr, "input은 -fixture가 있어야 합니다. 에이전트 PC의 deskhand-fixture.exe 경로를 주세요", nil)
+	}
+	rec, err := run(o)
+	if rec != nil {
+		if werr := writeRecord(filepath.Join(o.out, o.name+".json"), rec); werr != nil {
+			return fail(stderr, "결과를 쓰지 못했습니다", werr)
+		}
+	}
+	if err != nil {
+		return fail(stderr, "측정을 마치지 못했습니다", err)
+	}
+	fmt.Fprintf(stdout, "%s: AU %d개, 입력 %d개를 기록했습니다\n", o.name, auCount(rec), len(rec.Inputs))
+	if rec.Skipped != "" {
+		fmt.Fprintf(stdout, "%s: 건너뜀: %s\n", o.name, rec.Skipped)
+	}
+	return 0
+}
+
+func validFingerprint(fp string) bool {
+	if len(fp) != 64 {
+		return false
+	}
+	for _, c := range fp {
+		if !strings.ContainsRune("0123456789abcdef", c) {
+			return false
+		}
+	}
+	return true
+}
+
+func auCount(rec *record) int {
+	if rec == nil || rec.Video == nil {
+		return 0
+	}
+	return len(rec.Video.AUs)
+}
+
+func writeRecord(path string, rec *record) error {
+	b, err := json.MarshalIndent(rec, "", " ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(b, '\n'), 0o644)
+}
+
+// run measures o.scenario and returns what it recorded, with an error when
+// the run could not finish; a partial record comes with the error.
+func run(o options) (*record, error) {
+	if err := os.MkdirAll(o.out, 0o755); err != nil {
+		return nil, err
+	}
+	certPath, keyPath := identityPaths(o.idDir)
+	id, err := transport.LoadIdentity(certPath, keyPath)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(o.seconds+o.clicks*3+o.keys*3+180)*time.Second)
+	defer cancel()
+	rec := &record{Name: o.name, Scenario: o.scenario, Addr: o.addr, Started: time.Now().Format(time.RFC3339),
+		ClockSource: clockSource(), TimerResMS: []float64{timerResolutionMS()}}
+	dialCtx, dialCancel := context.WithTimeout(ctx, 15*time.Second)
+	conn, err := transport.Dial(dialCtx, o.addr, id, o.agentFP)
+	dialCancel()
+	if err != nil {
+		return rec, err
+	}
+	defer conn.CloseWithError(0, "screen-probe done")
+	rpc, hello, err := openRPC(ctx, conn)
+	if err != nil {
+		return rec, err
+	}
+	defer rpc.close()
+	rec.Hello = hello
+	if s, err := rpc.call("session.info", nil, 10*time.Second); err == nil {
+		delete(s, "t")
+		delete(s, "id")
+		delete(s, "ok")
+		rec.Session = s
+	}
+	if rec.SyncBefore, err = syncRounds(rpc, o.syncs); err != nil {
+		return rec, err
+	}
+
+	disp, err := pickDisplay(hello, o.display, nil)
+	if o.fixture != "" {
+		var args []string
+		if o.scenario == "motion" {
+			args = []string{"--animate"}
+		}
+		fx, ferr := launchFixture(rpc, o.fixture, args)
+		if fx != nil {
+			rec.Fixture = fx
+			defer func() {
+				if _, err := rpc.call("proc.kill", proto.Message{"pid": fx.PID}, 15*time.Second); err != nil {
+					rec.Notes = append(rec.Notes, "fixture proc.kill: "+err.Error())
+				}
+			}()
+		}
+		if ferr != nil {
+			return rec, ferr
+		}
+		disp, err = pickDisplay(hello, -1, fx)
+	}
+	if err != nil {
+		return rec, err
+	}
+	rec.Display = disp
+
+	header := wire.StreamHeader{S: "video", Display: disp.Index, MaxWidth: o.maxWidth, MaxFPS: o.maxFPS, Bitrate: o.bitrate, Codec: "h264"}
+	video, err := startVideo(ctx, conn, header, filepath.Join(o.out, o.name+".h264"))
+	if err != nil {
+		return rec, err
+	}
+	rec.Video = video.rec
+	var runErr error
+	switch o.scenario {
+	case "static", "motion":
+		select {
+		case <-time.After(time.Duration(o.seconds) * time.Second):
+		case <-video.done:
+		case <-ctx.Done():
+			runErr = ctx.Err()
+		}
+	case "input":
+		time.Sleep(2 * time.Second)
+		runErr = runInput(ctx, conn, rpc, rec, o)
+		time.Sleep(1500 * time.Millisecond)
+	}
+	video.stop()
+	if after, err := syncRounds(rpc, o.syncs); err == nil {
+		rec.SyncAfter = after
+	} else {
+		rec.Notes = append(rec.Notes, "time.sync after: "+err.Error())
+	}
+	rec.TimerResMS = append(rec.TimerResMS, timerResolutionMS())
+	return rec, runErr
+}
+
+// syncRounds sends n time.sync requests one after another, 5 ms apart.
+func syncRounds(rpc *rpcClient, n int) ([]syncSample, error) {
+	out := make([]syncSample, 0, n)
+	for range n {
+		res, sent, recv, err := rpc.callTimed("time.sync", nil, 5*time.Second)
+		if err != nil {
+			return out, fmt.Errorf("time.sync: %w", err)
+		}
+		mono, ok := res["mono_us"].(float64)
+		if !ok {
+			return out, fmt.Errorf("time.sync answered %v without mono_us; run an agent with time.sync", res)
+		}
+		out = append(out, syncSample{SentUS: sent, RecvUS: recv, AgentUS: uint64(mono)})
+		time.Sleep(5 * time.Millisecond)
+	}
+	return out, nil
+}
+
+// pickDisplay returns the display of hello that holds the centre of fx's
+// window, or the display with index want when fx is nil.
+func pickDisplay(hello proto.Message, want int, fx *fixtureInfo) (*displayInfo, error) {
+	raw, _ := json.Marshal(hello["displays"])
+	var list []displayInfo
+	if err := json.Unmarshal(raw, &list); err != nil || len(list) == 0 {
+		return nil, fmt.Errorf("the agent's hello lists no displays (%s); start the agent in the signed-in user's session", raw)
+	}
+	for i := range list {
+		d := &list[i]
+		if fx == nil && d.Index == want {
+			return d, nil
+		}
+		if fx != nil {
+			cx, cy := fx.X+fx.W/2, fx.Y+fx.H/2
+			if cx >= d.X && cy >= d.Y && cx < d.X+d.Width && cy < d.Y+d.Height {
+				return d, nil
+			}
+		}
+	}
+	if fx != nil {
+		return nil, fmt.Errorf("no display holds the centre of the fixture window at (%d,%d) %dx%d", fx.X, fx.Y, fx.W, fx.H)
+	}
+	return nil, fmt.Errorf("the agent has no display %d", want)
+}
+
+// launchFixture starts the fixture through app.launch, brings its window to
+// the foreground and reads its frame.
+func launchFixture(rpc *rpcClient, path string, args []string) (*fixtureInfo, error) {
+	res, err := rpc.call("app.launch", proto.Message{"path": path, "args": args, "wait_window_ms": 15000}, 40*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("app.launch %s: %w", path, err)
+	}
+	fx := &fixtureInfo{Path: path, Args: args, PID: res.Int("pid")}
+	w, _ := res["window"].(map[string]any)
+	if w == nil {
+		return fx, fmt.Errorf("the fixture (pid %d) showed no window within 15 s", fx.PID)
+	}
+	fx.Window, _ = w["id"].(string)
+	if _, err := rpc.call("win.action", proto.Message{"action": "focus", "window": fx.Window}, 20*time.Second); err != nil {
+		return fx, fmt.Errorf("win.action focus on the fixture: %w", err)
+	}
+	time.Sleep(1500 * time.Millisecond)
+	win, err := findWindow(rpc, fx.Window)
+	if err != nil {
+		return fx, err
+	}
+	fx.X, fx.Y, fx.W, fx.H = win.Int("x"), win.Int("y"), win.Int("w"), win.Int("h")
+	return fx, nil
+}
+
+// findWindow returns the win.list entry with id.
+func findWindow(rpc *rpcClient, id string) (proto.Message, error) {
+	res, err := rpc.call("win.list", nil, 20*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("win.list: %w", err)
+	}
+	list, _ := res["windows"].([]any)
+	for _, item := range list {
+		if w, ok := item.(map[string]any); ok && w["id"] == id {
+			return proto.Message(w), nil
+		}
+	}
+	return nil, fmt.Errorf("window %s is not in win.list", id)
+}
+
+// foregroundWindow returns the id and title of the window win.list marks
+// as the foreground.
+func foregroundWindow(rpc *rpcClient) (id, title string, err error) {
+	res, err := rpc.call("win.list", nil, 20*time.Second)
+	if err != nil {
+		return "", "", fmt.Errorf("win.list: %w", err)
+	}
+	list, _ := res["windows"].([]any)
+	for _, item := range list {
+		if w, ok := item.(map[string]any); ok && w["foreground"] == true {
+			id, _ = w["id"].(string)
+			title, _ = w["title"].(string)
+			return id, title, nil
+		}
+	}
+	return "", "", nil
+}
+
+// rpcClient is the probe's side of the rpc stream.
+type rpcClient struct {
+	st      *quic.Stream
+	mu      sync.Mutex
+	nextID  int
+	waiting map[int]chan reply
+	done    chan struct{}
+	err     error
+}
+
+// reply is an answer and the probe clock when it was read.
+type reply struct {
+	m      proto.Message
+	recvUS int64
+}
+
+// openRPC opens the rpc stream, reads the hello and answers with a welcome.
+func openRPC(ctx context.Context, conn *quic.Conn) (*rpcClient, proto.Message, error) {
+	st, err := conn.OpenStreamSync(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := wire.WriteHeader(st, map[string]string{"s": "rpc"}); err != nil {
+		return nil, nil, err
+	}
+	sc := bufio.NewScanner(st)
+	sc.Buffer(make([]byte, 64<<10), 8<<20)
+	_ = st.SetReadDeadline(time.Now().Add(15 * time.Second))
+	if !sc.Scan() {
+		return nil, nil, fmt.Errorf("no hello from the agent: %v", sc.Err())
+	}
+	_ = st.SetReadDeadline(time.Time{})
+	var hello proto.Message
+	if err := json.Unmarshal(sc.Bytes(), &hello); err != nil || hello.Type() != "hello" {
+		return nil, nil, fmt.Errorf("the agent's first line is not a hello: %s", sc.Bytes())
+	}
+	c := &rpcClient{st: st, waiting: map[int]chan reply{}, done: make(chan struct{})}
+	line, _ := proto.Encode(proto.Message{"t": "welcome", "v": 1, "controller": "screen-probe"})
+	if _, err := st.Write(line); err != nil {
+		return nil, nil, err
+	}
+	go c.readLoop(sc)
+	return c, hello, nil
+}
+
+func (c *rpcClient) readLoop(sc *bufio.Scanner) {
+	defer close(c.done)
+	for sc.Scan() {
+		now := nowUS()
+		var m proto.Message
+		if json.Unmarshal(sc.Bytes(), &m) != nil || m.Type() != "res" {
+			continue
+		}
+		c.mu.Lock()
+		ch := c.waiting[m.Int("id")]
+		delete(c.waiting, m.Int("id"))
+		c.mu.Unlock()
+		if ch != nil {
+			ch <- reply{m: m, recvUS: now}
+		}
+	}
+	c.err = sc.Err()
+	if c.err == nil {
+		c.err = io.EOF
+	}
+}
+
+// call sends op with params and returns a successful answer.
+func (c *rpcClient) call(op string, params proto.Message, timeout time.Duration) (proto.Message, error) {
+	m, _, _, err := c.callTimed(op, params, timeout)
+	return m, err
+}
+
+// callTimed is call that also returns the probe clock when the request was
+// written and when the answer was read.
+func (c *rpcClient) callTimed(op string, params proto.Message, timeout time.Duration) (proto.Message, int64, int64, error) {
+	req := proto.Message{"t": "req", "op": op}
+	for k, v := range params {
+		req[k] = v
+	}
+	ch := make(chan reply, 1)
+	c.mu.Lock()
+	c.nextID++
+	id := c.nextID
+	req["id"] = id
+	line, err := proto.Encode(req)
+	if err != nil {
+		c.mu.Unlock()
+		return nil, 0, 0, err
+	}
+	c.waiting[id] = ch
+	sent := nowUS()
+	_, err = c.st.Write(line)
+	c.mu.Unlock()
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	select {
+	case r := <-ch:
+		if r.m["ok"] != true {
+			return r.m, sent, r.recvUS, fmt.Errorf("%s: %s %s", op, r.m.String("code"), r.m.String("error"))
+		}
+		return r.m, sent, r.recvUS, nil
+	case <-c.done:
+		return nil, 0, 0, fmt.Errorf("%s: the rpc stream ended (%v)", op, c.err)
+	case <-time.After(timeout):
+		c.mu.Lock()
+		delete(c.waiting, id)
+		c.mu.Unlock()
+		return nil, 0, 0, fmt.Errorf("%s: no answer within %s", op, timeout)
+	}
+}
+
+func (c *rpcClient) close() {
+	c.st.CancelRead(0)
+	_ = c.st.Close()
+}
+
+// videoRun records a video stream until stop.
+type videoRun struct {
+	rec  *videoRecord
+	st   *quic.Stream
+	f    *os.File
+	w    *bufio.Writer
+	done chan struct{}
+}
+
+// startVideo opens a video stream with header and records its frames, the
+// access units' bytes in order to path.
+func startVideo(ctx context.Context, conn *quic.Conn, header wire.StreamHeader, path string) (*videoRun, error) {
+	f, err := os.Create(path)
+	if err != nil {
+		return nil, err
+	}
+	st, err := conn.OpenStreamSync(ctx)
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
+	v := &videoRun{rec: &videoRecord{Header: header, File: filepath.Base(path)}, st: st, f: f, w: bufio.NewWriterSize(f, 1<<20), done: make(chan struct{})}
+	v.rec.OpenedUS = nowUS()
+	if err := wire.WriteHeader(st, header); err != nil {
+		f.Close()
+		return nil, err
+	}
+	go v.loop(bufio.NewReaderSize(st, 1<<20))
+	return v, nil
+}
+
+func (v *videoRun) loop(br *bufio.Reader) {
+	defer close(v.done)
+	if b, err := br.Peek(1); err == nil && b[0] == '{' {
+		line, _ := br.ReadString('\n')
+		v.rec.Refusal = strings.TrimSpace(line)
+		return
+	}
+	for {
+		kind, payload, err := wire.ReadFrame(br, wire.MaxFrame)
+		now := nowUS()
+		if err != nil {
+			if !errors.Is(err, io.EOF) {
+				v.rec.Error = err.Error()
+			}
+			return
+		}
+		switch kind {
+		case wire.KindAU:
+			au, err := wire.UnmarshalAU(payload)
+			if err != nil {
+				v.rec.Error = err.Error()
+				return
+			}
+			v.rec.AUs = append(v.rec.AUs, auRecord{Seq: au.Seq, Key: au.Key, Config: au.HasConfig, Width: au.Width, Height: au.Height,
+				CaptureUS: au.CaptureMonoUS, EncodeDoneUS: au.EncodeDoneMonoUS, RecvUS: now, Size: len(au.Data)})
+			if _, err := v.w.Write(au.Data); err != nil {
+				v.rec.Error = err.Error()
+				return
+			}
+		case wire.KindVideoInfo:
+			var info wire.VideoInfo
+			_ = json.Unmarshal(payload, &info)
+			v.rec.Infos = append(v.rec.Infos, timedInfo{RecvUS: now, Info: info})
+		case wire.KindVideoStats:
+			var s wire.VideoStats
+			_ = json.Unmarshal(payload, &s)
+			v.rec.Stats = append(v.rec.Stats, timedStats{RecvUS: now, Stats: s})
+		case wire.KindVideoPaused:
+			var p wire.VideoPaused
+			_ = json.Unmarshal(payload, &p)
+			v.rec.Paused = append(v.rec.Paused, timedPaused{RecvUS: now, Paused: p})
+		}
+	}
+}
+
+// stop closes the probe's direction of the stream, waits up to 5 s for the
+// agent to end it and closes the file.
+func (v *videoRun) stop() {
+	_ = v.st.Close()
+	select {
+	case <-v.done:
+	case <-time.After(5 * time.Second):
+		v.st.CancelRead(0)
+		<-v.done
+	}
+	v.rec.ClosedUS = nowUS()
+	_ = v.w.Flush()
+	_ = v.f.Close()
+}
+
+// inputRun is an input stream that sends one event at a time and reads its
+// ack.
+type inputRun struct {
+	st  *quic.Stream
+	br  *bufio.Reader
+	seq uint64
+	gen uint64
+}
+
+// openInput opens an input stream with gen 0 and reads its accept line.
+func openInput(ctx context.Context, conn *quic.Conn) (*inputRun, error) {
+	st, err := conn.OpenStreamSync(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := wire.WriteHeader(st, map[string]any{"s": "input", "gen": 0}); err != nil {
+		return nil, err
+	}
+	br := bufio.NewReader(st)
+	_ = st.SetReadDeadline(time.Now().Add(10 * time.Second))
+	line, err := br.ReadString('\n')
+	_ = st.SetReadDeadline(time.Time{})
+	if err != nil {
+		return nil, fmt.Errorf("no accept line on the input stream: %w", err)
+	}
+	var accept struct {
+		OK    bool   `json:"ok"`
+		Gen   uint64 `json:"gen"`
+		Code  string `json:"code"`
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(line), &accept); err != nil || !accept.OK {
+		return nil, fmt.Errorf("the input stream was refused: %s", strings.TrimSpace(line))
+	}
+	return &inputRun{st: st, br: br, gen: accept.Gen}, nil
+}
+
+// send writes ev with the next seq and returns it with its ack.
+func (in *inputRun) send(ev wire.InputEvent, kind string) (inputRecord, error) {
+	in.seq++
+	ev.Seq, ev.Gen = in.seq, in.gen
+	payload, err := json.Marshal(ev)
+	if err != nil {
+		return inputRecord{}, err
+	}
+	r := inputRecord{Seq: ev.Seq, Kind: kind, SentUS: nowUS()}
+	if err := wire.WriteFrame(in.st, wire.KindClientInput, payload); err != nil {
+		return r, err
+	}
+	_ = in.st.SetReadDeadline(time.Now().Add(10 * time.Second))
+	k, p, err := wire.ReadFrame(in.br, wire.MaxFrame)
+	r.AckUS = nowUS()
+	_ = in.st.SetReadDeadline(time.Time{})
+	if err != nil {
+		return r, fmt.Errorf("no ack for input %d: %w", ev.Seq, err)
+	}
+	var ack wire.InputAck
+	if k != wire.KindInputAck || json.Unmarshal(p, &ack) != nil || ack.Seq != ev.Seq {
+		return r, fmt.Errorf("frame %#x %s is not the ack of input %d", k, p, ev.Seq)
+	}
+	r.OK, r.DoneUS, r.Code, r.Error = ack.OK, ack.DoneMonoUS, ack.Code, ack.Error
+	if !ack.OK {
+		return r, fmt.Errorf("input %d (%s) failed: %s %s", ev.Seq, kind, ack.Code, ack.Error)
+	}
+	return r, nil
+}
+
+// close ends the probe's direction and waits up to 5 s for the agent to
+// end the stream, which releases what the stream holds pressed.
+func (in *inputRun) close() {
+	_ = in.st.Close()
+	_ = in.st.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, _ = io.Copy(io.Discard, in.br)
+	in.st.CancelRead(0)
+}
+
+// Input timing of runInput.
+const (
+	pressHold   = 400 * time.Millisecond
+	pressRest   = 600 * time.Millisecond
+	warmupSleep = 1500 * time.Millisecond
+	vkSpace     = 0x20
+)
+
+// errGuard marks a run stopped by a guard; the record says why.
+var errGuard = errors.New("guard")
+
+// runInput clicks the fixture's Same button o.clicks times and presses
+// Space on it o.keys times, after a warm-up click that is not measured.
+func runInput(ctx context.Context, conn *quic.Conn, rpc *rpcClient, rec *record, o options) error {
+	fx, disp := rec.Fixture, rec.Display
+	res, err := rpc.call("ui.find", proto.Message{"window": fx.Window, "name": "Same", "index": 0}, 20*time.Second)
+	if err != nil {
+		rec.Skipped = "the fixture's Same button was not found through ui.find: " + err.Error()
+		return nil
+	}
+	nodes, _ := res["nodes"].([]any)
+	if len(nodes) == 0 {
+		rec.Skipped = "ui.find found no Same button in the fixture"
+		return nil
+	}
+	node := proto.Message(nodes[0].(map[string]any))
+	tx, ty := node.Int("x")+node.Int("w")/2, node.Int("y")+node.Int("h")/2
+	if node.Int("w") <= 0 || tx < fx.X || ty < fx.Y || tx >= fx.X+fx.W || ty >= fx.Y+fx.H ||
+		tx < disp.X || ty < disp.Y || tx >= disp.X+disp.Width || ty >= disp.Y+disp.Height {
+		rec.Skipped = fmt.Sprintf("the Same button's centre (%d,%d) is outside the fixture window or its display", tx, ty)
+		return nil
+	}
+	fx.TargetX, fx.TargetY = tx, ty
+
+	in, err := openInput(ctx, conn)
+	if err != nil {
+		return err
+	}
+	defer in.close()
+	foreground := func() error {
+		id, title, err := foregroundWindow(rpc)
+		if err != nil {
+			return err
+		}
+		if id != fx.Window {
+			return fmt.Errorf("%w: the foreground window is %s %q, not the fixture %s", errGuard, id, title, fx.Window)
+		}
+		return nil
+	}
+	overTarget := func() error {
+		at, err := rpc.call("ui.at", proto.Message{"x": tx, "y": ty}, 20*time.Second)
+		if err != nil {
+			return fmt.Errorf("%w: ui.at (%d,%d): %v", errGuard, tx, ty, err)
+		}
+		w, _ := at["window"].(map[string]any)
+		n, _ := at["node"].(map[string]any)
+		if w == nil || w["id"] != fx.Window || n == nil || n["name"] != "Same" {
+			return fmt.Errorf("%w: the element at (%d,%d) is %v in window %v, not the fixture's Same button", errGuard, tx, ty, n, w)
+		}
+		return nil
+	}
+	send := func(ev wire.InputEvent, kind string) error {
+		r, err := in.send(ev, kind)
+		rec.Inputs = append(rec.Inputs, r)
+		return err
+	}
+	press := func(kind string, down, up wire.InputEvent, guardPoint bool, measured bool) error {
+		if err := foreground(); err != nil {
+			return err
+		}
+		if guardPoint {
+			if err := overTarget(); err != nil {
+				return err
+			}
+		}
+		suffix := ""
+		if !measured {
+			suffix = "_warmup"
+		}
+		if err := send(down, kind+"_down"+suffix); err != nil {
+			return err
+		}
+		time.Sleep(pressHold)
+		if err := foreground(); err != nil {
+			return err
+		}
+		if err := send(up, kind+"_up"+suffix); err != nil {
+			return err
+		}
+		time.Sleep(pressRest)
+		return nil
+	}
+	stop := func(err error) error {
+		if errors.Is(err, errGuard) {
+			rec.Skipped = fmt.Sprintf("stopped after %d inputs: %v", len(rec.Inputs), err)
+			return nil
+		}
+		return err
+	}
+
+	if err := foreground(); err != nil {
+		return stop(err)
+	}
+	if err := send(wire.InputEvent{K: "move", Display: disp.Index, X: tx - disp.X, Y: ty - disp.Y}, "move"); err != nil {
+		return err
+	}
+	time.Sleep(300 * time.Millisecond)
+	click := func() (wire.InputEvent, wire.InputEvent) {
+		return wire.InputEvent{K: "button", B: "left", Down: true}, wire.InputEvent{K: "button", B: "left"}
+	}
+	space := func() (wire.InputEvent, wire.InputEvent) {
+		return wire.InputEvent{K: "key", VK: vkSpace, Down: true}, wire.InputEvent{K: "key", VK: vkSpace}
+	}
+	d, u := click()
+	if err := press("click", d, u, true, false); err != nil {
+		return stop(err)
+	}
+	time.Sleep(warmupSleep)
+	for range o.clicks {
+		d, u := click()
+		if err := press("click", d, u, true, true); err != nil {
+			return stop(err)
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+	}
+	for range o.keys {
+		d, u := space()
+		if err := press("key", d, u, false, true); err != nil {
+			return stop(err)
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+	}
+	return nil
+}
