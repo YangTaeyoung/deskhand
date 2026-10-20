@@ -3,6 +3,7 @@
 package input
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -22,6 +23,7 @@ var (
 	procMapVirtualKeyW           = user32.NewProc("MapVirtualKeyW")
 	procGetForegroundWindow      = user32.NewProc("GetForegroundWindow")
 	procGetWindowThreadProcessId = user32.NewProc("GetWindowThreadProcessId")
+	procIsHungAppWindow          = user32.NewProc("IsHungAppWindow")
 )
 
 const (
@@ -37,13 +39,13 @@ const (
 	// 0xE1 in the high byte for an extended key.
 	mapvkVKToVSCEx = 4
 
-	// threadWaiting is KTHREAD_STATE Waiting and waitUserRequest
-	// KWAIT_REASON WrUserRequest, the state of a thread blocked in
-	// GetMessage.
-	threadWaiting   = 5
-	waitUserRequest = 13
 	// drainPoll is the time between two looks at the foreground thread.
-	drainPoll = 2 * time.Millisecond
+	drainPoll = 15 * time.Millisecond
+	// parkGrace is how long a thread parked outside GetMessage (a console
+	// waiting for input) is watched before the drain proceeds, and
+	// runningGrace the same for a thread that keeps running.
+	parkGrace    = 100 * time.Millisecond
+	runningGrace = 500 * time.Millisecond
 )
 
 // mouseInput is MOUSEINPUT.
@@ -144,10 +146,15 @@ func (windowsSystem) foregroundAbove() bool {
 
 func (windowsSystem) clipboard() clipboardAccess { return windowsClipboard{} }
 
-// drain waits until the thread of the foreground window is seen blocked
-// waiting for messages (Waiting, WrUserRequest) on two looks drainPoll
-// apart. A window whose thread cannot be found does not wait.
-func (windowsSystem) drain(timeout time.Duration) error {
+// drain waits for the thread of the foreground window to read the input
+// sent to it, for at most timeout. It returns at once (so typing goes on)
+// when the thread idles in GetMessage (Waiting, WrUserRequest, seen
+// twice), when a thread parked elsewhere (a console waiting for input)
+// stays so for parkGrace, or when a running thread keeps running for
+// runningGrace. It returns an error only when the window stops responding
+// (IsHungAppWindow). A window whose thread cannot be found, and ctx ending,
+// do not wait.
+func (windowsSystem) drain(ctx context.Context, timeout time.Duration) error {
 	fg, _, _ := procGetForegroundWindow.Call()
 	if fg == 0 {
 		return nil
@@ -159,24 +166,35 @@ func (windowsSystem) drain(timeout time.Duration) error {
 	}
 	deadline := time.Now().Add(timeout)
 	idle := 0
+	var nonIdleSince time.Time
 	for {
-		state, reason, found := threadState(pid, uint32(tid))
-		switch {
-		case !found:
+		if ctx.Err() != nil {
 			return nil
-		case state == threadWaiting && reason == waitUserRequest:
-			idle++
-		default:
-			idle = 0
 		}
-		if idle == 2 {
+		state, reason, found := threadState(pid, uint32(tid))
+		if !found {
 			return nil
+		}
+		switch drainStep(state, reason, &idle, &nonIdleSince, time.Now(), parkGrace, runningGrace) {
+		case drainDone:
+			return nil
+		case drainProceed:
+			return hungOrProceed(fg, uint32(tid), pid)
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("thread %d of process %d is still busy, in thread state %d with wait reason %d", tid, pid, state, reason)
+			return hungOrProceed(fg, uint32(tid), pid)
 		}
 		time.Sleep(drainPoll)
 	}
+}
+
+// hungOrProceed returns an error when the window fg does not respond, and
+// nil otherwise.
+func hungOrProceed(fg uintptr, tid, pid uint32) error {
+	if r, _, _ := procIsHungAppWindow.Call(fg); r != 0 {
+		return fmt.Errorf("the window in front (thread %d of process %d) is not responding", tid, pid)
+	}
+	return nil
 }
 
 // systemThreadInformation is SYSTEM_THREAD_INFORMATION, which follows its

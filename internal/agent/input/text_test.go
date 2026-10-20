@@ -1,6 +1,7 @@
 package input
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"strings"
@@ -145,19 +146,31 @@ func TestPasteRestoresTheClipboardAroundCtrlV(t *testing.T) {
 	}
 }
 
-func TestPasteWaitsBeforeRestoring(t *testing.T) {
+func TestPasteWaitsForTheTargetToDrainBeforeRestoring(t *testing.T) {
 	clip := &fakeClipboard{text: "old"}
 	sys := &fakeSystem{clip: clip}
-	j := newTestInjector(t, sys, userSession, oneDisplay, Options{})
-	j.pasteDelay = 80 * time.Millisecond
-	var sentAt time.Time
-	sys.hook = func(int, []raw) { sentAt = time.Now() }
-	mustOK(t, j.Apply(wire.InputEvent{Seq: 1, K: "text", Text: "new", Method: "paste"}))
-	if since := time.Since(sentAt); since < 80*time.Millisecond {
-		t.Fatalf("restored %s after Ctrl+V", since)
+	entered, release := make(chan struct{}), make(chan struct{})
+	sys.drainErr = func(int) error {
+		close(entered)
+		<-release
+		return nil
 	}
-	if clip.text != "old" {
-		t.Fatalf("clipboard %q", clip.text)
+	j := newTestInjector(t, sys, userSession, oneDisplay, Options{})
+	done := make(chan wire.InputAck, 1)
+	go func() { done <- j.Apply(wire.InputEvent{Seq: 1, K: "text", Text: "new", Method: "paste"}) }()
+	<-entered
+	if clip.current() != "new" {
+		t.Fatalf("clipboard %q while the drain runs", clip.current())
+	}
+	for _, e := range clip.entries() {
+		if strings.HasPrefix(e, "restore") {
+			t.Fatalf("restored before the drain finished: %q", clip.entries())
+		}
+	}
+	close(release)
+	mustOK(t, <-done)
+	if clip.current() != "old" {
+		t.Fatalf("clipboard %q", clip.current())
 	}
 }
 
@@ -183,6 +196,24 @@ func TestAPreemptedPasteRestoresWithoutCtrlV(t *testing.T) {
 func TestPasteWithoutAClipboardIsUnsupported(t *testing.T) {
 	j := newTestInjector(t, &fakeSystem{}, userSession, oneDisplay, Options{})
 	mustFail(t, j.Apply(wire.InputEvent{Seq: 1, K: "text", Text: "a", Method: "paste"}), wire.CodeCapabilityUnsupported)
+}
+
+func TestTextStopsWhenItsStreamContextEnds(t *testing.T) {
+	sys := &fakeSystem{}
+	j := newTestInjector(t, sys, userSession, oneDisplay, Options{})
+	ctx, cancel := context.WithCancel(context.Background())
+	sys.hook = func(call int, in []raw) {
+		if call == 0 {
+			cancel()
+		}
+	}
+	ack := j.apply(ctx, 7, wire.InputEvent{Seq: 1, K: "text", Text: strings.Repeat("가", 5*chunkChars)})
+	if ack.OK || !strings.Contains(ack.Error, "typed 100 of 500") {
+		t.Fatalf("ack %+v", ack)
+	}
+	if n := len(sys.sent()); n != 1 {
+		t.Fatalf("%d sends after the context ended, want 1", n)
+	}
 }
 
 // rawName names a keyboard input by its virtual key and direction.

@@ -3,8 +3,10 @@ package server
 import (
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
+	"github.com/YangTaeyoung/deskhand/internal/agent/input"
 	"github.com/YangTaeyoung/deskhand/internal/agent/session"
 	"github.com/YangTaeyoung/deskhand/internal/proto"
 	"github.com/YangTaeyoung/deskhand/internal/wire"
@@ -95,6 +97,35 @@ func TestAPreemptedJournaledOpReplaysItsRefusal(t *testing.T) {
 	}
 	if ui.callCount() != 0 {
 		t.Fatalf("%d UI calls", ui.callCount())
+	}
+}
+
+func TestReleaseErrorNamesWhatWasFreed(t *testing.T) {
+	freed := []input.Pressed{{K: "button", B: "left"}, {K: "key", SC: 0x1D, Ext: true}, {K: "key", VK: 0x15}}
+	m := failure(1, releaseError(freed, &input.Error{Code: wire.CodeSessionLocked, Msg: "the PC is locked; unlock it"}))
+	if m["code"] != wire.CodeSessionLocked || m["retryable"] != false {
+		t.Fatalf("release error %v", m)
+	}
+	msg, _ := m["error"].(string)
+	for _, want := range []string{"button left", "sc 0x1d (ext)", "vk 0x15", "the PC is locked"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("release error %q has no %q", msg, want)
+		}
+	}
+	empty := failure(1, releaseError(nil, &input.Error{Code: wire.CodeSessionLocked, Msg: "x"}))
+	if msg, _ := empty["error"].(string); !strings.Contains(msg, "released nothing") {
+		t.Fatalf("empty release error %v", empty)
+	}
+}
+
+func TestTooLargeGenOnAUIOpIsInvalid(t *testing.T) {
+	c, _ := newRPCClient(t, Options{UI: &fakeUI{}})
+	res := c.call("ui.act", proto.Message{"ref": "e1", "gen": float64(1e18)})
+	if res["ok"] != false || res.String("code") != wire.CodeInvalidArgument {
+		t.Fatalf("ui.act with a too-large gen %v", res)
+	}
+	if got := c.ok("input.state", nil); got["gen"] != float64(0) {
+		t.Fatalf("a too-large gen raised the writer generation: %v", got)
 	}
 }
 

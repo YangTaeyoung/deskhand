@@ -64,6 +64,10 @@ func (j *Injector) ServeStream(ctx context.Context, st Stream, h wire.StreamHead
 		refuse(errUnsupported())
 		return
 	}
+	if h.Gen > maxGen {
+		refuse(tooLargeGen(h.Gen))
+		return
+	}
 	if err := j.Admit(h.Gen); err != nil {
 		var e *Error
 		errors.As(err, &e)
@@ -96,8 +100,11 @@ func (j *Injector) ServeStream(ctx context.Context, st Stream, h wire.StreamHead
 		}
 		ack := q.ack
 		if ack == nil {
-			a := j.apply(owner, q.ev)
+			a := j.apply(ctx, owner, q.ev)
 			ack = &a
+		}
+		if ctx.Err() != nil {
+			continue
 		}
 		b, _ := json.Marshal(ack)
 		_ = st.SetWriteDeadline(time.Now().Add(writeTimeout))
@@ -139,7 +146,7 @@ func (j *Injector) readEvents(ctx context.Context, st io.Reader, queue chan<- qu
 			_ = json.Unmarshal(payload, &head)
 			q.ack = &wire.InputAck{Seq: head.Seq, Code: wire.CodeInvalidArgument,
 				Error: "the input frame is not a JSON event of docs/protocol.md §6; send {\"seq\":…,\"gen\":…,\"k\":…}"}
-		} else if q.ev.Gen > j.Gen() {
+		} else if q.ev.Gen > j.Gen() && q.ev.Gen <= maxGen {
 			j.SetWriter(q.ev.Gen)
 		}
 		select {

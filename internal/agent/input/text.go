@@ -1,6 +1,7 @@
 package input
 
 import (
+	"context"
 	"time"
 	"unicode/utf16"
 	"unicode/utf8"
@@ -109,16 +110,24 @@ func textChunks(text string) ([]textChunk, int) {
 
 // typeText types ev.Text with KEYEVENTF_UNICODE inputs, chunk by chunk.
 // Before a chunk that follows another within drainAfter it waits, with mu
-// free, until the foreground window's thread has read the chunk before,
-// and it stops when the writer generation has risen past ev.Gen.
-func (j *Injector) typeText(owner uint64, ev wire.InputEvent) error {
+// free, until the foreground window's thread has read the chunk before. It
+// stops when the writer generation has risen past ev.Gen or ctx ends (the
+// input stream closed), with an ack that names how many characters it
+// typed.
+func (j *Injector) typeText(ctx context.Context, owner uint64, ev wire.InputEvent) error {
 	chunks, total := textChunks(ev.Text)
 	typed := 0
 	for i, c := range chunks {
+		if ctx.Err() != nil {
+			return streamClosed("typed %d of %d characters, then the input stream closed before the rest", typed, total)
+		}
 		if i > 0 || time.Since(time.Unix(0, j.lastText.Load())) < drainAfter {
-			if err := j.sys.drain(drainTimeout); err != nil {
-				return fail(wire.CodeTimeout, "typed %d of %d characters, then the window in front did not read its input for %s (%v); check that it responds, then send the rest", typed, total, drainTimeout, err)
+			if err := j.sys.drain(ctx, drainTimeout); err != nil {
+				return fail(wire.CodeTimeout, "typed %d of %d characters, then the window in front stopped reading its input (%v); check that it responds, then send the rest", typed, total, err)
 			}
+		}
+		if ctx.Err() != nil {
+			return streamClosed("typed %d of %d characters, then the input stream closed before the rest", typed, total)
 		}
 		err := j.locked(ev.Gen, func() error { return j.inject(owner, c.in) })
 		j.lastText.Store(time.Now().UnixNano())
@@ -134,8 +143,8 @@ func (j *Injector) typeText(owner uint64, ev wire.InputEvent) error {
 }
 
 // paste puts ev.Text on the clipboard, presses Ctrl+V and restores the
-// clipboard pasteDelay later.
-func (j *Injector) paste(owner uint64, ev wire.InputEvent) error {
+// clipboard once the paste target has drained, at most pasteDelay later.
+func (j *Injector) paste(ctx context.Context, owner uint64, ev wire.InputEvent) error {
 	cb := j.sys.clipboard()
 	if cb == nil {
 		return fail(wire.CodeCapabilityUnsupported, "this agent cannot paste; send the text with method unicode")
@@ -158,6 +167,9 @@ func (j *Injector) paste(owner uint64, ev wire.InputEvent) error {
 		j.clipboardWritten()
 	}
 	defer putBack()
+	if ctx.Err() != nil {
+		return streamClosed("the input stream closed before the paste")
+	}
 	if err := cb.setText(ev.Text); err != nil {
 		return fail(wire.CodeInternal, "the clipboard could not be set for the paste (%v); try again, or send the text with method unicode", err)
 	}
@@ -169,7 +181,7 @@ func (j *Injector) paste(owner uint64, ev wire.InputEvent) error {
 	if err := j.locked(ev.Gen, func() error { return j.inject(owner, ctrlV) }); err != nil {
 		return err
 	}
-	time.Sleep(j.pasteDelay)
+	_ = j.sys.drain(ctx, j.pasteDelay)
 	putBack()
 	return nil
 }

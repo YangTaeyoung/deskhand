@@ -4,6 +4,7 @@
 package input
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -121,9 +122,10 @@ type system interface {
 	foregroundAbove() bool
 	// clipboard is the clipboard of paste, nil without one.
 	clipboard() clipboardAccess
-	// drain waits until the thread of the foreground window has read the
-	// input sent to it, for at most timeout.
-	drain(timeout time.Duration) error
+	// drain waits for the thread of the foreground window to read the
+	// input sent to it, for at most timeout or until ctx ends. It errs
+	// only when the window stops responding.
+	drain(ctx context.Context, timeout time.Duration) error
 }
 
 // clipboardAccess is the clipboard a paste goes through.
@@ -139,12 +141,16 @@ const (
 	// displayCacheFor is how long the display list of move events is
 	// reused.
 	displayCacheFor = 2 * time.Second
-	// pasteRestoreDelay is the wait between Ctrl+V and restoring the
-	// clipboard.
-	pasteRestoreDelay = 300 * time.Millisecond
+	// pasteRestoreWait bounds the wait between Ctrl+V and restoring the
+	// clipboard: the agent waits for the paste target to drain, at most
+	// this long.
+	pasteRestoreWait = time.Second
 	// sessionCacheFor is how long a read of Options.SessionInfo is reused
 	// while the input desktop stays the same.
 	sessionCacheFor = time.Second
+	// maxGen bounds a writer generation, the whole numbers a JSON number
+	// holds exactly.
+	maxGen = 1 << 53
 )
 
 // Injector injects input events. The writer generation only rises; an
@@ -195,7 +201,7 @@ func newInjector(sys system, opt Options) *Injector {
 	if opt.Displays == nil {
 		opt.Displays = display.List
 	}
-	return &Injector{opt: opt, sys: sys, held: map[keyID]*heldInput{}, pasteDelay: pasteRestoreDelay}
+	return &Injector{opt: opt, sys: sys, held: map[keyID]*heldInput{}, pasteDelay: pasteRestoreWait}
 }
 
 // Supported reports whether this system injects input.
@@ -230,14 +236,17 @@ func (j *Injector) SetWriter(gen uint64) uint64 {
 
 // Admit checks an event or operation of writer generation gen: an older
 // generation fails with CONTROL_PREEMPTED and a newer one becomes the
-// writer generation through SetWriter.
+// writer generation through SetWriter. A generation that another writer
+// raises past gen between the check and the rise also fails.
 func (j *Injector) Admit(gen uint64) error {
 	cur := j.gen.Load()
 	switch {
 	case gen < cur:
 		return preempted(gen, cur)
 	case gen > cur:
-		j.SetWriter(gen)
+		if got := j.SetWriter(gen); got > gen {
+			return preempted(gen, got)
+		}
 	}
 	return nil
 }
@@ -247,10 +256,17 @@ func preempted(gen, cur uint64) *Error {
 }
 
 // Apply injects ev and returns its ack.
-func (j *Injector) Apply(ev wire.InputEvent) wire.InputAck { return j.apply(0, ev) }
+func (j *Injector) Apply(ev wire.InputEvent) wire.InputAck {
+	return j.apply(context.Background(), 0, ev)
+}
 
 // apply injects ev for owner, the input stream that sent it (0 for none).
-func (j *Injector) apply(owner uint64, ev wire.InputEvent) wire.InputAck {
+// A text stops when ctx ends, which an input stream cancels when the
+// daemon's connection or its direction closes.
+func (j *Injector) apply(ctx context.Context, owner uint64, ev wire.InputEvent) wire.InputAck {
+	if ev.Gen > maxGen {
+		return failedAck(ev.Seq, tooLargeGen(ev.Gen))
+	}
 	if err := j.Admit(ev.Gen); err != nil {
 		return failedAck(ev.Seq, err)
 	}
@@ -262,17 +278,14 @@ func (j *Injector) apply(owner uint64, ev wire.InputEvent) wire.InputAck {
 	case "text":
 		switch ev.Method {
 		case "", "unicode":
-			err = j.typeText(owner, ev)
+			err = j.typeText(ctx, owner, ev)
 		case "paste":
-			err = j.paste(owner, ev)
+			err = j.paste(ctx, owner, ev)
 		default:
 			err = fail(wire.CodeInvalidArgument, "text method '%s' is unknown; use unicode or paste", cut(ev.Method))
 		}
 	case "release_all":
-		err = j.locked(ev.Gen, func() error {
-			_, err := j.releaseLocked(func(*heldInput) bool { return true })
-			return err
-		})
+		_, err = j.ReleaseAll()
 	default:
 		err = j.locked(ev.Gen, func() error {
 			in, err := j.translate(ev)
@@ -286,6 +299,17 @@ func (j *Injector) apply(owner uint64, ev wire.InputEvent) wire.InputAck {
 		return failedAck(ev.Seq, err)
 	}
 	return wire.InputAck{Seq: ev.Seq, OK: true, DoneMonoUS: monoclock.NowUS()}
+}
+
+// tooLargeGen is the error of a writer generation past maxGen.
+func tooLargeGen(gen uint64) *Error {
+	return fail(wire.CodeInvalidArgument, "writer generation %d is too large; it must be a whole number from 0 to 2^53", gen)
+}
+
+// streamClosed is the error of a text that stopped because its input
+// stream ended; its ack does not reach the daemon that has gone.
+func streamClosed(format string, a ...any) *Error {
+	return &Error{Code: wire.CodeControlPreempted, Msg: fmt.Sprintf(format, a...)}
 }
 
 // locked runs f with mu held once the generation gen is still the writer's

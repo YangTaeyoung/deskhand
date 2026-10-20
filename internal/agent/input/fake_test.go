@@ -2,6 +2,7 @@ package input
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -66,12 +67,15 @@ func (f *fakeSystem) keyScan(vk uint16) (uint16, bool) {
 
 func (f *fakeSystem) foregroundAbove() bool { return f.above }
 
-func (f *fakeSystem) drain(time.Duration) error {
+func (f *fakeSystem) drain(ctx context.Context, _ time.Duration) error {
 	f.mu.Lock()
 	call := f.drains
 	f.drains++
 	answer := f.drainErr
 	f.mu.Unlock()
+	if ctx.Err() != nil {
+		return nil
+	}
 	if answer != nil {
 		return answer(call)
 	}
@@ -121,6 +125,12 @@ func (c *fakeClipboard) record(s string) {
 	c.mu.Lock()
 	c.log = append(c.log, s)
 	c.mu.Unlock()
+}
+
+func (c *fakeClipboard) current() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.text
 }
 
 func (c *fakeClipboard) save() (func() error, error) {

@@ -1,6 +1,8 @@
 package input
 
 import (
+	"io"
+	"log"
 	"reflect"
 	"strings"
 	"sync"
@@ -245,7 +247,6 @@ func TestInputDesktopWinlogonReported(t *testing.T) {
 			keyDown(1, 0, 0x1E),
 			{Seq: 2, K: "move", X: 10, Y: 10},
 			{Seq: 3, K: "text", Text: "a", Method: "unicode"},
-			{Seq: 4, K: "release_all"},
 		} {
 			ack := j.Apply(ev)
 			mustFail(t, ack, c.code)
@@ -262,6 +263,72 @@ func TestInputDesktopWinlogonReported(t *testing.T) {
 	}
 	if got := Outage(userSession); got != "" {
 		t.Fatalf("Outage of the user's session = %q", got)
+	}
+}
+
+func TestReleaseAllAttemptsAndMarksStaleInALockedSession(t *testing.T) {
+	cur := userSession
+	refuse := false
+	sys := &fakeSystem{accept: func(_ int, in []raw) int {
+		if refuse {
+			return 0
+		}
+		return len(in)
+	}}
+	j := newInjector(sys, Options{Logger: discardLogger(), Displays: func() ([]display.Info, error) { return oneDisplay, nil },
+		SessionInfo: func() (session.Info, error) { return cur, nil }, InputDesktop: func() string { return cur.InputDesktop }})
+	mustOK(t, j.Apply(wire.InputEvent{Seq: 1, K: "key", SC: 0x2A, Down: true}))
+	cur.Locked, cur.InputDesktop = true, session.DesktopWinlogon
+	refuse = true
+	before := len(sys.sent())
+	mustFail(t, j.Apply(wire.InputEvent{Seq: 2, K: "release_all"}), wire.CodeSessionLocked)
+	if len(sys.sent()) <= before {
+		t.Fatal("release_all in a locked session did not attempt to release")
+	}
+	if p := j.Pressed(); !reflect.DeepEqual(p, []Pressed{{K: "key", SC: 0x2A}}) {
+		t.Fatalf("pressed after a refused release_all %+v", p)
+	}
+	cur = userSession
+	refuse = false
+	mark := len(sys.sent())
+	mustOK(t, j.Apply(wire.InputEvent{Seq: 3, K: "key", SC: 0x1D, Down: true}))
+	if calls := sys.sent()[mark:]; !reflect.DeepEqual(calls, [][]raw{{keyRaw(0x2A, true)}, {keyRaw(0x1D, false)}}) {
+		t.Fatalf("the stale release was not retried before the next input: %+v", calls)
+	}
+}
+
+func discardLogger() *log.Logger { return log.New(io.Discard, "", 0) }
+
+func TestAGenerationPastItsBoundIsInvalidAndDoesNotRaise(t *testing.T) {
+	sys := &fakeSystem{}
+	j := newTestInjector(t, sys, userSession, oneDisplay, Options{})
+	mustFail(t, j.Apply(wire.InputEvent{Seq: 1, Gen: maxGen + 1, K: "key", SC: 0x1E, Down: true}), wire.CodeInvalidArgument)
+	if j.Gen() != 0 {
+		t.Fatalf("a too-large event gen raised the generation to %d", j.Gen())
+	}
+	if len(sys.all()) != 0 {
+		t.Fatalf("a too-large event injected %v", sys.all())
+	}
+	c, first := serveTestStream(t, j, maxGen+1)
+	if first["ok"] != false || first["code"] != wire.CodeInvalidArgument || first["error"] == "" {
+		t.Fatalf("stream header first line %v", first)
+	}
+	select {
+	case <-c.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a stream with a too-large header gen stays open")
+	}
+	if j.Gen() != 0 {
+		t.Fatalf("a too-large header gen raised the generation to %d", j.Gen())
+	}
+	c2, ok := serveTestStream(t, j, 0)
+	if ok["ok"] != true {
+		t.Fatalf("stream first line %v", ok)
+	}
+	c2.send(wire.InputEvent{Seq: 1, Gen: maxGen + 1, K: "key", SC: 0x1E, Down: true})
+	mustFail(t, c2.ack(), wire.CodeInvalidArgument)
+	if j.Gen() != 0 {
+		t.Fatalf("a too-large event gen on a stream raised the generation to %d", j.Gen())
 	}
 }
 

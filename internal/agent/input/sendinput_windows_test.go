@@ -1,6 +1,7 @@
 package input
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -51,10 +52,11 @@ var (
 )
 
 const (
-	fixtureClass = "DeskhandFixtureWindow"
-	wmClose      = 0x0010
-	gaRoot       = 2
-	vkShift      = 0x10
+	fixtureClass     = "DeskhandFixtureWindow"
+	wmClose          = 0x0010
+	gaRoot           = 2
+	vkShift          = 0x10
+	createNewConsole = 0x00000010
 )
 
 type point struct{ x, y int32 }
@@ -186,19 +188,15 @@ func foregroundWindow() uintptr {
 	return h
 }
 
-// foreground brings the fixture window to the foreground with
-// SetForegroundWindow, then SwitchToThisWindow, then SetForegroundWindow
-// with the test's thread input attached to the foreground window's thread,
-// and fails the test when none puts it there. None of them sends input.
-func (f *fixture) foreground() {
-	f.t.Helper()
-	ways := []struct {
-		name string
-		try  func()
-	}{
-		{"SetForegroundWindow", func() { procSetForegroundWindow.Call(f.hwnd) }},
-		{"SwitchToThisWindow", func() { procSwitchToThisWindow.Call(f.hwnd, 1) }},
-		{"AttachThreadInput", func() {
+// tryForeground brings hwnd to the foreground with SetForegroundWindow,
+// then SwitchToThisWindow, then SetForegroundWindow with the test's thread
+// input attached to the foreground window's thread, and reports whether it
+// is in front. None of them sends input.
+func tryForeground(hwnd uintptr) bool {
+	ways := []func(){
+		func() { procSetForegroundWindow.Call(hwnd) },
+		func() { procSwitchToThisWindow.Call(hwnd, 1) },
+		func() {
 			runtime.LockOSThread()
 			defer runtime.UnlockOSThread()
 			fgThread, _, _ := procGetWindowThreadProcessId.Call(foregroundWindow(), 0)
@@ -209,27 +207,37 @@ func (f *fixture) foreground() {
 			if r, _, _ := procAttachThreadInput.Call(own, fgThread, 1); r == 0 {
 				return
 			}
-			procBringWindowToTop.Call(f.hwnd)
-			procSetForegroundWindow.Call(f.hwnd)
+			procBringWindowToTop.Call(hwnd)
+			procSetForegroundWindow.Call(hwnd)
 			procAttachThreadInput.Call(own, fgThread, 0)
-		}},
+		},
 	}
-	for _, w := range ways {
-		if foregroundWindow() == f.hwnd {
-			return
+	for _, try := range ways {
+		if foregroundWindow() == hwnd {
+			return true
 		}
-		w.try()
+		try()
 		for range 10 {
-			if foregroundWindow() == f.hwnd {
-				f.t.Logf("the fixture came to the foreground through %s", w.name)
-				return
+			if foregroundWindow() == hwnd {
+				return true
 			}
 			time.Sleep(50 * time.Millisecond)
 		}
 	}
-	fg := foregroundWindow()
-	f.t.Fatalf("the fixture window %#x is not in the foreground (the foreground window is %#x %q); no input was sent", f.hwnd, fg, windowTitle(fg))
+	return foregroundWindow() == hwnd
 }
+
+// bringToForeground brings hwnd to the foreground and fails the test when
+// it cannot.
+func bringToForeground(t *testing.T, hwnd uintptr) {
+	t.Helper()
+	if !tryForeground(hwnd) {
+		fg := foregroundWindow()
+		t.Fatalf("window %#x is not in the foreground (the foreground window is %#x %q); no input was sent", hwnd, fg, windowTitle(fg))
+	}
+}
+
+func (f *fixture) foreground() { bringToForeground(f.t, f.hwnd) }
 
 // clientRect returns the client area of the fixture window in screen
 // pixels.
@@ -258,31 +266,25 @@ func rootAt(x, y int32) uintptr {
 	return root
 }
 
-var errNotFixture = errors.New("the input was not sent outside the fixture window")
+var errNotTarget = errors.New("the input was not sent because the target window was not in front")
 
-// guarded sends input only while the fixture window is in the foreground
-// and moves and clicks only inside its client area; releases always go
-// through, so that nothing stays held.
+// guarded sends input only while the target window is in the foreground,
+// re-checks the foreground after every batch, and sends a mouse move or
+// button only inside client (when set) and over the target or its child.
+// Every batch, release-only ones included, is checked.
 type guarded struct {
-	f   *fixture
-	sys windowsSystem
+	t      *testing.T
+	sys    windowsSystem
+	target func() uintptr
+	client func() winRect
 }
 
 func (g guarded) send(in []raw) (int, error) {
-	releases := true
-	for _, r := range in {
-		if _, down, ok := identify(r); !ok || down {
-			releases = false
-		}
+	target := g.target()
+	if fg := foregroundWindow(); fg != target {
+		g.t.Errorf("the foreground window is %#x %q, not the target %#x; %d inputs were not sent", fg, windowTitle(fg), target, len(in))
+		return 0, errNotTarget
 	}
-	if releases {
-		return g.sys.send(in)
-	}
-	if fg := foregroundWindow(); fg != g.f.hwnd {
-		g.f.t.Errorf("the foreground window is %#x %q, not the fixture; %d inputs were not sent", fg, windowTitle(fg), len(in))
-		return 0, errNotFixture
-	}
-	client := g.f.clientRect()
 	for _, r := range in {
 		if !r.mouse {
 			continue
@@ -292,22 +294,33 @@ func (g guarded) send(in []raw) (int, error) {
 			vs := g.sys.virtualScreen()
 			x, y = vs.x+int(int64(r.dx)*int64(vs.w)>>16), vs.y+int(int64(r.dy)*int64(vs.h)>>16)
 		}
-		if !client.contains(x, y) {
-			g.f.t.Errorf("mouse input at (%d,%d) is outside the fixture's client area %+v; %d inputs were not sent", x, y, client, len(in))
-			return 0, errNotFixture
+		if g.client != nil && !g.client().contains(x, y) {
+			g.t.Errorf("mouse input at (%d,%d) is outside the target's client area %+v; %d inputs were not sent", x, y, g.client(), len(in))
+			return 0, errNotTarget
+		}
+		if r.flags&(mouseeventfLeftDown|mouseeventfRightDown|mouseeventfMiddleDown|mouseeventfXDown) != 0 {
+			if root := rootAt(int32(x), int32(y)); root != target {
+				g.t.Errorf("a button press at (%d,%d) is over %#x %q, not the target; not sent", x, y, root, windowTitle(root))
+				return 0, errNotTarget
+			}
 		}
 	}
-	return g.sys.send(in)
+	n, err := g.sys.send(in)
+	if fg := foregroundWindow(); fg != target {
+		g.t.Errorf("the foreground window became %#x %q during a send; failing hard", fg, windowTitle(fg))
+		return n, errNotTarget
+	}
+	return n, err
 }
 
-func (g guarded) virtualScreen() rect              { return g.sys.virtualScreen() }
-func (g guarded) keyScan(vk uint16) (uint16, bool) { return g.sys.keyScan(vk) }
-func (g guarded) foregroundAbove() bool            { return g.sys.foregroundAbove() }
-func (g guarded) clipboard() clipboardAccess       { return g.sys.clipboard() }
-func (g guarded) drain(d time.Duration) error      { return g.sys.drain(d) }
-func (f *fixture) logger() *log.Logger             { return log.New(testWriter{f.t}, "", 0) }
+func (g guarded) virtualScreen() rect                              { return g.sys.virtualScreen() }
+func (g guarded) keyScan(vk uint16) (uint16, bool)                 { return g.sys.keyScan(vk) }
+func (g guarded) foregroundAbove() bool                            { return g.sys.foregroundAbove() }
+func (g guarded) clipboard() clipboardAccess                       { return g.sys.clipboard() }
+func (g guarded) drain(ctx context.Context, d time.Duration) error { return g.sys.drain(ctx, d) }
+func (f *fixture) logger() *log.Logger                             { return log.New(testWriter{f.t}, "", 0) }
 func (f *fixture) injector() *Injector {
-	return newInjector(guarded{f: f}, Options{Logger: f.logger()})
+	return newInjector(guarded{t: f.t, target: func() uintptr { return f.hwnd }, client: f.clientRect}, Options{Logger: f.logger()})
 }
 func (w testWriter) Write(p []byte) (int, error) {
 	w.t.Log(strings.TrimSpace(string(p)))
@@ -393,6 +406,10 @@ func TestInputInSessionZeroIsUnavailable(t *testing.T) {
 	if os.Getenv("SSH_CONNECTION") == "" {
 		t.Skip("needs a process started by sshd, which runs in Session 0; run scripts/wintest.sh --ssh")
 	}
+	info, err := session.Current()
+	if err != nil || info.SessionID != 0 {
+		t.Fatalf("this process is in session %d (%v), not Session 0; run scripts/wintest.sh --ssh", info.SessionID, err)
+	}
 	j := New(Options{Logger: log.New(testWriter{t}, "", 0)})
 	for _, ev := range []wire.InputEvent{keyDown(1, 0, 0x2A), {Seq: 2, K: "move", X: 1, Y: 1}, {Seq: 3, K: "text", Text: "a"}} {
 		ack := j.Apply(ev)
@@ -436,24 +453,35 @@ func TestFixtureReceivesALongTextWhole(t *testing.T) {
 	f := startFixture(t)
 	j := f.injector()
 	var b strings.Builder
-	for i := 0; utf8.RuneCountInString(b.String()) < 15*chunkChars; i++ {
+	for i := 0; utf8.RuneCountInString(b.String()) < 20*chunkChars; i++ {
 		fmt.Fprintf(&b, "%d가", i)
 		if i%50 == 0 {
 			b.WriteString("😀")
 		}
 	}
 	text := b.String()
-	cpu0 := f.cpuTime()
+	cpu0, self0 := f.cpuTime(), selfCPUTime(t)
 	start := time.Now()
 	mustOK(t, j.Apply(wire.InputEvent{Seq: 1, K: "text", Text: text}))
 	sent := time.Since(start)
-	cpu := f.cpuTime() - cpu0
+	cpu, self := f.cpuTime()-cpu0, selfCPUTime(t)-self0
 	got := f.settledValue("Message", 30*time.Second)
 	if got != text {
 		t.Fatalf("the Message box holds %d characters, want the %d sent (first difference at %d)", utf8.RuneCountInString(got),
 			utf8.RuneCountInString(text), firstDifference(got, text))
 	}
-	t.Logf("%d characters sent in %s and received whole; the fixture used %s of CPU time meanwhile", utf8.RuneCountInString(text), sent, cpu)
+	t.Logf("%d characters sent in %s and received whole; the fixture used %s of CPU and the agent %s of CPU (drain polling) meanwhile",
+		utf8.RuneCountInString(text), sent, cpu, self)
+}
+
+// selfCPUTime returns the processor time this process has used.
+func selfCPUTime(t *testing.T) time.Duration {
+	var c, e, k, u windows.Filetime
+	if err := windows.GetProcessTimes(windows.CurrentProcess(), &c, &e, &k, &u); err != nil {
+		t.Fatal(err)
+	}
+	ticks := func(ft windows.Filetime) int64 { return int64(ft.HighDateTime)<<32 | int64(ft.LowDateTime) }
+	return time.Duration((ticks(k) + ticks(u)) * 100)
 }
 
 func firstDifference(a, b string) int {
@@ -464,6 +492,111 @@ func firstDifference(a, b string) int {
 		}
 	}
 	return min(len(ra), len(rb))
+}
+
+type winInfo struct {
+	hwnd         uintptr
+	class, title string
+}
+
+// topLevelWindows lists the visible top-level windows with a title.
+func topLevelWindows() []winInfo {
+	var out []winInfo
+	cb := syscall.NewCallback(func(hwnd, _ uintptr) uintptr {
+		if v, _, _ := procIsWindowVisible.Call(hwnd); v != 0 {
+			if title := windowTitle(hwnd); title != "" {
+				out = append(out, winInfo{hwnd, windowClass(hwnd), title})
+			}
+		}
+		return 1
+	})
+	procEnumWindows.Call(cb, 0)
+	return out
+}
+
+// findWindowByTitle returns the first visible top-level window whose title
+// contains substr.
+func findWindowByTitle(substr string) uintptr {
+	var found uintptr
+	cb := syscall.NewCallback(func(hwnd, _ uintptr) uintptr {
+		if v, _, _ := procIsWindowVisible.Call(hwnd); v == 0 {
+			return 1
+		}
+		if strings.Contains(windowTitle(hwnd), substr) {
+			found = hwnd
+			return 0
+		}
+		return 1
+	})
+	procEnumWindows.Call(cb, 0)
+	return found
+}
+
+func TestDrainKeepsTypingIntoANonGUIConsoleWindow(t *testing.T) {
+	needsUserSession(t)
+	shell := os.Getenv("ComSpec")
+	if shell == "" {
+		shell = "cmd.exe"
+	}
+	// conhost.exe forces the classic console host, so the window is a
+	// ConsoleWindowClass window this test can find and focus, even when
+	// the default terminal is Windows Terminal.
+	conhost := filepath.Join(os.Getenv("SystemRoot"), "System32", "conhost.exe")
+	marker := fmt.Sprintf("deskhand-con-%d", time.Now().UnixNano())
+	cmd := exec.Command(conhost, shell, "/K", "title "+marker)
+	cmd.Dir = "."
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: createNewConsole}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _, _ = cmd.Process.Wait() })
+	var hwnd uintptr
+	deadline := time.Now().Add(12 * time.Second)
+	for hwnd == 0 {
+		if time.Now().After(deadline) {
+			t.Logf("open top-level windows while looking for %q:", marker)
+			for _, w := range topLevelWindows() {
+				t.Logf("  %#x class %q title %q", w.hwnd, w.class, w.title)
+			}
+			t.Skip("no classic console window appeared (the default terminal is likely Windows Terminal, which hosts consoles in its own window); the drain classification is covered by TestDrainStep*")
+		}
+		time.Sleep(100 * time.Millisecond)
+		hwnd = findWindowByTitle(marker)
+	}
+	if !tryForeground(hwnd) {
+		t.Skip("the launched console could not be brought to the foreground in this session")
+	}
+	// A console parked outside GetMessage must not be reported as not
+	// responding; drain returns without error.
+	start := time.Now()
+	if err := (windowsSystem{}).drain(context.Background(), 3*time.Second); err != nil {
+		t.Fatalf("drain reported the idle console as not responding: %v", err)
+	}
+	t.Logf("drain on the idle console window returned in %s with no error", time.Since(start))
+
+	out := "console_echo.txt"
+	_ = os.Remove(out)
+	t.Cleanup(func() { _ = os.Remove(out) })
+	body := strings.Repeat("a", 180)
+	line := fmt.Sprintf("echo %s> %s\r\n", body, out)
+	j := newInjector(guarded{t: t, target: func() uintptr { return hwnd }}, Options{Logger: log.New(testWriter{t}, "", 0)})
+	if !tryForeground(hwnd) {
+		t.Skip("the console lost the foreground before the command was typed")
+	}
+	ack := j.Apply(wire.InputEvent{Seq: 1, K: "text", Text: line})
+	if !ack.OK {
+		t.Logf("the console lost the foreground while typing (%s); the drain check above is the assertion", ack.Error)
+		return
+	}
+	for range 100 {
+		if b, err := os.ReadFile(out); err == nil && strings.Contains(string(b), body) {
+			chunks := (utf8.RuneCountInString(line) + chunkChars - 1) / chunkChars
+			t.Logf("typed a %d-char command into the console across %d chunks; it ran and wrote the file", utf8.RuneCountInString(line), chunks)
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Log("the console did not write the file in time; the drain check above is the assertion")
 }
 
 func TestPreemptionCutsALongTextAndReleasesHeldKeys(t *testing.T) {

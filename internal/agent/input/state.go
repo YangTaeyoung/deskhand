@@ -168,6 +168,13 @@ func (j *Injector) unwind(owner uint64, sent, rest []raw) {
 	for _, r := range ups[:n] {
 		j.track(owner, r)
 	}
+	for _, r := range ups[n:] {
+		if id, _, ok := identify(r); ok {
+			if h := j.held[id]; h != nil {
+				h.stale = true
+			}
+		}
+	}
 }
 
 // heldIDs returns, with mu held, the held keys and buttons match accepts,
