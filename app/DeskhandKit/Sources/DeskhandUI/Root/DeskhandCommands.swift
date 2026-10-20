@@ -4,7 +4,8 @@ import SwiftUI
 
 /// Menu bar commands: add a computer (⌘N), the workspace tabs (⌘1–⌘7) and inspector (⌥⌘0) in
 /// the View menu, and the 컴퓨터 menu with the control actions (emergency stop ⇧⌘.) and host
-/// actions for the selected computer.
+/// actions for the selected computer. In the files tab 제거… has no shortcut; ⌘⌫ there moves
+/// remote files to the recycle bin.
 public struct DeskhandCommands: Commands {
     let store: AppStore
 
@@ -37,7 +38,7 @@ public struct DeskhandCommands: Commands {
                 }
                 Divider()
                 Button(String.ui("action.remove", "제거…")) { store.pendingRemoval = host }
-                    .keyboardShortcut(.delete, modifiers: [.command])
+                    .keyboardShortcut(store.layout.tab == .files ? nil : KeyboardShortcut(.delete, modifiers: [.command]))
             } else {
                 Button(ControlActions.Action.stop.title) {}
                     .keyboardShortcut(".", modifiers: [.command, .shift])

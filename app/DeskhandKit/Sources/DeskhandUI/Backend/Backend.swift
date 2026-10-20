@@ -5,7 +5,7 @@ import struct DeskhandClient.Host
 /// Everything the screens ask of the daemon, grouped by feature. A feature adds its own
 /// protocol below and joins it to this list; `LiveBackend` and `PreviewBackend` implement each
 /// feature protocol in their own extension.
-public protocol Backend: BackendLifecycle, HostsBackend, ControlBackend, TimelineBackend, EventsBackend, ScreenBackend {}
+public protocol Backend: BackendLifecycle, HostsBackend, ControlBackend, TimelineBackend, EventsBackend, ScreenBackend, FilesBackend {}
 
 public protocol BackendLifecycle: Sendable {
     /// Makes the daemon reachable and says hello. Throws `ClientError.daemonUnavailable` when the
@@ -52,6 +52,33 @@ public protocol ScreenBackend: Sendable {
     func screenAttach(hostID: String, display: Int, preset: StreamPreset) async throws -> any ScreenStream
 }
 
+/// `files.*`, `app.launch` and `transfer.*` (local-api.md §3). Calls that change remote state
+/// throw `OperationError` when their envelope reports a failure or an unknown outcome.
+public protocol FilesBackend: Sendable {
+    /// One page of the folder at `path`: at most `limit` entries after `cursor`.
+    func filesList(hostID: String, path: String, cursor: String?, limit: Int) async throws -> FileEntryPage
+    func filesStat(hostID: String, path: String) async throws -> FileEntry
+    func filesMkdir(hostID: String, path: String) async throws
+    func filesRename(hostID: String, from: String, to: String) async throws
+    /// Moves `path` to the remote computer's recycle bin.
+    func filesTrash(hostID: String, path: String) async throws
+    /// Deletes `path` permanently (`permanent: true`).
+    func filesDelete(hostID: String, path: String) async throws
+    /// Starts `path` on the remote computer in the signed-in user's session.
+    func appLaunch(hostID: String, path: String) async throws
+    /// Starts a transfer and returns its `transfer_id`; progress arrives as `transfer.updated` events.
+    func transferStart(_ request: TransferRequest) async throws -> String
+    /// Transfers of `hostID`, newest first.
+    func transferList(hostID: String) async throws -> [Transfer]
+    func transferGet(transferID: String) async throws -> Transfer
+    /// Stops a running transfer, keeping the finished files and verified chunks.
+    func transferPause(transferID: String) async throws -> Transfer
+    /// Continues a paused, failed or cancelled transfer from its verified chunks.
+    func transferResume(transferID: String) async throws -> Transfer
+    /// Stops a transfer; finished files stay at the destination.
+    func transferCancel(transferID: String) async throws -> Transfer
+}
+
 /// A binary frame connection opened by `stream.attach`.
 public protocol ScreenStream: AnyObject, Sendable {
     /// Frames from the daemon in arrival order.
@@ -91,6 +118,8 @@ public enum EventKind {
     public static let displayChanged = "display.changed"
     /// `name`, `step`, `status`, `detail?`, `error?{code, message, next_action?}`.
     public static let installProgress = "host.install.progress"
+    /// `transfer` (Transfer).
+    public static let transferUpdated = "transfer.updated"
 
     /// Every kind `AppStore` subscribes to.
     public static let storeKinds = [
@@ -247,6 +276,16 @@ public struct OperationError: Error, Sendable, Equatable {
             .ui("fix.capabilityUnsupported", "원격 PC의 에이전트를 최신 버전으로 업데이트한 뒤 다시 시도하세요.")
         case "IN_PROGRESS":
             .ui("fix.inProgress", "같은 작업이 이미 진행 중입니다. 끝난 뒤 다시 시도하세요.")
+        case "DISK_FULL":
+            .ui("fix.diskFull", "대상 디스크의 공간을 확보한 뒤 이어서 보내세요.")
+        case "HASH_MISMATCH":
+            .ui("fix.hashMismatch", "보내는 동안 원본이 바뀌었습니다. 원본을 확인하고 다시 보내세요.")
+        case "TRANSFER_CONFLICT":
+            .ui("fix.transferConflict", "같은 이름의 항목이 있습니다. 바꾸기·건너뛰기·둘 다 유지 중 하나를 골라 다시 보내세요.")
+        case "NOT_FOUND":
+            .ui("fix.notFound", "목록을 새로 고친 뒤 다시 시도하세요.")
+        case "EXECUTION_OUTCOME_UNKNOWN":
+            .ui("fix.outcomeUnknown", "실행됐는지 확인하지 못했습니다. 목록을 새로 고쳐 실제 상태를 확인하세요.")
         default:
             nil
         }

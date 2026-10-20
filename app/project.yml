@@ -48,6 +48,11 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: Deskhand
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
         INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright © 2026 YangTaeyoung"
+        INFOPLIST_KEY_NSDesktopFolderUsageDescription: "파일 탭에서 데스크탑 폴더의 파일을 보여 주고 원격 PC와 주고받으려면 접근 권한이 필요합니다."
+        INFOPLIST_KEY_NSDocumentsFolderUsageDescription: "파일 탭에서 문서 폴더의 파일을 보여 주고 원격 PC와 주고받으려면 접근 권한이 필요합니다."
+        INFOPLIST_KEY_NSDownloadsFolderUsageDescription: "파일 탭에서 다운로드 폴더의 파일을 보여 주고 원격 PC와 주고받으려면 접근 권한이 필요합니다."
+        INFOPLIST_KEY_NSRemovableVolumesUsageDescription: "파일 탭에서 외장 디스크의 파일을 보여 주고 원격 PC와 주고받으려면 접근 권한이 필요합니다."
+        INFOPLIST_KEY_NSNetworkVolumesUsageDescription: "파일 탭에서 네트워크 볼륨의 파일을 보여 주고 원격 PC와 주고받으려면 접근 권한이 필요합니다."
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         DEAD_CODE_STRIPPING: YES

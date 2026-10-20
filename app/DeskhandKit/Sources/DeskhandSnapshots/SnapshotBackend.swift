@@ -4,8 +4,9 @@ import Foundation
 import struct DeskhandClient.Host
 
 /// `Backend` for snapshot scenes. Control and timeline reads return exactly what the scene
-/// seeded; a timeline can stay pending or fail, and control changes can fail. Everything else
-/// goes to a `PreviewBackend`.
+/// seeded; a timeline can stay pending or fail, and control changes can fail. File changes and
+/// transfers do nothing, since scenes seed the files tab. Everything else goes to a
+/// `PreviewBackend`.
 final class SnapshotBackend: Backend {
     enum TimelineReply: Sendable {
         case entries([TimelineEntry])
@@ -77,6 +78,23 @@ final class SnapshotBackend: Backend {
     func events(kinds: [String]?, hostID: String?) -> AsyncThrowingStream<DaemonEvent, Error> {
         AsyncThrowingStream { _ in }
     }
+
+    func filesList(hostID: String, path: String, cursor: String?, limit: Int) async throws -> FileEntryPage {
+        try await base.filesList(hostID: hostID, path: path, cursor: cursor, limit: limit)
+    }
+
+    func filesStat(hostID: String, path: String) async throws -> FileEntry { try await base.filesStat(hostID: hostID, path: path) }
+    func filesMkdir(hostID: String, path: String) async throws {}
+    func filesRename(hostID: String, from: String, to: String) async throws {}
+    func filesTrash(hostID: String, path: String) async throws {}
+    func filesDelete(hostID: String, path: String) async throws {}
+    func appLaunch(hostID: String, path: String) async throws {}
+    func transferStart(_ request: TransferRequest) async throws -> String { throw ClientError.notConnected }
+    func transferList(hostID: String) async throws -> [Transfer] { [] }
+    func transferGet(transferID: String) async throws -> Transfer { throw ClientError.notConnected }
+    func transferPause(transferID: String) async throws -> Transfer { throw ClientError.notConnected }
+    func transferResume(transferID: String) async throws -> Transfer { throw ClientError.notConnected }
+    func transferCancel(transferID: String) async throws -> Transfer { throw ClientError.notConnected }
 
     /// Throws; scenes draw the screen with `ScreenStandIn`.
     func screenAttach(hostID: String, display: Int, preset: StreamPreset) async throws -> any ScreenStream {

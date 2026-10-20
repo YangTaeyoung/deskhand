@@ -25,6 +25,17 @@
         }
       }
     },
+    "a11y.collapsed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "접힘"
+          }
+        }
+      }
+    },
     "a11y.connectionState": {
       "comment": "VoiceOver label of a status dot",
       "extractionState": "manual",
@@ -81,6 +92,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$@, %2$@"
+          }
+        }
+      }
+    },
+    "a11y.expanded": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "펼침"
           }
         }
       }
@@ -901,6 +923,237 @@
         }
       }
     },
+    "column.kind": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "종류"
+          }
+        }
+      }
+    },
+    "column.modified": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "수정한 날짜"
+          }
+        }
+      }
+    },
+    "column.name": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이름"
+          }
+        }
+      }
+    },
+    "column.size": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "크기"
+          }
+        }
+      }
+    },
+    "conflict.applyToAll": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "남은 충돌 %@개에도 같은 선택 적용"
+          }
+        }
+      }
+    },
+    "conflict.existing": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미 있는 항목"
+          }
+        }
+      }
+    },
+    "conflict.folderNote": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "폴더는 안의 파일마다 같은 이름이 있을 때 이 선택을 적용합니다."
+          }
+        }
+      }
+    },
+    "conflict.incoming": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보내는 항목"
+          }
+        }
+      }
+    },
+    "conflict.keepBoth": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "둘 다 유지"
+          }
+        }
+      }
+    },
+    "conflict.keepBoth.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보내는 항목을 ‘%@’처럼 다른 이름으로 저장합니다."
+          }
+        }
+      }
+    },
+    "conflict.newer": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "더 최근"
+          }
+        }
+      }
+    },
+    "conflict.remaining": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "충돌 %@개 남음"
+          }
+        }
+      }
+    },
+    "conflict.replace": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "바꾸기"
+          }
+        }
+      }
+    },
+    "conflict.replace.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 사본을 SHA-256으로 확인한 뒤 기존 항목을 바꿉니다."
+          }
+        }
+      }
+    },
+    "conflict.skip": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "건너뛰기"
+          }
+        }
+      }
+    },
+    "conflict.skip.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 항목은 보내지 않고 기록만 남깁니다."
+          }
+        }
+      }
+    },
+    "conflict.stop": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중단"
+          }
+        }
+      }
+    },
+    "conflict.stop.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 항목과 남은 충돌 항목을 모두 보내지 않습니다."
+          }
+        }
+      }
+    },
+    "conflict.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@의 ‘%2$@’ 폴더에 같은 이름의 항목이 있습니다. 어떻게 할까요?"
+          }
+        }
+      }
+    },
+    "conflict.title.file": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’ 파일이 이미 있습니다"
+          }
+        }
+      }
+    },
+    "conflict.title.folder": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’ 폴더가 이미 있습니다"
+          }
+        }
+      }
+    },
     "connection.blocked": {
       "comment": "Connection state",
       "extractionState": "manual",
@@ -1245,6 +1498,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "데몬을 시작할 수 없습니다"
+          }
+        }
+      }
+    },
+    "date.today": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오늘 %@"
+          }
+        }
+      }
+    },
+    "date.yesterday": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "어제 %@"
           }
         }
       }
@@ -1789,6 +2064,17 @@
         }
       }
     },
+    "error.outcomeUnknown": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 PC에서 실행됐는지 확인하지 못했습니다"
+          }
+        }
+      }
+    },
     "error.protocol": {
       "comment": "Error message: protocol",
       "extractionState": "manual",
@@ -1825,6 +2111,1062 @@
         }
       }
     },
+    "eta.about": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "약 %@"
+          }
+        }
+      }
+    },
+    "files.a11y.crumbHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 폴더를 엽니다"
+          }
+        }
+      }
+    },
+    "files.a11y.localPane": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Mac 패널"
+          }
+        }
+      }
+    },
+    "files.a11y.localTable": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Mac의 파일 목록"
+          }
+        }
+      }
+    },
+    "files.a11y.path": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "경로: %@"
+          }
+        }
+      }
+    },
+    "files.a11y.remotePane": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 PC 패널"
+          }
+        }
+      }
+    },
+    "files.a11y.remoteTable": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@의 파일 목록"
+          }
+        }
+      }
+    },
+    "files.back": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "뒤로 (⌘[)"
+          }
+        }
+      }
+    },
+    "files.busy.delete": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "영구 삭제하는 중…"
+          }
+        }
+      }
+    },
+    "files.busy.mkdir": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "폴더를 만드는 중…"
+          }
+        }
+      }
+    },
+    "files.busy.rename": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이름을 바꾸는 중…"
+          }
+        }
+      }
+    },
+    "files.busy.trash": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "휴지통으로 옮기는 중…"
+          }
+        }
+      }
+    },
+    "files.conflict.stopped": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "같은 이름이 있는 %@개 항목을 보내지 않았습니다"
+          }
+        }
+      }
+    },
+    "files.copiedPath": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "경로를 복사했습니다"
+          }
+        }
+      }
+    },
+    "files.copiedPaths": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "경로 %@개를 복사했습니다"
+          }
+        }
+      }
+    },
+    "files.delete.confirm": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "영구 삭제"
+          }
+        }
+      }
+    },
+    "files.delete.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@의 휴지통을 거치지 않고 바로 지웁니다. 이 작업은 되돌릴 수 없습니다."
+          }
+        }
+      }
+    },
+    "files.delete.titleMany": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@개 항목을 영구 삭제할까요?"
+          }
+        }
+      }
+    },
+    "files.delete.titleOne": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’을(를) 영구 삭제할까요?"
+          }
+        }
+      }
+    },
+    "files.deleted": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@개 항목을 영구 삭제했습니다"
+          }
+        }
+      }
+    },
+    "files.drop.moveBadge": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이동"
+          }
+        }
+      }
+    },
+    "files.drop.moveDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "확인이 끝난 뒤에만 %@의 원본을 지웁니다"
+          }
+        }
+      }
+    },
+    "files.drop.receive": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Mac의 ‘%1$@’ 폴더에 %2$@개 받기"
+          }
+        }
+      }
+    },
+    "files.drop.receiveMove": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Mac의 ‘%1$@’ 폴더로 %2$@개 이동"
+          }
+        }
+      }
+    },
+    "files.drop.send": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@의 ‘%2$@’ 폴더에 %3$@개 보내기"
+          }
+        }
+      }
+    },
+    "files.drop.sendMove": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@의 ‘%2$@’ 폴더로 %3$@개 이동"
+          }
+        }
+      }
+    },
+    "files.empty.local": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 패널에서 파일을 끌어다 놓으면 이 폴더로 받습니다."
+          }
+        }
+      }
+    },
+    "files.empty.remote": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Mac 패널이나 Finder에서 파일을 끌어다 놓으면 여기에 보냅니다."
+          }
+        }
+      }
+    },
+    "files.empty.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "빈 폴더"
+          }
+        }
+      }
+    },
+    "files.error.delete": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’을(를) 삭제하지 못했습니다"
+          }
+        }
+      }
+    },
+    "files.error.launch": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’을(를) 열지 못했습니다"
+          }
+        }
+      }
+    },
+    "files.error.mkdir": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’ 폴더를 만들지 못했습니다"
+          }
+        }
+      }
+    },
+    "files.error.more": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 외 %2$@개"
+          }
+        }
+      }
+    },
+    "files.error.rename": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’의 이름을 바꾸지 못했습니다"
+          }
+        }
+      }
+    },
+    "files.error.transferStart": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’ 전송을 시작하지 못했습니다"
+          }
+        }
+      }
+    },
+    "files.error.trash": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’을(를) 휴지통으로 옮기지 못했습니다"
+          }
+        }
+      }
+    },
+    "files.fix.localPermission": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "시스템 설정 › 개인정보 보호 및 보안 › 파일 및 폴더에서 Deskhand의 접근을 허용하세요."
+          }
+        }
+      }
+    },
+    "files.forward": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앞으로 (⌘])"
+          }
+        }
+      }
+    },
+    "files.goTo": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "경로로 이동"
+          }
+        }
+      }
+    },
+    "files.goTo.go": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이동"
+          }
+        }
+      }
+    },
+    "files.goTo.prompt": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "경로"
+          }
+        }
+      }
+    },
+    "files.goTo.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "폴더로 이동"
+          }
+        }
+      }
+    },
+    "files.goUp": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "상위 폴더로"
+          }
+        }
+      }
+    },
+    "files.launched": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@에서 ‘%2$@’을(를) 열었습니다"
+          }
+        }
+      }
+    },
+    "files.loading": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "폴더를 여는 중…"
+          }
+        }
+      }
+    },
+    "files.menu.copyFolderPath": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 폴더 경로 복사"
+          }
+        }
+      }
+    },
+    "files.menu.copyPath": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "경로 복사"
+          }
+        }
+      }
+    },
+    "files.menu.delete": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "영구 삭제…"
+          }
+        }
+      }
+    },
+    "files.menu.info": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "정보"
+          }
+        }
+      }
+    },
+    "files.menu.launch": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격에서 열기"
+          }
+        }
+      }
+    },
+    "files.menu.newFolder": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 폴더"
+          }
+        }
+      }
+    },
+    "files.menu.open": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "열기"
+          }
+        }
+      }
+    },
+    "files.menu.openLog": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그로 열기"
+          }
+        }
+      }
+    },
+    "files.menu.receive": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Mac으로 받기"
+          }
+        }
+      }
+    },
+    "files.menu.receiveMove": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Mac으로 이동…"
+          }
+        }
+      }
+    },
+    "files.menu.refresh": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새로 고침"
+          }
+        }
+      }
+    },
+    "files.menu.rename": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이름 바꾸기"
+          }
+        }
+      }
+    },
+    "files.menu.send": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 PC로 보내기"
+          }
+        }
+      }
+    },
+    "files.menu.sendMove": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 PC로 이동…"
+          }
+        }
+      }
+    },
+    "files.menu.showInFinder": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finder에서 보기"
+          }
+        }
+      }
+    },
+    "files.menu.trash": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "휴지통으로 이동"
+          }
+        }
+      }
+    },
+    "files.newFolderName": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 폴더"
+          }
+        }
+      }
+    },
+    "files.openPrivacy": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "개인정보 보호 설정 열기"
+          }
+        }
+      }
+    },
+    "files.options": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보기 옵션"
+          }
+        }
+      }
+    },
+    "files.page.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "나머지를 불러오지 못했습니다"
+          }
+        }
+      }
+    },
+    "files.places": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "자주 쓰는 위치"
+          }
+        }
+      }
+    },
+    "files.receive": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "받기"
+          }
+        }
+      }
+    },
+    "files.receive.a11y": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택한 항목을 이 Mac으로 받기"
+          }
+        }
+      }
+    },
+    "files.receive.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택한 항목을 이 Mac의 열린 폴더로 받습니다. ⌥를 누른 채 누르면 이동합니다."
+          }
+        }
+      }
+    },
+    "files.refreshing": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새로 고치는 중…"
+          }
+        }
+      }
+    },
+    "files.remote.blocked": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 페어링해야 합니다"
+          }
+        }
+      }
+    },
+    "files.remote.blockedMessage": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트 인증서가 페어링 때와 달라 연결을 막았습니다. 위 배너에서 다시 페어링한 뒤 파일을 열 수 있습니다."
+          }
+        }
+      }
+    },
+    "files.remote.connecting": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에 연결하는 중…"
+          }
+        }
+      }
+    },
+    "files.remote.offline": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결되어 있지 않습니다"
+          }
+        }
+      }
+    },
+    "files.remote.offlineMessage": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "위 배너의 ‘연결’로 %@에 연결하면 원격 폴더를 열고 파일을 주고받을 수 있습니다."
+          }
+        }
+      }
+    },
+    "files.remote.reconnecting": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에 다시 연결하는 중…"
+          }
+        }
+      }
+    },
+    "files.remote.unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 기능을 쓸 수 없습니다"
+          }
+        }
+      }
+    },
+    "files.remote.unavailableMessage": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트가 파일 기능이 준비되지 않았다고 알렸습니다."
+          }
+        }
+      }
+    },
+    "files.remote.waiting": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결되면 마지막으로 보던 폴더를 엽니다. 진행 중이던 전송은 연결이 돌아오면 이어집니다."
+          }
+        }
+      }
+    },
+    "files.search.clear": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "검색어 지우기"
+          }
+        }
+      }
+    },
+    "files.search.none": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일치하는 항목이 없습니다"
+          }
+        }
+      }
+    },
+    "files.search.noneMessage": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’이(가) 들어간 이름이 이 폴더에 없습니다."
+          }
+        }
+      }
+    },
+    "files.search.prompt": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이름 검색"
+          }
+        }
+      }
+    },
+    "files.send": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보내기"
+          }
+        }
+      }
+    },
+    "files.send.a11y": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택한 항목을 원격 PC로 보내기"
+          }
+        }
+      }
+    },
+    "files.send.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택한 항목을 원격 PC의 열린 폴더로 보냅니다. ⌥를 누른 채 누르면 이동합니다."
+          }
+        }
+      }
+    },
+    "files.showHidden": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "숨김 항목 보기"
+          }
+        }
+      }
+    },
+    "files.side.local": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Mac"
+          }
+        }
+      }
+    },
+    "files.status.items": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "항목 %@개"
+          }
+        }
+      }
+    },
+    "files.status.matches": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "검색 결과 %@개"
+          }
+        }
+      }
+    },
+    "files.status.paging": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@개 중 %2$@개 표시 · 스크롤하면 더 불러옵니다"
+          }
+        }
+      }
+    },
+    "files.status.selected": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@개 선택됨"
+          }
+        }
+      }
+    },
+    "files.status.selectedSize": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@개 선택됨 · %2$@"
+          }
+        }
+      }
+    },
+    "files.trashed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@개 항목을 휴지통으로 옮겼습니다"
+          }
+        }
+      }
+    },
+    "files.truncated": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트가 일부 항목만 보냈습니다"
+          }
+        }
+      }
+    },
+    "files.up": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "상위 폴더 (⌘↑)"
+          }
+        }
+      }
+    },
     "fix.authRequired": {
       "comment": "How to fix the error code: auth required",
       "extractionState": "manual",
@@ -1849,6 +3191,17 @@
         }
       }
     },
+    "fix.diskFull": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대상 디스크의 공간을 확보한 뒤 이어서 보내세요."
+          }
+        }
+      }
+    },
     "fix.elevation": {
       "comment": "How to fix the error code: elevation",
       "extractionState": "manual",
@@ -1857,6 +3210,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "관리자 계정의 SSH 별칭으로 다시 시도하세요."
+          }
+        }
+      }
+    },
+    "fix.hashMismatch": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보내는 동안 원본이 바뀌었습니다. 원본을 확인하고 다시 보내세요."
           }
         }
       }
@@ -1873,6 +3237,17 @@
         }
       }
     },
+    "fix.notFound": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "목록을 새로 고친 뒤 다시 시도하세요."
+          }
+        }
+      }
+    },
     "fix.offline": {
       "comment": "How to fix the error code: offline",
       "extractionState": "manual",
@@ -1881,6 +3256,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "컴퓨터가 켜져 있고 같은 네트워크나 VPN에 있는지 확인하세요."
+          }
+        }
+      }
+    },
+    "fix.outcomeUnknown": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행됐는지 확인하지 못했습니다. 목록을 새로 고쳐 실제 상태를 확인하세요."
           }
         }
       }
@@ -1905,6 +3291,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "원격 컴퓨터에서 로그인하거나 잠금을 해제하세요."
+          }
+        }
+      }
+    },
+    "fix.transferConflict": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "같은 이름의 항목이 있습니다. 바꾸기·건너뛰기·둘 다 유지 중 하나를 골라 다시 보내세요."
           }
         }
       }
@@ -2461,6 +3858,127 @@
         }
       }
     },
+    "info.attributes": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "속성"
+          }
+        }
+      }
+    },
+    "info.computer": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "컴퓨터"
+          }
+        }
+      }
+    },
+    "info.hidden": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "숨김"
+          }
+        }
+      }
+    },
+    "info.link": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "링크"
+          }
+        }
+      }
+    },
+    "info.loading": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최신 정보를 읽는 중"
+          }
+        }
+      }
+    },
+    "info.location": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "위치"
+          }
+        }
+      }
+    },
+    "info.modified": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "수정한 날짜"
+          }
+        }
+      }
+    },
+    "info.none": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "없음"
+          }
+        }
+      }
+    },
+    "info.readOnly": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "읽기 전용"
+          }
+        }
+      }
+    },
+    "info.size": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "크기"
+          }
+        }
+      }
+    },
+    "info.statFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최신 정보를 읽지 못해 목록의 정보를 보여 줍니다: %@"
+          }
+        }
+      }
+    },
     "inspector.activity": {
       "comment": "Inspector pane: timeline of actions",
       "extractionState": "manual",
@@ -2665,6 +4183,644 @@
         }
       }
     },
+    "kind.7z": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "7-Zip 압축 파일"
+          }
+        }
+      }
+    },
+    "kind.archive": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "압축 파일"
+          }
+        }
+      }
+    },
+    "kind.audio": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오디오"
+          }
+        }
+      }
+    },
+    "kind.backup": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "백업 파일"
+          }
+        }
+      }
+    },
+    "kind.bat": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "배치 파일"
+          }
+        }
+      }
+    },
+    "kind.code": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "소스 코드"
+          }
+        }
+      }
+    },
+    "kind.config": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정 파일"
+          }
+        }
+      }
+    },
+    "kind.cs": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "C# 소스"
+          }
+        }
+      }
+    },
+    "kind.csproj": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "C# 프로젝트"
+          }
+        }
+      }
+    },
+    "kind.csv": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CSV 문서"
+          }
+        }
+      }
+    },
+    "kind.data": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "데이터 파일"
+          }
+        }
+      }
+    },
+    "kind.database": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "데이터베이스"
+          }
+        }
+      }
+    },
+    "kind.diskImage": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "디스크 이미지"
+          }
+        }
+      }
+    },
+    "kind.dll": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "응용 프로그램 확장"
+          }
+        }
+      }
+    },
+    "kind.document": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "문서"
+          }
+        }
+      }
+    },
+    "kind.dump": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "크래시 덤프"
+          }
+        }
+      }
+    },
+    "kind.etl": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이벤트 추적 로그"
+          }
+        }
+      }
+    },
+    "kind.evtx": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windows 이벤트 로그"
+          }
+        }
+      }
+    },
+    "kind.excel": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Excel 통합 문서"
+          }
+        }
+      }
+    },
+    "kind.exe": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "응용 프로그램"
+          }
+        }
+      }
+    },
+    "kind.ext": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 파일"
+          }
+        }
+      }
+    },
+    "kind.folder": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "폴더"
+          }
+        }
+      }
+    },
+    "kind.html": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTML 문서"
+          }
+        }
+      }
+    },
+    "kind.hwp": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "한글 문서"
+          }
+        }
+      }
+    },
+    "kind.image": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미지"
+          }
+        }
+      }
+    },
+    "kind.internetShortcut": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "인터넷 바로 가기"
+          }
+        }
+      }
+    },
+    "kind.jpeg": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "JPEG 이미지"
+          }
+        }
+      }
+    },
+    "kind.js": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "JavaScript 소스"
+          }
+        }
+      }
+    },
+    "kind.json": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "JSON 문서"
+          }
+        }
+      }
+    },
+    "kind.log": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그 파일"
+          }
+        }
+      }
+    },
+    "kind.md": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markdown 문서"
+          }
+        }
+      }
+    },
+    "kind.msi": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windows 설치 프로그램"
+          }
+        }
+      }
+    },
+    "kind.msix": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱 패키지"
+          }
+        }
+      }
+    },
+    "kind.package": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "패키지"
+          }
+        }
+      }
+    },
+    "kind.pdf": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PDF 문서"
+          }
+        }
+      }
+    },
+    "kind.pkg": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설치 패키지"
+          }
+        }
+      }
+    },
+    "kind.png": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PNG 이미지"
+          }
+        }
+      }
+    },
+    "kind.powerpoint": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PowerPoint 프레젠테이션"
+          }
+        }
+      }
+    },
+    "kind.ps1": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PowerShell 스크립트"
+          }
+        }
+      }
+    },
+    "kind.py": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Python 스크립트"
+          }
+        }
+      }
+    },
+    "kind.rtf": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "서식 있는 텍스트"
+          }
+        }
+      }
+    },
+    "kind.sh": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "셸 스크립트"
+          }
+        }
+      }
+    },
+    "kind.shortcut": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "바로 가기"
+          }
+        }
+      }
+    },
+    "kind.sln": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Visual Studio 솔루션"
+          }
+        }
+      }
+    },
+    "kind.svg": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SVG 이미지"
+          }
+        }
+      }
+    },
+    "kind.sys": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "시스템 파일"
+          }
+        }
+      }
+    },
+    "kind.temp": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "임시 파일"
+          }
+        }
+      }
+    },
+    "kind.ts": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TypeScript 소스"
+          }
+        }
+      }
+    },
+    "kind.txt": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "텍스트 문서"
+          }
+        }
+      }
+    },
+    "kind.video": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "동영상"
+          }
+        }
+      }
+    },
+    "kind.word": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Word 문서"
+          }
+        }
+      }
+    },
+    "kind.xml": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "XML 문서"
+          }
+        }
+      }
+    },
+    "kind.yaml": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "YAML 문서"
+          }
+        }
+      }
+    },
+    "kind.zip": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ZIP 압축 파일"
+          }
+        }
+      }
+    },
+    "local.error.missing": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’ 폴더가 없습니다"
+          }
+        }
+      }
+    },
+    "local.error.permission": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’ 폴더를 읽을 권한이 없습니다"
+          }
+        }
+      }
+    },
+    "local.error.read": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%1$@’ 폴더를 읽지 못했습니다: %2$@"
+          }
+        }
+      }
+    },
+    "logs.selected": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "열 파일"
+          }
+        }
+      }
+    },
     "menu.addHost": {
       "comment": "Menu bar item: add host",
       "extractionState": "manual",
@@ -2733,6 +4889,94 @@
           "stringUnit": {
             "state": "translated",
             "value": "인스펙터 보기"
+          }
+        }
+      }
+    },
+    "name.dots": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘.’과 ‘..’은 이름으로 쓸 수 없습니다."
+          }
+        }
+      }
+    },
+    "name.empty": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이름을 입력하세요."
+          }
+        }
+      }
+    },
+    "name.invalidCharacters": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windows 이름에는 < > : \" / \\ | ? * 를 쓸 수 없습니다."
+          }
+        }
+      }
+    },
+    "name.reserved": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’은(는) Windows가 예약한 이름이라 쓸 수 없습니다."
+          }
+        }
+      }
+    },
+    "name.slash": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이름에는 / 를 쓸 수 없습니다."
+          }
+        }
+      }
+    },
+    "name.taken": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’ 이름의 항목이 이미 있습니다."
+          }
+        }
+      }
+    },
+    "name.tooLong": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이름은 255자를 넘을 수 없습니다."
+          }
+        }
+      }
+    },
+    "name.trailing": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windows 이름은 공백이나 마침표로 끝날 수 없습니다."
           }
         }
       }
@@ -2877,6 +5121,83 @@
           "stringUnit": {
             "state": "translated",
             "value": "연결이 끊겨 실행 여부를 확인하지 못했습니다"
+          }
+        }
+      }
+    },
+    "place.applications": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "응용 프로그램"
+          }
+        }
+      }
+    },
+    "place.desktop": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "데스크탑"
+          }
+        }
+      }
+    },
+    "place.documents": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "문서"
+          }
+        }
+      }
+    },
+    "place.downloads": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다운로드"
+          }
+        }
+      }
+    },
+    "place.drive": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 디스크 (C:)"
+          }
+        }
+      }
+    },
+    "place.home": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "홈"
+          }
+        }
+      }
+    },
+    "place.remoteDesktop": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "바탕 화면"
           }
         }
       }
@@ -3033,6 +5354,182 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld fps"
+          }
+        }
+      }
+    },
+    "queue.a11y": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전송 대기열"
+          }
+        }
+      }
+    },
+    "queue.a11y.progress": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전체 진행률"
+          }
+        }
+      }
+    },
+    "queue.clear": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "완료 항목 지우기"
+          }
+        }
+      }
+    },
+    "queue.collapse": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전송 목록 접기"
+          }
+        }
+      }
+    },
+    "queue.empty": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전송 기록이 없습니다"
+          }
+        }
+      }
+    },
+    "queue.emptyMessage": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일을 다른 패널로 끌어다 놓으면 여기에서 진행률과 결과를 확인할 수 있습니다. ⌥를 누른 채 놓으면 이동합니다."
+          }
+        }
+      }
+    },
+    "queue.expand": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전송 목록 펼치기"
+          }
+        }
+      }
+    },
+    "queue.idle": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "진행 중인 전송 없음"
+          }
+        }
+      }
+    },
+    "queue.loadFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전송 목록을 불러오지 못했습니다"
+          }
+        }
+      }
+    },
+    "queue.loading": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전송 목록을 불러오는 중…"
+          }
+        }
+      }
+    },
+    "queue.none": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전송 기록 없음"
+          }
+        }
+      }
+    },
+    "queue.summary.active": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@개 진행 중"
+          }
+        }
+      }
+    },
+    "queue.summary.attention": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "확인 필요 %@개"
+          }
+        }
+      }
+    },
+    "queue.summary.paused": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일시정지 %@개"
+          }
+        }
+      }
+    },
+    "queue.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전송"
+          }
+        }
+      }
+    },
+    "rate.perSecond": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@/s"
           }
         }
       }
@@ -4069,6 +6566,28 @@
         }
       }
     },
+    "size.exact": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@바이트"
+          }
+        }
+      }
+    },
+    "size.zero": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0바이트"
+          }
+        }
+      }
+    },
     "step.active": {
       "comment": "Step status",
       "extractionState": "manual",
@@ -4701,6 +7220,633 @@
           "stringUnit": {
             "state": "translated",
             "value": "어제"
+          }
+        }
+      }
+    },
+    "transfer.action.cancel": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "취소"
+          }
+        }
+      }
+    },
+    "transfer.action.dismiss": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "목록에서 지우기"
+          }
+        }
+      }
+    },
+    "transfer.action.pause": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일시정지"
+          }
+        }
+      }
+    },
+    "transfer.action.resume": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "재개"
+          }
+        }
+      }
+    },
+    "transfer.action.retry": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 시도"
+          }
+        }
+      }
+    },
+    "transfer.action.showDestination": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "받은 위치 보기"
+          }
+        }
+      }
+    },
+    "transfer.action.showSource": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원본 보기"
+          }
+        }
+      }
+    },
+    "transfer.bytes": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ / %2$@"
+          }
+        }
+      }
+    },
+    "transfer.eta": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 남음"
+          }
+        }
+      }
+    },
+    "transfer.eta.unknown": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "남은 시간 계산 중"
+          }
+        }
+      }
+    },
+    "transfer.explain.cancelled": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "취소했습니다. 대상에 반영된 파일은 없습니다."
+          }
+        }
+      }
+    },
+    "transfer.explain.cancelledKept": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "취소했습니다. 끝난 파일 %@개는 대상에 그대로 있습니다."
+          }
+        }
+      }
+    },
+    "transfer.explain.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전송하지 못했습니다."
+          }
+        }
+      }
+    },
+    "transfer.explain.move": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이동: 대상에서 SHA-256을 확인한 뒤에만 %@의 원본을 지웁니다."
+          }
+        }
+      }
+    },
+    "transfer.explain.moved": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대상에서 SHA-256을 확인한 뒤 %@의 원본을 지웠습니다."
+          }
+        }
+      }
+    },
+    "transfer.explain.partial": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@개 중 %2$@개를 보냈고 %3$@개는 실패했습니다. 실패한 파일은 아래 목록에 이유가 있습니다."
+          }
+        }
+      }
+    },
+    "transfer.explain.partialMove": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@개 중 %2$@개를 옮겼고 %3$@개는 실패했습니다. 실패한 파일의 원본은 지우지 않았습니다."
+          }
+        }
+      }
+    },
+    "transfer.explain.pausedBecause": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ %2$@"
+          }
+        }
+      }
+    },
+    "transfer.explain.reason": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@\n이유: %2$@"
+          }
+        }
+      }
+    },
+    "transfer.explain.renamed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대상에 같은 이름이 있어 다른 이름으로 저장했습니다."
+          }
+        }
+      }
+    },
+    "transfer.explain.resumeDown": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "재개하면 확인된 부분 다음부터 이어서 받습니다."
+          }
+        }
+      }
+    },
+    "transfer.explain.resumeUp": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "재개하면 확인된 부분 다음부터 이어서 보냅니다."
+          }
+        }
+      }
+    },
+    "transfer.explain.retained": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대상에 사본을 쓰고 SHA-256으로 확인했지만 원본을 지우지 못했습니다. 원본은 %@에 그대로 있습니다."
+          }
+        }
+      }
+    },
+    "transfer.explain.skipped": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대상에 같은 이름이 있어 보내지 않았습니다."
+          }
+        }
+      }
+    },
+    "transfer.explain.verifying": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대상에 쓴 파일의 SHA-256을 원본과 비교하고 있습니다."
+          }
+        }
+      }
+    },
+    "transfer.explain.written": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대상에 쓰고 SHA-256으로 확인했습니다."
+          }
+        }
+      }
+    },
+    "transfer.files": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 %1$@/%2$@개"
+          }
+        }
+      }
+    },
+    "transfer.filesAll": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 %@개"
+          }
+        }
+      }
+    },
+    "transfer.filesFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 %1$@개 · 실패 %2$@개"
+          }
+        }
+      }
+    },
+    "transfer.moveHelp": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대상에서 SHA-256을 확인한 뒤에만 원본을 지웁니다"
+          }
+        }
+      }
+    },
+    "transfer.outcome.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실패"
+          }
+        }
+      }
+    },
+    "transfer.outcome.partial": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일부 완료"
+          }
+        }
+      }
+    },
+    "transfer.outcome.renamed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 이름으로 저장"
+          }
+        }
+      }
+    },
+    "transfer.outcome.retained": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복사됨 · 원본 남음"
+          }
+        }
+      }
+    },
+    "transfer.outcome.skipped": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "건너뜀"
+          }
+        }
+      }
+    },
+    "transfer.outcome.written": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "완료"
+          }
+        }
+      }
+    },
+    "transfer.route.down": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ → %2$@"
+          }
+        }
+      }
+    },
+    "transfer.route.up": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ → %2$@"
+          }
+        }
+      }
+    },
+    "transfer.state.cancelled": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "취소됨"
+          }
+        }
+      }
+    },
+    "transfer.state.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실패"
+          }
+        }
+      }
+    },
+    "transfer.state.moving": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "옮기는 중"
+          }
+        }
+      }
+    },
+    "transfer.state.paused": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일시정지됨"
+          }
+        }
+      }
+    },
+    "transfer.state.queued": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대기 중"
+          }
+        }
+      }
+    },
+    "transfer.state.receiving": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "받는 중"
+          }
+        }
+      }
+    },
+    "transfer.state.sending": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보내는 중"
+          }
+        }
+      }
+    },
+    "transfer.state.verifying": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "확인 중"
+          }
+        }
+      }
+    },
+    "transferFile.cancelled": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "취소됨"
+          }
+        }
+      }
+    },
+    "transferFile.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실패"
+          }
+        }
+      }
+    },
+    "transferFile.partial": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일부"
+          }
+        }
+      }
+    },
+    "transferFile.paused": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일시정지"
+          }
+        }
+      }
+    },
+    "transferFile.queued": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대기"
+          }
+        }
+      }
+    },
+    "transferFile.renamed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 이름"
+          }
+        }
+      }
+    },
+    "transferFile.retained": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원본 남음"
+          }
+        }
+      }
+    },
+    "transferFile.sha": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SHA-256 %@…"
+          }
+        }
+      }
+    },
+    "transferFile.skipped": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "건너뜀"
+          }
+        }
+      }
+    },
+    "transferFile.verifying": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "확인 중"
+          }
+        }
+      }
+    },
+    "transferFile.written": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "완료"
           }
         }
       }

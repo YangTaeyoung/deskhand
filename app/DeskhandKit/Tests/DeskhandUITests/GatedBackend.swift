@@ -33,6 +33,10 @@ final class GatedBackend: Backend {
         var controlFailures: [String: OperationError] = [:]
         var heldControls: Set<HeldControl> = []
         var pendingControls: [(method: String, continuation: CheckedContinuation<Void, Never>)] = []
+        var filesListCalls: [FilesListCall] = []
+        var onePageListing = false
+        var transferRequests: [TransferRequest] = []
+        var fileCalls: [FileCall] = []
     }
 
     private let state = Mutex(State())
@@ -52,6 +56,15 @@ final class GatedBackend: Backend {
     func resumeHostList(at index: Int, with result: Result<[Host], Error>) {
         let continuation = state.withLock { $0.pendingHostLists.remove(at: index) }
         continuation.resume(with: result)
+    }
+
+    var filesListCalls: [FilesListCall] { state.withLock { $0.filesListCalls } }
+    var transferRequests: [TransferRequest] { state.withLock { $0.transferRequests } }
+    var fileCalls: [FileCall] { state.withLock { $0.fileCalls } }
+
+    /// Answers `filesList` with the whole folder in one page, as `files.list` without paging does.
+    func listInOnePage(_ onePage: Bool) {
+        state.withLock { $0.onePageListing = onePage }
     }
 
     func failTimeline(with error: OperationError?) {
@@ -162,6 +175,72 @@ final class GatedBackend: Backend {
     func screenAttach(hostID: String, display: Int, preset: StreamPreset) async throws -> any ScreenStream {
         try await base.screenAttach(hostID: hostID, display: display, preset: preset)
     }
+
+    func filesList(hostID: String, path: String, cursor: String?, limit: Int) async throws -> FileEntryPage {
+        let onePage = state.withLock { s -> Bool in
+            s.filesListCalls.append(FilesListCall(path: path, cursor: cursor, limit: limit))
+            return s.onePageListing
+        }
+        guard onePage else { return try await base.filesList(hostID: hostID, path: path, cursor: cursor, limit: limit) }
+        let all = try await base.filesList(hostID: hostID, path: path, cursor: nil, limit: Int.max)
+        return FileEntryPage(entries: all.entries, total: all.entries.count)
+    }
+
+    func filesStat(hostID: String, path: String) async throws -> FileEntry { try await base.filesStat(hostID: hostID, path: path) }
+
+    func filesMkdir(hostID: String, path: String) async throws {
+        record(FileCall(method: "files.mkdir", path: path))
+        try await base.filesMkdir(hostID: hostID, path: path)
+    }
+
+    func filesRename(hostID: String, from: String, to: String) async throws {
+        record(FileCall(method: "files.rename", path: from, to: to))
+        try await base.filesRename(hostID: hostID, from: from, to: to)
+    }
+
+    func filesTrash(hostID: String, path: String) async throws {
+        record(FileCall(method: "files.trash", path: path))
+        try await base.filesTrash(hostID: hostID, path: path)
+    }
+
+    func filesDelete(hostID: String, path: String) async throws {
+        record(FileCall(method: "files.delete", path: path))
+        try await base.filesDelete(hostID: hostID, path: path)
+    }
+
+    func appLaunch(hostID: String, path: String) async throws {
+        record(FileCall(method: "app.launch", path: path))
+        try await base.appLaunch(hostID: hostID, path: path)
+    }
+
+    func transferStart(_ request: TransferRequest) async throws -> String {
+        state.withLock { $0.transferRequests.append(request) }
+        return try await base.transferStart(request)
+    }
+
+    func transferList(hostID: String) async throws -> [Transfer] { try await base.transferList(hostID: hostID) }
+    func transferGet(transferID: String) async throws -> Transfer { try await base.transferGet(transferID: transferID) }
+    func transferPause(transferID: String) async throws -> Transfer { try await base.transferPause(transferID: transferID) }
+    func transferResume(transferID: String) async throws -> Transfer { try await base.transferResume(transferID: transferID) }
+    func transferCancel(transferID: String) async throws -> Transfer { try await base.transferCancel(transferID: transferID) }
+
+    private func record(_ call: FileCall) {
+        state.withLock { $0.fileCalls.append(call) }
+    }
+}
+
+/// One `filesList` call as `GatedBackend` received it.
+struct FilesListCall: Equatable {
+    let path: String
+    let cursor: String?
+    let limit: Int
+}
+
+/// One state-changing `files.*` or `app.launch` call.
+struct FileCall: Equatable {
+    let method: String
+    let path: String
+    var to: String?
 }
 
 /// Polls `condition` on the main actor until it holds or `timeout` passes.

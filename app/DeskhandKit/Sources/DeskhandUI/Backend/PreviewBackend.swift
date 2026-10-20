@@ -44,6 +44,8 @@ public final class PreviewBackend: Backend {
     private let state: Mutex<State>
     /// Access units of the H.264 capture the screen streams play.
     private let screenUnits: [Data]
+    /// Remote folders and transfers.
+    let files: PreviewFileStore
 
     /// `screenVideo` is an Annex-B H.264 file whose first access unit is a keyframe; screen
     /// streams play it in a loop. Without one they report the stream as paused.
@@ -54,6 +56,7 @@ public final class PreviewBackend: Backend {
         let hosts = scenario == .standard ? PreviewFixtures.hosts() : []
         let timelines = Dictionary(uniqueKeysWithValues: hosts.map { ($0.hostID, PreviewFixtures.timeline(hostID: $0.hostID)) })
         state = Mutex(State(hosts: hosts, controls: PreviewFixtures.controls(for: hosts), timelines: timelines))
+        files = PreviewFileStore(hosts: hosts, includesTransfers: scenario == .standard)
     }
 
     /// Ends every open `events` stream, finishing it with `error` when given, as a dropped
@@ -88,6 +91,23 @@ public final class PreviewBackend: Backend {
             return (event, s.subscribers.values.filter { $0.matches(event) }.map(\.continuation))
         }
         for continuation in targets { continuation.yield(event) }
+    }
+
+    /// Waits `fraction` of the step delay.
+    func pause(fraction: Double) async {
+        guard stepDelay > .zero else { return }
+        try? await Task.sleep(for: stepDelay * fraction)
+    }
+
+    /// The step delay as a multiple of 700 ms, the delay of the app's preview launches.
+    var delayScale: Double {
+        let components = stepDelay.components
+        return (Double(components.seconds) + Double(components.attoseconds) / 1e18) / 0.7
+    }
+
+    /// The listed host, or `NOT_FOUND`.
+    func listedHost(_ hostID: String) throws -> Host {
+        try host(hostID)
     }
 
     private func pause(_ multiple: Int = 1) async {

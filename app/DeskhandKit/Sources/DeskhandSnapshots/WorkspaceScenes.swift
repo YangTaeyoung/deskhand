@@ -59,6 +59,7 @@ enum WorkspaceScenes {
         resetScreen(store)
         store.screenPreferences.showsStatistics = setup.statistics
         if let display = setup.display { store.screenPreferences.setDisplay(display, for: setup.selected) }
+        if setup.tab == .files { FilesScenes.seed(store, hostID: setup.selected) }
         return store
     }
 

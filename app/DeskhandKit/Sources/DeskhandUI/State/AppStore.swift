@@ -83,6 +83,10 @@ public final class AppStore {
     public let screenPreferences: ScreenPreferences
     /// Take control, give back to the AI and emergency stop, with their progress and failures.
     public let controlActions: ControlActions
+    /// Conflict policy, sorts, columns and folders of the files tab.
+    public let filesPreferences: FilesPreferences
+    /// A remote file the files tab asked the logs tab to show.
+    public var logSelection: LogSelection?
 
     private var controls: [String: ControlState] = [:]
     /// Hosts whose next control state is applied whatever its `gen`, after the event stream
@@ -92,6 +96,7 @@ public final class AppStore {
     private var timelines: [String: [TimelineEntry]] = [:]
     private var timelineErrors: [String: OperationError] = [:]
     private var streamQualities: [String: StreamQuality] = [:]
+    @ObservationIgnored private var filesModels: [String: FilesModel] = [:]
     @ObservationIgnored private var eventsTask: Task<Void, Never>?
     @ObservationIgnored private var reloadTask: Task<Void, Never>?
     @ObservationIgnored private var reloadToken = 0
@@ -104,6 +109,7 @@ public final class AppStore {
         self.layout = WorkspaceLayout(defaults: defaults)
         self.screenPreferences = ScreenPreferences(defaults: defaults)
         self.controlActions = ControlActions(backend: backend)
+        self.filesPreferences = FilesPreferences(defaults: defaults)
         controlActions.store = self
     }
 
@@ -146,6 +152,27 @@ public final class AppStore {
     /// The latest measured quality of the host's screen stream, while one is open.
     public func streamQuality(for hostID: String) -> StreamQuality? {
         streamQualities[hostID]
+    }
+
+    /// The files tab state of a host, created on first use and kept while the host is listed.
+    public func files(for host: Host) -> FilesModel {
+        if let model = filesModels[host.hostID] { return model }
+        let model = FilesModel(host: host, backend: backend, preferences: filesPreferences)
+        model.store = self
+        filesModels[host.hostID] = model
+        return model
+    }
+
+    /// Shows the logs tab with a remote file selected.
+    public func openLog(hostID: String, path: String) {
+        logSelection = LogSelection(hostID: hostID, path: path)
+        layout.tab = .logs
+    }
+
+    private func forgetFiles(_ hostID: String) {
+        filesModels[hostID]?.stop()
+        filesModels[hostID] = nil
+        if logSelection?.hostID == hostID { logSelection = nil }
     }
 
     /// Records the quality of the host's screen stream; `nil` when the stream closes.
@@ -246,6 +273,7 @@ public final class AppStore {
         let ids = Set(list.map(\.hostID))
         for host in hosts where !ids.contains(host.hostID) {
             controlActions.forget(host.hostID)
+            forgetFiles(host.hostID)
         }
         hosts = list
         for i in hosts.indices { syncOwner(at: i) }
@@ -295,6 +323,7 @@ public final class AppStore {
             guard let id = event.hostID else { return }
             hosts.removeAll { $0.hostID == id }
             controlActions.forget(id)
+            forgetFiles(id)
             controls[id] = nil
             controlsToRevalidate.remove(id)
             timelines[id] = nil
@@ -462,6 +491,17 @@ public final class AppStore {
                 self?.actionError = OperationError(error)
             }
         }
+    }
+}
+
+/// A remote file to show in the logs tab.
+public struct LogSelection: Sendable, Equatable {
+    public var hostID: String
+    public var path: String
+
+    public init(hostID: String, path: String) {
+        self.hostID = hostID
+        self.path = path
     }
 }
 
