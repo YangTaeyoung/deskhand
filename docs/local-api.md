@@ -149,3 +149,24 @@
 
 - 데몬 로그: `<home>/logs/daemon.log`.
 - `events.subscribe`는 연결당 하나다. 다시 부르면 이전 필터를 대체한다.
+
+## 6. 이벤트
+
+`event` 알림의 `params`는 `{seq, ts, kind, host_id?, …}`이고 아래 필드가 같은 객체에 들어간다.
+
+| `kind` | 필드 |
+|---|---|
+| `connection.state` | `state`, `connection_generation`, `reason?` |
+| `host.added` / `host.updated` | `host`(Host) |
+| `host.removed` | — |
+| `host.install.progress` | `name`, `step`(`probe`/`copy`/`init`/`install`/`verify`), `status`(`active`/`done`/`failed`), `detail?`, `error?`{`code`, `message`, `next_action?`} |
+| `caps.changed` | `caps` |
+| `session.changed` | `session`(SessionInfo) |
+| `display.changed` | `displays` |
+| `control.changed` | ControlState 필드 |
+| `timeline.appended` | `entry`(TimelineEntry) |
+| `job.updated` | `job`(Job) |
+| `transfer.updated` | `transfer`(Transfer) |
+
+- `timeline.list{host_id, since?, limit?}` 결과: `{entries: [TimelineEntry], next_cursor?}`(최신순).
+- `host.doctor` 항목 `id`: `ssh_reachable`, `agent_version`, `quic_connect`, `fingerprint`, `session`, `firewall_rule`.
