@@ -47,6 +47,7 @@ const usage = `사용법:
 `
 
 func main() {
+	attachConsole()
 	os.Exit(runMain(os.Args[1:], os.Stdout, os.Stderr))
 }
 

@@ -65,23 +65,29 @@ func system32() (string, error) {
 	return filepath.Join(windows, "System32"), nil
 }
 
-// tool runs program of System32 with args and returns its combined output.
+// createNoWindow is the CREATE_NO_WINDOW process creation flag.
+const createNoWindow = 0x08000000
+
+// tool runs program of System32 with args without a console window and
+// returns its combined output.
 func tool(program string, args ...string) ([]byte, error) {
 	dir, err := system32()
 	if err != nil {
 		return nil, err
 	}
-	return exec.Command(filepath.Join(dir, program), args...).CombinedOutput()
+	c := exec.Command(filepath.Join(dir, program), args...)
+	c.SysProcAttr = &syscall.SysProcAttr{CreationFlags: createNoWindow}
+	return c.CombinedOutput()
 }
 
-// netsh runs netsh with the raw command line line.
+// netsh runs netsh with the raw command line line without a console window.
 func netsh(line string) ([]byte, error) {
 	dir, err := system32()
 	if err != nil {
 		return nil, err
 	}
 	c := exec.Command(filepath.Join(dir, "netsh.exe"))
-	c.SysProcAttr = &syscall.SysProcAttr{CmdLine: line}
+	c.SysProcAttr = &syscall.SysProcAttr{CmdLine: line, CreationFlags: createNoWindow}
 	return c.CombinedOutput()
 }
 

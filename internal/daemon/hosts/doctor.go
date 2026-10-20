@@ -10,6 +10,7 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/daemon/apierr"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/conn"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
+	"github.com/YangTaeyoung/deskhand/internal/install"
 	"github.com/YangTaeyoung/deskhand/internal/proto"
 	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
@@ -29,7 +30,6 @@ const sshCheckTimeout = 20 * time.Second
 
 const (
 	sshProbeScript   = "Write-Output 'deskhand-ok'"
-	agentVersionPS   = "$ErrorActionPreference = 'Continue'\n& 'C:\\Program Files\\Deskhand\\deskhand-agent.exe' version\nexit $LASTEXITCODE"
 	firewallScript   = "$r = Get-NetFirewallRule -DisplayName 'Deskhand Agent' -ErrorAction SilentlyContinue | Select-Object -First 1\nif ($r) { Write-Output ('deskhand-fw enabled=' + $r.Enabled) } else { Write-Output 'deskhand-fw none' }"
 	firewallRuleName = "Deskhand Agent"
 )
@@ -140,7 +140,7 @@ func (r *Registry) agentCheck(ctx context.Context, h *conn.Host, alias string, s
 		version = h.Hello().Agent
 	} else if sshOK {
 		sctx, cancel := context.WithTimeout(ctx, sshCheckTimeout)
-		out, stderr, err := r.ssh(alias).Run(sctx, agentVersionPS)
+		out, stderr, err := r.ssh(alias).Run(sctx, install.AgentVersionScript)
 		cancel()
 		if err != nil {
 			add(CheckAgent, model.CheckFail, "설치된 에이전트가 응답하지 않습니다: "+firstLine(stderr, err), repair)

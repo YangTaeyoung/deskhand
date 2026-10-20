@@ -58,16 +58,16 @@ func (f *fakeSSH) run(_ context.Context, name string, args []string, stdin strin
 		return "deskhand-probe os=windows arch=X64\n", "", nil
 	case strings.Contains(stdin, "deskhand-short="):
 		return "deskhand-short=C:\\Temp\\deskhand-install\n", "", nil
-	case strings.Contains(stdin, " init "):
+	case strings.Contains(stdin, "-ArgumentList ('init "):
 		if f.paired && !strings.Contains(stdin, "--force") {
 			return "", "key exists\n", exitCode(4)
 		}
 		f.forcedInit = strings.Contains(stdin, "--force")
 		f.paired = true
 		return `{"fingerprint":"` + agentFP + `"}` + "\n", "", nil
-	case strings.Contains(stdin, " install"):
+	case strings.Contains(stdin, "-ArgumentList 'install'"):
 		return "", "", nil
-	case strings.Contains(stdin, " version"):
+	case strings.Contains(stdin, "-ArgumentList 'version'"):
 		return `{"version":"v1","os":"windows","arch":"amd64"}` + "\n", "", nil
 	case strings.Contains(stdin, "deskhand-ok"):
 		return "deskhand-ok\n", "", nil

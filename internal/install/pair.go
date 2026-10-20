@@ -71,6 +71,17 @@ var ErrAlreadyPaired = errors.New("이 PC에는 이미 Deskhand 에이전트가 
 // psQuote returns s as a PowerShell single-quoted literal.
 func psQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
 
+// agentCall is the PowerShell line that runs the program exe with the
+// command line args, both PowerShell expressions, through Start-Process in
+// the same console and waits for it; $p.ExitCode then holds its exit code.
+func agentCall(exe, args string) string {
+	return "$p = Start-Process -FilePath " + exe + " -ArgumentList " + args + " -NoNewWindow -Wait -PassThru\n"
+}
+
+// AgentVersionScript runs the installed agent's version command and exits
+// with its exit code.
+var AgentVersionScript = "$ErrorActionPreference = 'Continue'\n" + agentCall(psQuote(remoteExe), "'version'") + "exit $p.ExitCode"
+
 const probeScript = `$ErrorActionPreference = 'Stop'
 $os = if ($env:OS -eq 'Windows_NT') { 'windows' } else { 'other' }
 $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
@@ -122,7 +133,7 @@ func Pair(ctx context.Context, s SSH, name string, controller transport.Identity
 	}
 
 	progress(StepInstall)
-	script := tempDirSetup + tempExe + "$ErrorActionPreference = 'Continue'\n& $exe install\nexit $LASTEXITCODE"
+	script := tempDirSetup + tempExe + "$ErrorActionPreference = 'Continue'\n" + agentCall("$exe", "'install'") + "exit $p.ExitCode"
 	if _, stderr, err := s.Run(ctx, script); err != nil {
 		return PairResult{}, fmt.Errorf("에이전트를 설치하지 못했습니다. SSH 계정이 관리자 권한인지 확인하세요: %s", firstLine(stderr, err))
 	}
@@ -216,11 +227,12 @@ func initAgent(ctx context.Context, s SSH, name, controllerFP string, force bool
 	b.WriteString(tempDirSetup + tempExe)
 	b.WriteString("$ErrorActionPreference = 'Continue'\n")
 	fmt.Fprintf(&b, "$name = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(%s))\n", psQuote(nameB64))
-	fmt.Fprintf(&b, "& $exe init --name $name --controller-fp %s", psQuote(controllerFP))
+	args := "init --name \"' + $name + '\" --controller-fp " + controllerFP
 	if force {
-		b.WriteString(" --force")
+		args += " --force"
 	}
-	b.WriteString("\nexit $LASTEXITCODE")
+	b.WriteString(agentCall("$exe", "('"+args+"')"))
+	b.WriteString("exit $p.ExitCode")
 	stdout, stderr, err := s.Run(ctx, b.String())
 	if err != nil {
 		var ee interface{ ExitCode() int }
@@ -247,8 +259,8 @@ func initAgent(ctx context.Context, s SSH, name, controllerFP string, force bool
 // verify runs the installed agent's version command, removes the temporary
 // copy and returns the remote OS and architecture.
 func verify(ctx context.Context, s SSH) (osName, arch string, err error) {
-	script := tempDirSetup + "$ErrorActionPreference = 'Continue'\n& " + psQuote(remoteExe) +
-		" version\n$code = $LASTEXITCODE\nRemove-Item -Recurse -Force -Path $d -ErrorAction SilentlyContinue\nexit $code"
+	script := tempDirSetup + "$ErrorActionPreference = 'Continue'\n" + agentCall(psQuote(remoteExe), "'version'") +
+		"$code = $p.ExitCode\nRemove-Item -Recurse -Force -Path $d -ErrorAction SilentlyContinue\nexit $code"
 	stdout, stderr, err := s.Run(ctx, script)
 	if err != nil {
 		return "", "", fmt.Errorf("설치된 에이전트가 응답하지 않습니다. PC에서 'Deskhand Agent' 작업이 있는지 확인하세요: %s", firstLine(stderr, err))
@@ -268,11 +280,11 @@ func verify(ctx context.Context, s SSH) (osName, arch string, err error) {
 
 // Unpair removes the agent from the host; purge also deletes its data.
 func Unpair(ctx context.Context, s SSH, purge bool) error {
-	script := "$ErrorActionPreference = 'Continue'\n& " + psQuote(remoteExe) + " uninstall"
+	args := "'uninstall'"
 	if purge {
-		script += " --purge"
+		args = "'uninstall --purge'"
 	}
-	script += "\nexit $LASTEXITCODE"
+	script := "$ErrorActionPreference = 'Continue'\n" + agentCall(psQuote(remoteExe), args) + "exit $p.ExitCode"
 	if _, stderr, err := s.Run(ctx, script); err != nil {
 		return fmt.Errorf("에이전트를 제거하지 못했습니다. SSH 계정이 관리자 권한인지 확인하세요: %s", firstLine(stderr, err))
 	}

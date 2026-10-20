@@ -50,7 +50,7 @@ func (f *fakeRemote) run(_ context.Context, name string, args []string, stdin st
 		return "deskhand-probe os=" + f.osName + " arch=" + f.arch + "\n", "", nil
 	case strings.Contains(stdin, "deskhand-short="):
 		return "deskhand-short=C:\\Users\\bob\\AppData\\Local\\Temp\\deskhand-install\n", "", nil
-	case strings.Contains(stdin, " init "):
+	case strings.Contains(stdin, "-ArgumentList ('init "):
 		if f.initFail {
 			return "", f.initErr, exitErr(f.initCode)
 		}
@@ -59,9 +59,9 @@ func (f *fakeRemote) run(_ context.Context, name string, args []string, stdin st
 			out = `{"fingerprint":"` + testAgentFP + `","name":"x"}`
 		}
 		return "banner\n" + out + "\n", "", nil
-	case strings.Contains(stdin, " install"):
+	case strings.Contains(stdin, "-ArgumentList 'install'"):
 		return "", "", nil
-	case strings.Contains(stdin, " version"):
+	case strings.Contains(stdin, "-ArgumentList 'version'"):
 		return `{"version":"dev","os":"` + f.versionOS + `","arch":"amd64"}` + "\n", "", nil
 	}
 	return "", "", nil
@@ -197,7 +197,7 @@ func TestPairForcePassesForceToInit(t *testing.T) {
 	}
 	found := false
 	for _, c := range f.calls {
-		if strings.Contains(c.stdin, " init ") && strings.Contains(c.stdin, "--force") {
+		if strings.Contains(c.stdin, "-ArgumentList ('init ") && strings.Contains(c.stdin, "--force") {
 			found = true
 		}
 	}
@@ -299,7 +299,7 @@ func TestUnpairPurge(t *testing.T) {
 	if err := Unpair(context.Background(), f.ssh(), true); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(f.calls[0].stdin, `Program Files\Deskhand\deskhand-agent.exe' uninstall --purge`) {
+	if !strings.Contains(f.calls[0].stdin, `Program Files\Deskhand\deskhand-agent.exe' -ArgumentList 'uninstall --purge'`) {
 		t.Fatalf("%q", f.calls[0].stdin)
 	}
 	f = newFake()
@@ -358,4 +358,43 @@ func TestRejectsUnsafeAliases(t *testing.T) {
 	if _, _, err := (SSH{Alias: "me@win-1.local_x", Exec: f.run}).Run(context.Background(), "x"); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestAgentScriptsWaitThroughStartProcess(t *testing.T) {
+	f := newFake()
+	if _, _, _, err := pair(t, f); err != nil {
+		t.Fatal(err)
+	}
+	if err := Unpair(context.Background(), f.ssh(), true); err != nil {
+		t.Fatal(err)
+	}
+	scripts := []string{AgentVersionScript}
+	for _, c := range f.calls {
+		if c.name == "ssh" && strings.Contains(c.stdin, "-ArgumentList") {
+			scripts = append(scripts, c.stdin)
+		}
+	}
+	if len(scripts) != 5 {
+		t.Fatalf("%d agent scripts: %q", len(scripts), scripts)
+	}
+	for _, s := range scripts {
+		if !strings.Contains(s, "$p = Start-Process -FilePath ") || !strings.Contains(s, " -NoNewWindow -Wait -PassThru\n") ||
+			!strings.Contains(s, "$p.ExitCode") || strings.Contains(s, "$LASTEXITCODE") || strings.Contains(s, "& $exe") {
+			t.Fatalf("script %q", s)
+		}
+	}
+}
+
+func TestInitQuotesNameOnTheCommandLine(t *testing.T) {
+	f := newFake()
+	if _, _, _, err := pair(t, f); err != nil {
+		t.Fatal(err)
+	}
+	want := `-ArgumentList ('init --name "' + $name + '" --controller-fp ` + testFP + `')`
+	for _, c := range f.calls {
+		if strings.Contains(c.stdin, want) {
+			return
+		}
+	}
+	t.Fatalf("no init script with %q", want)
 }
