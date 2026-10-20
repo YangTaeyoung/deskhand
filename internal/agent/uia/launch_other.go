@@ -22,6 +22,6 @@ func DeployRootLocked(dir string) bool { return false }
 // DefaultLauncher returns a launcher that always fails on this system.
 func DefaultLauncher(dir string, logf func(format string, args ...any)) Launcher {
 	return func(<-chan struct{}) (io.WriteCloser, io.ReadCloser, func(), error) {
-		return nil, nil, nil, errors.New("UI Automation is only available on Windows guests")
+		return nil, nil, nil, errors.New("UI Automation is only available on Windows")
 	}
 }

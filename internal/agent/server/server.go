@@ -663,7 +663,7 @@ func newSerialQueue(done chan struct{}) serialQueue {
 
 // errClipboardQueueFull answers a clipboard operation that finds the queue
 // of its connection full.
-var errClipboardQueueFull = fmt.Sprintf("%d clipboard operations of this connection are waiting for the guest's clipboard tool; retry once it answers", clipboardQueueSize)
+var errClipboardQueueFull = fmt.Sprintf("%d clipboard operations of this connection are waiting for the PC's clipboard tool; retry once it answers", clipboardQueueSize)
 
 // run queues f and reports whether it did; a full queue does not take f.
 func (q serialQueue) run(f func()) bool {

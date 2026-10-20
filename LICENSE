@@ -19,12 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-Scope: the MIT licence above covers this repository's own code -- AlcoveKit/,
-Alcove/, guest-tools/, mcp/, scripts/, docs/, project.yml.
-
-It does NOT cover qemu-patches/, which is a derived work of QEMU and is
-licensed under the GNU General Public License instead. See qemu-patches/LICENSE
-and NOTICE.md.

@@ -8,7 +8,7 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/proto"
 )
 
-const errNoUI = "UI Automation is only available on Windows guests"
+const errNoUI = "UI Automation is only available on Windows"
 
 // UI is the UI Automation helper behind the ui and win ops. The helper starts
 // on the first call.

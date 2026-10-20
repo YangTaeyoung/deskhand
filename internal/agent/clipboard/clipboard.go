@@ -1,4 +1,4 @@
-// Package clipboard reads and writes the guest's text clipboard.
+// Package clipboard reads and writes the text clipboard.
 package clipboard
 
 import (

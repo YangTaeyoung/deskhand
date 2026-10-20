@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// psSample is `ps axo pid=,ppid=,rss=,args=` of an Ubuntu 26.04 guest.
+// psSample is `ps axo pid=,ppid=,rss=,args=` of an Ubuntu 26.04 desktop.
 const psSample = `      1       0 13312 /sbin/init splash
       2       0     0 [kthreadd]
    2420       1  8704 sshd: /usr/sbin/sshd -D [listener] 0 of 10-100 startups

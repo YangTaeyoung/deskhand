@@ -1,6 +1,6 @@
 //go:build windows
 
-// deskhand-fixture is a small Win32 application for UI tests of a Windows guest.
+// deskhand-fixture is a small Win32 application for UI tests of deskhand-agent on Windows.
 //
 //	deskhand-fixture [--log FILE] [--url URL]
 //

@@ -329,7 +329,7 @@ func TestAClipboardSetBeforeAuthIsRefusedAndNotApplied(t *testing.T) {
 	cb := &fakeClipboard{}
 	a := startAuthServer(t, Options{Clipboard: cb})
 	c := a.dial()
-	c.send(t, proto.Message{"t": "clipboard.set", "text": "from a guest program"})
+	c.send(t, proto.Message{"t": "clipboard.set", "text": "from a local program"})
 	c.expectRefusedAndClosed(t, errUnauthenticated)
 	if text, _ := cb.Text(); text != "" {
 		t.Fatalf("clipboard %q", text)
@@ -340,7 +340,7 @@ func TestAConnectionWithoutAuthGetsNothingButTheRefusalAfterTheTimeout(t *testin
 	cb := &fakeClipboard{}
 	a := startAuthServer(t, Options{Clipboard: cb, AuthTimeout: 300 * time.Millisecond})
 	c := a.dial()
-	cb.external("changed in the guest")
+	cb.external("changed on the PC")
 	a.s.emit("window.opened", proto.Message{"window": "0x1"})
 	c.expectRefusedAndClosed(t, errAuthTimeout)
 }

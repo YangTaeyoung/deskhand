@@ -1,4 +1,4 @@
-// Package session finds the desktop session of a Linux guest through
+// Package session finds the desktop session of a Linux desktop through
 // loginctl and describes the user and environment of that session.
 package session
 

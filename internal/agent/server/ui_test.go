@@ -132,7 +132,7 @@ func TestNoUICapWithoutHelper(t *testing.T) {
 	for i, op := range []string{"ui.tree", "win.list", "ui.ping"} {
 		w.Send(proto.Message{"t": "req", "id": i + 1, "op": op})
 		res := expect(t, r, "res")
-		if res["ok"] != false || res.String("error") != "UI Automation is only available on Windows guests" {
+		if res["ok"] != false || res.String("error") != "UI Automation is only available on Windows" {
 			t.Fatalf("%s: res %v", op, res)
 		}
 	}

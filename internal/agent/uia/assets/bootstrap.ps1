@@ -26,7 +26,7 @@ try {
     [Console]::Error.WriteLine($stamp + ' bootstrap ' + $PID + ': compiled helper.cs after ' + $watch.ElapsedMilliseconds + ' ms')
 } catch {
     $first = ($_.Exception.Message -split "\r?\n")[0] -replace '^.*\.cs\((\d+)\) : ', 'helper.cs line $1: '
-    Stop-WithFatal ('the UI helper could not be compiled: ' + $first + '; reinstall the guest tools') $_
+    Stop-WithFatal ('the UI helper could not be compiled: ' + $first + '; reinstall deskhand-agent') $_
 }
 
 try {

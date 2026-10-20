@@ -159,7 +159,7 @@ func TestClipboardTextCutAtTheLimitEndsOnAWholeCharacter(t *testing.T) {
 
 func TestSequenceKeepsTheLastValueWhileTheReaderFails(t *testing.T) {
 	shortToolTimeout(t)
-	dir := fakeTools(t, map[string]string{"wl-paste": `if [ -e "$HANG" ]; then sleep 30; fi; printf 'guest text'`})
+	dir := fakeTools(t, map[string]string{"wl-paste": `if [ -e "$HANG" ]; then sleep 30; fi; printf 'PC text'`})
 	hang := filepath.Join(dir, "hang")
 	target := waylandTarget(t)
 	target.Env = append(target.Env, "HANG="+hang)
@@ -180,7 +180,7 @@ func TestSequenceKeepsTheLastValueWhileTheReaderFails(t *testing.T) {
 }
 
 func TestSequenceKeepsTheLastValueWhileTheReaderExitsNonZero(t *testing.T) {
-	dir := fakeTools(t, map[string]string{"wl-paste": `if [ -e "$FAIL" ]; then echo 'Nothing is copied' >&2; exit 1; fi; printf 'guest text'`})
+	dir := fakeTools(t, map[string]string{"wl-paste": `if [ -e "$FAIL" ]; then echo 'Nothing is copied' >&2; exit 1; fi; printf 'PC text'`})
 	fail := filepath.Join(dir, "fail")
 	target := waylandTarget(t)
 	target.Env = append(target.Env, "FAIL="+fail)

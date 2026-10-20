@@ -67,7 +67,7 @@ func TestClipboardSetAndGetOfAConnectionRunInOrder(t *testing.T) {
 
 func TestClipboardGetsBeyondTheQueueAreRefusedAndRepliesCarryTheirID(t *testing.T) {
 	cb := &stuckClipboard{release: make(chan struct{}), entered: make(chan struct{}, 1)}
-	cb.external("guest text")
+	cb.external("PC text")
 	cb.stuck.Store(true)
 	_, r, w, _ := startServerS(t, Options{Clipboard: cb, HomeDir: t.TempDir()})
 	expect(t, r, "hello")
@@ -81,7 +81,7 @@ func TestClipboardGetsBeyondTheQueueAreRefusedAndRepliesCarryTheirID(t *testing.
 		send(t, w, proto.Message{"t": "clipboard.get", "id": fmt.Sprint(i)})
 	}
 	refused := expect(t, r, "clipboard.text")
-	want := "64 clipboard operations of this connection are waiting for the guest's clipboard tool; retry once it answers"
+	want := "64 clipboard operations of this connection are waiting for the PC's clipboard tool; retry once it answers"
 	if refused.String("id") != fmt.Sprint(clipboardQueueSize+1) || refused.String("error") != want || refused.String("text") != "" {
 		t.Fatalf("the clipboard.get beyond the queue answered %v", refused)
 	}
@@ -89,7 +89,7 @@ func TestClipboardGetsBeyondTheQueueAreRefusedAndRepliesCarryTheirID(t *testing.
 	close(cb.release)
 	for i := 0; i <= clipboardQueueSize; i++ {
 		got := expect(t, r, "clipboard.text")
-		if got.String("id") != fmt.Sprint(i) || got.Has("error") || got.String("text") != "guest text" {
+		if got.String("id") != fmt.Sprint(i) || got.Has("error") || got.String("text") != "PC text" {
 			t.Fatalf("reply %d: %v", i, got)
 		}
 	}
@@ -131,9 +131,9 @@ func TestOneClipboardWatcherPollsLessWhileNothingChanges(t *testing.T) {
 	if n := cb.sequences.Load(); n > 30 {
 		t.Fatalf("the clipboard was polled %d times in 1 s by three connections", n)
 	}
-	cb.external("changed in the guest")
+	cb.external("changed on the PC")
 	for i, r := range readers {
-		if m := expect(t, r, "clipboard.changed"); m.String("text") != "changed in the guest" {
+		if m := expect(t, r, "clipboard.changed"); m.String("text") != "changed on the PC" {
 			t.Fatalf("connection %d got %v", i, m)
 		}
 	}

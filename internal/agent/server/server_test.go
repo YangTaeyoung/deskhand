@@ -92,22 +92,22 @@ func TestHelloClipboardAndFiles(t *testing.T) {
 		t.Fatalf("caps %v", caps)
 	}
 
-	// host -> guest clipboard
+	// controller -> PC clipboard
 	w.Send(proto.Message{"t": "clipboard.set", "text": "from host"})
 	time.Sleep(600 * time.Millisecond)
 	if got, _ := cb.Text(); got != "from host" {
 		t.Fatalf("clipboard not set: %q", got)
 	}
-	// guest -> host clipboard (a foreign change must be reported, our own must not)
-	cb.external("typed in guest")
+	// PC -> controller clipboard (a foreign change must be reported, our own must not)
+	cb.external("typed on the PC")
 	m := expect(t, r, "clipboard.changed")
-	if m.String("text") != "typed in guest" {
+	if m.String("text") != "typed on the PC" {
 		t.Fatalf("changed %v", m)
 	}
 
 	// explicit read
 	w.Send(proto.Message{"t": "clipboard.get"})
-	if got := expect(t, r, "clipboard.text"); got.String("text") != "typed in guest" {
+	if got := expect(t, r, "clipboard.text"); got.String("text") != "typed on the PC" {
 		t.Fatalf("clipboard.get %v", got)
 	}
 
