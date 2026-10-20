@@ -19,17 +19,15 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
-// pushFile sends the file seq to the host: it settles a commit whose answer
-// was lost, checks the fingerprint of the source, readies the part file
+// pushFile sends the file seq to the host: it settles a commit whose
+// outcome is not known (settleCommit), checks the fingerprint of the source, readies the part file
 // with xfer.prepare (resuming from the bytes it holds when they are the
 // source's), sends the rest on a put stream while it hashes the file, and
 // commits it once the hash is the planned SHA-256.
 func (t *transfer) pushFile(ctx context.Context, h *conn.Host, seq int) (result, error) {
 	f := t.file(seq)
 	if f.CommitRID != "" {
-		if r, err, settled := t.settleCommit(ctx, h, seq); settled {
-			return r, err
-		}
+		return t.settleCommit(ctx, h, seq)
 	}
 	src := t.localPath(f)
 	if f.Refresh {
@@ -48,7 +46,7 @@ func (t *transfer) pushFile(ctx context.Context, h *conn.Host, seq int) (result,
 	}
 	f = t.file(seq)
 	if e := unchanged(src, f); e != nil {
-		_ = t.abortPart(ctx, h, seq)
+		_, _ = t.abortPart(ctx, h, seq)
 		return t.verdict(ctx, seq, e)
 	}
 	for round := 0; ; round++ {
@@ -61,7 +59,7 @@ func (t *transfer) pushFile(ctx context.Context, h *conn.Host, seq int) (result,
 			return t.verdict(ctx, seq, err)
 		}
 		if t.row.OnConflict == "skip" && prep.Bool("dest_exists") {
-			if err := t.abortPart(ctx, h, seq); err != nil {
+			if _, err := t.abortPart(ctx, h, seq); err != nil {
 				return t.verdict(ctx, seq, err)
 			}
 			t.doneFile(seq, t.remotePath(f), OutcomeSkipped)
@@ -82,7 +80,7 @@ func (t *transfer) pushFile(ctx context.Context, h *conn.Host, seq int) (result,
 				if round > 0 {
 					return resRetry, apierr.New(wire.CodeInternal, "PC의 임시 파일을 비웠는데도 내용이 남아 있습니다. transfer.resume으로 다시 시도하세요", true, apierr.NextRetry)
 				}
-				if err := t.abortPart(ctx, h, seq); err != nil {
+				if _, err := t.abortPart(ctx, h, seq); err != nil {
 					return t.verdict(ctx, seq, err)
 				}
 				continue
@@ -93,7 +91,7 @@ func (t *transfer) pushFile(ctx context.Context, h *conn.Host, seq int) (result,
 			part, err := t.sendPut(ctx, h, seq, src, f, have, hasher)
 			if err != nil {
 				if ctx.Err() == nil && !keepPart(err) {
-					_ = t.abortPart(ctx, h, seq)
+					_, _ = t.abortPart(ctx, h, seq)
 				}
 				return t.verdict(ctx, seq, err)
 			}
@@ -102,7 +100,7 @@ func (t *transfer) pushFile(ctx context.Context, h *conn.Host, seq int) (result,
 			}
 		}
 		if hex.EncodeToString(hasher.Sum(nil)) != f.SHA256 || unchanged(src, f) != nil {
-			_ = t.abortPart(ctx, h, seq)
+			_, _ = t.abortPart(ctx, h, seq)
 			return t.verdict(ctx, seq, sourceChanged(src))
 		}
 		return t.commitPush(ctx, h, seq)
@@ -185,16 +183,16 @@ func (t *transfer) sendPut(ctx context.Context, h *conn.Host, seq int, src strin
 }
 
 // abortPart removes the part file of the file seq on the host with
-// xfer.abort.
-func (t *transfer) abortPart(ctx context.Context, h *conn.Host, seq int) error {
+// xfer.abort and reports whether there was one.
+func (t *transfer) abortPart(ctx context.Context, h *conn.Host, seq int) (bool, error) {
 	f := t.file(seq)
 	if !f.Part {
-		return nil
+		return false, nil
 	}
-	_, _, err := callBusy(ctx, h, "xfer.abort", proto.Message{"transfer_id": t.row.TransferID, "path": t.remotePath(f)}, opWait)
+	res, _, err := callBusy(ctx, h, "xfer.abort", proto.Message{"transfer_id": t.row.TransferID, "path": t.remotePath(f)}, opWait)
 	if err != nil {
-		return err
+		return false, err
 	}
 	t.update(seq, func(f *store.TransferFile) { f.Part, f.BytesDone = false, 0 })
-	return nil
+	return res.Bool("removed"), nil
 }

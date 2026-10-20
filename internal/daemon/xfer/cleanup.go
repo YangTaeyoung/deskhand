@@ -143,9 +143,9 @@ func (t *transfer) samePlan(entries []remoteEntry) *apierr.Error {
 	return nil
 }
 
-// cancelFiles cancels the files of a stopped transfer that are not done:
-// a commit whose answer was lost is settled first, and the part files are
-// removed, on the host while it is ready.
+// cancelFiles cancels the files of a stopped transfer that are not done
+// and removes their part files, on the host while it is ready (cancelPart,
+// which settles a commit whose outcome is not known).
 func (t *transfer) cancelFiles() {
 	t.mu.Lock()
 	var seqs []int
@@ -172,14 +172,10 @@ func (t *transfer) cancelFiles() {
 				}
 			}
 			t.dropLocalPart(seq)
-		case h != nil && f.CommitRID != "":
-			if res, err := h.Resolve(ctx, f.CommitRID); err == nil {
-				t.doneFile(seq, res.String("path"), res.String("outcome"))
+		case h != nil:
+			if done, _ := t.cancelPart(ctx, h, seq); done {
 				continue
 			}
-			_ = t.abortPart(ctx, h, seq)
-		case h != nil:
-			_ = t.abortPart(ctx, h, seq)
 		}
 		t.update(seq, func(f *store.TransferFile) {
 			if f.State != StateDone {
@@ -190,7 +186,7 @@ func (t *transfer) cancelFiles() {
 }
 
 // cleanupParts removes, once the host is ready, the part files a cancelled
-// transfer left on it.
+// transfer left on it (cancelPart).
 func (t *transfer) cleanupParts(ctx context.Context) {
 	h, err := t.readyHost(ctx)
 	if err != nil {
@@ -205,16 +201,7 @@ func (t *transfer) cleanupParts(ctx context.Context) {
 	}
 	t.mu.Unlock()
 	for _, seq := range seqs {
-		if f := t.file(seq); f.CommitRID != "" {
-			rctx, cancel := context.WithTimeout(ctx, settleWait)
-			res, err := h.Resolve(rctx, f.CommitRID)
-			cancel()
-			if err == nil {
-				t.doneFile(seq, res.String("path"), res.String("outcome"))
-				continue
-			}
-		}
-		if err := t.abortPart(ctx, h, seq); err != nil {
+		if _, err := t.cancelPart(ctx, h, seq); err != nil {
 			t.m.lg.Printf("transfer %s: remove the part file of %s: %v", t.row.TransferID, t.file(seq).Rel, err)
 			return
 		}

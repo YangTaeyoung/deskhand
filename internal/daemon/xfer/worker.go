@@ -281,7 +281,8 @@ feed:
 }
 
 // moveFile moves the file seq. A file whose attempts fail strikesMax times
-// without progress while the connection stays fails with the last error.
+// without progress while the connection stays, and without a commit whose
+// outcome is not known, fails with the last error.
 func (t *transfer) moveFile(ctx context.Context, h *conn.Host, seq int) result {
 	gen := h.Generation()
 	before := t.file(seq).BytesDone
@@ -305,7 +306,7 @@ func (t *transfer) moveFile(ctx context.Context, h *conn.Host, seq int) result {
 		t.update(seq, requeue)
 		return resStopped
 	}
-	if h.Generation() == gen && hostReady(h) && t.file(seq).BytesDone <= before {
+	if after := t.file(seq); h.Generation() == gen && hostReady(h) && after.BytesDone <= before && after.CommitRID == "" {
 		t.mu.Lock()
 		t.strikes[seq]++
 		n := t.strikes[seq]
