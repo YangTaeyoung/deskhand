@@ -57,12 +57,6 @@ type moveInput struct {
 	Overwrite bool   `json:"overwrite,omitempty" jsonschema:"Replace the destination if it exists."`
 }
 
-type deleteInput struct {
-	Host      string `json:"host" jsonschema:"Host: host_id or name from hosts_list."`
-	Path      string `json:"path" jsonschema:"Absolute Windows path of the file or folder to delete."`
-	Recursive bool   `json:"recursive,omitempty" jsonschema:"Delete a folder with its contents."`
-}
-
 func (s *Server) registerFiles(srv *mcp.Server) {
 	add[listInput](s, srv, "files_list", "List one page of the entries of a folder on the PC (name, path, dir, size, mtime), folders first and then by name without regard to case. Returns up to limit entries (default 500, maximum 5000), total, and next_cursor when more entries follow; pass next_cursor back as cursor for the next page. Example path: C:\\Users\\me.",
 		spec{Method: "files.list"}, func(s *jsonschema.Schema) {
@@ -92,6 +86,4 @@ func (s *Server) registerFiles(srv *mcp.Server) {
 		spec{Method: "files.mkdir", Mutating: true}, nil)
 	add[moveInput](s, srv, "files_rename", "Rename or move a file or folder inside the PC (same host, full paths). To move between this Mac and the PC use files_move.",
 		spec{Method: "files.rename", Mutating: true}, nil)
-	add[deleteInput](s, srv, "files_delete", "Permanently delete a file or folder on the PC. This cannot be undone; there is no recycle bin.",
-		spec{Method: "files.delete", Mutating: true, Extra: map[string]any{"permanent": true}}, nil)
 }

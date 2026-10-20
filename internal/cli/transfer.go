@@ -94,6 +94,8 @@ const xferHelp = `사용법:
   --on-conflict fail|replace|skip|rename   대상이 이미 있을 때(기본 fail)
   --detach                                  시작만 하고 전송 ID를 출력
   --jsonl                                   transfer.updated 이벤트를 JSON 한 줄씩 출력
+Ctrl-C는 보기만 끝내고 전송은 계속 진행됩니다(종료 코드 4). 다시 보려면 deskhand transfer watch <전송-id>,
+취소는 deskhand transfer cancel <전송-id>, 일시 정지·재개는 deskhand transfer pause|resume <전송-id>입니다.
 종료 코드: 0 모두 끝남, 1 일부 실패·취소·원본 남김(--json에 파일별 상세), 2 사용법, 4 결과 불명, 5 오프라인.
 `
 
@@ -341,6 +343,20 @@ func (r *run) reportTransfer(d, start obj, jsonl bool) int {
 		verb := map[string]string{"push": "올렸습니다", "pull": "받았습니다", "move_push": "옮겼습니다", "move_pull": "옮겼습니다"}[d.str("direction")]
 		total, _ := d.num("bytes_total")
 		done, _ := d.num("files_done")
+		retained := sourceOutcome(d) == "retained"
+		if retained {
+			verb = "복사했습니다"
+			if len(files) > 0 {
+				done, total = 0, 0
+				for _, f := range files {
+					if f.str("state") == stateDone && f.str("outcome") != outcomeSkipped {
+						n, _ := f.num("size")
+						done++
+						total += n
+					}
+				}
+			}
+		}
 		line := fmt.Sprintf("%s: %s → %s (%d개 파일, %s)", verb, src, dst, done, humanSize(total))
 		if n := count(outcomeSkipped); n > 0 {
 			line += fmt.Sprintf(", 대상에 이미 있어 건너뛴 파일 %d개", n)
@@ -348,14 +364,19 @@ func (r *run) reportTransfer(d, start obj, jsonl bool) int {
 		if n := count("renamed"); n > 0 {
 			line += fmt.Sprintf(", 이름을 바꿔 둔 파일 %d개", n)
 		}
-		r.say("%s", line)
 		if s := moveSentence(d); s != "" {
-			if code == exitOK {
-				r.say("%s", s)
-			} else {
-				fmt.Fprintln(r.Stderr, s)
+			if retained {
+				line += " — " + s
+				if !r.asJSON {
+					fmt.Fprintln(r.Stdout, line)
+				}
+				return code
 			}
+			r.say("%s", line)
+			r.say("%s", s)
+			return code
 		}
+		r.say("%s", line)
 		return code
 	case statePaused:
 		fmt.Fprintf(r.Stderr, "전송 %s가 일시 정지 상태입니다. deskhand transfer resume %s 로 다시 시작하세요\n", id, id)
@@ -554,6 +575,15 @@ func (r *run) transferControl(ctx context.Context, action string, args []string)
 	}
 	if r.asJSON {
 		writeJSON(r.Stdout, detailJSON(res, nil))
+		return exitOK
+	}
+	if want := map[string]string{"pause": statePaused, "cancel": stateCancelled}[action]; res.str("state") != want {
+		verb := map[string]string{"pause": "일시 정지하지", "cancel": "취소하지"}[action]
+		if adj := map[string]string{stateDone: "완료된", stateFailed: "실패한", stateCancelled: "취소된", statePaused: "일시 정지된"}[res.str("state")]; adj != "" {
+			r.say("전송 %s를 %s 않았습니다: 이미 %s 전송입니다", pos[0], verb, adj)
+		} else {
+			r.say("전송 %s를 %s 않았습니다: 상태는 %s입니다", pos[0], verb, stateKorean(res.str("state")))
+		}
 		return exitOK
 	}
 	if action == "pause" {

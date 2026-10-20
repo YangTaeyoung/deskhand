@@ -109,7 +109,7 @@ func (s *Server) filesList(ctx context.Context, _ *session, raw json.RawMessage)
 		return nil, err
 	}
 	if p.Limit < 0 || p.Limit > maxListLimit {
-		return nil, apierr.Invalid("limit은 1 이상 5000 이하여야 합니다. 범위 안의 값을 주거나 limit 없이 조회하세요")
+		return nil, apierr.Invalid("limit은 0 이상 5000 이하여야 합니다. 0이거나 없으면 기본값 500입니다")
 	}
 	h, row, err := s.d.Hosts.Conn(p.HostID)
 	if err != nil {

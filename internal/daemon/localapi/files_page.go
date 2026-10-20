@@ -3,12 +3,15 @@ package localapi
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"sort"
 	"strings"
 
 	"github.com/YangTaeyoung/deskhand/internal/daemon/apierr"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
 )
+
+var errBadCursor = errors.New("bad cursor")
 
 const (
 	defaultListLimit = 500
@@ -53,6 +56,9 @@ func decodeCursor(s string) (listCursor, error) {
 	if err == nil {
 		err = json.Unmarshal(b, &c)
 	}
+	if err == nil && (c.Fold == "" || c.Path == "") {
+		err = errBadCursor
+	}
 	if err != nil {
 		return c, apierr.Invalid("cursor를 읽지 못했습니다. 이전 결과의 next_cursor를 그대로 주거나 cursor 없이 처음부터 다시 조회하세요")
 	}
@@ -64,7 +70,7 @@ func decodeCursor(s string) (listCursor, error) {
 // of the next page ("" on the last page) and the number of entries listed.
 func pageEntries(entries []model.FileEntry, cursor string, limit int) ([]model.FileEntry, string, int, error) {
 	if limit < 0 || limit > maxListLimit {
-		return nil, "", 0, apierr.Invalid("limit은 1 이상 5000 이하여야 합니다. 범위 안의 값을 주거나 limit 없이 조회하세요")
+		return nil, "", 0, apierr.Invalid("limit은 0 이상 5000 이하여야 합니다. 0이거나 없으면 기본값 500입니다")
 	}
 	if limit == 0 {
 		limit = defaultListLimit

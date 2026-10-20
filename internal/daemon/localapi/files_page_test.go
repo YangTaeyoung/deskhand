@@ -1,6 +1,7 @@
 package localapi
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/YangTaeyoung/deskhand/internal/daemon/apierr"
@@ -16,9 +17,12 @@ func names(es []model.FileEntry) []string {
 }
 
 func sample() []model.FileEntry {
-	return []model.FileEntry{
-		{Name: "b.txt"}, {Name: "Zeta", Dir: true}, {Name: "A.txt"}, {Name: "alpha", Dir: true}, {Name: "c.txt"},
+	var out []model.FileEntry
+	for _, e := range []model.FileEntry{{Name: "b.txt"}, {Name: "Zeta", Dir: true}, {Name: "A.txt"}, {Name: "alpha", Dir: true}, {Name: "c.txt"}} {
+		e.Path = "/p/" + e.Name
+		out = append(out, e)
 	}
+	return out
 }
 
 func TestPageEntriesOrdersFoldersFirstThenNameIgnoringCase(t *testing.T) {
@@ -57,7 +61,7 @@ func TestPageEntriesWalksPagesWithCursor(t *testing.T) {
 
 func TestPageEntriesCursorSurvivesRemovedEntry(t *testing.T) {
 	_, next, _, _ := pageEntries(sample(), "", 2)
-	rest := []model.FileEntry{{Name: "b.txt"}, {Name: "c.txt"}, {Name: "A.txt"}}
+	rest := []model.FileEntry{{Name: "b.txt", Path: "/p/b.txt"}, {Name: "c.txt", Path: "/p/c.txt"}, {Name: "A.txt", Path: "/p/A.txt"}}
 	page, _, _, err := pageEntries(rest, next, 10)
 	if err != nil || len(page) != 3 || page[0].Name != "A.txt" {
 		t.Fatalf("page=%v err=%v", names(page), err)
@@ -67,6 +71,10 @@ func TestPageEntriesCursorSurvivesRemovedEntry(t *testing.T) {
 func TestPageEntriesRejectsBadCursorAndLimit(t *testing.T) {
 	if _, _, _, err := pageEntries(sample(), "not-a-cursor", 2); apierr.CodeOf(err) != "INVALID_ARGUMENT" {
 		t.Fatalf("bad cursor err = %v", err)
+	}
+	empty := encodeCursor(listCursor{Dir: true})
+	if _, _, _, err := pageEntries(sample(), empty, 2); apierr.CodeOf(err) != "INVALID_ARGUMENT" {
+		t.Fatalf("empty-key cursor err = %v", err)
 	}
 	if _, _, _, err := pageEntries(sample(), "", 5001); apierr.CodeOf(err) != "INVALID_ARGUMENT" {
 		t.Fatalf("limit 5001 err = %v", err)
@@ -79,7 +87,7 @@ func TestPageEntriesRejectsBadCursorAndLimit(t *testing.T) {
 func TestPageEntriesDefaultLimitIs500(t *testing.T) {
 	var es []model.FileEntry
 	for i := 0; i < 700; i++ {
-		es = append(es, model.FileEntry{Name: string(rune('a'+i%26)) + string(rune(0x4e00+i))})
+		es = append(es, model.FileEntry{Name: string(rune('a'+i%26)) + string(rune(0x4e00+i)), Path: fmt.Sprint("/p/", i)})
 	}
 	page, next, total, err := pageEntries(es, "", 0)
 	if err != nil || len(page) != 500 || next == "" || total != 700 {

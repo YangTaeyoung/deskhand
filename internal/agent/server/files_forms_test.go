@@ -133,3 +133,27 @@ func TestWindowsPathFormsThatDependOnACurrentFolderAreRefused(t *testing.T) {
 		}
 	}
 }
+
+func TestFsListTruncatesToTheFirstEntriesInNameOrder(t *testing.T) {
+	c, home := fsHome(t)
+	dir := filepath.Join(home, "big")
+	os.MkdirAll(dir, 0o755)
+	for i := 0; i < fsListMax+3; i++ {
+		os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%05d", i)), nil, 0o644)
+	}
+	names := func() []string {
+		res := c.ok("fs.list", proto.Message{"path": "big"})
+		if res["truncated"] != true {
+			t.Fatalf("truncated = %v", res["truncated"])
+		}
+		var out []string
+		for _, e := range res["entries"].([]any) {
+			out = append(out, e.(map[string]any)["name"].(string))
+		}
+		return out
+	}
+	a, b := names(), names()
+	if len(a) != fsListMax || a[0] != "f00000" || a[len(a)-1] != fmt.Sprintf("f%05d", fsListMax-1) || strings.Join(a, ",") != strings.Join(b, ",") {
+		t.Fatalf("first %q last %q len %d", a[0], a[len(a)-1], len(a))
+	}
+}

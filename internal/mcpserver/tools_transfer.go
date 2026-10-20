@@ -186,8 +186,14 @@ func transferText(m map[string]any) string {
 	ft, _ := num(m, "files_total")
 	ff, _ := num(m, "files_failed")
 	rate, _ := num(m, "rate_bps")
-	fmt.Fprintf(&b, "transfer %v %v state=%v outcome=%v: %d/%d files done, %d failed, %d/%d bytes, %d bytes/s",
-		m["transfer_id"], m["direction"], m["state"], m["outcome"], fd, ft, ff, done, total, rate)
+	head := fmt.Sprintf("transfer %v %v state=%v outcome=%v", m["transfer_id"], m["direction"], m["state"], m["outcome"])
+	if sourceOutcome(m) == "retained" && str(m, "state") == "done" {
+		head = fmt.Sprintf("transfer %v %v COPIED but NOT MOVED (source kept) state=done outcome=%v", m["transfer_id"], m["direction"], m["outcome"])
+		if files, _ := m["files"].([]any); len(files) > 0 {
+			fd = int64(len(files) - notMoved(m))
+		}
+	}
+	fmt.Fprintf(&b, "%s: %d/%d files copied, %d failed, %d/%d bytes, %d bytes/s", head, fd, ft, ff, done, total, rate)
 	if t := moveText(m); t != "" {
 		b.WriteString("\n" + t)
 	}

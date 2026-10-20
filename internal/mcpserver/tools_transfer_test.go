@@ -205,3 +205,14 @@ func TestMoveToolDescribesSourceSemantics(t *testing.T) {
 	}
 	t.Fatal("files_move not listed")
 }
+
+func TestRetainedMoveSummaryDoesNotClaimTheMoveHappened(t *testing.T) {
+	files := []any{map[string]any{"rel": "a", "state": "done", "outcome": "written"}, map[string]any{"rel": "b", "state": "done", "outcome": "skipped"}}
+	startFakeAPI(t, map[string]handler{"transfer.get": func(map[string]any) (any, *rpcFail) {
+		return detailOf(map[string]any{"direction": "move_pull", "outcome": "copied_source_retained", "files_total": 2, "files_done": 2, "files": files}), nil
+	}})
+	tx := text(callTool(t, connect(t), "transfer_get", map[string]any{"transfer_id": "t-1"}))
+	if !strings.Contains(tx, "COPIED but NOT MOVED") || !strings.Contains(tx, "1/2 files copied") || strings.Contains(tx, "Move finished") {
+		t.Fatalf("text = %q", tx)
+	}
+}

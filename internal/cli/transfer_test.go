@@ -388,3 +388,30 @@ func TestPushRelativeLocalPathBecomesAbsolute(t *testing.T) {
 		t.Fatalf("local = %v, want under %s", f.called("transfer.start")[0]["local"], want)
 	}
 }
+
+func TestRetainedMoveHeadlineSaysCopiedAndCountsOnlyMovedFiles(t *testing.T) {
+	files := []any{map[string]any{"rel": "a", "size": 100, "state": "done", "outcome": "written"},
+		map[string]any{"rel": "b", "size": 50, "state": "done", "outcome": "skipped"}, map[string]any{"rel": "c", "size": 50, "state": "failed"}}
+	startFake(t, map[string]handler{"transfer.start": startOK(), "transfer.get": ok(xfer(map[string]any{"direction": "move_pull",
+		"outcome": "copied_source_retained", "files_total": 3, "files_done": 3, "bytes_total": 200, "files": files}))})
+	r := runCLI(t, false, "", "files", "move", `pc1:C:\x`, "/tmp/x")
+	if r.code != 1 || strings.Contains(r.stdout, "옮겼습니다") || !strings.HasPrefix(r.stdout, "복사했습니다") ||
+		!strings.Contains(r.stdout, "(1개 파일, 100 B)") || !strings.Contains(r.stdout, "원본을 남겼습니다: 2개 파일이 옮겨지지 않았습니다") {
+		t.Fatalf("code %d stdout %q stderr %q", r.code, r.stdout, r.err)
+	}
+}
+
+func TestTransferCancelOfEndedTransferSaysItsState(t *testing.T) {
+	startFake(t, map[string]handler{"transfer.cancel": ok(xfer(map[string]any{"state": "failed"}))})
+	r := runCLI(t, false, "", "transfer", "cancel", "t-1")
+	if r.code != 0 || strings.Contains(r.stdout, "취소했습니다") || !strings.Contains(r.stdout, "이미 실패한 전송입니다") {
+		t.Fatalf("code %d stdout %q", r.code, r.stdout)
+	}
+}
+
+func TestTransferHelpSaysCtrlCLeavesTransferRunning(t *testing.T) {
+	r := runCLI(t, false, "", "files", "push", "--help")
+	if !strings.Contains(r.stdout, "Ctrl-C") || !strings.Contains(r.stdout, "transfer cancel") {
+		t.Fatalf("help %q", r.stdout)
+	}
+}

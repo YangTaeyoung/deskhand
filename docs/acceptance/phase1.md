@@ -261,6 +261,8 @@ hosts_list: is_error false, windows-dev ready, connection_generation 2
 exec_run:   is_error false, elapsed_ms 50, status succeeded, code 0, stdout "DESKTOP-08RKHVP\r\n"
 ```
 
+참고: 3단계에서 `files_move`는 `files_rename`이 됐고(Mac↔PC 이동은 새 `files_move`), `files_delete`는 AI 도구에서 빠졌다.
+
 첫 실행에서 `exec_run {"cmd":"[Console]::Out.Write(\"한글 출력 😀\"); exit 5","shell":"powershell"}` → `is_error false`, `status failed`, `code 5`, stdout `한글 출력 😀`(754 ms).
 
 ## 1b. 재등록 (수정 1회차)

@@ -177,7 +177,7 @@ func envelope(extra map[string]any) map[string]any {
 }
 
 var allTools = []string{"hosts_list", "host_doctor", "session_inspect", "exec_run", "exec_start", "job_get", "job_output", "job_cancel",
-	"files_list", "files_stat", "files_read", "files_write", "files_mkdir", "files_rename", "files_delete", "proc_list", "proc_kill", "app_launch",
+	"files_list", "files_stat", "files_read", "files_write", "files_mkdir", "files_rename", "proc_list", "proc_kill", "app_launch",
 	"files_push", "files_pull", "files_move", "files_copy", "files_trash", "files_hash", "transfer_get", "transfer_list", "transfer_cancel", "transfer_resume", "transfer_pause"}
 
 func TestToolsListed(t *testing.T) {
@@ -375,7 +375,7 @@ func TestFilesReadPaging(t *testing.T) {
 func TestParamMapping(t *testing.T) {
 	ok := func(map[string]any) (any, *rpcFail) { return envelope(nil), nil }
 	methods := []string{"host.list", "host.doctor", "session.inspect", "exec.run", "exec.start", "jobs.get", "jobs.output", "jobs.cancel",
-		"files.list", "files.stat", "files.write", "files.mkdir", "files.rename", "files.delete", "proc.list", "proc.kill", "app.launch"}
+		"files.list", "files.stat", "files.write", "files.mkdir", "files.rename", "proc.list", "proc.kill", "app.launch"}
 	h := map[string]handler{}
 	for _, m := range methods {
 		h[m] = ok
@@ -403,8 +403,6 @@ func TestParamMapping(t *testing.T) {
 		{"files_mkdir", map[string]any{"host": "win", "path": `C:\d`}, "files.mkdir", map[string]any{"host_id": "win", "path": `C:\d`}},
 		{"files_rename", map[string]any{"host": "win", "from": `C:\a`, "to": `C:\b`, "overwrite": true}, "files.rename",
 			map[string]any{"host_id": "win", "from": `C:\a`, "to": `C:\b`, "overwrite": true}},
-		{"files_delete", map[string]any{"host": "win", "path": `C:\a`, "recursive": true}, "files.delete",
-			map[string]any{"host_id": "win", "path": `C:\a`, "recursive": true, "permanent": true}},
 		{"proc_list", map[string]any{"host": "win", "name": "notepad.exe"}, "proc.list", map[string]any{"host_id": "win", "name": "notepad.exe"}},
 		{"proc_kill", map[string]any{"host": "win", "pid": 12, "tree": true}, "proc.kill", map[string]any{"host_id": "win", "pid": float64(12), "tree": true}},
 		{"app_launch", map[string]any{"host": "win", "path": `C:\Windows\notepad.exe`, "args": []any{"a.txt"}}, "app.launch",
