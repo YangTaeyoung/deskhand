@@ -216,6 +216,29 @@ func TestPasteWaitsTheMinimumBeforeDrainingAndRestoring(t *testing.T) {
 	}
 }
 
+func TestPasteRestoresAtOnceWhenItsStreamContextEnds(t *testing.T) {
+	clip := &fakeClipboard{text: "old"}
+	sys := &fakeSystem{clip: clip}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sys.hook = func(call int, in []raw) { cancel() }
+	restored := false
+	j := newTestInjector(t, sys, userSession, oneDisplay, Options{ClipboardWritten: func() {
+		if clip.current() == "old" {
+			restored = true
+		}
+	}})
+	j.pasteMin = 10 * time.Second
+	start := time.Now()
+	j.apply(ctx, 7, wire.InputEvent{Seq: 1, K: "text", Text: "new", Method: "paste"})
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("the paste took %v after its context ended during the minimum wait of %v", d, j.pasteMin)
+	}
+	if len(sys.sent()) != 1 || clip.current() != "old" || !restored {
+		t.Fatalf("%d sends, clipboard %q, restore reported %v", len(sys.sent()), clip.current(), restored)
+	}
+}
+
 func TestAPreemptedPasteRestoresWithoutCtrlV(t *testing.T) {
 	clip := &fakeClipboard{text: "old"}
 	sys := &fakeSystem{clip: clip}

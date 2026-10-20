@@ -105,8 +105,12 @@ type Options struct {
 	NewEncoder func(dev *d3d.Device, srcW, srcH, outW, outH, fps, bps int) (encode.Encoder, error)
 	// InitThread prepares the capture thread; nil means encode.InitThread.
 	InitThread func() (leave func(), err error)
-	Clock      Clock
-	Logger     *log.Logger
+	// LastInput returns the Clock readings when an input was injected last
+	// and when one other than a pointer move was, 0 for none; nil means no
+	// input.
+	LastInput func() (input, action uint64)
+	Clock     Clock
+	Logger    *log.Logger
 }
 
 // Refusal is the error of a stream header the pipeline does not accept,
@@ -335,10 +339,11 @@ type run struct {
 	encRetry                   time.Duration
 	fwdStop, fwdDone           chan struct{}
 
-	// last is the newest image of the source. pending reports that it is
-	// to be encoded, and repeat that it was encoded already and goes again
-	// as an image captured now.
+	// last is the newest image of the source, taken at imageAtUS. pending
+	// reports that it is to be encoded, and repeat that it was encoded
+	// already and goes again as an image captured now.
 	last              capture.Frame
+	imageAtUS         uint64
 	haveLast, pending bool
 	repeat            bool
 	forceKey          bool
@@ -640,10 +645,14 @@ func (r *run) next(now uint64) (capture.Frame, error) {
 }
 
 // polling reports whether the pipeline looks at its source without
-// waiting: a Desktop Duplication source, not paused, with frames in the
-// encoder of which the last was given within pollWindow.
+// waiting: a Desktop Duplication source, not paused, with an encoder,
+// while warming or while the encoder holds frames of which the last was
+// given within pollWindow.
 func (r *run) polling(now uint64) bool {
-	return r.dd && r.paused == "" && r.enc != nil && now < r.lastEncodeUS+uint64(pollWindow/time.Microsecond) && r.enc.Pending() > 0
+	if !r.dd || r.paused != "" || r.enc == nil {
+		return false
+	}
+	return r.warming(now) || (now < r.lastEncodeUS+uint64(pollWindow/time.Microsecond) && r.enc.Pending() > 0)
 }
 
 // took handles the result of the source's Next.
@@ -655,6 +664,7 @@ func (r *run) took(f capture.Frame, err error) error {
 			return nil
 		}
 		r.last, r.haveLast, r.pending, r.repeat, r.dd = f, true, true, false, f.Texture != 0
+		r.imageAtUS = r.clock.NowUS()
 		if r.paused != "" {
 			r.needInfo, r.forceKey = true, true
 		}
@@ -696,21 +706,42 @@ func (r *run) slotUS(now uint64) uint64 {
 }
 
 // due reports whether an image is to be encoded now: a new one, the last
-// one again for a key frame request, or the last one again after
-// keepalive without an access unit; within the pacing of max_fps.
+// one again for a key frame request, after keepalive without an access
+// unit, or while warmDue holds after an input; within the pacing of
+// max_fps.
 func (r *run) due(now uint64) bool {
 	if !r.haveLast {
 		return false
 	}
-	if !r.pending && (r.forceKey || (r.enc != nil && now >= r.lastEncodeUS+uint64(keepalive/time.Microsecond))) {
+	if !r.pending && (r.forceKey || (r.enc != nil && (now >= r.lastEncodeUS+uint64(keepalive/time.Microsecond) ||
+		warmDue(r.warmState(), now)))) {
 		r.pending, r.repeat = true, true
 	}
 	return r.pending && r.refill(now) >= 1 && now >= r.encAtUS
 }
 
+// warmState is the state warmDue decides on now.
+func (r *run) warmState() warmState {
+	s := warmState{imageUS: r.imageAtUS, auUS: r.lastEncodeUS, maxFPS: r.set.maxFPS, inFlight: r.inFlight()}
+	if r.p.opt.LastInput != nil {
+		s.inputUS, s.actionUS = r.p.opt.LastInput()
+	}
+	return s
+}
+
+// warming reports whether now is within warmWindow of the last input.
+func (r *run) warming(now uint64) bool {
+	if r.p.opt.LastInput == nil {
+		return false
+	}
+	in, _ := r.p.opt.LastInput()
+	return in != 0 && now < in+uint64(warmWindow/time.Microsecond)
+}
+
 // timeout is how long Next may wait: until the next pacing slot of a
-// pending image, the keepalive of a static one, or the next stats frame,
-// and at most poll.
+// pending image, the keepalive of a static one, its next frame while
+// warming (pollStep while the encoder holds frames), or the next stats
+// frame, and at most poll.
 func (r *run) timeout(now uint64) time.Duration {
 	until := func(t uint64) time.Duration {
 		if t <= now {
@@ -724,6 +755,13 @@ func (r *run) timeout(now uint64) time.Duration {
 		d = min(d, until(max(r.slotUS(now), r.encAtUS)))
 	case r.haveLast && r.enc != nil:
 		d = min(d, until(r.lastEncodeUS+uint64(keepalive/time.Microsecond)))
+		if r.warming(now) {
+			if s := r.warmState(); s.inFlight > 0 {
+				d = min(d, pollStep)
+			} else {
+				d = min(d, until(s.earliestUS()))
+			}
+		}
 	}
 	return d
 }

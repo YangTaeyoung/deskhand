@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -73,7 +74,10 @@ func (s *fakeSource) Next(ctx context.Context, timeout time.Duration) (capture.F
 		s.mu.Lock()
 		f.Width, f.Height = s.w, s.h
 		s.mu.Unlock()
-		f.MonoUS, f.Dirty, f.Texture = s.clk.NowUS(), true, 1
+		f.MonoUS, f.Dirty = s.clk.NowUS(), true
+		if f.Texture == 0 {
+			f.Texture = 1
+		}
 	}
 	return f, err
 }
@@ -187,6 +191,15 @@ type fakeEncoder struct {
 	emitted  int
 	bitrates []int
 	closed   bool
+	// given lists the frames Encode took.
+	given []givenFrame
+}
+
+// givenFrame is a frame an encoder took: its texture and capture reading,
+// and the clock reading when it was given.
+type givenFrame struct {
+	texture      uintptr
+	monoUS, atUS uint64
 }
 
 func (e *fakeEncoder) Encode(f capture.Frame, forceKey bool) error {
@@ -201,6 +214,7 @@ func (e *fakeEncoder) Encode(f capture.Frame, forceKey bool) error {
 	if e.busy {
 		return encode.ErrBusy
 	}
+	e.given = append(e.given, givenFrame{texture: f.Texture, monoUS: f.MonoUS, atUS: e.clk.NowUS()})
 	key := forceKey || e.frames == 0
 	e.frames++
 	if e.frames <= e.drop {
@@ -274,6 +288,12 @@ func (e *fakeEncoder) encoded() int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.frames
+}
+
+func (e *fakeEncoder) frameList() []givenFrame {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return append([]givenFrame(nil), e.given...)
 }
 
 type encoders struct {
@@ -405,22 +425,26 @@ func describe(t *testing.T, frames []recorded) string {
 
 // harness runs a pipeline on a fake clock until the clock reaches stopAt
 // or the test's hook cancels it. Its encoders return from Encode once
-// the access unit is written.
+// the access unit is written. input and action are the readings its
+// LastInput returns.
 type harness struct {
-	clk  *fakeClock
-	op   *opener
-	encs *encoders
-	rec  *recorder
-	p    *Pipeline
+	clk           *fakeClock
+	op            *opener
+	encs          *encoders
+	rec           *recorder
+	p             *Pipeline
+	input, action atomic.Uint64
 }
 
 func newHarness(p plan, w, h int) *harness {
 	clk := &fakeClock{}
 	written := make(chan struct{}, 1)
 	hs := &harness{clk: clk, op: &opener{clk: clk, p: p, w: w, h: h}, encs: &encoders{clk: clk, written: written}, rec: &recorder{written: written}}
-	hs.p = New(Options{Open: hs.op.open, NewEncoder: hs.encs.new, Clock: clk})
+	hs.p = New(Options{Open: hs.op.open, NewEncoder: hs.encs.new, Clock: clk, LastInput: hs.lastInput})
 	return hs
 }
+
+func (hs *harness) lastInput() (uint64, uint64) { return hs.input.Load(), hs.action.Load() }
 
 // run starts the pipeline with h and stops it at stopAt µs; at calls each
 // function of at once when the clock passes its time in µs.

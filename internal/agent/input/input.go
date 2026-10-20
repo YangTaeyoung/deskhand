@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -182,6 +183,10 @@ type Injector struct {
 
 	// lastText is when a chunk of text was last sent, in UnixNano.
 	lastText atomic.Int64
+	// injected is the monoclock reading after the last send that injected
+	// an input, and acted after the last that injected one other than a
+	// pointer move; 0 before the first.
+	injected, acted atomic.Uint64
 
 	pasteMin, pasteDelay time.Duration
 }
@@ -254,6 +259,31 @@ func (j *Injector) Admit(gen uint64) error {
 
 func preempted(gen, cur uint64) *Error {
 	return fail(wire.CodeControlPreempted, "writer generation %d is older than the current %d because another writer has taken control; get control again before sending input", gen, cur)
+}
+
+// LastInjected returns the monoclock readings (docs/protocol.md mono_us)
+// when Windows last took an input of this injector, from any input
+// stream, operation or release, and when it last took one other than a
+// pointer move; 0 before the first.
+func (j *Injector) LastInjected() (input, action uint64) { return j.injected.Load(), j.acted.Load() }
+
+// send injects in through the system and records the time when it
+// injected any of it, and when any of that was more than a pointer move.
+func (j *Injector) send(in []raw) (int, error) {
+	n, err := j.sys.send(in)
+	if n > 0 {
+		now := max(monoclock.NowUS(), 1)
+		j.injected.Store(now)
+		if slices.ContainsFunc(in[:n], func(r raw) bool { return !pointerMove(r) }) {
+			j.acted.Store(now)
+		}
+	}
+	return n, err
+}
+
+// pointerMove reports whether r only moves the pointer.
+func pointerMove(r raw) bool {
+	return r.mouse && r.flags&^(mouseeventfMove|mouseeventfAbsolute|mouseeventfVirtualDesk) == 0
 }
 
 // Apply injects ev and returns its ack.
@@ -534,7 +564,7 @@ func (j *Injector) inject(owner uint64, in []raw) error {
 	if len(in) == 0 {
 		return nil
 	}
-	n, err := j.sys.send(in)
+	n, err := j.send(in)
 	for _, r := range in[:n] {
 		j.track(owner, r)
 	}

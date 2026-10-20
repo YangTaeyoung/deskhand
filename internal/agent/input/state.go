@@ -164,7 +164,7 @@ func (j *Injector) unwind(owner uint64, sent, rest []raw) {
 	if len(ups) == 0 {
 		return
 	}
-	n, _ := j.sys.send(ups)
+	n, _ := j.send(ups)
 	for _, r := range ups[:n] {
 		j.track(owner, r)
 	}
@@ -202,7 +202,7 @@ func (j *Injector) releaseLocked(match func(*heldInput) bool) ([]Pressed, error)
 	for i, id := range ids {
 		ups[i] = releaseOf(j.held[id].down)
 	}
-	n, err := j.sys.send(ups)
+	n, err := j.send(ups)
 	released := make([]Pressed, 0, n)
 	for i, id := range ids {
 		if i < n {
