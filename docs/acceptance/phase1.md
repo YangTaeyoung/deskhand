@@ -11,10 +11,12 @@ Mac 컨트롤러에서 실제 Windows 11 PC로 에이전트를 설치·페어링
 | F6 | 실패한 `host add`가 `%TEMP%\deskhand-install`을 남기고, 설치된 exe로 `uninstall`하면 `%TEMP%\deskhand-agent-<pid>.exe.old`가 남는다 |
 | F7 | CLI에 `files write`가 없다 |
 | F9 | `req.status` 확정을 적는 데몬 로그 줄이 없다(4단계 증거가 간접) |
+| I5 | `exec.run`·`exec.start`·`app.launch`의 기본 비승격 실행, `elevated`, `integrity`, `allow_ai_elevation`·`host.update`는 아직 없다(아래 "전체 검수 수정"). 이 PC는 UAC가 꺼져 있다(`EnableLUA=0`) |
 | 재연결 | ready였던 호스트가 응답하지 않으면 backoff를 처음 값(0.5 s)에 묶어 두고 상한이 없다. PC가 꺼져 있는 동안 핸드셰이크 시간 초과(5 s) + 0.5 s 간격으로 계속 다이얼하고, 연결 거부가 오는 네트워크라면 약 0.5 s 간격이 된다 |
 
 - 일시: 2026-10-20 15:44–17:02 (KST). 시각은 Mac 시계 기준이다. PC 시계는 Mac보다 약 0.45 s 늦다(16:37:30 −446 ms, 16:59:37 −473 ms: 한 SSH 세션에서 PC가 찍은 시각과 Mac 도착 시각 차의 최댓값). 5단계 시간은 이 차이를 보정했고, 보정하지 않은 두 기기 시각을 섞은 간격에는 ±0.5 s 오차가 있다.
-- 최종 판정 실행(수정 2회차 뒤): 커밋 `e4b9eb9`, 16:58:41–17:01:23, 확인 42개 모두 PASS. 에이전트(`deskhand-agentw.exe`)는 이 실행이 끝난 뒤 `DESKHAND_HOME=/tmp/dh-e2e-KYrY`의 컨트롤러 인증서(SHA-256 `5a628e10658ce497749023ba56f7f7e9901f2c186d78b7c9704d4d7176533257`)와 페어링돼 있다.
+- 전체 검수 수정 판정 실행: 커밋 `7f5a748`, 18:07:05–18:09:58, 확인 42개 모두 PASS(5단계 5회 p50 9.1 s). 이어서 수정 항목별 실기기 확인(아래 "전체 검수 수정")도 모두 PASS. 에이전트(`deskhand-agentw.exe`)는 그 뒤 `DESKHAND_HOME=/tmp/dh-e2e-7qnI`의 컨트롤러 인증서(SHA-256 `a47f8fdc3e9d8d919983b5c918d325ddacbd642fd155fb1f418f46412d8cd8a4`)와 UDP 47600으로 페어링돼 있다.
+- 수정 2회차 판정 실행: 커밋 `e4b9eb9`, 16:58:41–17:01:23, 확인 42개 모두 PASS. 그때 에이전트는 `DESKHAND_HOME=/tmp/dh-e2e-KYrY`(인증서 SHA-256 `5a628e10658ce497749023ba56f7f7e9901f2c186d78b7c9704d4d7176533257`)와 페어링돼 있었다.
 - 수정 1회차 판정 실행: 커밋 `e949ba1`, 16:36:32–16:39:21, 확인 38개 모두 PASS.
 - 이전 판정 실행: 커밋 `34d74d0`, `DESKHAND_HOME=/tmp/dh-e2e-V54r`, 16:18:19–16:19:38, 확인 24개 모두 PASS.
 - 첫 실행: 커밋 `c0c6e40`(Task 8 끝), `DESKHAND_HOME=/tmp/dh-e2e-nQCl`. 여기서 찾은 결함은 아래 커밋으로 고쳤다.
@@ -318,6 +320,23 @@ PC의 `agent.json` `controller_fingerprints`는 `0e3482f1f3a4a5884d8781410b7c3b9
 | 에이전트 강제 종료 → ready (`e949ba1`, 5회) | 8.6 / 9.4 / 9.9 / 9.3 / 10.4 s, p50 9.4 s |
 | 에이전트 강제 종료 → ready (`e4b9eb9`, 5회) | 9.3 / 10.2 / 10.3 / 8.6 / 10.3 s, p50 10.2 s |
 | `host add` 전체 (`e4b9eb9`, 두 빌드 복사) | 10 s |
+
+## 전체 검수 수정 (커밋 `5e4ce92`–`7f5a748`)
+
+전체 브랜치 검수의 지적을 고친 뒤 `scripts/e2e/phase1.sh` 전체를 다시 돌렸고(확인 42개 PASS), 수정 항목은 같은 홈(`/tmp/dh-e2e-7qnI`)에서 따로 확인했다(18:10:08–18:11:18, 확인 16개 PASS).
+
+| 항목 | 커밋 | 실기기 확인 |
+|---|---|---|
+| I1 256 KiB 넘는 출력 | `6486d11` | `deskhand exec windows-dev --shell powershell -- "[Console]::Out.Write('a' * 700000)"` stdout 700000바이트. 끝난 `exec.start` job의 `jobs.output`을 처음부터 읽으면 700000바이트·3쪽 뒤 `next_cursor:"end"` |
+| I2 멈춘 job 정리 | `0748a9f` | `cmd /c "ping -n 8 127.0.0.1 >nul & exit 6"`를 `--detach`로 시작하고 데몬을 멈췄다가 12 s 뒤 다시 시작 → ready 뒤 job `failed`, `code 6` |
+| I3 `host add --port` | `e554d90` | `host add --port 47611 --force` → 방화벽 규칙 포트 47611, `agent.json` `listen=:47611`, 에이전트 UDP 소켓 47611, 호스트 ready·port 47611, exec 성공, doctor `firewall_rule` pass. 다시 47600으로 같은 확인 PASS |
+| I4 `exec.start` 시간 제한 | `562ee4b` | `deskhand exec windows-dev --timeout 3s -- powershell -NoProfile -Command "Write-Output started; Start-Sleep 60"` → 4 s 만에 종료 코드 124, stdout `started`, job `failed` + `TIMEOUT`·`timed_out:true`, PC에서 그 pid가 없음 |
+| I6 job 목록·상세의 출력 | `0a4b656` | `exec.run hostname` 뒤 `jobs.get`은 `output_bytes:17`이고 `result`에 stdout이 없다. `jobs.list`의 어떤 job에도 stdout이 없다 |
+| M1 잠금 상태 | `3c40b08` | `session.inspect`에 `locked` 키가 없다(이 에이전트는 잠금 상태를 보고하지 않는다) |
+| M3 연결 끊김으로 끝난 `exec.run` | `cccfe5e` | 단위·통합 테스트로 확인(실기기 확인 없음) |
+| M6 기록 대상 op 목록 | `5e4ce92` | 테스트로 확인 |
+| M2 문서 | `7f5a748` | — |
+| I5 기본 비승격 실행 | — | 하지 않았다. 이 PC는 `EnableLUA=0`이라 에이전트 토큰이 `TokenElevationTypeDefault`이고 연결된 토큰이 없다(`GetTokenInformation(TokenLinkedToken)`이 "A specified logon session does not exist"). 구현 방식은 결정이 필요하다 |
 
 ## 발견 사항과 남은 문제
 
