@@ -96,7 +96,7 @@
 | `transfer.pause` / `transfer.resume` / `transfer.cancel` | Transfer(§8) |
 
 ### 진단
-`diag.system`, `diag.services`, `diag.events`, `diag.crashes`, `diag.processes` — 에이전트 op 래핑 + artifact 저장.
+`diag.system{host_id}`, `diag.services{host_id, name?}`, `diag.events{host_id, …}`, `diag.crashes{host_id, since?}` — 에이전트 op(protocol.md §3.1)와 같은 파라미터·결과 + 봉투, `save:true`면 결과 JSON을 artifact로 저장해 `artifact_id`를 붙인다. 크래시 덤프 받기는 `transfer.start{direction:"pull"}`. 프로세스 표는 `proc.list{host_id, name?}`(protocol.md §3.1의 확장 필드 포함), 종료는 `proc.kill{host_id, pid, tree?}`.
 
 ### 디버깅
 | 메서드 | 결과 |
