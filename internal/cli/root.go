@@ -62,6 +62,7 @@ const usageText = `사용법: deskhand [--json] [--quiet] <명령> ...
   files ls|stat|cat|mkdir|mv|rm        원격 파일 (<호스트>:<경로>)
   proc ls|kill                         원격 프로세스
   daemon run|start|stop|status         데몬 관리
+  mcp                                  MCP 서버(표준 입출력, AI 에이전트용)
   version                              버전 보기
 
 종료 코드: 0 성공, 1 실패, 2 사용법 오류, 3 사람 확인 필요, 4 결과 불명, 5 오프라인·차단
@@ -90,6 +91,8 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		code = r.proc(ctx, args[1:])
 	case "daemon":
 		code = r.daemon(ctx, args[1:])
+	case "mcp":
+		code = r.mcp(ctx, args[1:])
 	case "version":
 		if r.asJSON {
 			writeJSON(a.Stdout, obj{"version": a.Version})
