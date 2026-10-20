@@ -182,9 +182,11 @@ type fakeEncoder struct {
 	hold chan struct{}
 	stop chan struct{}
 	// drop is the number of first frames that give no access unit; busy
-	// makes Encode refuse every frame with encode.ErrBusy.
-	drop int
-	busy bool
+	// makes Encode refuse every frame with encode.ErrBusy; software makes
+	// Info report a software encoder.
+	drop     int
+	busy     bool
+	software bool
 
 	mu       sync.Mutex
 	frames   int
@@ -271,7 +273,7 @@ func (e *fakeEncoder) SetBitrate(bps int) error {
 }
 
 func (e *fakeEncoder) Info() encode.EncoderInfo {
-	return encode.EncoderInfo{Name: "fake", Hardware: true, Width: e.outW, Height: e.outH}
+	return encode.EncoderInfo{Name: "fake", Hardware: !e.software, Width: e.outW, Height: e.outH}
 }
 
 func (e *fakeEncoder) Close() {
@@ -302,8 +304,11 @@ type encoders struct {
 	hold    chan struct{}
 	drop    int
 	busy    bool
-	// firstOnly gives hold, drop and busy to the first encoder only.
+	// firstOnly gives hold, drop and busy to the first encoder only;
+	// software, when set, tells which encoders by the order made are
+	// software encoders.
 	firstOnly bool
+	software  func(n int) bool
 	mu        sync.Mutex
 	made      []*fakeEncoder
 }
@@ -316,6 +321,7 @@ func (es *encoders) new(_ *d3d.Device, srcW, srcH, outW, outH, fps, bps int) (en
 	if !es.firstOnly || len(es.made) == 0 {
 		e.hold, e.drop, e.busy = es.hold, es.drop, es.busy
 	}
+	e.software = es.software != nil && es.software(len(es.made))
 	es.made = append(es.made, e)
 	return e, nil
 }

@@ -332,7 +332,9 @@ type run struct {
 	openAtUS  uint64
 	openRetry time.Duration
 
+	// enc is the encoder, a hardware one when hardware is set.
 	enc                        encode.Encoder
+	hardware                   bool
 	encSrcW, encSrcH           int
 	encW, encH, encFPS, encBPS int
 	encAtUS                    uint64
@@ -626,7 +628,7 @@ func (r *run) closeEncoder() {
 	r.enc.Close()
 	close(r.fwdStop)
 	<-r.fwdDone
-	r.enc = nil
+	r.enc, r.hardware = nil, false
 }
 
 // next waits for a frame of the source up to timeout. While polling it
@@ -720,18 +722,20 @@ func (r *run) due(now uint64) bool {
 	return r.pending && r.refill(now) >= 1 && now >= r.encAtUS
 }
 
-// warmState is the state warmDue decides on now.
+// warmState is the state warmDue decides on now; it holds no input
+// while the encoder is not a hardware one.
 func (r *run) warmState() warmState {
 	s := warmState{imageUS: r.imageAtUS, auUS: r.lastEncodeUS, maxFPS: r.set.maxFPS, inFlight: r.inFlight()}
-	if r.p.opt.LastInput != nil {
+	if r.p.opt.LastInput != nil && r.hardware {
 		s.inputUS, s.actionUS = r.p.opt.LastInput()
 	}
 	return s
 }
 
-// warming reports whether now is within warmWindow of the last input.
+// warming reports whether the encoder is a hardware one and now is within
+// warmWindow of the last input.
 func (r *run) warming(now uint64) bool {
-	if r.p.opt.LastInput == nil {
+	if r.p.opt.LastInput == nil || !r.hardware {
 		return false
 	}
 	in, _ := r.p.opt.LastInput()
@@ -857,6 +861,7 @@ func (r *run) makeEncoder(f capture.Frame, outW, outH int, now uint64) error {
 	r.log.Printf("video: display %d %dx%d to %dx%d at %d fps, %d bps on %s (hardware %v)", r.set.display, f.Width, f.Height,
 		outW, outH, r.set.maxFPS, bps, info.Name, info.Hardware)
 	r.enc, r.encSrcW, r.encSrcH, r.encW, r.encH, r.encFPS, r.encBPS = enc, f.Width, f.Height, outW, outH, r.set.maxFPS, bps
+	r.hardware = info.Hardware
 	r.needInfo, r.forceKey = true, true
 	r.fwdStop, r.fwdDone = make(chan struct{}), make(chan struct{})
 	go r.forward(enc, r.epoch.Load(), r.fwdStop, r.fwdDone)

@@ -273,10 +273,10 @@ func (j *Injector) send(in []raw) (int, error) {
 	n, err := j.sys.send(in)
 	if n > 0 {
 		now := max(monoclock.NowUS(), 1)
-		j.injected.Store(now)
 		if slices.ContainsFunc(in[:n], func(r raw) bool { return !pointerMove(r) }) {
 			j.acted.Store(now)
 		}
+		j.injected.Store(now)
 	}
 	return n, err
 }

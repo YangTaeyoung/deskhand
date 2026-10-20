@@ -268,8 +268,8 @@ func writeInstallLog(dataDir, msg string) {
 }
 
 // streamHandlers are the handlers of the streams after the rpc stream;
-// input streams go to inj, and video streams keep their encoder warm
-// after its inputs.
+// input streams go to inj, and video streams read the times of its
+// inputs.
 func streamHandlers(logger *log.Logger, inj *input.Injector) quicserve.StreamHandlers {
 	return quicserve.StreamHandlers{
 		"video": func(ctx context.Context, st *quic.Stream, h wire.StreamHeader) {

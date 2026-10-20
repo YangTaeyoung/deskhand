@@ -101,7 +101,8 @@ func (te *timedEncoder) idleMS() []float64 {
 
 // TestWarmFeedCPU streams the first display with each encoder, without
 // input and with a pointer move injected all the time, and logs the access
-// units, bitrate, encode time and process CPU of each.
+// units, bitrate, encode time and process CPU of each: the hardware encoder
+// gets the warm feed, the software encoder none.
 func TestWarmFeedCPU(t *testing.T) {
 	streamDisplay(t)
 	list, err := display.List()
@@ -206,11 +207,11 @@ func TestWarmFeedCPU(t *testing.T) {
 				if keys != 0 {
 					t.Errorf("%d key frames after the first", keys)
 				}
-				if warm && enc.name == "hardware" && fps < 30 {
-					t.Errorf("%.1f fps with a pointer move injected all the time", fps)
-				}
-				if warm && len(aus) == 0 {
-					t.Error("no access unit with a pointer move injected all the time")
+				switch {
+				case warm && info.Hardware && fps < 30:
+					t.Errorf("%.1f fps on the hardware encoder with a pointer move injected all the time", fps)
+				case warm && !info.Hardware && fps >= 5:
+					t.Errorf("%.1f fps on the software encoder with a pointer move injected all the time; it gets no warm feed", fps)
 				}
 			})
 		}

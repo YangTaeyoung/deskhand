@@ -9,8 +9,7 @@ const (
 	// warmMaxFPS caps the rate of those frames.
 	warmMaxFPS = 60
 	// actionHoldOff is how long after an input other than a pointer move
-	// no image is encoded again, so that the screen it changes finds the
-	// encoder free.
+	// no image is encoded again.
 	actionHoldOff = 50 * time.Millisecond
 )
 

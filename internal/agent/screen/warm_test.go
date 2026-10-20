@@ -353,3 +353,44 @@ func TestWarmFeedLeavesAMovingScreenAlone(t *testing.T) {
 		t.Fatalf("%d images of a 60 fps source in 2 s", len(given))
 	}
 }
+
+func TestASoftwareEncoderIsNotWarmed(t *testing.T) {
+	window := uint64(warmWindow / time.Microsecond)
+	for _, c := range []struct {
+		name     string
+		software func(n int) bool
+		input    uint64
+		at       map[uint64]func(hs *harness)
+	}{
+		{"software from the start", func(int) bool { return true }, 2_000_000, nil},
+		{"software after a rebuild", func(n int) bool { return n > 0 }, 2_000_000, map[uint64]func(hs *harness){
+			1_000_000: func(hs *harness) { hs.p.Control(wire.VideoControl{Op: wire.ControlConfig}) },
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var calls calls
+			hs := newHarness(calls.wrap(static), 1920, 1080)
+			hs.encs.software = c.software
+			at := map[uint64]func(){c.input: func() { hs.input.Store(c.input) }}
+			for when, fn := range c.at {
+				at[when] = func() { fn(hs) }
+			}
+			hs.run(t, wire.StreamHeader{S: "video"}, 4_000_000, at)
+			encs := hs.encs.list()
+			last := encs[len(encs)-1]
+			if last.Info().Hardware {
+				t.Fatalf("the last of %d encoders is a hardware encoder", len(encs))
+			}
+			if n := len(between(hs.rec.aus(t), c.input, c.input+window)); n != 0 {
+				t.Fatalf("%d access units in the window after an input on a software encoder:%s", n, describe(t, hs.rec.all(false)))
+			}
+			calls.mu.Lock()
+			defer calls.mu.Unlock()
+			for i, at := range calls.at {
+				if at >= c.input+uint64(pollWindow/time.Microsecond) && at < c.input+window && calls.timeouts[i] == 0 {
+					t.Fatalf("Next(0) at %d µs after an input on a software encoder", at)
+				}
+			}
+		})
+	}
+}
