@@ -148,9 +148,11 @@ func (s *session) snapshotLocked() Session {
 		out.ClosedAt = model.Time(s.closedAt)
 	}
 	out.Targets = []Target{}
-	for _, id := range s.order {
-		if t := s.targets[id]; t != nil {
-			out.Targets = append(out.Targets, t.info)
+	for _, main := range []bool{true, false} {
+		for _, id := range s.order {
+			if t := s.targets[id]; t != nil && (t.info.Role == RoleMain) == main {
+				out.Targets = append(out.Targets, t.info)
+			}
 		}
 	}
 	out.Breakpoints = make([]Breakpoint, 0, len(s.breakpoints))

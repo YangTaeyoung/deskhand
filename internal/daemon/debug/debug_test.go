@@ -433,3 +433,14 @@ func mainTarget(t *testing.T, s Session) string {
 	t.Fatalf("no main target in %+v", s.Targets)
 	return ""
 }
+
+func TestSessionListsMainBeforeTheRendererWhateverAttachedFirst(t *testing.T) {
+	s := &session{targets: map[string]*targetState{}}
+	s.addTargetLocked(&targetState{info: Target{ID: "page-1", Role: RoleRenderer, Type: "page"}})
+	s.addTargetLocked(&targetState{info: Target{ID: "page-2", Role: RoleRenderer, Type: "page"}})
+	s.addTargetLocked(&targetState{info: Target{ID: "node-1", Role: RoleMain, Type: "node"}})
+	got := s.snapshotLocked().Targets
+	if len(got) != 3 || got[0].ID != "node-1" || got[1].ID != "page-1" || got[2].ID != "page-2" {
+		t.Fatalf("targets = %+v, want node-1 then page-1 and page-2 in the order they attached", got)
+	}
+}
