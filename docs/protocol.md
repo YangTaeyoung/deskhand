@@ -60,7 +60,7 @@ Alcove 에이전트 프로토콜 2층과 같은 NDJSON(`t`로 구분). 한 줄 �
 
 ### 3.1 op 목록
 
-`proc.list`의 각 항목에는 Alcove 필드(`pid`, `ppid`, `name`, `path`, `cmd`, `mem_kb`)에 더해 `cpu_pct`(0.5초 간격 두 표본, 논리 코어 합 기준 0–100), `user?`, `started`(RFC 3339), `started_by_deskhand`(이 에이전트가 `exec.*`·`app.launch`·`pty`로 띄운 프로세스와 그 자손이면 true)가 있다.
+`proc.list`의 각 항목에는 Alcove 필드(`pid`, `ppid`, `name`, `path`, `cmd`, `mem_kb`)에 더해 `cpu_pct`(0.5초 간격 두 표본, 논리 코어 합 기준 0–100), `user?`, `started`(RFC 3339), `started_by_deskhand`(이 에이전트가 `exec.*`·`app.launch`·`pty`로 띄운 프로세스와 그 자손이면 true), `self`(에이전트 자신의 프로세스면 true)가 있다. `proc.kill`에 `pid`와 함께 `started`(그 프로세스의 `proc.list` 값)를 주면, 지금 그 PID의 시작 시각이 다를 때 종료하지 않고 `STALE_TARGET`으로 답한다. 에이전트 자신(`self`)은 종료하지 않는다(`PERMISSION_DENIED`).
 
 Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `exec.start`, `exec.read`, `exec.write`, `exec.kill`, `exec.list`, `proc.list`, `proc.kill`, `fs.stat`, `fs.list`, `fs.read`, `fs.tail`, `fs.write`, `fs.rename`, `fs.mkdir`, `fs.delete`, `app.launch`, `win.list`, `win.action`, `ui.tree`, `ui.find`, `ui.text`, `ui.rect`, `ui.act`, `ui.focused`, `ui.at`, `ui.ping`, `clipboard.get`, `clipboard.set`.
 
