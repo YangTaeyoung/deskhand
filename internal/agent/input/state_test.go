@@ -170,6 +170,19 @@ func TestStreamRefusesAStaleHeader(t *testing.T) {
 	}
 }
 
+func TestTheAcceptLineCarriesGenerationZero(t *testing.T) {
+	j := newTestInjector(t, &fakeSystem{}, userSession, oneDisplay, Options{})
+	_, first := serveTestStream(t, j, 0)
+	if gen, has := first["gen"]; first["ok"] != true || !has || gen != float64(0) {
+		t.Fatalf("first line %v, want ok with gen 0", first)
+	}
+	for _, k := range []string{"code", "error"} {
+		if _, has := first[k]; has {
+			t.Fatalf("the accept line %v has %s", first, k)
+		}
+	}
+}
+
 func TestStreamAcceptsWithTheCurrentGeneration(t *testing.T) {
 	j := newTestInjector(t, &fakeSystem{}, userSession, oneDisplay, Options{})
 	j.SetWriter(3)

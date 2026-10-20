@@ -28,12 +28,17 @@ type Stream interface {
 	Close() error
 }
 
-// streamLine is the first line the agent writes on an input stream.
-type streamLine struct {
+// acceptLine is the first line of an input stream the agent accepts.
+type acceptLine struct {
+	OK  bool   `json:"ok"`
+	Gen uint64 `json:"gen"`
+}
+
+// refusalLine is the only line of an input stream the agent refuses.
+type refusalLine struct {
 	OK    bool   `json:"ok"`
-	Gen   uint64 `json:"gen,omitempty"`
-	Code  string `json:"code,omitempty"`
-	Error string `json:"error,omitempty"`
+	Code  string `json:"code"`
+	Error string `json:"error"`
 }
 
 // queued is an event read from the stream, or the ack of a frame that
@@ -58,7 +63,7 @@ func (j *Injector) ServeStream(ctx context.Context, st Stream, h wire.StreamHead
 	defer st.Close()
 	refuse := func(e *Error) {
 		_ = st.SetWriteDeadline(time.Now().Add(writeTimeout))
-		_ = wire.WriteHeader(st, streamLine{Code: e.Code, Error: e.Msg})
+		_ = wire.WriteHeader(st, refusalLine{Code: e.Code, Error: e.Msg})
 	}
 	if j.sys == nil {
 		refuse(errUnsupported())
@@ -75,7 +80,7 @@ func (j *Injector) ServeStream(ctx context.Context, st Stream, h wire.StreamHead
 		return
 	}
 	_ = st.SetWriteDeadline(time.Now().Add(writeTimeout))
-	if err := wire.WriteHeader(st, streamLine{OK: true, Gen: j.Gen()}); err != nil {
+	if err := wire.WriteHeader(st, acceptLine{OK: true, Gen: j.Gen()}); err != nil {
 		return
 	}
 	owner := j.owners.Add(1)
