@@ -13,11 +13,14 @@ extension ConnectionState {
         }
     }
 
+    /// Offline and connecting gray, ready green, degraded orange, reconnecting the accent (with
+    /// the status dot's pulse), blocked red.
     public var tint: Color {
         switch self {
         case .offline, .connecting: DS.Color.neutral
         case .ready: DS.Color.success
-        case .degraded, .reconnecting: DS.Color.warning
+        case .degraded: DS.Color.warning
+        case .reconnecting: DS.Color.accent
         case .blocked: DS.Color.danger
         }
     }

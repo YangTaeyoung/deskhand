@@ -118,7 +118,7 @@ struct ControlBanner: View {
                 EmptyView()
             }
         case .connecting, .reconnecting:
-            BannerBand(style: .tinted(DS.Color.warning), symbol: nil, title: kind.title,
+            BannerBand(style: .tinted(host.connection.tint), symbol: nil, title: kind.title,
                        message: kind == .connecting
                            ? String.ui("banner.connecting.message", "보안 연결로 에이전트에 접속하고 있습니다.")
                            : String.ui("banner.reconnecting.message", "연결되면 바로 이어서 쓸 수 있습니다. 결과를 모르는 작업은 다시 실행하지 않습니다.")) {

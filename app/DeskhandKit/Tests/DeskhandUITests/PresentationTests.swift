@@ -44,4 +44,10 @@ final class PresentationTests: XCTestCase {
         XCTAssertEqual(ControlPill.label(owner: .human, clientName: nil), "내가 조작 중")
         XCTAssertEqual(ControlPill.label(owner: .none, clientName: "Claude Code"), "관찰 중")
     }
+
+    func testDegradedAndReconnectingHaveDifferentColors() throws {
+        let degraded = try SRGB(ConnectionState.degraded.tint)
+        let reconnecting = try SRGB(ConnectionState.reconnecting.tint)
+        XCTAssertGreaterThan(degraded.distance(to: reconnecting), 0.2)
+    }
 }
