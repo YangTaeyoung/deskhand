@@ -230,27 +230,28 @@ public struct ScreenView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         case .connecting:
-            ScreenSkeleton(rect: rect, title: String.ui("screen.connecting.host", "PC에 연결하는 중…"), detail: host.name)
+            ScreenSkeleton(rect: rect, title: String.ui("screen.connecting.host", "연결되면 화면이 나타납니다"), detail: loadingDetail,
+                           spinner: false)
         case .reconnecting:
             if shown.hasFrame {
                 Scrim(rect: rect)
-                StageCapsule(title: String.ui("screen.reconnecting", "다시 연결하는 중…"), spinner: true)
+                StageCapsule(title: String.ui("screen.reconnecting.resumes", "연결이 돌아오면 화면이 이어집니다"), spinner: false)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScreenSkeleton(rect: rect, title: String.ui("screen.reconnecting", "다시 연결하는 중…"), detail: host.name)
+                ScreenSkeleton(rect: rect, title: String.ui("screen.connecting.host", "연결되면 화면이 나타납니다"), detail: loadingDetail,
+                               spinner: false)
             }
         case .offline:
-            StageMessage(symbol: "moon.zzz",
-                         title: String.ui("screen.offline.title", "PC가 오프라인입니다"),
-                         message: String.ui("screen.offline.message", "다시 연결되면 화면이 여기에 나타납니다."))
+            StageMessage(symbol: HostOffline.symbol, title: HostOffline.title,
+                         message: String.ui("screen.offline.message", "위 배너의 ‘연결’로 \(host.name)에 연결하면 화면이 여기에 나타납니다."))
         case .blocked:
-            StageMessage(symbol: "exclamationmark.shield",
-                         title: String.ui("screen.blocked.title", "화면을 열 수 없습니다"),
-                         message: String.ui("screen.blocked.message", "인증서 문제를 해결하고 다시 연결하면 화면을 볼 수 있습니다."))
+            PlaceholderNote(symbol: "lock.trianglebadge.exclamationmark",
+                            message: String.ui("screen.blocked.message", "다시 페어링하면 화면을 볼 수 있습니다."))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .locked:
-            StageMessage(symbol: "lock.display",
-                         title: String.ui("screen.locked.title", "Windows 잠금 화면"),
-                         message: String.ui("screen.locked.message", "잠금이 풀리면 화면이 바로 나타납니다. 잠금 화면은 원격으로 볼 수 없습니다."))
+            PlaceholderNote(symbol: "lock.display",
+                            message: String.ui("screen.locked.message", "잠금이 풀리면 화면이 바로 나타납니다. 잠금 화면은 원격으로 볼 수 없습니다."))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .unavailable(let state, let reason):
             StageMessage(symbol: "display.trianglebadge.exclamationmark",
                          title: state == .unsupported
@@ -368,6 +369,8 @@ struct ScreenSkeleton: View {
     let title: String
     var detail: String?
     var error: OperationError?
+    /// Draws the spinner; off while the workspace banner shows the connection's progress.
+    var spinner = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -386,7 +389,7 @@ struct ScreenSkeleton: View {
                 }
                 .clipShape(RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
             VStack(spacing: DS.Space.m) {
-                StageSpinner(size: 20)
+                if spinner { StageSpinner(size: 20) }
                 VStack(spacing: DS.Space.xs) {
                     Text(title)
                         .font(DS.Font.headline)

@@ -5,8 +5,8 @@ import struct DeskhandClient.Host
 /// The QA tab: a toolbar with 시나리오 실행… (⌘R) and the list scope (this computer or every
 /// computer); the runs on the left and the selected run on the right. Below `narrowWidth` the list
 /// folds away behind the toolbar's sidebar button and opens as a floating panel. The workspace's
-/// control banner shows the computer's connection; while it is connected with capabilities that
-/// are not ready, a strip names them.
+/// control banner shows the PC's connection; while the PC is offline a strip says so, and while it
+/// is connected with capabilities that are not ready, a strip names them.
 public struct QAView: View {
     static let narrowWidth: CGFloat = 900
 
@@ -55,7 +55,10 @@ private struct QAContent: View {
             QAToolbar(store: store, model: model, host: host, scope: scope, narrow: narrow, listShown: showsList, hasRuns: !runs.isEmpty) {
                 setList(!showsList)
             }
-            if connected, !QACapabilityStrip.missing(host).isEmpty {
+            if host.connection == .offline {
+                HostOfflineStrip(reconnecting: false,
+                                 detail: String.ui("qa.offline.strip", "실행 기록은 볼 수 있습니다. 지금 실행하면 PC가 필요한 단계는 ‘차단’으로 끝납니다."))
+            } else if connected, !QACapabilityStrip.missing(host).isEmpty {
                 QACapabilityStrip(host: host)
             }
             main(runs)

@@ -153,28 +153,16 @@ private struct TerminalEmptyState: View {
                 }
                 .scrollBounceBehavior(.basedOnSize)
             }
-        case .connecting, .reconnecting:
-            VStack(spacing: DS.Space.m) {
-                ProgressView()
-                Text(availability == .connecting
-                     ? String.ui("terminal.host.connecting", "\(host.name)에 연결하는 중…")
-                     : String.ui("terminal.host.reconnecting", "\(host.name)에 다시 연결하는 중…"))
-                    .font(DS.Font.headline)
-                Text(String.ui("terminal.host.waiting", "연결되면 셸을 열 수 있습니다. 원격 PC에서 실행 중이던 셸은 분리된 셸에서 다시 엽니다."))
-                    .font(DS.Font.body)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 360)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(DS.Space.l)
-            .accessibilityElement(children: .combine)
+        case .connecting:
+            HostStateBody(state: .connecting, symbol: "terminal", resumes: waitingText, repairs: repairText)
+        case .reconnecting:
+            HostStateBody(state: .reconnecting, symbol: "terminal", resumes: waitingText, repairs: repairText)
         case .offline:
-            EmptyStateView(symbol: "bolt.horizontal.circle", title: String.ui("terminal.host.offline", "연결되어 있지 않습니다"),
-                           message: String.ui("terminal.host.offlineMessage", "위 배너의 ‘연결’로 \(host.name)에 연결하면 셸을 열 수 있습니다."))
+            HostStateBody(state: .offline, symbol: "terminal",
+                          resumes: String.ui("terminal.host.offlineMessage", "위 배너의 ‘연결’로 \(host.name)에 연결하면 셸을 열 수 있습니다."),
+                          repairs: repairText)
         case .blocked:
-            EmptyStateView(symbol: "lock.trianglebadge.exclamationmark", title: String.ui("terminal.host.blocked", "다시 페어링해야 합니다"),
-                           message: String.ui("terminal.host.blockedMessage", "에이전트 인증서가 페어링 때와 달라 연결을 막았습니다. 위 배너에서 다시 페어링한 뒤 셸을 열 수 있습니다."))
+            HostStateBody(state: .blocked, symbol: "terminal", resumes: waitingText, repairs: repairText)
         case .unavailable(let state, let reason):
             EmptyStateView(symbol: "terminal",
                            title: state == .unsupported
@@ -182,6 +170,14 @@ private struct TerminalEmptyState: View {
                                : String.ui("terminal.host.unavailable", "지금은 터미널을 열 수 없습니다"),
                            message: reason ?? String.ui("terminal.host.unavailableMessage", "에이전트가 터미널 기능이 준비되지 않았다고 알렸습니다. 진단을 실행해 원인을 확인하세요."))
         }
+    }
+
+    private var waitingText: String {
+        .ui("terminal.host.waiting", "연결되면 셸을 열 수 있습니다. 원격 PC에서 실행 중이던 셸은 분리된 셸에서 다시 엽니다.")
+    }
+
+    private var repairText: String {
+        .ui("terminal.host.blocked", "다시 페어링하면 셸을 열 수 있습니다.")
     }
 
     private var ready: some View {

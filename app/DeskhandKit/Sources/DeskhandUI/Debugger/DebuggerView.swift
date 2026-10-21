@@ -252,45 +252,23 @@ private struct DebuggerContent: View {
     }
 }
 
-/// The computer went offline or is reconnecting while sessions are listed.
+/// The PC went offline or is reconnecting while sessions are listed.
 struct OfflineStrip: View {
     let host: Host
     let availability: HostFeatureAvailability
 
     var body: some View {
-        HStack(spacing: DS.Space.s) {
-            if availability == .connecting || availability == .reconnecting {
-                ProgressView().controlSize(.small)
-            } else {
-                Image(systemName: "bolt.horizontal.circle")
-                    .foregroundStyle(DS.Color.warning)
-                    .accessibilityHidden(true)
-            }
-            Text(message)
-                .font(DS.Font.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, DS.Space.m)
-        .padding(.vertical, DS.Space.s)
-        .background(DS.Color.warning.opacity(0.08))
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(DS.Color.separator).frame(height: 1)
-        }
-        .accessibilityElement(children: .combine)
+        HostOfflineStrip(reconnecting: availability == .connecting || availability == .reconnecting, detail: message)
     }
 
     private var message: String {
-        let name = host.name
         switch availability {
         case .connecting, .reconnecting:
-            return .ui("debugger.offline.reconnecting", "\(name)에 다시 연결하는 중입니다. 연결이 돌아오면 세션 상태와 놓친 콘솔 기록을 다시 읽습니다.")
+            return .ui("debugger.offline.reconnecting", "연결이 돌아오면 세션 상태와 놓친 콘솔 기록을 다시 읽습니다.")
         default:
-            return .ui("debugger.offline.strip", "\(name)에 연결되어 있지 않아 실행 제어와 평가를 쓸 수 없습니다. 이전 세션 기록만 볼 수 있습니다.")
+            return .ui("debugger.offline.strip", "실행 제어와 평가는 쓸 수 없고, 이전 세션 기록만 볼 수 있습니다.")
         }
     }
-
     /// Why sessions cannot start on `host` now, or nil while it can serve the debugger.
     static func reason(host: Host, availability: HostFeatureAvailability) -> String? {
         let name = host.name

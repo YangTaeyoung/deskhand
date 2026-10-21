@@ -2063,6 +2063,17 @@
         }
       }
     },
+    "debugger.blocked": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 페어링하면 Electron 앱을 디버그할 수 있습니다."
+          }
+        }
+      }
+    },
     "debugger.breakpoint.add": {
       "extractionState": "manual",
       "localizations": {
@@ -4104,7 +4115,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@에 다시 연결하는 중입니다. 연결이 돌아오면 세션 상태와 놓친 콘솔 기록을 다시 읽습니다."
+            "value": "연결이 돌아오면 세션 상태와 놓친 콘솔 기록을 다시 읽습니다."
           }
         }
       }
@@ -4115,7 +4126,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@에 연결되어 있지 않아 실행 제어와 평가를 쓸 수 없습니다. 이전 세션 기록만 볼 수 있습니다."
+            "value": "실행 제어와 평가는 쓸 수 없고, 이전 세션 기록만 볼 수 있습니다."
           }
         }
       }
@@ -6423,61 +6434,6 @@
         }
       }
     },
-    "feature.blocked": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "다시 페어링해야 합니다"
-          }
-        }
-      }
-    },
-    "feature.blockedMessage": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "에이전트 인증서가 페어링 때와 달라 연결을 막았습니다. 위 배너에서 다시 페어링하면 이 탭을 쓸 수 있습니다."
-          }
-        }
-      }
-    },
-    "feature.connecting": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@에 연결하는 중…"
-          }
-        }
-      }
-    },
-    "feature.offline": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "연결되어 있지 않습니다"
-          }
-        }
-      }
-    },
-    "feature.reconnecting": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@에 다시 연결하는 중…"
-          }
-        }
-      }
-    },
     "feature.unavailableMessage": {
       "extractionState": "manual",
       "localizations": {
@@ -7331,40 +7287,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "다시 페어링해야 합니다"
-          }
-        }
-      }
-    },
-    "files.remote.blockedMessage": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "에이전트 인증서가 페어링 때와 달라 연결을 막았습니다. 위 배너에서 다시 페어링한 뒤 파일을 열 수 있습니다."
-          }
-        }
-      }
-    },
-    "files.remote.connecting": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@에 연결하는 중…"
-          }
-        }
-      }
-    },
-    "files.remote.offline": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "연결되어 있지 않습니다"
+            "value": "다시 페어링하면 원격 폴더를 열고 파일을 주고받을 수 있습니다."
           }
         }
       }
@@ -7376,17 +7299,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "위 배너의 ‘연결’로 %@에 연결하면 원격 폴더를 열고 파일을 주고받을 수 있습니다."
-          }
-        }
-      }
-    },
-    "files.remote.reconnecting": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@에 다시 연결하는 중…"
           }
         }
       }
@@ -8056,6 +7968,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "사용자"
+          }
+        }
+      }
+    },
+    "host.offline.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PC가 오프라인입니다"
           }
         }
       }
@@ -9316,6 +9239,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "이벤트 로그"
+          }
+        }
+      }
+    },
+    "logs.blocked": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 페어링하면 시스템 요약, 이벤트 로그, 크래시 덤프를 볼 수 있습니다."
           }
         }
       }
@@ -10996,7 +10930,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "마지막 연결 %@. PC가 켜져 있으면 연결을 눌러 다시 시도하세요."
+            "value": "마지막 연결 %@"
           }
         }
       }
@@ -11008,19 +10942,18 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "PC가 켜져 있으면 연결을 눌러 다시 시도하세요."
+            "value": "PC가 켜져 있으면 ‘연결’을 눌러 다시 시도하세요."
           }
         }
       }
     },
-    "notice.offline.title": {
-      "comment": "Connection notice in the computer detail: offline title",
+    "notice.offline.never": {
       "extractionState": "manual",
       "localizations": {
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "오프라인입니다"
+            "value": "연결한 기록이 없습니다"
           }
         }
       }
@@ -11364,6 +11297,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "트리 종료 불가: %@"
+          }
+        }
+      }
+    },
+    "processes.blocked": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 페어링하면 실행 중인 프로세스를 보고 종료할 수 있습니다."
           }
         }
       }
@@ -14261,6 +14205,17 @@
         }
       }
     },
+    "qa.offline.strip": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 기록은 볼 수 있습니다. 지금 실행하면 PC가 필요한 단계는 ‘차단’으로 끝납니다."
+          }
+        }
+      }
+    },
     "qa.phase.a11y": {
       "extractionState": "manual",
       "localizations": {
@@ -16396,19 +16351,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "인증서 문제를 해결하고 다시 연결하면 화면을 볼 수 있습니다."
-          }
-        }
-      }
-    },
-    "screen.blocked.title": {
-      "comment": "Remote screen UI text",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "화면을 열 수 없습니다"
+            "value": "다시 페어링하면 화면을 볼 수 있습니다."
           }
         }
       }
@@ -16444,7 +16387,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "PC에 연결하는 중…"
+            "value": "연결되면 화면이 나타납니다"
           }
         }
       }
@@ -16713,18 +16656,6 @@
         }
       }
     },
-    "screen.locked.title": {
-      "comment": "Remote screen UI text",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Windows 잠금 화면"
-          }
-        }
-      }
-    },
     "screen.offline.message": {
       "comment": "Remote screen UI text",
       "extractionState": "manual",
@@ -16732,19 +16663,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "다시 연결되면 화면이 여기에 나타납니다."
-          }
-        }
-      }
-    },
-    "screen.offline.title": {
-      "comment": "Remote screen UI text",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "PC가 오프라인입니다"
+            "value": "위 배너의 ‘연결’로 %@에 연결하면 화면이 여기에 나타납니다."
           }
         }
       }
@@ -16829,6 +16748,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "다시 연결하는 중…"
+          }
+        }
+      }
+    },
+    "screen.reconnecting.resumes": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결이 돌아오면 화면이 이어집니다"
           }
         }
       }
@@ -19793,40 +19723,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "다시 페어링해야 합니다"
-          }
-        }
-      }
-    },
-    "terminal.host.blockedMessage": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "에이전트 인증서가 페어링 때와 달라 연결을 막았습니다. 위 배너에서 다시 페어링한 뒤 셸을 열 수 있습니다."
-          }
-        }
-      }
-    },
-    "terminal.host.connecting": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@에 연결하는 중…"
-          }
-        }
-      }
-    },
-    "terminal.host.offline": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "연결되어 있지 않습니다"
+            "value": "다시 페어링하면 셸을 열 수 있습니다."
           }
         }
       }
@@ -19838,17 +19735,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "위 배너의 ‘연결’로 %@에 연결하면 셸을 열 수 있습니다."
-          }
-        }
-      }
-    },
-    "terminal.host.reconnecting": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@에 다시 연결하는 중…"
           }
         }
       }

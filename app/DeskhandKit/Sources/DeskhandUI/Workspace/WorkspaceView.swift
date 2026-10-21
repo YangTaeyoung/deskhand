@@ -130,6 +130,12 @@ public struct WorkspaceView: View {
     }
 }
 
+/// Heights shared by the workspace chrome of every tab.
+enum WorkspaceMetrics {
+    /// Height of each tab's sub-toolbar under the tab bar.
+    static let subToolbarHeight: CGFloat = 44
+}
+
 /// Leading row of the seven workspace tabs (⌘1–⌘7): symbol and title, or symbols only when
 /// the column is narrow; tabs in `badges` carry a paused badge.
 struct WorkspaceTabBar: View {

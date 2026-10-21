@@ -763,29 +763,19 @@ private struct RemoteUnavailableView: View {
     let availability: RemoteFilesAvailability
 
     var body: some View {
+        let waiting = String.ui("files.remote.waiting", "연결되면 마지막으로 보던 폴더를 다시 엽니다. 연결이 끊겨 멈춘 전송은 다시 연결된 뒤 전송 목록에서 ‘재개’를 누르세요.")
+        let repairs = String.ui("files.remote.blocked", "다시 페어링하면 원격 폴더를 열고 파일을 주고받을 수 있습니다.")
         switch availability {
-        case .connecting, .reconnecting:
-            VStack(spacing: DS.Space.m) {
-                ProgressView()
-                Text(availability == .connecting
-                     ? String.ui("files.remote.connecting", "\(host.name)에 연결하는 중…")
-                     : String.ui("files.remote.reconnecting", "\(host.name)에 다시 연결하는 중…"))
-                    .font(DS.Font.headline)
-                Text(String.ui("files.remote.waiting", "연결되면 마지막으로 보던 폴더를 다시 엽니다. 연결이 끊겨 멈춘 전송은 다시 연결된 뒤 전송 목록에서 ‘재개’를 누르세요."))
-                    .font(DS.Font.body)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 320)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(DS.Space.l)
-            .accessibilityElement(children: .combine)
+        case .connecting:
+            HostStateBody(state: .connecting, symbol: "folder", resumes: waiting, repairs: repairs)
+        case .reconnecting:
+            HostStateBody(state: .reconnecting, symbol: "folder", resumes: waiting, repairs: repairs)
         case .offline:
-            EmptyStateView(symbol: "bolt.horizontal.circle", title: String.ui("files.remote.offline", "연결되어 있지 않습니다"),
-                           message: String.ui("files.remote.offlineMessage", "위 배너의 ‘연결’로 \(host.name)에 연결하면 원격 폴더를 열고 파일을 주고받을 수 있습니다."))
+            HostStateBody(state: .offline, symbol: "folder",
+                          resumes: String.ui("files.remote.offlineMessage", "위 배너의 ‘연결’로 \(host.name)에 연결하면 원격 폴더를 열고 파일을 주고받을 수 있습니다."),
+                          repairs: repairs)
         case .blocked:
-            EmptyStateView(symbol: "lock.trianglebadge.exclamationmark", title: String.ui("files.remote.blocked", "다시 페어링해야 합니다"),
-                           message: String.ui("files.remote.blockedMessage", "에이전트 인증서가 페어링 때와 달라 연결을 막았습니다. 위 배너에서 다시 페어링한 뒤 파일을 열 수 있습니다."))
+            HostStateBody(state: .blocked, symbol: "folder", resumes: waiting, repairs: repairs)
         case .unavailable(_, let reason):
             EmptyStateView(symbol: "folder.badge.questionmark", title: String.ui("files.remote.unavailable", "파일 기능을 쓸 수 없습니다"),
                            message: reason ?? String.ui("files.remote.unavailableMessage", "에이전트가 파일 기능이 준비되지 않았다고 알렸습니다."))

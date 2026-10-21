@@ -51,3 +51,32 @@ public struct EmptyStateView: View {
         .padding(DS.Space.l)
     }
 }
+
+/// A quiet note in place of a panel's content: a muted symbol and one secondary line, for states
+/// whose title and actions are shown elsewhere on the screen.
+public struct PlaceholderNote: View {
+    public let symbol: String
+    public let message: String
+
+    public init(symbol: String, message: String) {
+        self.symbol = symbol
+        self.message = message
+    }
+
+    public var body: some View {
+        VStack(spacing: DS.Space.m) {
+            Image(systemName: symbol)
+                .font(.largeTitle)
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
+            Text(message)
+                .font(DS.Font.body)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 400)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(DS.Space.l)
+        .accessibilityElement(children: .combine)
+    }
+}

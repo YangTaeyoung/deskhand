@@ -29,8 +29,8 @@ enum HostFeatureAvailability: Equatable {
     }
 }
 
-/// A tab whose computer cannot serve it: connecting, offline, blocked, or the capability not
-/// ready. Connect and re-pair stay in the workspace banner above.
+/// A tab whose PC cannot serve it: connecting, offline, blocked (`HostStateBody`), or the
+/// capability not ready. Connect and re-pair stay in the workspace banner above.
 struct HostFeatureUnavailableView: View {
     enum Feature {
         case processes
@@ -44,31 +44,14 @@ struct HostFeatureUnavailableView: View {
 
     var body: some View {
         switch availability {
-        case .connecting, .reconnecting:
-            VStack(spacing: DS.Space.m) {
-                ProgressView()
-                Text(availability == .connecting
-                     ? String.ui("feature.connecting", "\(host.name)에 연결하는 중…")
-                     : String.ui("feature.reconnecting", "\(host.name)에 다시 연결하는 중…"))
-                    .font(DS.Font.headline)
-                Text(waitingText)
-                    .font(DS.Font.body)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 360)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(DS.Space.l)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .accessibilityElement(children: .combine)
+        case .connecting:
+            HostStateBody(state: .connecting, symbol: symbol, resumes: waitingText, repairs: repairText)
+        case .reconnecting:
+            HostStateBody(state: .reconnecting, symbol: symbol, resumes: waitingText, repairs: repairText)
         case .offline:
-            EmptyStateView(symbol: "bolt.horizontal.circle", title: String.ui("feature.offline", "연결되어 있지 않습니다"),
-                           message: offlineText)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            HostStateBody(state: .offline, symbol: symbol, resumes: offlineText, repairs: repairText)
         case .blocked:
-            EmptyStateView(symbol: "lock.trianglebadge.exclamationmark", title: String.ui("feature.blocked", "다시 페어링해야 합니다"),
-                           message: String.ui("feature.blockedMessage", "에이전트 인증서가 페어링 때와 달라 연결을 막았습니다. 위 배너에서 다시 페어링하면 이 탭을 쓸 수 있습니다."))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            HostStateBody(state: .blocked, symbol: symbol, resumes: waitingText, repairs: repairText)
         case .unavailable(let state, let reason):
             EmptyStateView(symbol: symbol,
                            title: title(state),
@@ -98,9 +81,17 @@ struct HostFeatureUnavailableView: View {
     private var offlineText: String {
         let name = host.name
         switch feature {
-        case .processes: return .ui("processes.offline", "위 배너의 ‘연결’로 \(host.name)에 연결하면 실행 중인 프로세스를 보고 종료할 수 있습니다.")
-        case .diagnostics: return .ui("logs.offline", "위 배너의 ‘연결’로 \(host.name)에 연결하면 시스템 요약, 이벤트 로그, 크래시 덤프를 볼 수 있습니다.")
+        case .processes: return .ui("processes.offline", "위 배너의 ‘연결’로 \(name)에 연결하면 실행 중인 프로세스를 보고 종료할 수 있습니다.")
+        case .diagnostics: return .ui("logs.offline", "위 배너의 ‘연결’로 \(name)에 연결하면 시스템 요약, 이벤트 로그, 크래시 덤프를 볼 수 있습니다.")
         case .debugger: return .ui("debugger.offline", "위 배너의 ‘연결’로 \(name)에 연결하면 Electron 앱을 실행해 디버그하거나 실행 중인 앱에 연결할 수 있습니다.")
+        }
+    }
+
+    private var repairText: String {
+        switch feature {
+        case .processes: .ui("processes.blocked", "다시 페어링하면 실행 중인 프로세스를 보고 종료할 수 있습니다.")
+        case .diagnostics: .ui("logs.blocked", "다시 페어링하면 시스템 요약, 이벤트 로그, 크래시 덤프를 볼 수 있습니다.")
+        case .debugger: .ui("debugger.blocked", "다시 페어링하면 Electron 앱을 디버그할 수 있습니다.")
         }
     }
 

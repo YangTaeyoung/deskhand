@@ -54,7 +54,7 @@ public enum ControlBannerKind: Equatable, Sendable {
     public var title: String {
         switch self {
         case .blocked: .ui("notice.blocked.title", "인증서 불일치")
-        case .offline: .ui("notice.offline.title", "오프라인입니다")
+        case .offline: HostOffline.title
         case .connecting: .ui("notice.connecting.title", "연결하는 중…")
         case .reconnecting: .ui("notice.reconnecting.title", "다시 연결하는 중…")
         case .sessionLocked: .ui("banner.locked.title", "Windows가 잠겨 있습니다")
@@ -131,10 +131,10 @@ struct ControlBanner: View {
                     .buttonStyle(.bordered)
             }
         case .offline:
-            BannerBand(style: .tinted(DS.Color.neutral), symbol: "moon.zzz.fill", title: kind.title,
-                       message: host.lastSeenText.map {
-                           String.ui("notice.offline.lastSeen", "마지막 연결 \($0). PC가 켜져 있으면 연결을 눌러 다시 시도하세요.")
-                       } ?? String.ui("notice.offline.message", "PC가 켜져 있으면 연결을 눌러 다시 시도하세요.")) {
+            BannerBand(style: .tinted(DS.Color.neutral), symbol: "moon.zzz.fill",
+                       title: host.lastSeenText.map { String.ui("notice.offline.lastSeen", "마지막 연결 \($0)") }
+                           ?? String.ui("notice.offline.never", "연결한 기록이 없습니다"),
+                       message: String.ui("notice.offline.message", "PC가 켜져 있으면 ‘연결’을 눌러 다시 시도하세요.")) {
                 Button { store.connect(host.hostID) } label: {
                     Label(String.ui("action.connect", "연결"), systemImage: "bolt.horizontal")
                 }
