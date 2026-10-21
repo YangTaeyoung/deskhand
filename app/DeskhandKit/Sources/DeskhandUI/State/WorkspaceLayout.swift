@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftUI
 
 /// Workspace layout the person chose: the selected tab, the inspector and the logs tab's system
 /// summary. Kept in UserDefaults and shared by every computer.
@@ -66,6 +67,11 @@ public final class WorkspaceLayout {
     /// The tab reads its content again on 새로 고침.
     public static func canRefresh(_ tab: WorkspaceTab) -> Bool {
         [.files, .processes, .logs, .debugger].contains(tab)
+    }
+
+    /// ⌘R for 새로 고침, except on the QA tab where ⌘R runs a scenario.
+    public static func refreshShortcut(_ tab: WorkspaceTab) -> KeyboardShortcut? {
+        tab == .qa ? nil : KeyboardShortcut("r")
     }
 
     /// The inspector is folded away because the workspace is too narrow for it beside the content.

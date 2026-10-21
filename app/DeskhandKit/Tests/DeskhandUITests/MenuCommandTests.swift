@@ -1,5 +1,6 @@
 import AppKit
 @testable import DeskhandUI
+import SwiftUI
 import XCTest
 
 @MainActor
@@ -7,6 +8,15 @@ final class MenuCommandTests: XCTestCase {
     func testFindAndRefreshApplyToTheTabsThatHaveThem() {
         XCTAssertEqual(WorkspaceTab.allCases.filter(WorkspaceLayout.canFind), [.files, .processes, .logs, .debugger, .qa])
         XCTAssertEqual(WorkspaceTab.allCases.filter(WorkspaceLayout.canRefresh), [.files, .processes, .logs, .debugger])
+    }
+
+    /// 새로 고침 stays in the View menu on every tab; on the QA tab it is disabled and leaves ⌘R
+    /// to 시나리오 실행.
+    func testRefreshKeepsCommandRExceptOnTheQATab() {
+        for tab in WorkspaceTab.allCases {
+            XCTAssertEqual(WorkspaceLayout.refreshShortcut(tab), tab == .qa ? nil : KeyboardShortcut("r"), "\(tab)")
+        }
+        XCTAssertFalse(WorkspaceLayout.canRefresh(.qa))
     }
 
     func testEachFindRequestIsNewAndRecentForHalfASecond() {

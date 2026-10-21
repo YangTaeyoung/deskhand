@@ -89,8 +89,9 @@ enum RemoveHostShortcut {
     }
 }
 
-/// View menu items: the quick switch, one checkable item per workspace tab and the inspector
-/// panes. Choosing a tab closes the quick switch.
+/// View menu items: the quick switch, one checkable item per workspace tab, the inspector panes
+/// and 새로 고침 — disabled on tabs without it, and without ⌘R on the QA tab. Choosing a tab
+/// closes the quick switch.
 private struct WorkspaceViewCommands: View {
     let store: AppStore
     @Bindable var layout: WorkspaceLayout
@@ -122,12 +123,10 @@ private struct WorkspaceViewCommands: View {
             .keyboardShortcut("2", modifiers: [.command, .option])
             .disabled(!hasWorkspace)
         Divider()
-        if layout.tab != .qa {
-            Button(String.ui("menu.refresh", "새로 고침")) { layout.requestRefresh() }
-                .keyboardShortcut("r")
-                .disabled(!hasWorkspace || !WorkspaceLayout.canRefresh(layout.tab))
-            Divider()
-        }
+        Button(String.ui("menu.refresh", "새로 고침")) { layout.requestRefresh() }
+            .keyboardShortcut(WorkspaceLayout.refreshShortcut(layout.tab))
+            .disabled(!hasWorkspace || !WorkspaceLayout.canRefresh(layout.tab))
+        Divider()
     }
 }
 
