@@ -5,7 +5,7 @@ import struct DeskhandClient.Host
 /// Bar above the remote screen: the display picker (or the single display), what a click or
 /// typing does right now, and menus for stream quality, keyboard handling and statistics.
 struct ScreenHeader: View {
-    static let height: CGFloat = 40
+    static let height = WorkspaceMetrics.subToolbarHeight
 
     @Bindable var preferences: ScreenPreferences
     let host: Host

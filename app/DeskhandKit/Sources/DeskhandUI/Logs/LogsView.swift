@@ -152,7 +152,7 @@ private struct LogsSectionBar: View {
             .accessibilityLabel(String.ui("logs.refresh", "새로 고침"))
         }
         .padding(.horizontal, DS.Space.m)
-        .frame(height: 40)
+        .frame(height: WorkspaceMetrics.subToolbarHeight)
         .overlay(alignment: .top) {
             if showsSummary { Rectangle().fill(DS.Color.separator).frame(height: 1) }
         }

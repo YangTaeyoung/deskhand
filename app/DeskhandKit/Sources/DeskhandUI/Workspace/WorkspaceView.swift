@@ -31,6 +31,7 @@ public struct WorkspaceView: View {
 
     public var body: some View {
         framed
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { store.layout.fit(width: $0) }
             .environment(\.appDefaults, store.defaults)
             .task(id: host.hostID) {
                 store.debugger(for: host).start()
@@ -51,14 +52,14 @@ public struct WorkspaceView: View {
         case .native:
             main
                 .toolbar { WorkspaceToolbar(store: store, host: host) }
-                .inspector(isPresented: $layout.showsInspector) {
+                .inspector(isPresented: Binding(get: { layout.isInspectorVisible }, set: { layout.setInspectorVisible($0) })) {
                     TimelineInspector(store: store, host: host)
                         .inspectorColumnWidth(min: 280, ideal: 320, max: 440)
                 }
         case .standIn:
             HStack(spacing: 0) {
                 main
-                if layout.showsInspector {
+                if layout.isInspectorVisible {
                     Divider()
                     TimelineInspector(store: store, host: host)
                         .frame(width: 320)

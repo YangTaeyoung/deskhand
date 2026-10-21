@@ -10,7 +10,7 @@ struct TerminalTabStrip: View {
     let host: Host
     let canOpen: Bool
 
-    static let height: CGFloat = 40
+    static let height = WorkspaceMetrics.subToolbarHeight
     static let maximumTabWidth: CGFloat = 220
     static let minimumTabWidth: CGFloat = 112
 

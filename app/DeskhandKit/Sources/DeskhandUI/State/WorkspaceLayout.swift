@@ -50,6 +50,47 @@ public final class WorkspaceLayout {
     /// The sidebar's PC list has keyboard focus. Not kept between launches.
     public var sidebarFocused = false
 
+    /// The inspector is folded away because the workspace is too narrow for it beside the content.
+    public private(set) var inspectorAutoHidden = false
+
+    /// Narrowest tab content kept beside the inspector.
+    static let minimumContentWidth: CGFloat = 640
+    /// Width the inspector takes while it shows.
+    static let inspectorWidth: CGFloat = 320
+    /// Extra width the workspace needs before a folded inspector comes back.
+    static let returnMargin: CGFloat = 40
+
+    /// The inspector shows: the person wants it and the workspace is wide enough.
+    public var isInspectorVisible: Bool { showsInspector && !inspectorAutoHidden }
+
+    /// Shows or hides the inspector as the person asks, whatever the width.
+    public func setInspectorVisible(_ visible: Bool) {
+        showsInspector = visible
+        inspectorAutoHidden = false
+    }
+
+    public func toggleInspectorVisibility() {
+        setInspectorVisible(!isInspectorVisible)
+    }
+
+    /// Folds the inspector away when the content beside it would be narrower than
+    /// `minimumContentWidth` in a workspace `width` wide, and brings it back once the workspace is
+    /// `returnMargin` wider than that.
+    public func fit(width: CGFloat) {
+        guard showsInspector else {
+            inspectorAutoHidden = false
+            return
+        }
+        let content = width - Self.inspectorWidth
+        if content < Self.minimumContentWidth {
+            inspectorAutoHidden = true
+        } else if inspectorAutoHidden, content < Self.minimumContentWidth + Self.returnMargin {
+            inspectorAutoHidden = true
+        } else {
+            inspectorAutoHidden = false
+        }
+    }
+
     @ObservationIgnored private let defaults: UserDefaults
 
     init(defaults: UserDefaults) {
@@ -62,11 +103,11 @@ public final class WorkspaceLayout {
 
     /// Shows the inspector on `pane`, or hides it when it already shows `pane`.
     public func toggleInspector(_ pane: InspectorPane) {
-        if showsInspector && inspectorPane == pane {
-            showsInspector = false
+        if isInspectorVisible && inspectorPane == pane {
+            setInspectorVisible(false)
         } else {
             inspectorPane = pane
-            showsInspector = true
+            setInspectorVisible(true)
         }
     }
 }

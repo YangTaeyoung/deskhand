@@ -261,7 +261,7 @@ private struct FilePaneHeader: View {
             }
         }
         .padding(.horizontal, DS.Space.m)
-        .frame(height: 40)
+        .frame(height: WorkspaceMetrics.subToolbarHeight)
         .background(isActive ? DS.Color.accent.opacity(0.06) : .clear)
         .overlay(alignment: .bottom) {
             Rectangle().fill(DS.Color.separator).frame(height: 1)

@@ -103,10 +103,10 @@ private struct WorkspaceViewCommands: View {
                 .disabled(!hasWorkspace)
         }
         Divider()
-        Button(layout.showsInspector
+        Button(layout.isInspectorVisible
                ? String.ui("menu.hideInspector", "인스펙터 가리기")
                : String.ui("menu.showInspector", "인스펙터 보기")) {
-            layout.showsInspector.toggle()
+            layout.toggleInspectorVisibility()
         }
         .keyboardShortcut("0", modifiers: [.command, .option])
         .disabled(!hasWorkspace)

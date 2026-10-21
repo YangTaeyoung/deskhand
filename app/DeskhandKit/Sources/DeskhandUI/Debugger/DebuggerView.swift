@@ -370,7 +370,7 @@ struct DebuggerToolbar: View {
         }
         .controlSize(.regular)
         .padding(.horizontal, DS.Space.m)
-        .frame(height: 44)
+        .frame(height: WorkspaceMetrics.subToolbarHeight)
         .overlay(alignment: .bottom) {
             Rectangle().fill(DS.Color.separator).frame(height: 1)
         }

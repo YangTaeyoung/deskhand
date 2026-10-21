@@ -73,7 +73,7 @@ struct WorkspaceToolbar: ToolbarContent {
                 .id(stopRunning)
         }
         ToolbarSpacer(.fixed, placement: .primaryAction)
-        let showsInspector = store.layout.showsInspector
+        let showsInspector = store.layout.isInspectorVisible
         ToolbarItem(placement: .primaryAction) {
             InspectorToggleButton(layout: store.layout, showsInspector: showsInspector)
                 .id(showsInspector)
@@ -145,7 +145,7 @@ public struct WorkspaceToolbarStrip: View {
                 EmergencyStopButton(store: model.store, host: model.host,
                                     running: model.store.controlActions.isRunning(.stop, on: model.host.hostID))
             }
-            InspectorToggleButton(layout: model.store.layout, showsInspector: model.store.layout.showsInspector)
+            InspectorToggleButton(layout: model.store.layout, showsInspector: model.store.layout.isInspectorVisible)
                 .buttonStyle(.bordered)
                 .padding(.leading, DS.Space.s)
         }
@@ -242,7 +242,7 @@ struct InspectorToggleButton: View {
 
     var body: some View {
         Button {
-            layout.showsInspector.toggle()
+            layout.toggleInspectorVisibility()
         } label: {
             Label(showsInspector ? String.ui("menu.hideInspector", "인스펙터 가리기") : String.ui("menu.showInspector", "인스펙터 보기"),
                   systemImage: "sidebar.right")
