@@ -535,7 +535,13 @@ final class FilesTests: XCTestCase {
         XCTAssertEqual(row.fix, OperationError(code: "DISK_FULL", message: "").fix)
         XCTAssertNotNil(row.fix)
         let partial = try XCTUnwrap(PreviewFixtures.transfers().first { $0.transferID == "t-preview-partial" })
-        XCTAssertEqual(TransferPresentation(partial.transfer, hostName: "개발 PC").fix, OperationError(code: "PERMISSION_DENIED", message: "").fix)
+        XCTAssertEqual(TransferPresentation(partial.transfer, hostName: "개발 PC").fix,
+                       "쓸 권한이 있는지, 다른 프로그램이 그 파일을 열고 있지 않은지 확인한 뒤 다시 시도하세요.")
+        let collision = try XCTUnwrap(partial.files.first { $0.error?.code == "TRANSFER_CONFLICT" })
+        XCTAssertNil(TransferFilePresentation(collision).fix, "the daemon's message already says to rename one of the two")
+        let taken = TransferFile(rel: "a.txt", size: 1, bytesDone: 0, state: "failed",
+                                 error: EnvelopeError(code: "TRANSFER_CONFLICT", message: "대상에 같은 이름의 항목이 있습니다"))
+        XCTAssertEqual(TransferFilePresentation(taken).fix, OperationError(code: "TRANSFER_CONFLICT", message: "").fix)
     }
 
     func testLaunchReportsProgressAndInlineError() async throws {

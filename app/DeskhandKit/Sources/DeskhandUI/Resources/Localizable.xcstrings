@@ -21222,6 +21222,17 @@
         }
       }
     },
+    "transfer.fix.permission": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "쓸 권한이 있는지, 다른 프로그램이 그 파일을 열고 있지 않은지 확인한 뒤 다시 시도하세요."
+          }
+        }
+      }
+    },
     "transfer.moveHelp": {
       "extractionState": "manual",
       "localizations": {

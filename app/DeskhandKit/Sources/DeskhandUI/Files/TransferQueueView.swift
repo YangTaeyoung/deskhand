@@ -288,7 +288,7 @@ struct TransferRow: View {
                 WorkingBar(tint: row.state == .verifying ? DS.Color.success : DS.Color.accent)
                     .accessibilityLabel(row.state == .verifying ? verifyingText(row) : String.ui("transfer.a11y.working", "진행 중"))
             }
-            Text((row.state == .verifying ? [verifyingText(row), row.bytesText, row.filesText]
+            Text((row.state == .verifying ? [row.direction.isMove ? nil : verifyingText(row), row.bytesText, row.filesText]
                   : [row.progress.map(DS.Format.percent), row.bytesText, row.rateText, row.etaText, row.filesText])
                 .compactMap { $0 }.joined(separator: " · "))
                 .font(DS.Font.caption.monospacedDigit())

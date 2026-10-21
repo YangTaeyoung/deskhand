@@ -251,7 +251,7 @@ public struct TransferPresentation: Sendable, Equatable {
     /// the error of its first failed file.
     public var fix: String? {
         guard state == .failed || state == .paused || outcome == .failed || outcome == .partial else { return nil }
-        return transfer.error.map { OperationError($0).fix } ?? nil
+        return transfer.error.flatMap(TransferRemedy.fix)
     }
 
     private var partialExplanation: String {
@@ -343,7 +343,7 @@ public struct TransferFilePresentation: Sendable, Equatable {
 
     /// How to resolve the file's error, chosen by its code.
     public var fix: String? {
-        file.error.flatMap { OperationError($0).fix }
+        file.error.flatMap(TransferRemedy.fix)
     }
 
     /// `SHA-256 9c1f07d2…` once verified.
@@ -351,6 +351,24 @@ public struct TransferFilePresentation: Sendable, Equatable {
         guard let sha = file.sha256, !sha.isEmpty else { return nil }
         let short = String(sha.prefix(8))
         return .ui("transferFile.sha", "SHA-256 \(short)…")
+    }
+}
+
+/// How to resolve a transfer's or a file's error. A refused write reads as a write problem, not
+/// as the agent's account; a `TRANSFER_CONFLICT` whose message already names its remedy (names
+/// that differ only in letter case, a source that changed while it moved) gets none; other codes
+/// take the shared remedy.
+enum TransferRemedy {
+    static func fix(_ error: EnvelopeError) -> String? {
+        let message = error.message ?? ""
+        switch error.code {
+        case "PERMISSION_DENIED":
+            return .ui("transfer.fix.permission", "쓸 권한이 있는지, 다른 프로그램이 그 파일을 열고 있지 않은지 확인한 뒤 다시 시도하세요.")
+        case "TRANSFER_CONFLICT" where message.contains("대소문자") || message.contains("바뀌"):
+            return nil
+        default:
+            return OperationError(error).fix
+        }
     }
 }
 
