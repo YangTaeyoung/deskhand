@@ -158,7 +158,7 @@ func TestTransferAgentOverLAN(t *testing.T) {
 	}
 	srv := server.New(server.Options{Clipboard: fakeClipboard{}, HomeDir: work, AllowExec: true, Version: "lan", Logger: quiet})
 	defer srv.Close()
-	serveConn(ctx, conn, srv, TransferStreams(srv), quiet)
+	serveConn(ctx, conn, srv, TransferStreams(srv), &controllerConns{conns: map[string]*quic.Conn{}}, quiet)
 }
 
 // lanSSH runs command on the SSH host host and returns its output.

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/agent/config"
@@ -37,11 +38,53 @@ const (
 const (
 	closeNormal   quic.ApplicationErrorCode = 0
 	closeProtocol quic.ApplicationErrorCode = 1
+	closeReplaced quic.ApplicationErrorCode = 2
 )
+
+// controllerConns holds the connection whose rpc stream each controller
+// certificate began last.
+type controllerConns struct {
+	mu    sync.Mutex
+	conns map[string]*quic.Conn
+}
+
+// replace records conn as the connection of the controller fp and closes
+// the connection recorded for fp before it.
+func (c *controllerConns) replace(fp string, conn *quic.Conn, lg *log.Logger) {
+	c.mu.Lock()
+	old := c.conns[fp]
+	c.conns[fp] = conn
+	c.mu.Unlock()
+	if old != nil && old != conn {
+		lg.Printf("closing the connection from %s: a newer one from the same controller began", old.RemoteAddr())
+		old.CloseWithError(closeReplaced, "a newer connection from this controller replaced this one")
+	}
+}
+
+// remove forgets conn when it is still the connection of fp.
+func (c *controllerConns) remove(fp string, conn *quic.Conn) {
+	c.mu.Lock()
+	if c.conns[fp] == conn {
+		delete(c.conns, fp)
+	}
+	c.mu.Unlock()
+}
+
+// controllerFingerprint is the certificate fingerprint of conn's peer, ""
+// without a certificate.
+func controllerFingerprint(conn *quic.Conn) string {
+	certs := conn.ConnectionState().TLS.PeerCertificates
+	if len(certs) == 0 {
+		return ""
+	}
+	return transport.Fingerprint(certs[0].Raw)
+}
 
 // Run listens on cfg.Listen for controllers whose certificate fingerprint is
 // one of cfg.ControllerFingerprints and serves each connection until ctx
-// ends; it then returns nil. A failure to listen or to accept is returned.
+// ends; it then returns nil. When the rpc stream of a connection begins,
+// the older connection of the same controller certificate is closed. A
+// failure to listen or to accept is returned.
 func Run(ctx context.Context, cfg config.Agent, id transport.Identity, srv *server.Server, streams StreamHandlers) error {
 	allowed := map[string]bool{}
 	for _, fp := range cfg.ControllerFingerprints {
@@ -54,6 +97,7 @@ func Run(ctx context.Context, cfg config.Agent, id transport.Identity, srv *serv
 	defer ln.Close()
 	srv.Start()
 	lg := srv.Logger()
+	latest := &controllerConns{conns: map[string]*quic.Conn{}}
 	for {
 		conn, err := ln.Accept(ctx)
 		if err != nil {
@@ -62,13 +106,15 @@ func Run(ctx context.Context, cfg config.Agent, id transport.Identity, srv *serv
 			}
 			return fmt.Errorf("accept on %s: %w", cfg.Listen, err)
 		}
-		go serveConn(ctx, conn, srv, streams, lg)
+		go serveConn(ctx, conn, srv, streams, latest, lg)
 	}
 }
 
 // serveConn serves the rpc stream that has to come first on conn, and the
 // streams after it, until the rpc stream or ctx ends; then it closes conn.
-func serveConn(ctx context.Context, conn *quic.Conn, srv *server.Server, streams StreamHandlers, lg *log.Logger) {
+// Once the rpc stream begins, conn replaces the connection of its
+// controller in latest.
+func serveConn(ctx context.Context, conn *quic.Conn, srv *server.Server, streams StreamHandlers, latest *controllerConns, lg *log.Logger) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	peer := conn.RemoteAddr().String()
@@ -91,6 +137,10 @@ func serveConn(ctx context.Context, conn *quic.Conn, srv *server.Server, streams
 		refuse(st, wire.CodeInvalidArgument, fmt.Sprintf("the first stream of a connection is the rpc stream, not '%s'; open it with {\"s\":\"rpc\"}", h.S))
 		closeAfterRefusal(conn, "the first stream is not rpc")
 		return
+	}
+	if fp := controllerFingerprint(conn); fp != "" {
+		latest.replace(fp, conn, lg)
+		defer latest.remove(fp, conn)
 	}
 	go acceptStreams(ctx, conn, streams, lg)
 	srv.ServeConn(ctx, rpcStream{st}, peer)

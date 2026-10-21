@@ -263,3 +263,65 @@ func TestARegisteredStreamKindReachesItsHandler(t *testing.T) {
 		t.Fatalf("answer %+v, %v", got, err)
 	}
 }
+
+// ping sends ping on the rpc stream of w and r and reports whether it was
+// answered.
+func ping(t *testing.T, r *proto.Reader, w *proto.Writer, id int) bool {
+	t.Helper()
+	if err := w.Send(proto.Message{"t": "req", "id": id, "op": "ping"}); err != nil {
+		return false
+	}
+	for {
+		m, err := r.Next()
+		if err != nil {
+			return false
+		}
+		if m.Type() == "res" && m.Int("id") == id {
+			return m["ok"] == true
+		}
+	}
+}
+
+func TestANewRPCStreamOfTheSameControllerClosesItsOlderConnection(t *testing.T) {
+	a := startAgent(t)
+	old := a.dial(t)
+	openRPC(t, old)
+	newer := a.dial(t)
+	_, r, w := openRPC(t, newer)
+	select {
+	case <-old.Context().Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("the older connection of the controller stayed open after its newer rpc stream began")
+	}
+	var ae *quic.ApplicationError
+	if err := context.Cause(old.Context()); !errors.As(err, &ae) || !ae.Remote || ae.ErrorMessage == "" {
+		t.Fatalf("the older connection ended with %v", err)
+	}
+	if !ping(t, r, w, 1) {
+		t.Fatal("the newer connection does not answer")
+	}
+	if newer.Context().Err() != nil {
+		t.Fatalf("the newer connection closed: %v", context.Cause(newer.Context()))
+	}
+}
+
+func TestAnotherControllersConnectionStaysOpen(t *testing.T) {
+	t.Setenv("DESKHAND_HOME", t.TempDir())
+	agentID, _ := transport.NewIdentity("agent")
+	first, _ := transport.NewIdentity("mac-1")
+	second, _ := transport.NewIdentity("mac-2")
+	cfg := config.Agent{Listen: fmt.Sprintf("127.0.0.1:%d", freeUDPPort(t)), ControllerFingerprints: []string{first.Fingerprint, second.Fingerprint},
+		DataDir: t.TempDir(), Name: "pc"}
+	srv := server.New(server.Options{Clipboard: fakeClipboard{}, HomeDir: t.TempDir(), DataDir: cfg.DataDir, Logger: quiet})
+	t.Cleanup(srv.Close)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go Run(ctx, cfg, agentID, srv, nil)
+	one := agentUnderTest{addr: cfg.Listen, agent: agentID, daemon: first}.dial(t)
+	_, r, w := openRPC(t, one)
+	two := agentUnderTest{addr: cfg.Listen, agent: agentID, daemon: second}.dial(t)
+	openRPC(t, two)
+	if !ping(t, r, w, 1) || one.Context().Err() != nil {
+		t.Fatalf("the first controller's connection closed when another controller connected: %v", context.Cause(one.Context()))
+	}
+}
