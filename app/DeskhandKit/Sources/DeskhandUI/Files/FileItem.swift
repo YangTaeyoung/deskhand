@@ -84,11 +84,11 @@ public struct FileItem: Identifiable, Sendable, Equatable, Hashable {
 
     public var fileKind: FileKind { FileKind(name: name, isDirectory: isDirectory, isPackage: isPackage) }
 
-    /// `84.3MB`, or `—` for folders.
-    public var sizeText: String { size.map(FileFormat.size) ?? "—" }
+    /// `84.3 MB`, or `—` for folders.
+    public var sizeText: String { size.map(DS.Format.bytes) ?? "—" }
 
     /// `오늘 오후 3:12`, `어제 오후 6:40` or `2026. 10. 3. 오후 3:12`.
-    public var modifiedText: String { modified.map { FileFormat.date($0) } ?? "—" }
+    public var modifiedText: String { modified.map { DS.Format.dateTime($0) } ?? "—" }
 }
 
 /// Families of files with their symbol and kind text.
@@ -276,57 +276,6 @@ public enum FileKind: Sendable, Equatable {
         case .log, .text, .code, .script, .other: true
         default: false
         }
-    }
-}
-
-/// Sizes, dates, rates and durations as the files tab writes them.
-public enum FileFormat {
-    static let locale = Locale(identifier: "ko_KR")
-
-    /// `84.3MB`, `512바이트`, `0바이트`.
-    public static func size(_ bytes: Int) -> String {
-        if bytes == 0 { return .ui("size.zero", "0바이트") }
-        return Int64(bytes).formatted(.byteCount(style: .file).locale(locale))
-    }
-
-    /// `88,301,568바이트`.
-    public static func exactBytes(_ bytes: Int) -> String {
-        let count = bytes.formatted(.number.locale(locale))
-        return .ui("size.exact", "\(count)바이트")
-    }
-
-    /// `42.1MB/s`.
-    public static func rate(_ bytesPerSecond: Int) -> String {
-        let value = size(bytesPerSecond)
-        return .ui("rate.perSecond", "\(value)/s")
-    }
-
-    /// `38%`, rounded down.
-    public static func percent(_ fraction: Double) -> String {
-        (floor(fraction * 100) / 100).formatted(.percent.precision(.fractionLength(0)).locale(locale))
-    }
-
-    /// `3,000`.
-    public static func count(_ value: Int) -> String {
-        value.formatted(.number.locale(locale))
-    }
-
-    /// `오늘 오후 3:12`, `어제 오후 6:40`, otherwise `2026. 10. 3. 오후 3:12`.
-    public static func date(_ date: Date, now: Date = .now, calendar: Calendar = .current) -> String {
-        let time = date.formatted(.dateTime.hour().minute().locale(locale))
-        if calendar.isDate(date, inSameDayAs: now) { return .ui("date.today", "오늘 \(time)") }
-        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) {
-            return .ui("date.yesterday", "어제 \(time)")
-        }
-        return date.formatted(.dateTime.year().month(.defaultDigits).day().hour().minute().locale(locale))
-    }
-
-    /// `약 9초`, `약 2분 5초`, `약 1시간 4분`.
-    public static func remaining(seconds: Double) -> String {
-        let total = max(1, Int(seconds.rounded(.up)))
-        let units: Set<Duration.UnitsFormatStyle.Unit> = total >= 3600 ? [.hours, .minutes] : [.minutes, .seconds]
-        let text = Duration.seconds(total).formatted(.units(allowed: units, width: .abbreviated).locale(locale))
-        return .ui("eta.about", "약 \(text)")
     }
 }
 

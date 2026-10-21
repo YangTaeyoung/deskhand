@@ -64,7 +64,7 @@ struct TimelineRow: View {
                         .lineLimit(entry.isCommandLike ? 2 : 3)
                         .truncationMode(.middle)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Text(entry.ts.date.formatted(date: .omitted, time: .shortened))
+                    Text(DS.Format.clock(entry.ts.date))
                         .font(DS.Font.caption)
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
@@ -112,7 +112,7 @@ struct TimelineRow: View {
     }
 
     private var accessibilityText: String {
-        var parts = [entry.actorName, entry.summary, entry.ts.date.formatted(date: .omitted, time: .shortened)]
+        var parts = [entry.actorName, entry.summary, DS.Format.clock(entry.ts.date)]
         if let outcome = OutcomeBadge.Outcome(rawValue: entry.outcome) { parts.append(outcome.title) }
         if !entry.artifacts.isEmpty {
             parts.append(String.ui("timeline.a11y.artifacts", "산출물 \(entry.artifacts.count)개"))

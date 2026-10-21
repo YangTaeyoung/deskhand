@@ -15,6 +15,6 @@ public struct StreamQuality: Equatable, Hashable, Sendable {
 
     /// Megabits per second with one decimal (`12.4`).
     public var megabitsText: String? {
-        bitsPerSecond.map { ($0 / 1_000_000).formatted(.number.precision(.fractionLength(1))) }
+        bitsPerSecond.map { DS.Format.decimal($0 / 1_000_000) }
     }
 }

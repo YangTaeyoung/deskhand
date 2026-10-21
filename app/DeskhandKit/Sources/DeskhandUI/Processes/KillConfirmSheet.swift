@@ -29,7 +29,7 @@ public struct KillConfirmSheet: View {
         let name = process.name
         if ended { return .ui("processes.confirm.endedTitle", "‘\(name)’ 프로세스가 이미 종료되었습니다") }
         if request.tree {
-            let count = FileFormat.count(request.descendants.count)
+            let count = DS.Format.count(request.descendants.count)
             return .ui("processes.confirm.treeTitle", "‘\(name)’ 및 하위 프로세스 \(count)개를 종료할까요?")
         }
         return .ui("processes.confirm.title", "‘\(name)’ 프로세스를 종료할까요?")
@@ -40,7 +40,7 @@ public struct KillConfirmSheet: View {
         let shown = current ?? process
         var parts = [String.ui("processes.pidLabel", "PID \(String(shown.pid))")]
         if let user = shown.user { parts.append(ProcessFormat.user(user)) }
-        parts.append(ProcessFormat.memory(kb: shown.memKb))
+        parts.append(DS.Format.memory(kb: shown.memKb))
         return parts.joined(separator: " · ")
     }
 
@@ -51,7 +51,7 @@ public struct KillConfirmSheet: View {
         if !request.tree {
             return .ui("processes.confirm.deskhandOne", "Deskhand가 터미널 탭이나 AI 작업으로 시작한 프로세스입니다. 이 셸이나 명령이 중단됩니다.")
         }
-        let count = FileFormat.count(started)
+        let count = DS.Format.count(started)
         return .ui("processes.confirm.deskhand", "함께 끝나는 프로세스 중 \(count)개는 Deskhand가 터미널 탭이나 AI 작업으로 시작한 것입니다. 그 셸과 명령도 중단됩니다.")
     }
 
@@ -101,7 +101,7 @@ public struct KillConfirmSheet: View {
                     descendantList
                 }
                 if request.survivors > 0 {
-                    let count = FileFormat.count(request.survivors)
+                    let count = DS.Format.count(request.survivors)
                     HStack(alignment: .firstTextBaseline, spacing: DS.Space.s) {
                         Image(systemName: "arrow.triangle.branch")
                             .foregroundStyle(.secondary)
@@ -181,7 +181,7 @@ public struct KillConfirmSheet: View {
             }
             if request.descendants.count > shown.count {
                 Divider()
-                let more = FileFormat.count(request.descendants.count - shown.count)
+                let more = DS.Format.count(request.descendants.count - shown.count)
                 Text(String.ui("processes.confirm.more", "외 \(more)개"))
                     .font(DS.Font.caption)
                     .foregroundStyle(.secondary)

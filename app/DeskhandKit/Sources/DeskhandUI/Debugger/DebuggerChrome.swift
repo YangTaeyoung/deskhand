@@ -180,11 +180,9 @@ enum DebugFormat {
         }
     }
 
-    /// `14:32:08` in 24-hour time.
+    /// `14:32:08` or `오후 2:32:08`, as the system clock setting writes it.
     static func clock(_ date: Date) -> String {
-        date.formatted(Date.VerbatimFormatStyle(
-            format: "\(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased)):\(minute: .twoDigits):\(second: .twoDigits)",
-            timeZone: .current, calendar: Calendar(identifier: .gregorian)))
+        DS.Format.clock(date, seconds: true)
     }
 
     static let monoSize: CGFloat = 12

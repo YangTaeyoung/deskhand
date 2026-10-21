@@ -79,7 +79,7 @@ struct TransferQueueView: View {
                     Text(String.ui("queue.title", "전송"))
                         .font(DS.Font.headline)
                     if !queue.visible.isEmpty {
-                        Text(FileFormat.count(queue.visible.count))
+                        Text(DS.Format.count(queue.visible.count))
                             .font(DS.Font.caption.weight(.semibold).monospacedDigit())
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 6)
@@ -287,7 +287,7 @@ struct TransferRow: View {
                                                                 : String.ui("transfer.a11y.working", "진행 중"))
             }
             Text((row.state == .verifying ? [String.ui("transfer.verifyingDetail", "SHA-256 확인 중"), row.bytesText, row.filesText]
-                  : [row.progress.map(FileFormat.percent), row.bytesText, row.rateText, row.etaText, row.filesText])
+                  : [row.progress.map(DS.Format.percent), row.bytesText, row.rateText, row.etaText, row.filesText])
                 .compactMap { $0 }.joined(separator: " · "))
                 .font(DS.Font.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
@@ -358,10 +358,10 @@ struct TransferRow: View {
     }
 
     private var filesTitle: String {
-        let total = FileFormat.count(transfer.files.count)
+        let total = DS.Format.count(transfer.files.count)
         let failed = transfer.files.filter { $0.transferState == .failed || $0.transferOutcome == .failed }.count
         if failed > 0 {
-            let bad = FileFormat.count(failed)
+            let bad = DS.Format.count(failed)
             return .ui("transfer.filesFailed", "파일 \(total)개 · 실패 \(bad)개")
         }
         return .ui("transfer.filesAll", "파일 \(total)개")
@@ -461,7 +461,7 @@ private struct TransferFileRow: View {
                         .lineLimit(1)
                         .fixedSize()
                 }
-                Text(FileFormat.size(file.size))
+                Text(DS.Format.bytes(file.size))
                     .font(DS.Font.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .frame(minWidth: 64, alignment: .trailing)

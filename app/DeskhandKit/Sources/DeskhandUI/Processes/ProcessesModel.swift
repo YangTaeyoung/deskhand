@@ -268,7 +268,7 @@ public final class ProcessesModel {
                 processes.removeAll { ended.contains($0.pid) }
                 apply(processes)
                 if request.tree {
-                    let count = FileFormat.count(max(receipt.killed, ended.count) - 1)
+                    let count = DS.Format.count(max(receipt.killed, ended.count) - 1)
                     show(.success, .ui("processes.killed.tree", "‘\(name)’ 및 하위 프로세스 \(count)개를 종료했습니다"))
                 } else {
                     show(.success, .ui("processes.killed", "‘\(name)’(PID \(pid)) 프로세스를 종료했습니다"))

@@ -510,7 +510,7 @@ public final class FilesModel {
     public func resolveConflict(_ policy: ConflictPolicy, applyToAll: Bool) async {
         guard var prompt = conflicts.first, !prompt.items.isEmpty else { return }
         if policy == .fail {
-            let count = FileFormat.count(prompt.items.count)
+            let count = DS.Format.count(prompt.items.count)
             conflicts.removeFirst()
             show(.info, .ui("files.conflict.stopped", "같은 이름이 있는 \(count)개 항목을 보내지 않았습니다"))
             return
@@ -667,12 +667,12 @@ public final class FilesModel {
         if let (item, error) = failures.first {
             var message = failure(item.name)
             if failures.count > 1 {
-                let more = FileFormat.count(failures.count - 1)
+                let more = DS.Format.count(failures.count - 1)
                 message = .ui("files.error.more", "\(message) 외 \(more)개")
             }
             show(.error, message, error: error, side: .remote)
         } else {
-            show(.success, success(FileFormat.count(items.count)))
+            show(.success, success(DS.Format.count(items.count)))
         }
     }
 
@@ -727,7 +727,7 @@ public final class FilesModel {
         if items.count == 1 {
             show(.success, .ui("files.copiedPath", "경로를 복사했습니다"))
         } else {
-            let count = FileFormat.count(items.count)
+            let count = DS.Format.count(items.count)
             show(.success, .ui("files.copiedPaths", "경로 \(count)개를 복사했습니다"))
         }
     }

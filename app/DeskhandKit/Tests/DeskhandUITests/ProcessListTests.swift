@@ -158,13 +158,6 @@ final class ProcessListTests: XCTestCase {
 
     // MARK: Formatting
 
-    func testMemoryHasOneDecimalAndASpacedUnit() {
-        XCTAssertEqual(ProcessFormat.memory(kb: 302 * 1024), "302.0 MB")
-        XCTAssertEqual(ProcessFormat.memory(kb: 1_677_722), "1.6 GB")
-        XCTAssertEqual(ProcessFormat.memory(kb: 144), "144.0 KB")
-        XCTAssertEqual(ProcessFormat.memory(kb: 420_045), "410.2 MB")
-    }
-
     func testStructuredEventMessagesUseMonospace() {
         XCTAssertTrue(EventMessage.isStructured("응용 프로그램: Shop.exe\nCoreCLR 버전: 9.0\n설명: 처리되지 않은 예외\n   위치: A.B()\n   위치: C.D()"))
         XCTAssertTrue(EventMessage.isStructured("오류 버킷 1859, 유형 4\n이벤트 이름: APPCRASH\n\n문제 서명:\nP1: Shop.exe\nP2: 1.18"))

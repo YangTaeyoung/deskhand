@@ -19,7 +19,7 @@ public enum EventTimeRange: Hashable, Sendable {
         case .lastDay: .ui("logs.range.day", "최근 24시간")
         case .lastWeek: .ui("logs.range.week", "최근 7일")
         case .custom(let start, let end):
-            .ui("logs.range.custom", "\(EventFormat.shortDate(start)) – \(EventFormat.shortDate(end))")
+            .ui("logs.range.custom", "\(DS.Format.dateTime(start, relative: false)) – \(DS.Format.dateTime(end, relative: false))")
         }
     }
 
@@ -552,32 +552,5 @@ public final class LogsModel {
         self.section = section
         rebuildVisible()
         started = true
-    }
-}
-
-/// Dates and sizes as the logs tab writes them.
-public enum EventFormat {
-    static let locale = Locale(identifier: "ko_KR")
-
-    /// `10월 20일 오후 9:12`.
-    public static func shortDate(_ date: Date) -> String {
-        date.formatted(.dateTime.month(.abbreviated).day().hour().minute().locale(locale))
-    }
-
-    /// `오늘 오후 9:12:03`, `어제 오후 6:40:11`, otherwise `10월 18일 오후 3:12:07`.
-    public static func time(_ date: Date, now: Date = .now, calendar: Calendar = .current) -> String {
-        let clock = date.formatted(.dateTime.hour().minute().second().locale(locale))
-        if calendar.isDate(date, inSameDayAs: now) { return .ui("logs.time.today", "오늘 \(clock)") }
-        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) {
-            return .ui("logs.time.yesterday", "어제 \(clock)")
-        }
-        return date.formatted(.dateTime.month(.abbreviated).day().hour().minute().second().locale(locale))
-    }
-
-    /// `2일 5시간`, `6시간 40분`, `12분`.
-    public static func duration(seconds: Int) -> String {
-        let total = max(60, seconds)
-        let units: Set<Duration.UnitsFormatStyle.Unit> = total >= 86_400 ? [.days, .hours] : (total >= 3_600 ? [.hours, .minutes] : [.minutes])
-        return Duration.seconds(total).formatted(.units(allowed: units, width: .narrow, maximumUnitCount: 2).locale(locale))
     }
 }

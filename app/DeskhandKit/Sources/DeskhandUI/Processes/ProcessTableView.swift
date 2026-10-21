@@ -4,8 +4,6 @@ import SwiftUI
 
 /// SF Symbol and formatted values of a process as the processes tab shows them.
 enum ProcessFormat {
-    static let locale = Locale(identifier: "ko_KR")
-
     private static let shells: Set<String> = ["powershell.exe", "pwsh.exe", "cmd.exe", "conhost.exe", "openconsole.exe",
                                               "windowsterminal.exe", "bash.exe", "wsl.exe"]
     private static let browsers: Set<String> = ["chrome.exe", "msedge.exe", "firefox.exe", "msedgewebview2.exe", "brave.exe"]
@@ -45,29 +43,6 @@ enum ProcessFormat {
         return rest.isEmpty ? nil : rest
     }
 
-    /// `12.4`, or `—` when the agent did not measure it.
-    static func cpu(_ value: Double?) -> String {
-        guard let value else { return "—" }
-        return value.formatted(.number.precision(.fractionLength(1)).locale(locale))
-    }
-
-    /// `12.4%`, or `—` when the agent did not measure it.
-    static func cpuPercent(_ value: Double?) -> String {
-        guard let value else { return "—" }
-        return (value / 100).formatted(.percent.precision(.fractionLength(1)).locale(locale))
-    }
-
-    /// `302.0 MB`, `1.6 GB`, `144.0 KB`: binary units, one decimal.
-    static func memory(kb: Int) -> String {
-        let bytes = Double(kb) * 1024
-        let (value, unit): (Double, String) = switch bytes {
-        case 1_073_741_824...: (bytes / 1_073_741_824, "GB")
-        case 1_048_576...: (bytes / 1_048_576, "MB")
-        default: (bytes / 1024, "KB")
-        }
-        return value.formatted(.number.precision(.fractionLength(1)).grouping(.never).locale(locale)) + " " + unit
-    }
-
     /// The user without the `NT AUTHORITY\` style prefix of service accounts.
     static func user(_ value: String?) -> String {
         guard let value else { return "—" }
@@ -75,14 +50,19 @@ enum ProcessFormat {
         return value
     }
 
-    /// `오늘 오후 3:12`, `어제 오후 6:40`, otherwise `10월 18일 오후 5:12`.
-    static func started(_ date: Date?, now: Date = .now, calendar: Calendar = .current) -> String {
-        guard let date else { return "—" }
-        let yesterday = calendar.date(byAdding: .day, value: -1, to: now)
-        if calendar.isDate(date, inSameDayAs: now) || yesterday.map({ calendar.isDate(date, inSameDayAs: $0) }) == true {
-            return FileFormat.date(date, now: now, calendar: calendar)
-        }
-        return EventFormat.shortDate(date)
+    /// `오늘 15:12`, `어제 18:40`, otherwise `10월 18일 17:12`, or `—` when the agent did not report it.
+    static func started(_ date: Date?) -> String {
+        date.map { DS.Format.dateTime($0) } ?? "—"
+    }
+
+    /// `12.4`, or `—` when the agent did not measure it.
+    static func cpu(_ value: Double?) -> String {
+        value.map { DS.Format.decimal($0) } ?? "—"
+    }
+
+    /// `12.4%`, or `—` when the agent did not measure it.
+    static func cpuPercent(_ value: Double?) -> String {
+        value.map { DS.Format.percent(points: $0, decimals: 1) } ?? "—"
     }
 }
 
@@ -199,7 +179,7 @@ struct ProcessTableView: View {
             return cell
         case .memory:
             let cell = DataTextCell.make(table, "process.memory", alignment: .right, monospacedDigits: true)
-            cell.configure(ProcessFormat.memory(kb: process.memKb), style: style)
+            cell.configure(DS.Format.memory(kb: process.memKb), style: style)
             return cell
         case .user:
             let cell = DataTextCell.make(table, "process.user")

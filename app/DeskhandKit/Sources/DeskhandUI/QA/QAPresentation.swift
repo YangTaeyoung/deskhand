@@ -474,50 +474,6 @@ enum QAFormat {
         return out
     }
 
-    // MARK: Times and sizes
-
-    /// `0.1초 미만`, `0.4초`, `12초`, `1분 12초`, `1시간 2분`.
-    static func duration(ms: Int) -> String {
-        if ms < 100 { return .ui("qa.duration.underTenth", "0.1초 미만") }
-        if ms < 10_000 {
-            let text = String(format: "%.1f", Double(ms) / 1000)
-            return .ui("qa.duration.seconds", "\(text)초")
-        }
-        let total = ms / 1000
-        if total < 60 {
-            let seconds = String(total)
-            return .ui("qa.duration.wholeSeconds", "\(seconds)초")
-        }
-        if total < 3600 {
-            let minutes = String(total / 60)
-            let seconds = String(total % 60)
-            return .ui("qa.duration.minutes", "\(minutes)분 \(seconds)초")
-        }
-        let hours = String(total / 3600)
-        let minutes = String(total % 3600 / 60)
-        return .ui("qa.duration.hours", "\(hours)시간 \(minutes)분")
-    }
-
-    static func duration(from start: Date, to end: Date) -> String {
-        duration(ms: Int(end.timeIntervalSince(start) * 1000))
-    }
-
-    /// `오늘 오후 3:12`, `어제 오후 6:40`, otherwise `10월 18일 오후 5:12`, as the processes tab writes them.
-    static func started(_ date: Date, now: Date = .now, calendar: Calendar = .current) -> String {
-        ProcessFormat.started(date, now: now, calendar: calendar)
-    }
-
-    /// `563 B`, `2.1 KB`, `2.4 MB`, `5.0 GB`: under 1024 bytes the whole count and ` B`; otherwise the
-    /// count divided by 1024 (KB), 1024² (MB) or 1024³ (GB) — the largest whose power the count
-    /// reaches — with one decimal as printf `%.1f` rounds it, a space and the unit.
-    static func bytes(_ count: Int) -> String {
-        let value = max(count, 0)
-        if value < 1024 { return String(value) + " B" }
-        let units: [(Double, String)] = [(1_073_741_824, "GB"), (1_048_576, "MB"), (1024, "KB")]
-        let (divisor, unit) = units.first { Double(value) >= $0.0 } ?? units[2]
-        return String(format: "%.1f", Double(value) / divisor) + " " + unit
-    }
-
     // MARK: Blocked steps
 
     /// Why a blocked step did not run, in plain words, and what to do next.

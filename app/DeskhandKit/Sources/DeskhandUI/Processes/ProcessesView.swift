@@ -378,7 +378,7 @@ private struct ProcessDetailBar: View {
         }
         let cpu = ProcessFormat.cpuPercent(process.cpuPct)
         parts.append(.ui("processes.fact.cpu", "CPU \(cpu)"))
-        let memory = ProcessFormat.memory(kb: process.memKb)
+        let memory = DS.Format.memory(kb: process.memKb)
         parts.append(.ui("processes.fact.memory", "메모리 \(memory)"))
         return parts.joined(separator: " · ")
     }
@@ -453,20 +453,20 @@ private struct ProcessesStatusBar: View {
     }
 
     private var updated: String {
-        (model.updatedAt ?? .now).formatted(.dateTime.hour().minute().second().locale(ProcessFormat.locale))
+        DS.Format.clock(model.updatedAt ?? .now, seconds: true)
     }
 
-    /// `프로세스 82개 · CPU 23.4% · 메모리 18.4GB`, or the search count.
+    /// `프로세스 82개 · CPU 23.4% · 메모리 18.4 GB`, or the search count.
     private var summary: String {
         let all = model.processes
-        let count = FileFormat.count(all.count)
+        let count = DS.Format.count(all.count)
         if !model.query.trimmingCharacters(in: .whitespaces).isEmpty {
-            let matches = FileFormat.count(model.rows.filter { !$0.isContext }.count)
+            let matches = DS.Format.count(model.rows.filter { !$0.isContext }.count)
             return .ui("processes.status.matches", "검색 결과 \(matches)개 · 전체 \(count)개")
         }
         let busy = all.filter { $0.pid != 0 }.compactMap(\.cpuPct).reduce(0, +)
         let cpu = ProcessFormat.cpuPercent(min(100, busy))
-        let memory = ProcessFormat.memory(kb: all.reduce(0) { $0 + $1.memKb })
+        let memory = DS.Format.memory(kb: all.reduce(0) { $0 + $1.memKb })
         return .ui("processes.status.summary", "프로세스 \(count)개 · CPU \(cpu) · 메모리 \(memory)")
     }
 }

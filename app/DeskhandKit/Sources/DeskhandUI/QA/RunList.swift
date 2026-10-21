@@ -257,7 +257,7 @@ struct RunRow: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer(minLength: DS.Space.xs)
-                Text(QAFormat.started(run.startedAt.date))
+                Text(DS.Format.dateTime(run.startedAt.date))
                     .font(DS.Font.caption)
                     .foregroundStyle(secondary)
                     .monospacedDigit()
@@ -308,7 +308,7 @@ struct RunRow: View {
 
     private var accessibilityText: String {
         let status = QAStatusBadge.title(run)
-        let started = QAFormat.started(run.startedAt.date)
+        let started = DS.Format.dateTime(run.startedAt.date)
         let tally = StepTally.spoken(counts)
         var text = String.ui("qa.row.a11y", "\(run.name), \(status), \(started) 시작, \(tally)")
         if let hostName { text += ", " + hostName }
@@ -427,10 +427,10 @@ struct RunDuration: View {
     var body: some View {
         if run.isRunning {
             TimelineView(.periodic(from: .now, by: 1)) { context in
-                Text(QAFormat.duration(from: run.startedAt.date, to: max(context.date, run.startedAt.date)))
+                Text(DS.Format.elapsed(from: run.startedAt.date, to: max(context.date, run.startedAt.date)))
             }
         } else {
-            Text(QAFormat.duration(from: run.startedAt.date, to: (run.finishedAt ?? run.updatedAt).date))
+            Text(DS.Format.elapsed(from: run.startedAt.date, to: (run.finishedAt ?? run.updatedAt).date))
         }
     }
 }

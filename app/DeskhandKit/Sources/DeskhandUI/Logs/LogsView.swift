@@ -126,7 +126,7 @@ private struct LogsSectionBar: View {
             if let updated = model.section == .events
                 ? (model.eventsPhase == .loaded ? model.eventsUpdatedAt : nil)
                 : (model.crashesPhase == .loaded ? model.crashesUpdatedAt : nil) {
-                let time = updated.formatted(.dateTime.hour().minute().second().locale(EventFormat.locale))
+                let time = DS.Format.clock(updated, seconds: true)
                 Text(String.ui("logs.updated", "\(time) 기준"))
                     .font(DS.Font.caption)
                     .foregroundStyle(.secondary)
@@ -160,7 +160,7 @@ private struct LogsSectionBar: View {
 
     private func title(_ section: LogsModel.Section) -> String {
         guard section == .crashes, model.crashesPhase == .loaded, !model.crashes.isEmpty else { return section.title }
-        let count = FileFormat.count(model.crashes.count)
+        let count = DS.Format.count(model.crashes.count)
         return .ui("logs.section.crashesCount", "크래시 덤프 \(count)")
     }
 }
@@ -227,7 +227,7 @@ private struct LogFileStrip: View {
             HStack(spacing: DS.Space.s) {
                 ProgressView(value: presentation.progress ?? 0)
                     .frame(width: 100)
-                Text(FileFormat.percent(presentation.progress ?? 0))
+                Text(DS.Format.percent(presentation.progress ?? 0))
                     .font(DS.Font.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }

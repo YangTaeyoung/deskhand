@@ -83,31 +83,6 @@ final class QAPresentationTests: XCTestCase {
         XCTAssertEqual(QAStepCounts(run: summary, steps: nil), QAStepCounts(passed: 2, failed: 0, blocked: 2, cancelStopped: 0, notRun: 1))
     }
 
-    // MARK: Units
-
-    func testDurationsUseSecondsThroughout() {
-        XCTAssertEqual(QAFormat.duration(ms: 3), "0.1초 미만")
-        XCTAssertEqual(QAFormat.duration(ms: 420), "0.4초")
-        XCTAssertEqual(QAFormat.duration(ms: 12_300), "12초")
-        XCTAssertEqual(QAFormat.duration(ms: 72_000), "1분 12초")
-        XCTAssertEqual(QAFormat.duration(ms: 3_720_000), "1시간 2분")
-    }
-
-    func testSizesUseBinaryUnitsWithOneDecimal() {
-        XCTAssertEqual(QAFormat.bytes(0), "0 B")
-        XCTAssertEqual(QAFormat.bytes(563), "563 B")
-        XCTAssertEqual(QAFormat.bytes(1023), "1023 B")
-        XCTAssertEqual(QAFormat.bytes(1024), "1.0 KB")
-        XCTAssertEqual(QAFormat.bytes(1280), "1.2 KB", "an exact tie rounds to even")
-        XCTAssertEqual(QAFormat.bytes(2184), "2.1 KB")
-        XCTAssertEqual(QAFormat.bytes(196_608), "192.0 KB")
-        XCTAssertEqual(QAFormat.bytes(1_048_575), "1024.0 KB", "the unit follows the byte count, not the rounded value")
-        XCTAssertEqual(QAFormat.bytes(2_516_992), "2.4 MB")
-        XCTAssertEqual(QAFormat.bytes(4_404_019), "4.2 MB")
-        XCTAssertEqual(QAFormat.bytes(5_368_709_120), "5.0 GB")
-        XCTAssertEqual(QAFormat.bytes(3 << 40), "3072.0 GB", "GB is the largest unit")
-    }
-
     func testNotRunMessagesOfThePreviewFollowTheDaemonsWording() {
         XCTAssertEqual(PreviewQAFixtures.notRunMessage(index: 7, name: "대답이 끝날 때까지 기다리기", status: .fail),
                        "7단계(대답이 끝날 때까지 기다리기)의 결과(실패) 때문에 실행하지 않았습니다")

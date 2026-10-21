@@ -114,26 +114,26 @@ public struct TransferPresentation: Sendable, Equatable {
         return min(1, Double(transfer.bytesDone) / Double(transfer.bytesTotal))
     }
 
-    /// `243MB / 640MB`, or the total once done.
+    /// `243.0 MB / 640.0 MB`, or the total once done.
     public var bytesText: String {
-        if state == .done || transfer.bytesTotal == 0 { return FileFormat.size(transfer.bytesTotal) }
-        let done = FileFormat.size(transfer.bytesDone)
-        let total = FileFormat.size(transfer.bytesTotal)
+        if state == .done || transfer.bytesTotal == 0 { return DS.Format.bytes(transfer.bytesTotal) }
+        let done = DS.Format.bytes(transfer.bytesDone)
+        let total = DS.Format.bytes(transfer.bytesTotal)
         return .ui("transfer.bytes", "\(done) / \(total)")
     }
 
     /// `파일 3/7개` for transfers of more than one file.
     public var filesText: String? {
         guard transfer.filesTotal > 1 else { return nil }
-        let done = FileFormat.count(transfer.filesDone)
-        let total = FileFormat.count(transfer.filesTotal)
+        let done = DS.Format.count(transfer.filesDone)
+        let total = DS.Format.count(transfer.filesTotal)
         return .ui("transfer.files", "파일 \(done)/\(total)개")
     }
 
-    /// `42.1MB/s` while bytes move. `rate_bps` is read as bytes per second.
+    /// `42.1 MB/s` while bytes move. `rate_bps` is read as bytes per second.
     public var rateText: String? {
         guard state == .running, transfer.rateBps > 0 else { return nil }
-        return FileFormat.rate(transfer.rateBps)
+        return DS.Format.rate(transfer.rateBps)
     }
 
     /// `약 9초 남음` while bytes move at a known rate.
@@ -141,7 +141,7 @@ public struct TransferPresentation: Sendable, Equatable {
         guard state == .running else { return nil }
         guard transfer.rateBps > 0 else { return .ui("transfer.eta.unknown", "남은 시간 계산 중") }
         let remaining = Double(max(0, transfer.bytesTotal - transfer.bytesDone)) / Double(transfer.rateBps)
-        let text = FileFormat.remaining(seconds: remaining)
+        let text = DS.Format.remaining(seconds: remaining)
         return .ui("transfer.eta", "\(text) 남음")
     }
 
@@ -209,7 +209,7 @@ public struct TransferPresentation: Sendable, Equatable {
             return resume
         case .cancelled:
             if transfer.filesDone > 0 {
-                let done = FileFormat.count(transfer.filesDone)
+                let done = DS.Format.count(transfer.filesDone)
                 return .ui("transfer.explain.cancelledKept", "취소했습니다. 끝난 파일 \(done)개는 대상에 그대로 있습니다.")
             }
             return .ui("transfer.explain.cancelled", "취소했습니다. 대상에 반영된 파일은 없습니다.")
@@ -255,9 +255,9 @@ public struct TransferPresentation: Sendable, Equatable {
 
     private var partialExplanation: String {
         let failed = max(failedFiles, transfer.filesTotal - transfer.filesDone)
-        let total = FileFormat.count(transfer.filesTotal)
-        let ok = FileFormat.count(max(0, transfer.filesTotal - failed))
-        let bad = FileFormat.count(failed)
+        let total = DS.Format.count(transfer.filesTotal)
+        let ok = DS.Format.count(max(0, transfer.filesTotal - failed))
+        let bad = DS.Format.count(failed)
         if direction.isMove {
             return .ui("transfer.explain.partialMove", "\(total)개 중 \(ok)개를 옮겼고 \(bad)개는 실패했습니다. 실패한 파일의 원본은 지우지 않았습니다.")
         }
@@ -282,7 +282,7 @@ public struct TransferPresentation: Sendable, Equatable {
     /// One sentence for VoiceOver.
     public var accessibilitySummary: String {
         var parts = [name, route, headline]
-        if let progress, !isFinished { parts.append(FileFormat.percent(progress)) }
+        if let progress, !isFinished { parts.append(DS.Format.percent(progress)) }
         if let rateText { parts.append(rateText) }
         if let etaText { parts.append(etaText) }
         return parts.joined(separator: ", ")
@@ -308,7 +308,7 @@ public struct TransferFilePresentation: Sendable, Equatable {
         switch state {
         case .queued: return .ui("transferFile.queued", "대기")
         case .running:
-            return FileFormat.percent(progress ?? 0)
+            return DS.Format.percent(progress ?? 0)
         case .paused: return .ui("transferFile.paused", "일시정지")
         case .verifying: return .ui("transferFile.verifying", "확인 중")
         case .cancelled: return .ui("transferFile.cancelled", "취소됨")
@@ -395,24 +395,24 @@ public struct TransferSummary: Sendable, Equatable {
         return min(1, Double(bytesDone) / Double(bytesTotal))
     }
 
-    /// `2개 진행 중 · 42.1MB/s · 약 1분 남음`, `일시정지 1개`, or nil with nothing to report.
+    /// `2개 진행 중 · 42.1 MB/s · 약 1분 남음`, `일시정지 1개`, or nil with nothing to report.
     public var text: String? {
         var parts: [String] = []
         if active > 0 {
-            let count = FileFormat.count(active)
+            let count = DS.Format.count(active)
             parts.append(.ui("queue.summary.active", "\(count)개 진행 중"))
             if rate > 0 {
-                parts.append(FileFormat.rate(rate))
-                let eta = FileFormat.remaining(seconds: Double(max(0, bytesTotal - bytesDone)) / Double(rate))
+                parts.append(DS.Format.rate(rate))
+                let eta = DS.Format.remaining(seconds: Double(max(0, bytesTotal - bytesDone)) / Double(rate))
                 parts.append(.ui("transfer.eta", "\(eta) 남음"))
             }
         }
         if paused > 0 {
-            let count = FileFormat.count(paused)
+            let count = DS.Format.count(paused)
             parts.append(.ui("queue.summary.paused", "일시정지 \(count)개"))
         }
         if failed > 0 {
-            let count = FileFormat.count(failed)
+            let count = DS.Format.count(failed)
             parts.append(.ui("queue.summary.attention", "확인 필요 \(count)개"))
         }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")

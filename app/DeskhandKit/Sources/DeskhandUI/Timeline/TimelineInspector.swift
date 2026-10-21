@@ -135,8 +135,6 @@ struct TimelineDay: Identifiable {
     }
 
     static func title(for day: Date, calendar: Calendar) -> String {
-        if calendar.isDateInToday(day) { return .ui("timeline.today", "오늘") }
-        if calendar.isDateInYesterday(day) { return .ui("timeline.yesterday", "어제") }
-        return day.formatted(.dateTime.month(.wide).day().weekday(.wide).locale(Locale(identifier: "ko_KR")))
+        DS.Format.day(day, calendar: calendar)
     }
 }

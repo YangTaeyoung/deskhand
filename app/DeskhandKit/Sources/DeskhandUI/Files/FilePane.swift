@@ -216,7 +216,7 @@ struct FilePane: View {
     private func dropText(_ hover: FileDropHover) -> String {
         let folderName = hover.folder?.name ?? FilePath.lastComponent(browser.path, style: browser.style)
         let target = model.sideName(side)
-        let count = FileFormat.count(hover.count)
+        let count = DS.Format.count(hover.count)
         switch (side, hover.move) {
         case (.remote, false): return .ui("files.drop.send", "\(target)의 ‘\(folderName)’ 폴더에 \(count)개 보내기")
         case (.remote, true): return .ui("files.drop.sendMove", "\(target)의 ‘\(folderName)’ 폴더로 \(count)개 이동")
@@ -592,27 +592,27 @@ private struct FilePaneStatus: View {
         guard browser.phase == .loaded else { return " " }
         let selected = browser.selectedItems
         if !selected.isEmpty {
-            let count = FileFormat.count(selected.count)
+            let count = DS.Format.count(selected.count)
             let bytes = selected.compactMap(\.size).reduce(0, +)
             if bytes > 0 {
-                let size = FileFormat.size(bytes)
+                let size = DS.Format.bytes(bytes)
                 return .ui("files.status.selectedSize", "\(count)개 선택됨 · \(size)")
             }
             return .ui("files.status.selected", "\(count)개 선택됨")
         }
         if !browser.query.trimmingCharacters(in: .whitespaces).isEmpty {
-            let count = FileFormat.count(browser.matchCount)
+            let count = DS.Format.count(browser.matchCount)
             return .ui("files.status.matches", "검색 결과 \(count)개")
         }
-        let total = FileFormat.count(browser.total ?? browser.items.count)
+        let total = DS.Format.count(browser.total ?? browser.items.count)
         return .ui("files.status.items", "항목 \(total)개")
     }
 
     /// `3,000개 중 500개 표시` while rows or pages remain.
     private var paging: String? {
         guard browser.hasMore else { return nil }
-        let shown = FileFormat.count(browser.rows.count)
-        let total = FileFormat.count(browser.total ?? browser.items.count)
+        let shown = DS.Format.count(browser.rows.count)
+        let total = DS.Format.count(browser.total ?? browser.items.count)
         return .ui("files.status.paging", "\(total)개 중 \(shown)개 표시 · 스크롤하면 더 불러옵니다")
     }
 }

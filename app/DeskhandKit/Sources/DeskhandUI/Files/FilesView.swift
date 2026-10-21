@@ -98,7 +98,7 @@ private struct FilesContent: View {
         guard request.items.count > 1 else { return consequence }
         var names = request.items.prefix(5).map { "· \($0.name)" }
         if request.items.count > 5 {
-            let more = FileFormat.count(request.items.count - 5)
+            let more = DS.Format.count(request.items.count - 5)
             names.append(.ui("files.delete.more", "외 \(more)개"))
         }
         return names.joined(separator: "\n") + "\n\n" + consequence
@@ -109,7 +109,7 @@ private struct FilesContent: View {
         if items.count == 1, let name = items.first?.name {
             return .ui("files.delete.titleOne", "‘\(name)’ 항목을 영구 삭제할까요?")
         }
-        let count = FileFormat.count(items.count)
+        let count = DS.Format.count(items.count)
         return .ui("files.delete.titleMany", "\(count)개 항목을 영구 삭제할까요?")
     }
 }

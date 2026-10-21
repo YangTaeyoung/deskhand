@@ -180,7 +180,7 @@ private struct RunHeader: View {
         fact("doc.text", run.scenarioPath?.abbreviatingHome ?? String.ui("qa.header.inline", "글로 받은 시나리오"), mono: run.scenarioPath != nil,
              help: run.scenarioPath)
         fact("desktopcomputer", store.host(run.hostID)?.name ?? run.hostID)
-        fact("clock", QAFormat.started(run.startedAt.date))
+        fact("clock", DS.Format.dateTime(run.startedAt.date))
         fact("number", run.runID, mono: true, help: String.ui("qa.header.ids", "실행 \(run.runID) · job \(run.jobID)"))
     }
 
@@ -463,7 +463,7 @@ private struct ExportStrip: View {
                       detail: String.ui("qa.export.runningTo", "\(dir.abbreviatingHome)에 복사하고 manifest의 sha256과 맞춰 봅니다"))
         case .exported(let result):
             let files = String(result.files)
-            let size = QAFormat.bytes(result.bytes)
+            let size = DS.Format.bytes(result.bytes)
             NoteStrip(symbol: "checkmark.circle.fill", tint: DS.Color.success,
                       title: String.ui("qa.export.done", "결과 묶음을 내보냈습니다 · 파일 \(files)개 · \(size)"),
                       detail: (result.manifest != nil

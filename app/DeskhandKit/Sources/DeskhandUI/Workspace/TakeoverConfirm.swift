@@ -101,7 +101,7 @@ private struct LastActionBox: View {
                     .lineLimit(2)
                     .truncationMode(.middle)
                 Spacer(minLength: DS.Space.s)
-                Text(entry.ts.date.formatted(.relative(presentation: .named).locale(Locale(identifier: "ko_KR"))))
+                Text(DS.Format.relative(entry.ts.date))
                     .font(DS.Font.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize()

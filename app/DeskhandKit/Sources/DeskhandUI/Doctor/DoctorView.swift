@@ -44,7 +44,7 @@ public struct DoctorView: View {
             Divider()
             HStack {
                 if let finishedAt = model.finishedAt, !model.isRunning {
-                    Text(String.ui("doctor.finishedAt", "마지막 진단 \(finishedAt.formatted(date: .omitted, time: .shortened))"))
+                    Text(String.ui("doctor.finishedAt", "마지막 진단 \(DS.Format.clock(finishedAt))"))
                         .font(DS.Font.caption)
                         .foregroundStyle(.secondary)
                 }

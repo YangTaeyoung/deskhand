@@ -146,7 +146,7 @@ struct EvidenceViewer: View {
         if case .image(_, let pixels) = model.evidence.content(of: item.artifact, size: .full) {
             parts.append(String(Int(pixels.width)) + "×" + String(Int(pixels.height)))
         }
-        parts.append(QAFormat.bytes(item.artifact.size))
+        parts.append(DS.Format.bytes(item.artifact.size))
         parts.append(String(item.step.index) + ". " + item.step.name)
         return parts.joined(separator: " · ")
     }

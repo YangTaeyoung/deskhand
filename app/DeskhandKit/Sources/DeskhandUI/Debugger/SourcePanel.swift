@@ -366,7 +366,7 @@ struct ElisionMarker: View {
     let leading: Bool
 
     var body: some View {
-        let number = FileFormat.count(count)
+        let number = DS.Format.count(count)
         Text(leading ? String.ui("debugger.source.hiddenBefore", "‹ 앞 \(number)자") : String.ui("debugger.source.hiddenAfter", "뒤 \(number)자 ›"))
             .font(.system(size: 10, weight: .medium))
             .foregroundStyle(.secondary)
@@ -374,7 +374,7 @@ struct ElisionMarker: View {
             .padding(.horizontal, DS.Space.xs)
             .frame(width: leading ? Self.width : nil, height: 16)
             .background(DS.Color.neutral.opacity(0.16), in: Capsule())
-            .help(String.ui("debugger.source.window.help", "긴 줄은 멈춘 열 주변 \(FileFormat.count(SourceText.windowWidth))자만 보입니다"))
+            .help(String.ui("debugger.source.window.help", "긴 줄은 멈춘 열 주변 \(DS.Format.count(SourceText.windowWidth))자만 보입니다"))
     }
 }
 

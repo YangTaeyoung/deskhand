@@ -56,7 +56,7 @@ public struct ConflictSheet: View {
                 legend(String.ui("conflict.stop", "중단"), String.ui("conflict.stop.detail", "이 항목과 남은 충돌 항목을 모두 보내지 않습니다."))
             }
             if remaining > 1 {
-                let others = FileFormat.count(remaining - 1)
+                let others = DS.Format.count(remaining - 1)
                 Toggle(String.ui("conflict.applyToAll", "남은 충돌 \(others)개에도 같은 선택 적용"), isOn: $applyToAll)
                     .toggleStyle(.checkbox)
             }
@@ -64,7 +64,7 @@ public struct ConflictSheet: View {
                 Button(String.ui("conflict.stop", "중단")) { resolve(.fail, applyToAll) }
                     .keyboardShortcut(.cancelAction)
                 if remaining > 1 {
-                    let total = FileFormat.count(remaining)
+                    let total = DS.Format.count(remaining)
                     Text(String.ui("conflict.remaining", "충돌 \(total)개 남음"))
                         .font(DS.Font.caption)
                         .foregroundStyle(.secondary)
@@ -157,9 +157,9 @@ private struct ConflictSide: View {
             Text(place)
                 .font(DS.Font.headline)
                 .lineLimit(1)
-            Text(size.map(FileFormat.size) ?? String.ui("kind.folder", "폴더"))
+            Text(size.map(DS.Format.bytes) ?? String.ui("kind.folder", "폴더"))
                 .font(DS.Font.body.monospacedDigit())
-            Text(modified.map { FileFormat.date($0) } ?? "—")
+            Text(modified.map { DS.Format.dateTime($0) } ?? "—")
                 .font(DS.Font.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
         }
@@ -207,10 +207,8 @@ struct FileInfoSheet: View {
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: DS.Space.m, verticalSpacing: DS.Space.s) {
                 row(String.ui("info.computer", "컴퓨터"), sideName)
                 row(String.ui("info.location", "위치"), FilePath.parent(item.path, style: item.path.contains("\\") ? .windows : .posix) ?? item.path, mono: true)
-                row(String.ui("info.size", "크기"), item.size.map { "\(FileFormat.size($0)) (\(FileFormat.exactBytes($0)))" } ?? "—")
-                row(String.ui("info.modified", "수정한 날짜"), item.modified.map {
-                    $0.formatted(.dateTime.year().month().day().hour().minute().second().locale(Locale(identifier: "ko_KR")))
-                } ?? "—")
+                row(String.ui("info.size", "크기"), item.size.map { "\(DS.Format.bytes($0)) (\(DS.Format.exactBytes($0)))" } ?? "—")
+                row(String.ui("info.modified", "수정한 날짜"), item.modified.map { DS.Format.fullDateTime($0) } ?? "—")
                 row(String.ui("info.attributes", "속성"), attributes(item))
             }
             if let error = state.error {
@@ -273,7 +271,7 @@ public struct MoveConfirmSheet: View {
         if request.candidates.count == 1, let name = request.candidates.first?.name {
             return .ui("move.title.one", "‘\(name)’ 항목을 이동할까요?")
         }
-        let count = FileFormat.count(request.candidates.count)
+        let count = DS.Format.count(request.candidates.count)
         return .ui("move.title.many", "\(count)개 항목을 이동할까요?")
     }
 

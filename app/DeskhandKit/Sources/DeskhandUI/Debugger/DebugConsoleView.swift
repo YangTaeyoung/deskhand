@@ -329,7 +329,7 @@ private struct ConsoleList: View {
             .padding(.vertical, DS.Space.xs)
         }
         if session.console.dropped > 0 {
-            let count = FileFormat.count(session.console.dropped)
+            let count = DS.Format.count(session.console.dropped)
             Text(String.ui("debugger.console.dropped", "오래된 메시지 \(count)개는 데몬 보관 한도를 넘어 지워졌습니다"))
                 .font(DS.Font.caption)
                 .foregroundStyle(.secondary)

@@ -71,7 +71,7 @@ struct CrashDumpList: View {
     }
 
     private var header: some View {
-        let count = FileFormat.count(model.crashes.count)
+        let count = DS.Format.count(model.crashes.count)
         let folder = (model.downloadFolder as NSString).abbreviatingWithTildeInPath
         return HStack(alignment: .firstTextBaseline, spacing: DS.Space.s) {
             Text(String.ui("logs.dumps.title", "최근 30일 · \(count)개"))
@@ -133,7 +133,7 @@ private struct CrashDumpRow: View {
             VStack(alignment: .trailing, spacing: 3) {
                 Text(ProcessFormat.started(dump.time.date))
                     .font(DS.Font.caption.monospacedDigit())
-                Text(SummaryFormat.storage(dump.sizeBytes))
+                Text(DS.Format.bytes(dump.sizeBytes))
                     .font(DS.Font.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
@@ -149,7 +149,7 @@ private struct CrashDumpRow: View {
             Button(String.ui("logs.dump.copyPath", "원격 경로 복사")) { ProcessMenu.put(dump.path) }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(String.ui("logs.a11y.dump", "\(dump.app), \(kind?.title ?? dump.kind), \(ProcessFormat.started(dump.time.date)), \(SummaryFormat.storage(dump.sizeBytes))"))
+        .accessibilityLabel(String.ui("logs.a11y.dump", "\(dump.app), \(kind?.title ?? dump.kind), \(ProcessFormat.started(dump.time.date)), \(DS.Format.bytes(dump.sizeBytes))"))
     }
 
     private func errorText(transfer: Transfer?, startError: OperationError?) -> String? {
@@ -251,7 +251,7 @@ private struct DownloadControl: View {
     }
 
     private func progressText(_ presentation: TransferPresentation) -> String {
-        let percent = FileFormat.percent(presentation.progress ?? 0)
+        let percent = DS.Format.percent(presentation.progress ?? 0)
         switch presentation.state {
         case .verifying: return .ui("logs.download.verifying", "확인 중")
         case .paused: return .ui("logs.download.paused", "\(percent) · 일시정지됨")

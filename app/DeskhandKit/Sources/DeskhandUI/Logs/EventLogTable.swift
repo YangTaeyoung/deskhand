@@ -473,8 +473,8 @@ struct EventTableView: View {
             return cell
         case .time:
             let cell = DataTextCell.make(table, "event.time", monospacedDigits: true)
-            cell.configure(EventFormat.time(event.time.date), style: .secondary,
-                           help: event.time.date.formatted(.dateTime.year().month().day().hour().minute().second().locale(EventFormat.locale)))
+            cell.configure(DS.Format.dateTime(event.time.date, seconds: true), style: .secondary,
+                           help: DS.Format.fullDateTime(event.time.date))
             return cell
         case .provider:
             let cell = DataTextCell.make(table, "event.provider", truncation: .byTruncatingMiddle)
@@ -598,10 +598,10 @@ private struct EventStatusBar: View {
     }
 
     private var summary: String {
-        let count = FileFormat.count(model.events.count)
+        let count = DS.Format.count(model.events.count)
         let range = model.filter.range.title
         if !model.search.trimmingCharacters(in: .whitespaces).isEmpty {
-            let matches = FileFormat.count(model.visibleEvents.count)
+            let matches = DS.Format.count(model.visibleEvents.count)
             return .ui("logs.status.matches", "검색 결과 \(matches)개 · 불러온 이벤트 \(count)개")
         }
         let log = model.filter.log.title
@@ -644,7 +644,7 @@ private struct EventDetailView: View {
         let level = event.eventLevel
         let id = String(event.eventID)
         let record = String(event.recordID)
-        let time = event.time.date.formatted(.dateTime.year().month().day().hour().minute().second().locale(EventFormat.locale))
+        let time = DS.Format.fullDateTime(event.time.date)
         let log = model.filter.log.title
         return HStack(alignment: .top, spacing: DS.Space.m) {
             Image(systemName: level?.symbol ?? "questionmark.circle")

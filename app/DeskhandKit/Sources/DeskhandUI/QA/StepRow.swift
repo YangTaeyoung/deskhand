@@ -107,7 +107,7 @@ struct StepRow: View {
     private var accessibilityText: String {
         var parts = [String(step.index) + ". " + step.name, QAFormat.title(step: step), QAFormat.action(step.action)]
         if let line = outcomeLine { parts.append(line.text) }
-        if let ms = step.durationMs { parts.append(QAFormat.duration(ms: ms)) }
+        if let ms = step.durationMs { parts.append(DS.Format.elapsed(ms: ms)) }
         return parts.joined(separator: ", ")
     }
 }
@@ -196,11 +196,11 @@ struct StepDuration: View {
     var body: some View {
         if step.stepStatus == .running, let started = step.startedAt?.date {
             TimelineView(.periodic(from: .now, by: 1)) { context in
-                Text(QAFormat.duration(from: started, to: max(context.date, started)))
+                Text(DS.Format.elapsed(from: started, to: max(context.date, started)))
                     .foregroundStyle(inverted ? DS.Color.onFill : DS.Status.accentText)
             }
         } else if let ms = step.durationMs {
-            Text(QAFormat.duration(ms: ms))
+            Text(DS.Format.elapsed(ms: ms))
                 .foregroundStyle(inverted ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(DS.Status.neutralText))
         } else {
             Text("—")

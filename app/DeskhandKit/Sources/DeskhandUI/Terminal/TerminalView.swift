@@ -310,7 +310,7 @@ private struct DetachedShellRow: View {
 enum TerminalJobText {
     /// `25분 전 시작 · Claude Code · PID 9216`.
     static func detail(_ job: Job, now: Date = .now) -> String {
-        let started = job.createdAt.date.formatted(.relative(presentation: .named).locale(Locale(identifier: "ko_KR")))
+        let started = DS.Format.relative(job.createdAt.date, now: now)
         var parts = [String.ui("terminal.job.started", "\(started) 시작")]
         if let client = job.result?["client_name"]?.stringValue { parts.append(client) }
         if let pid = job.result?["pid"]?.intValue { parts.append("PID \(pid)") }

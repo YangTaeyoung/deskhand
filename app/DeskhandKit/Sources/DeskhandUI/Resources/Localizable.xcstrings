@@ -1634,6 +1634,39 @@
         }
       }
     },
+    "date.dayTime": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ %2$@"
+          }
+        }
+      }
+    },
+    "date.dayWeekday": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ %2$@"
+          }
+        }
+      }
+    },
+    "date.monthDay": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@월 %2$@일"
+          }
+        }
+      }
+    },
     "date.today": {
       "extractionState": "manual",
       "localizations": {
@@ -1641,6 +1674,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "오늘 %@"
+          }
+        }
+      }
+    },
+    "date.yearMonthDay": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@년 %2$@월 %3$@일"
           }
         }
       }
@@ -10508,28 +10552,6 @@
         }
       }
     },
-    "logs.time.today": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "오늘 %@"
-          }
-        }
-      }
-    },
-    "logs.time.yesterday": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "어제 %@"
-          }
-        }
-      }
-    },
     "logs.unavailable": {
       "extractionState": "manual",
       "localizations": {
@@ -19003,17 +19025,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@바이트"
-          }
-        }
-      }
-    },
-    "size.zero": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "0바이트"
           }
         }
       }

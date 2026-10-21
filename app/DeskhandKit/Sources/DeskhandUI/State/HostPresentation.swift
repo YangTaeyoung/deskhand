@@ -29,7 +29,7 @@ extension Host {
 
     /// When the daemon last heard from the computer, relative to now (`3시간 전`).
     public var lastSeenText: String? {
-        lastSeen?.date.formatted(.relative(presentation: .named).locale(Locale(identifier: "ko_KR")))
+        lastSeen.map { DS.Format.relative($0.date) }
     }
 
     /// True while Windows shows the lock or sign-in screen, so screen and input are unavailable.

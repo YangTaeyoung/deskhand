@@ -63,11 +63,11 @@ struct ScreenHUD: View {
     }
 
     static func megabits(_ bitsPerSecond: Double) -> String {
-        (bitsPerSecond / 1_000_000).formatted(.number.precision(.fractionLength(1)))
+        DS.Format.decimal(bitsPerSecond / 1_000_000)
     }
 
     private static func ms(_ value: Double) -> String {
-        value.formatted(.number.precision(.fractionLength(value < 10 ? 1 : 0)))
+        DS.Format.decimal(value, decimals: value < 10 ? 1 : 0)
     }
 
     private var latencyDetail: String {

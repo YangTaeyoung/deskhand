@@ -91,7 +91,7 @@ struct StepDetail: View {
                 meta("text.alignleft", String.ui("qa.detail.line", "\(String(step.line))번째 줄"))
                 meta("square.stack.3d.up", QAFormat.phase(step.stepPhase))
                 if let started = step.startedAt {
-                    meta("clock", QAFormat.started(started.date))
+                    meta("clock", DS.Format.dateTime(started.date))
                 }
                 if step.durationMs != nil || step.stepStatus == .running {
                     HStack(spacing: DS.Space.xs) {
@@ -517,7 +517,7 @@ struct EvidenceThumbnail: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(width: Self.size.width, alignment: .leading)
-            Text(QAFormat.bytes(artifact.size))
+            Text(DS.Format.bytes(artifact.size))
                 .font(DS.Font.caption)
                 .foregroundStyle(DS.Status.neutralText)
         }
@@ -564,7 +564,7 @@ struct EvidenceChip: View {
                     .font(.system(size: 12, design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.middle)
-                Text(Self.kindTitle(artifact.kind) + " · " + QAFormat.bytes(artifact.size))
+                Text(Self.kindTitle(artifact.kind) + " · " + DS.Format.bytes(artifact.size))
                     .font(DS.Font.caption)
                     .foregroundStyle(DS.Status.neutralText)
             }

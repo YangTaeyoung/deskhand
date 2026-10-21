@@ -46,7 +46,7 @@ private struct SummaryHeader: View {
                 .foregroundStyle(.secondary)
             Spacer(minLength: DS.Space.s)
             if let updated = model.systemUpdatedAt {
-                let time = updated.formatted(.dateTime.hour().minute().second().locale(EventFormat.locale))
+                let time = DS.Format.clock(updated, seconds: true)
                 if let error = model.systemRefreshError {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(DS.Color.warning)
@@ -161,9 +161,9 @@ private struct SummaryCards: View {
 
     private var cpuCard: some View {
         let usage = min(100, max(0, system.cpu.usagePct))
-        let percent = SummaryFormat.percent(usage)
-        let cores = FileFormat.count(system.cpu.cores)
-        let threads = FileFormat.count(system.cpu.threads)
+        let percent = DS.Format.percent(points: usage)
+        let cores = DS.Format.count(system.cpu.cores)
+        let threads = DS.Format.count(system.cpu.threads)
         return SummaryCard(symbol: "cpu", title: String.ui("logs.system.cpu", "CPU")) {
             HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
                 Text(percent)
@@ -191,9 +191,9 @@ private struct SummaryCards: View {
         let total = max(1, system.memory.totalBytes)
         let used = min(total, system.memory.usedBytes)
         let fraction = Double(used) / Double(total)
-        let usedText = SummaryFormat.memory(used)
-        let totalText = SummaryFormat.memory(total)
-        let free = SummaryFormat.memory(total - used)
+        let usedText = DS.Format.bytes(used)
+        let totalText = DS.Format.bytes(total)
+        let free = DS.Format.bytes(total - used)
         return SummaryCard(symbol: "memorychip", title: String.ui("logs.system.memory", "메모리")) {
             HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
                 Text(usedText)
@@ -221,7 +221,7 @@ private struct SummaryCards: View {
                 DiskRow(disk: disk)
             }
             if system.disks.count > 3 {
-                let more = FileFormat.count(system.disks.count - 3)
+                let more = DS.Format.count(system.disks.count - 3)
                 Text(String.ui("logs.system.disks.more", "외 \(more)개"))
                     .font(DS.Font.caption)
                     .foregroundStyle(.secondary)
@@ -241,7 +241,7 @@ private struct SummaryCards: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 if system.gpus.count > 1 {
-                    let more = FileFormat.count(system.gpus.count - 1)
+                    let more = DS.Format.count(system.gpus.count - 1)
                     Text(String.ui("logs.system.gpu.more", "어댑터 \(more)개 더"))
                         .font(DS.Font.caption)
                         .foregroundStyle(.secondary)
@@ -258,13 +258,13 @@ private struct SummaryCards: View {
     private func gpuDetail(_ gpu: DiagGPU) -> String {
         var parts: [String] = []
         if let driver = gpu.driverVersion { parts.append(.ui("logs.system.gpu.driver", "드라이버 \(driver)")) }
-        if let memory = gpu.memoryBytes { parts.append(SummaryFormat.memory(memory)) }
+        if let memory = gpu.memoryBytes { parts.append(DS.Format.bytes(memory)) }
         return parts.isEmpty ? String.ui("logs.system.gpu.noDriver", "드라이버 정보 없음") : parts.joined(separator: " · ")
     }
 
     private var uptimeCard: some View {
-        let uptime = EventFormat.duration(seconds: system.uptimeS)
-        let boot = EventFormat.shortDate(system.bootTime.date)
+        let uptime = DS.Format.uptime(seconds: system.uptimeS)
+        let boot = DS.Format.dateTime(system.bootTime.date, relative: false)
         return SummaryCard(symbol: "clock.arrow.circlepath", title: String.ui("logs.system.uptime", "가동 시간")) {
             Text(uptime)
                 .font(DS.Font.headline.monospacedDigit())
@@ -322,8 +322,8 @@ private struct DiskRow: View {
         let total = max(1, disk.totalBytes)
         let free = min(total, disk.freeBytes)
         let used = Double(total - free) / Double(total)
-        let freeText = SummaryFormat.storage(free)
-        let totalText = SummaryFormat.storage(total)
+        let freeText = DS.Format.bytes(free)
+        let totalText = DS.Format.bytes(total)
         let tint = SummaryFormat.tint(usedFraction: used)
         let label = disk.label ?? ""
         VStack(alignment: .leading, spacing: 2) {
@@ -373,27 +373,5 @@ enum SummaryFormat {
         if usedFraction >= 0.92 { return DS.Color.danger }
         if usedFraction >= 0.8 { return DS.Color.warning }
         return DS.Color.accent
-    }
-
-    /// `23%`.
-    static func percent(_ value: Double) -> String {
-        (value / 100).formatted(.percent.precision(.fractionLength(0)).locale(EventFormat.locale))
-    }
-
-    /// `27.4 GB`: binary units, one decimal.
-    static func memory(_ bytes: Int) -> String {
-        ProcessFormat.memory(kb: bytes / 1024)
-    }
-
-    /// `212.4 GB`, `1.3 TB`, `41.9 KB`: decimal units, one decimal.
-    static func storage(_ bytes: Int) -> String {
-        let value = Double(bytes)
-        let (amount, unit): (Double, String) = switch value {
-        case 1e12...: (value / 1e12, "TB")
-        case 1e9...: (value / 1e9, "GB")
-        case 1e6...: (value / 1e6, "MB")
-        default: (value / 1e3, "KB")
-        }
-        return amount.formatted(.number.precision(.fractionLength(1)).grouping(.never).locale(EventFormat.locale)) + " " + unit
     }
 }

@@ -192,7 +192,7 @@ enum PreviewQAFixtures {
         guard status == .pass else { return nil }
         switch spec.action {
         case "push":
-            let size = QAFormat.bytes(2_516_992)
+            let size = DS.Format.bytes(2_516_992)
             return "파일 1개(\(size))를 보냈습니다"
         case "launch": return "pid 8812로 실행했습니다, 창 \"\(spec.name.contains("Shop") ? "Shop Admin" : "Deskhand Fixture")\""
         case "wait_window":
@@ -200,7 +200,7 @@ enum PreviewQAFixtures {
             return "창 \"\(title)\"를 찾았습니다"
         case "screenshot": return "1920×1080 화면을 저장했습니다"
         case "collect":
-            let size = QAFormat.bytes(2184)
+            let size = DS.Format.bytes(2184)
             return "C:\\deskhand-qa\\fixture.log의 \(size)를 모았습니다"
         case "close": return "창을 닫았습니다"
         case "exec": return "종료 코드 0"
