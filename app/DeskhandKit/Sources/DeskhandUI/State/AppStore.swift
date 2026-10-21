@@ -103,8 +103,8 @@ public final class AppStore {
     /// Hosts whose next control state is applied whatever its `gen`, after the event stream
     /// was subscribed again.
     private var controlsToRevalidate: Set<String> = []
-    /// Per host, newest first.
-    private var timelines: [String: [TimelineEntry]] = [:]
+    /// Timelines of the hosts whose timeline was asked for; events for other hosts are not kept.
+    private var timelines: [String: HostTimeline] = [:]
     private var timelineErrors: [String: OperationError] = [:]
     private var streamQualities: [String: StreamQuality] = [:]
     @ObservationIgnored private var filesModels: [String: FilesModel] = [:]
@@ -162,12 +162,17 @@ public final class AppStore {
 
     /// Timeline entries of a host, newest first.
     public func timeline(for hostID: String) -> [TimelineEntry] {
-        timelines[hostID] ?? []
+        timelines[hostID]?.entries ?? []
     }
 
-    /// True once the host's timeline has loaded or received an entry.
+    /// The host's timeline with its day groups and older-page state, once it was asked for.
+    public func timelineState(for hostID: String) -> HostTimeline? {
+        timelines[hostID]
+    }
+
+    /// True once the host's first timeline page has loaded.
     public func isTimelineLoaded(for hostID: String) -> Bool {
-        timelines[hostID] != nil
+        timelines[hostID]?.loaded ?? false
     }
 
     /// Why the last timeline load of a host failed, until a load succeeds.
@@ -454,8 +459,9 @@ public final class AppStore {
                                        gen: p["gen"]?.intValue ?? 0, aiPaused: p["ai_paused"]?.boolValue ?? false)
             applyControl(control, for: id)
         case EventKind.timelineAppended:
-            guard let value = p["entry"], let entry = try? LiveBackend.decode(TimelineEntry.self, from: value) else { return }
-            timelines[id] = Self.merge(timelines[id] ?? [], [entry])
+            guard timelines[id] != nil, let value = p["entry"],
+                  let entry = try? LiveBackend.decode(TimelineEntry.self, from: value) else { return }
+            timelines[id]?.insert(entry)
         case EventKind.capsChanged:
             guard let value = p["caps"], let caps = try? LiveBackend.decode(HostCaps.self, from: value) else { return }
             hosts[i].caps = caps
@@ -480,14 +486,6 @@ public final class AppStore {
         if p["step"]?.stringValue == InstallStep.verify.rawValue, p["status"]?.stringValue == "done" {
             scheduleReload()
         }
-    }
-
-    /// Union of two newest-first entry lists by `seq`, newest first.
-    static func merge(_ current: [TimelineEntry], _ incoming: [TimelineEntry]) -> [TimelineEntry] {
-        var bySeq: [Int: TimelineEntry] = [:]
-        for entry in current { bySeq[entry.seq] = entry }
-        for entry in incoming { bySeq[entry.seq] = entry }
-        return bySeq.values.sorted { $0.seq > $1.seq }
     }
 
     // MARK: Control and timeline
@@ -546,18 +544,35 @@ public final class AppStore {
         hosts[index].ownerClient = control.ownerClient
     }
 
-    /// Loads a host's timeline and merges it with entries already received from events.
+    /// Loads the newest page of a host's timeline and merges it with entries already received
+    /// from events; from the first call on, `timeline.appended` events of the host are kept.
     /// A failure is kept per host for `timelineError(for:)`.
-    public func loadTimeline(for hostID: String, limit: Int = 200) async {
+    public func loadTimeline(for hostID: String, limit: Int = HostTimeline.pageSize) async {
+        guard host(hostID) != nil else { return }
+        if timelines[hostID] == nil { timelines[hostID] = HostTimeline() }
         do {
-            let entries = try await backend.timelineList(hostID: hostID, since: nil, limit: limit)
+            let page = try await backend.timelineList(hostID: hostID, since: nil, limit: limit, cursor: nil)
             guard host(hostID) != nil else { return }
-            timelines[hostID] = Self.merge(timelines[hostID] ?? [], entries)
+            timelines[hostID]?.applyFirstPage(page)
             timelineErrors[hostID] = nil
         } catch is CancellationError {
         } catch {
             guard host(hostID) != nil else { return }
             timelineErrors[hostID] = OperationError(error)
+        }
+    }
+
+    /// Reads the page older than the oldest held entry of a host's timeline.
+    public func loadOlderTimeline(for hostID: String) async {
+        guard let cursor = timelines[hostID]?.olderCursor, timelines[hostID]?.isLoadingOlder == false else { return }
+        timelines[hostID]?.isLoadingOlder = true
+        timelines[hostID]?.olderError = nil
+        do {
+            let page = try await backend.timelineList(hostID: hostID, since: nil, limit: HostTimeline.pageSize, cursor: cursor)
+            timelines[hostID]?.applyOlderPage(page)
+        } catch {
+            timelines[hostID]?.isLoadingOlder = false
+            if !(error is CancellationError) { timelines[hostID]?.olderError = OperationError(error) }
         }
     }
 
@@ -635,6 +650,7 @@ extension AppStore {
         selectedHostID: String?,
         controls: [String: ControlState]? = nil,
         timelines: [String: [TimelineEntry]] = [:],
+        timelineCursors: [String: String] = [:],
         timelineErrors: [String: OperationError] = [:],
         streamQualities: [String: StreamQuality] = [:]
     ) -> AppStore {
@@ -649,7 +665,10 @@ extension AppStore {
         }
         store.hostsLoaded = phase == .ready || phase == .reconnecting
         store.controls = controls ?? PreviewFixtures.controls(for: hosts)
-        store.timelines = timelines
+        store.timelines = timelines.mapValues { _ in HostTimeline() }
+        for (hostID, entries) in timelines {
+            store.timelines[hostID]?.applyFirstPage(TimelinePage(entries: entries, nextCursor: timelineCursors[hostID]))
+        }
         store.timelineErrors = timelineErrors
         store.streamQualities = streamQualities
         store.selectedHostID = selectedHostID

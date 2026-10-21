@@ -164,6 +164,9 @@ extension PreviewBackend {
 
     public func evidenceData(path: String, maxBytes: Int) async throws -> Data {
         guard let content = qa.state.withLock({ $0.evidence[path] }) else {
+            if let screen = PreviewFixtures.timelineScreen(path: path) {
+                return await Task.detached { PreviewQAImages.png(screen) }.value
+            }
             throw RPCErrorInfo(message: "증거 파일 \(path)를 찾을 수 없습니다", code: "NOT_FOUND")
         }
         switch content {

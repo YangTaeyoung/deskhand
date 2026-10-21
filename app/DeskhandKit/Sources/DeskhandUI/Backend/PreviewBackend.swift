@@ -369,10 +369,13 @@ extension PreviewBackend {
 // MARK: Timeline
 
 extension PreviewBackend {
-    public func timelineList(hostID: String, since: Int?, limit: Int) async throws -> [TimelineEntry] {
+    public func timelineList(hostID: String, since: Int?, limit: Int, cursor: String?) async throws -> TimelinePage {
         _ = try host(hostID)
-        let entries = state.withLock { $0.timelines[hostID] ?? [] }.filter { since == nil || $0.seq > since! }
-        return Array(entries.prefix(limit))
+        let before = cursor.flatMap(Int.init)
+        let entries = state.withLock { $0.timelines[hostID] ?? [] }
+            .filter { (since == nil || $0.seq > since!) && (before == nil || $0.seq < before!) }
+        let page = Array(entries.prefix(limit))
+        return TimelinePage(entries: page, nextCursor: entries.count > limit ? page.last.map { String($0.seq) } : nil)
     }
 }
 

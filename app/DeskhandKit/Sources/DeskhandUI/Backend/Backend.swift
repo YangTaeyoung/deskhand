@@ -75,10 +75,10 @@ public protocol ControlBackend: Sendable {
     func controlResumeAI(hostID: String) async throws -> ControlState
 }
 
-/// `timeline.list` (local-api.md §3, §6).
+/// `timeline.list` (local-api.md §3, §6, §7).
 public protocol TimelineBackend: Sendable {
-    /// Entries newest first.
-    func timelineList(hostID: String, since: Int?, limit: Int) async throws -> [TimelineEntry]
+    /// Entries newest first; with `cursor` (a previous `next_cursor`) the page older than it.
+    func timelineList(hostID: String, since: Int?, limit: Int, cursor: String?) async throws -> TimelinePage
 }
 
 /// `stream.attach` with kind `screen` (local-api.md §4).
@@ -631,6 +631,11 @@ public struct OperationError: Error, Sendable, Equatable {
     /// The daemon's message followed by the remedy on its own line when one is known.
     public var detail: String {
         [message, fix].compactMap { $0 }.joined(separator: "\n")
+    }
+
+    /// The message and the remedy as sentences on one line.
+    public var sentences: String {
+        String.sentences(message, fix)
     }
 
     /// How to resolve the failure, for error codes with a known remedy.

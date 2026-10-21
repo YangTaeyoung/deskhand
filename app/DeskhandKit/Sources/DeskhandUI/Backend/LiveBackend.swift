@@ -191,17 +191,20 @@ private struct TimelineParams: Encodable {
     let hostID: String
     let since: Int?
     let limit: Int
+    let cursor: String?
 }
 
 /// `{entries, next_cursor?}`; entries are newest first.
 private struct TimelineResult: Decodable {
     let entries: [TimelineEntry]
+    let nextCursor: String?
 }
 
 extension LiveBackend {
-    public func timelineList(hostID: String, since: Int?, limit: Int) async throws -> [TimelineEntry] {
-        let result: TimelineResult = try await client.call("timeline.list", TimelineParams(hostID: hostID, since: since, limit: limit))
-        return result.entries
+    public func timelineList(hostID: String, since: Int?, limit: Int, cursor: String?) async throws -> TimelinePage {
+        let result: TimelineResult = try await client.call(
+            "timeline.list", TimelineParams(hostID: hostID, since: since, limit: limit, cursor: cursor))
+        return TimelinePage(entries: result.entries, nextCursor: result.nextCursor)
     }
 }
 

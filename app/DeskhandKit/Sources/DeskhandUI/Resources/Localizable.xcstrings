@@ -20537,7 +20537,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "사람이나 AI가 이 컴퓨터를 조작하면 누가 무엇을 했는지 여기에 시간순으로 남습니다."
+            "value": "사람이나 AI가 이 PC를 조작하면 누가 무엇을 했는지 여기에 시간순으로 남습니다."
           }
         }
       }
@@ -20670,6 +20670,39 @@
           "stringUnit": {
             "state": "translated",
             "value": "활동 기록을 불러오는 중"
+          }
+        }
+      }
+    },
+    "timeline.older": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이전 기록 더 보기"
+          }
+        }
+      }
+    },
+    "timeline.older.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이보다 오래된 기록을 %@개 더 불러옵니다"
+          }
+        }
+      }
+    },
+    "timeline.older.loading": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이전 기록을 불러오는 중"
           }
         }
       }

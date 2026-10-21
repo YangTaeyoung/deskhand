@@ -166,6 +166,33 @@ final class AppStoreConsistencyTests: XCTestCase {
         XCTAssertEqual(store.timeline(for: dev).map(\.seq), [newSeq] + fixtureSeqs)
     }
 
+    func testTimelineEventsOfAComputerWhoseTimelineWasNeverShownAreNotKept() async throws {
+        let (store, backend) = await startedStore()
+        let dev = PreviewFixtures.devPCID
+        let entry = TimelineEntry(seq: 900, ts: Timestamp(date: .now), hostID: dev, actor: "ai", kind: "input",
+                                  summary: "클릭", outcome: "ok")
+        backend.base.emit(kind: EventKind.timelineAppended, hostID: dev, payload: ["entry": PreviewBackend.payload(entry)])
+        try await drainEvents(store, backend)
+        XCTAssertNil(store.timelineState(for: dev))
+        XCTAssertTrue(store.timeline(for: dev).isEmpty)
+    }
+
+    func testOlderTimelineEntriesLoadFromTheNextCursor() async throws {
+        let (store, _) = await startedStore()
+        let dev = PreviewFixtures.devPCID
+        let fixtureSeqs = PreviewFixtures.timeline(hostID: dev).map(\.seq)
+        XCTAssertGreaterThan(fixtureSeqs.count, 2)
+        await store.loadTimeline(for: dev, limit: 2)
+        XCTAssertEqual(store.timeline(for: dev).map(\.seq), Array(fixtureSeqs.prefix(2)))
+        XCTAssertEqual(store.timelineState(for: dev)?.olderCursor, String(fixtureSeqs[1]))
+
+        await store.loadOlderTimeline(for: dev)
+
+        XCTAssertEqual(store.timeline(for: dev).map(\.seq), fixtureSeqs)
+        XCTAssertEqual(store.timelineState(for: dev)?.hasOlder, false)
+        XCTAssertEqual(store.timelineState(for: dev)?.isLoadingOlder, false)
+    }
+
     func testTimelineFailureStaysInline() async throws {
         let (store, backend) = await startedStore()
         let dev = PreviewFixtures.devPCID

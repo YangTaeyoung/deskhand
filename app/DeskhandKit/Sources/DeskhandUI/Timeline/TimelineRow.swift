@@ -53,6 +53,8 @@ struct TimelineRow: View {
     let entry: TimelineEntry
     /// Draws the rail down to the next row.
     let continuesRail: Bool
+    /// Reads and caches the screenshot thumbnails.
+    let evidence: QAEvidenceStore
 
     var body: some View {
         HStack(alignment: .top, spacing: DS.Space.m) {
@@ -80,7 +82,7 @@ struct TimelineRow: View {
                     }
                 }
                 if !entry.artifacts.isEmpty {
-                    ArtifactStrip(artifacts: entry.artifacts)
+                    ArtifactStrip(artifacts: entry.artifacts, evidence: evidence)
                         .padding(.top, DS.Space.xs)
                 }
             }
@@ -184,10 +186,11 @@ struct OutcomeBadge: View {
     }
 }
 
-/// Artifacts of an entry: screenshots as thumbnail tiles, other files as chips. Each reveals
-/// its file in Finder.
+/// Artifacts of an entry: screenshots as thumbnail tiles of the image file, other files as
+/// chips. Each reveals its file in Finder.
 struct ArtifactStrip: View {
     let artifacts: [Artifact]
+    let evidence: QAEvidenceStore
     static let maxShown = 3
 
     var body: some View {
@@ -196,8 +199,8 @@ struct ArtifactStrip: View {
                 Button {
                     FinderReveal.reveal(path: artifact.path)
                 } label: {
-                    if artifact.kind == "screenshot" {
-                        ScreenshotTile(name: artifact.name)
+                    if QAEvidenceStore.isImage(artifact) {
+                        ScreenshotTile(artifact: artifact, evidence: evidence)
                     } else {
                         ArtifactChip(artifact: artifact)
                     }
@@ -218,24 +221,38 @@ struct ArtifactStrip: View {
     }
 }
 
-/// Placeholder thumbnail of a screenshot artifact.
+/// Thumbnail of a screenshot artifact, read and downsampled off the main thread by `evidence`:
+/// a spinner while it loads, the photo symbol when the file cannot be read.
 private struct ScreenshotTile: View {
-    let name: String
+    let artifact: Artifact
+    let evidence: QAEvidenceStore
+    static let size = CGSize(width: 96, height: 60)
 
     var body: some View {
-        RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous)
-            .fill(LinearGradient(colors: [DS.Color.neutral.opacity(0.10), DS.Color.neutral.opacity(0.22)],
-                                 startPoint: .topLeading, endPoint: .bottomTrailing))
-            .frame(width: 96, height: 60)
+        let shape = RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous)
+        shape
+            .fill(DS.Color.neutral.opacity(0.12))
+            .frame(width: Self.size.width, height: Self.size.height)
             .overlay {
-                Image(systemName: "photo")
-                    .font(.system(size: 18, weight: .regular))
-                    .foregroundStyle(.secondary)
+                switch evidence.content(of: artifact, size: .thumbnail) {
+                case .image(let image, _):
+                    Image(nsImage: image)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFill()
+                        .frame(width: Self.size.width, height: Self.size.height)
+                case .loading:
+                    ProgressView()
+                        .controlSize(.small)
+                default:
+                    Image(systemName: "photo")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
             }
-            .overlay(
-                RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous)
-                    .strokeBorder(DS.Color.separator, lineWidth: 1)
-            )
+            .clipShape(shape)
+            .overlay(shape.strokeBorder(DS.Color.separator, lineWidth: 1))
+            .onAppear { evidence.load(artifact, size: .thumbnail) }
     }
 }
 

@@ -39,15 +39,16 @@ struct TimelineInspector: View {
     }
 }
 
-/// Timeline entries newest first, grouped by day, with loading, empty and error states.
+/// Timeline entries newest first, grouped by day, with loading, empty and error states and a
+/// button that reads older entries.
 struct ActivityPane: View {
     let store: AppStore
     let host: Host
 
     var body: some View {
-        let entries = store.timeline(for: host.hostID)
+        let timeline = store.timelineState(for: host.hostID)
         let error = store.timelineError(for: host.hostID)
-        if !store.isTimelineLoaded(for: host.hostID) && error == nil {
+        if !(timeline?.loaded ?? false) && error == nil {
             VStack(spacing: DS.Space.s) {
                 ProgressView()
                     .controlSize(.small)
@@ -60,28 +61,33 @@ struct ActivityPane: View {
             .accessibilityElement(children: .combine)
         } else {
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     if let error {
                         ErrorBanner(message: String.ui("timeline.failed", "활동 기록을 불러오지 못했습니다"),
-                                    fix: error.detail,
+                                    fix: error.sentences,
                                     code: error.code,
                                     retry: { Task { await store.loadTimeline(for: host.hostID) } })
                             .padding(.bottom, DS.Space.l)
                     }
-                    if entries.isEmpty {
-                        if error == nil { empty }
-                    } else {
-                        ForEach(TimelineDay.group(entries)) { day in
-                            Text(day.title)
+                    if let timeline, !timeline.entries.isEmpty {
+                        ForEach(timeline.days) { day in
+                            Text(DS.Format.day(day.day))
                                 .font(DS.Font.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
                                 .padding(.bottom, DS.Space.s)
                                 .padding(.top, day.isFirst ? 0 : DS.Space.s)
                                 .accessibilityAddTraits(.isHeader)
-                            ForEach(Array(day.entries.enumerated()), id: \.element.seq) { index, entry in
-                                TimelineRow(entry: entry, continuesRail: index < day.entries.count - 1)
+                            ForEach(day.rows) { row in
+                                TimelineRow(entry: row.entry, continuesRail: row.continuesRail, evidence: store.qa.evidence)
                             }
                         }
+                        if timeline.hasOlder {
+                            OlderTimelineFooter(timeline: timeline) {
+                                Task { await store.loadOlderTimeline(for: host.hostID) }
+                            }
+                        }
+                    } else if error == nil {
+                        empty
                     }
                 }
                 .padding(DS.Space.l)
@@ -92,12 +98,12 @@ struct ActivityPane: View {
     private var empty: some View {
         VStack(spacing: DS.Space.s) {
             Image(systemName: "clock.arrow.circlepath")
-                .font(.system(size: 28, weight: .regular))
+                .font(.title)
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             Text(String.ui("timeline.empty.title", "아직 기록이 없습니다"))
                 .font(DS.Font.headline)
-            Text(String.ui("timeline.empty.message", "사람이나 AI가 이 컴퓨터를 조작하면 누가 무엇을 했는지 여기에 시간순으로 남습니다."))
+            Text(String.ui("timeline.empty.message", "사람이나 AI가 이 PC를 조작하면 누가 무엇을 했는지 여기에 시간순으로 남습니다."))
                 .font(DS.Font.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -109,32 +115,39 @@ struct ActivityPane: View {
     }
 }
 
-/// Timeline entries of one calendar day, titled 오늘, 어제 or the date.
-struct TimelineDay: Identifiable {
-    let day: Date
-    let title: String
-    let isFirst: Bool
-    let entries: [TimelineEntry]
+/// `이전 기록 더 보기` under the oldest entry, a spinner while the page loads, and why it failed.
+private struct OlderTimelineFooter: View {
+    let timeline: HostTimeline
+    let load: () -> Void
+    private static let pageSize = String(HostTimeline.pageSize)
 
-    var id: Date { day }
-
-    /// Groups newest-first `entries` by day, keeping their order.
-    static func group(_ entries: [TimelineEntry], calendar: Calendar = .current) -> [TimelineDay] {
-        var days: [(Date, [TimelineEntry])] = []
-        for entry in entries {
-            let day = calendar.startOfDay(for: entry.ts.date)
-            if let last = days.last, last.0 == day {
-                days[days.count - 1].1.append(entry)
+    var body: some View {
+        VStack(alignment: .leading, spacing: DS.Space.s) {
+            if timeline.isLoadingOlder {
+                HStack(spacing: DS.Space.s) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(String.ui("timeline.older.loading", "이전 기록을 불러오는 중"))
+                        .font(DS.Font.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
             } else {
-                days.append((day, [entry]))
+                Button(action: load) {
+                    Label(String.ui("timeline.older", "이전 기록 더 보기"), systemImage: "clock.arrow.circlepath")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help(String.ui("timeline.older.help", "이보다 오래된 기록을 \(Self.pageSize)개 더 불러옵니다"))
+            }
+            if let error = timeline.olderError {
+                Label(error.sentences, systemImage: "exclamationmark.triangle.fill")
+                    .font(DS.Font.caption)
+                    .foregroundStyle(DS.Status.warningText)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        return days.enumerated().map { index, item in
-            TimelineDay(day: item.0, title: title(for: item.0, calendar: calendar), isFirst: index == 0, entries: item.1)
-        }
-    }
-
-    static func title(for day: Date, calendar: Calendar) -> String {
-        DS.Format.day(day, calendar: calendar)
+        .padding(.leading, ActorBadge.size + DS.Space.m)
+        .padding(.top, DS.Space.xs)
     }
 }

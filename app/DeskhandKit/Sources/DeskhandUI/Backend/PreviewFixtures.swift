@@ -1,3 +1,4 @@
+import AppKit
 import DeskhandClient
 import Foundation
 import struct DeskhandClient.Host
@@ -117,6 +118,31 @@ public enum PreviewFixtures {
         case stagingID: StreamQuality(fps: 48, latencyMS: 35, bitsPerSecond: 11_300_000)
         default: nil
         }
+    }
+
+    /// The drawn screen of a timeline screenshot fixture, by its file name.
+    static func timelineScreen(path: String) -> PreviewQAImages.Screen? {
+        switch (path as NSString).lastPathComponent {
+        case "after-click.png": .shopDashboard
+        case "display-1.png": .fixtureDone
+        case "confirm-dialog.png": .fixtureTyping
+        default: nil
+        }
+    }
+
+    /// Thumbnails of every timeline screenshot fixture by path, drawn and decoded now. Snapshot
+    /// scenes seed them into the evidence store.
+    public static func timelineThumbnails(now: Date = .now) -> [String: QAEvidenceContent] {
+        var thumbnails: [String: QAEvidenceContent] = [:]
+        for host in hosts() {
+            for artifact in timeline(hostID: host.hostID, now: now).flatMap(\.artifacts) {
+                guard let screen = timelineScreen(path: artifact.path),
+                      let decoded = QAEvidenceStore.decodeImage(PreviewQAImages.png(screen), maxPixels: QAEvidenceStore.thumbnailPixels)
+                else { continue }
+                thumbnails[artifact.path] = .image(NSImage(cgImage: decoded.image, size: .zero), pixels: decoded.pixels)
+            }
+        }
+        return thumbnails
     }
 
     /// Timeline entries newest first, as `timeline.list` returns them.

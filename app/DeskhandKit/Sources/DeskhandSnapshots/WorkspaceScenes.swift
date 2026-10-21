@@ -53,6 +53,7 @@ enum WorkspaceScenes {
         let store = AppStore.seeded(backend: backend, defaults: defaults, hosts: hosts, selectedHostID: setup.selected,
                                     controls: controls, timelines: timelines, timelineErrors: errors,
                                     streamQualities: qualities)
+        store.qa.evidence.seed(PreviewFixtures.timelineThumbnails())
         store.layout.tab = setup.tab
         store.layout.showsInspector = setup.inspector != nil
         store.layout.inspectorPane = setup.inspector ?? .activity
