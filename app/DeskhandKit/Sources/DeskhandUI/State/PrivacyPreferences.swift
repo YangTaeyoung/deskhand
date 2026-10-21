@@ -163,15 +163,15 @@ public struct AIScope: Codable, Equatable, Sendable {
         files == .workRoots && rootCount == 0 ? [.noWorkRoots] : []
     }
 
-    /// `화면 · 작업 루트 2곳 · 클립보드 차단`.
+    /// `화면 허용 · 작업 루트 2곳 · 클립보드 차단`.
     public func summary(rootCount: Int) -> String {
-        let screen = allowsScreen ? String.ui("ai.summary.screen", "화면") : .ui("ai.summary.screenBlocked", "화면 차단")
+        let screen = allowsScreen ? String.ui("ai.summary.screen", "화면 허용") : .ui("ai.summary.screenBlocked", "화면 차단")
         let files: String = switch self.files {
-        case .all: .ui("ai.summary.filesAll", "모든 폴더")
+        case .all: .ui("ai.summary.filesAll", "모든 폴더 허용")
         case .workRoots: .ui("ai.summary.workRoots", "작업 루트 \(String(rootCount))곳")
         case .none: .ui("ai.summary.filesBlocked", "파일 차단")
         }
-        let clipboard = allowsClipboard ? String.ui("ai.summary.clipboard", "클립보드") : .ui("ai.summary.clipboardBlocked", "클립보드 차단")
+        let clipboard = allowsClipboard ? String.ui("ai.summary.clipboard", "클립보드 허용") : .ui("ai.summary.clipboardBlocked", "클립보드 차단")
         return [screen, files, clipboard].joined(separator: " · ")
     }
 }

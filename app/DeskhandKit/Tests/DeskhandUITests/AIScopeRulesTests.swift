@@ -105,11 +105,13 @@ final class AIScopeRulesTests: XCTestCase {
     }
 
     func testRestrictedScopeIsSummarized() {
-        XCTAssertEqual(AIScope.unrestricted.summary(rootCount: 0), "화면 · 모든 폴더 · 클립보드")
+        XCTAssertEqual(AIScope.unrestricted.summary(rootCount: 0), "화면 허용 · 모든 폴더 허용 · 클립보드 허용")
         let scope = AIScope(allowsScreen: false, files: .workRoots, allowsClipboard: false)
         XCTAssertEqual(scope.summary(rootCount: 2), "화면 차단 · 작업 루트 2곳 · 클립보드 차단")
+        XCTAssertEqual(AIScope(allowsScreen: true, files: .workRoots, allowsClipboard: false).summary(rootCount: 1),
+                       "화면 허용 · 작업 루트 1곳 · 클립보드 차단")
         XCTAssertEqual(AIScope(allowsScreen: true, files: .none, allowsClipboard: true).summary(rootCount: 0),
-                       "화면 · 파일 차단 · 클립보드")
+                       "화면 허용 · 파일 차단 · 클립보드 허용")
         XCTAssertFalse(AIScope.unrestricted.isRestricted)
         XCTAssertTrue(scope.isRestricted)
     }

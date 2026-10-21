@@ -683,7 +683,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "클립보드"
+            "value": "클립보드 허용"
           }
         }
       }
@@ -705,7 +705,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "모든 폴더"
+            "value": "모든 폴더 허용"
           }
         }
       }
@@ -727,7 +727,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "화면"
+            "value": "화면 허용"
           }
         }
       }
