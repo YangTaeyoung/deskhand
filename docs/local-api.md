@@ -162,11 +162,21 @@ QA 시나리오 실행기. 세부 규칙은 [§10](#10-qa-세부-계약).
 
 새 소켓 연결에서 `hello` 다음 `stream.attach`를 부르면, 성공 응답 줄 이후 그 연결은 바이너리 프레임(`u32 BE 길이` + 본문, 첫 바이트 종류)으로 바뀐다.
 
-`kind:"screen"` (`host_id`, `display`, `preset`(`sharp`/`balanced`/`saver`))
-- 데몬 → 앱: 비디오 `0x01`–`0x04`(protocol.md §4와 동일), 커서 `0x10`·`0x11`, `0x30` 알림 JSON(`control_denied`, `owner_changed`, `connection_state`, `latency`{`capture_to_receive_ms`}).
-- 앱 → 데몬: `0x40` 제어 JSON(`keyframe`, `preset`), `0x41` 사람 입력 JSON(protocol.md §6 이벤트, 좌표는 원본 픽셀). 소유권이 AI면 입력을 버리고 `control_denied`를 보낸다.
+`kind:"screen"` (`host_id`, `display`(기본 0), `preset`(`sharp`/`balanced`/`saver`, 기본 `balanced`)) — 코드: `internal/daemon/screen`
+- 성공 응답의 `result`는 `{host_id, display, preset}`. 실패는 JSON-RPC 오류다: `host_id`가 없거나 `display`가 음수이거나 모르는 `preset`은 `INVALID_ARGUMENT`, 모르는 PC는 `NOT_FOUND`, PC에 그 디스플레이가 없으면(에이전트의 `video` 거절 `NOT_FOUND`) `DISPLAY_UNAVAILABLE`, 화면을 보낼 수 없는 에이전트(Windows 밖)는 `CAPABILITY_UNSUPPORTED`, PC와 연결돼 있지 않으면 `OFFLINE`(`retryable:true`).
+- 데몬 → 앱: 비디오 `0x01`–`0x04`(protocol.md §4와 동일), 커서 `0x10`·`0x11`(§5와 동일), `0x30` 알림 JSON.
+- 앱 → 데몬: `0x40` 제어 JSON(`{"op":"keyframe"}`, `{"op":"preset","preset":…}`), `0x41` 사람 입력 JSON(protocol.md §6 이벤트, 좌표는 원본 픽셀). 다른 종류와 모르는 `op`는 버린다.
+- 공유: 한 PC의 한 디스플레이에 붙은 연결(앱 창)은 모두 에이전트 `video`·`cursor` 스트림 하나씩을 함께 쓴다. 첫 연결이 열고, 마지막 연결이 떠난 뒤 5초 동안 아무도 붙지 않으면 데몬이 닫는다(그 사이 붙으면 그대로 쓴다). 데몬은 영상을 디코딩하지 않고 프레임을 그대로 나른다. 에이전트 스트림이 끝나면(연결 끊김 포함) 붙은 연결은 그대로 두고 0.2초부터 두 배씩 최대 5초 간격으로 다시 열며, 다시 열 수 없는 거절(`DISPLAY_UNAVAILABLE`·`CAPABILITY_UNSUPPORTED` 등)이면 붙은 연결을 닫는다(앱이 다시 붙으면 그 오류를 받는다).
+- 프리셋: `sharp`는 원본 폭·20 Mbps, `balanced`는 최대 2560 폭·12 Mbps, `saver`는 최대 1920 폭·4 Mbps다. 에이전트 스트림은 붙은 연결의 프리셋 가운데 가장 높은 것으로 열고, 그 최고 프리셋이 바뀌면(더 높은 연결이 붙거나 떠나거나 `preset` 제어) `bitrate`와 `config`(`max_width`, `max_fps`는 기본)로 바꾼다.
+- 키프레임: 새 연결은 붙자마자 지금 상태(마지막 `info`, 멈춰 있으면 `paused`, 마지막 커서 `shape`·`pos`)를 받고 다음 키프레임부터 AU를 받는다. 데몬은 새 연결이 붙을 때, 앱이 `keyframe`을 보낼 때, 세션이 바뀔 때(`session.changed`), 그리고 30초마다 에이전트에 `keyframe`을 요청한다(0.1초 안의 요청은 하나로 합친다). `paused` 뒤에는 모든 연결이 다음 키프레임부터 AU를 받는다.
+- 느린 연결: 연결마다 보내지 못한 프레임이 1024개 또는 16 MiB를 넘으면 그 연결만 프레임을 버리기 시작한다. 쌓인 프레임을 다 보낸 뒤 지금 상태를 다시 보내고 키프레임을 요청해 그 키프레임부터 AU를 이어 보낸다. 다른 연결과 에이전트 스트림은 기다리지 않는다. 10초 동안 쓰기가 끝나지 않는 연결은 닫는다.
+- 디스플레이·연결 변화: `display.changed`의 목록에 그 디스플레이가 없으면 데몬이 `0x04`{`reason`:`no_output`}을 보내고(에이전트가 이미 그 사유로 멈췄으면 보내지 않는다), 있으면 키프레임을 요청한다. 에이전트의 `paused`·`info`는 오는 대로 전한다.
 - `0x30` 알림 JSON은 `{"type": …}`로 구분한다: `latency`{`capture_to_receive_ms`, `clock_offset_ms`}, `control_denied`{`owner`, `owner_client?`}, `owner_changed`{ControlState 필드}, `connection_state`{`state`, `reason?`}.
-- 사람 입력(`0x41`)의 `gen`은 데몬이 현재 writer generation으로 덮어쓴다. 앱은 0을 보내도 된다.
+  - `latency`: 데몬은 PC와 연결될 때마다 `time.sync`를 5번 불러 왕복이 가장 짧은 표본으로 시계 차(`clock_offset_ms` = 에이전트 시계 − 데몬 시계, 그 왕복의 가운데 기준)를 정하고, 1초마다 그 1초에 받은 AU의 캡처→데몬 수신 시간 평균(`capture_to_receive_ms`)을 보낸다. 그 1초에 AU가 없거나 시계 차를 모르면 보내지 않는다.
+  - `owner_changed`: 그 PC의 제어권이 바뀔 때마다(`control.changed`와 같은 필드) 그 PC에 붙은 모든 연결에 보낸다.
+  - `connection_state`: PC와의 연결 상태가 바뀔 때마다(`connection.state`와 같은 `state`·`reason`) 보낸다.
+  - `control_denied`: 사람 입력을 버렸을 때 연결마다 1초에 한 번까지 보낸다.
+- 사람 입력(`0x41`): `seq`와 `gen`은 데몬이 덮어쓴다(앱은 0을 보내도 된다). 이벤트는 PC마다 에이전트 `input` 스트림 하나로 받은 순서대로 간다(처음 입력에 열고, 입력 없이 30초가 지나고 누른 키·버튼이 없으면, 또는 그 PC의 마지막 연결이 떠나면 닫는다). 이벤트마다 제어권을 확인한다(`control.acquire`와 같은 규칙): 아무도 쥐지 않았으면 그 연결의 클라이언트가 사람 제어권을 얻고(`ai_paused`여도), 사람이 쥐었으면(다른 창·클라이언트 포함) 현재 `gen`으로 보내며, AI 클라이언트의 lease가 살아 있으면 버리고 `control_denied`를 보낸다. AI 클라이언트(`mcp`)의 연결이 보낸 입력도 버리고 `control_denied`를 보낸다. `release_all`은 사람이 제어권을 쥐었을 때만 보내고 제어권을 얻지 않는다. 에이전트의 확인(`0x42`)은 앱에 전하지 않는다(결과는 화면으로 본다). 연결이 떠날 때 그 연결이 누른 채인 키·버튼이 있고 사람이 제어권을 쥐었으면 `release_all`을 보낸다.
 - 단축키: 화면 입력을 잡고 있어도 ⌘Q·⌘H·⌘Tab·⌘⇧.·⌘1–⌘7·⌘⌥0·⌘K·⌘,는 Mac에 남는다(설정 "시스템 단축키도 원격으로 보내기"로 ⌘Q·⌘H·⌘Tab만 원격 전달 가능, 기본 끔). 그 밖의 ⌘ 조합은 Cmd↔Ctrl 설정에 따라 원격으로 간다.
 
 `kind:"pty"` (`pty_id` 또는 `job_id`): `0x20`–`0x23` (protocol.md §7과 동일). `pty_id`는 방금 연 셸, `job_id`는 실행 중인 pty job에 다시 붙는다(분리했거나 연결이 끊긴 셸). 붙으면 데몬이 `0x23`{`job`(데몬 job_id), `pid`}을 보내고 이어서 스크롤백(셸의 마지막 출력 최대 1 MiB, protocol.md §7)을 `0x20`으로 다시 보낸다. 앱은 `0x23`을 받을 때마다 현재 크기를 `0x21`로 보낸다. 끝난 job에 붙으면 `NOT_FOUND`.
@@ -174,7 +184,7 @@ QA 시나리오 실행기. 세부 규칙은 [§10](#10-qa-세부-계약).
 - 앱 → 데몬은 `0x20`(입력, 한 프레임 최대 1 MiB)과 `0x21`(`cols`·`rows` 각 1–1000, 범위 밖은 버린다)만 전달되고 다른 종류는 버린다. 데몬 → 앱은 `0x23`, `0x20`, `0x22`다.
 - 셸이 끝나면 `0x22`{`code`} 뒤 데몬이 연결을 닫는다. `0x22` 없이 닫히면(PC 연결 끊김) 셸은 PC에서 계속 돌고 있으니 `job_id`로 다시 붙는다. 앱이 연결을 닫으면(분리) 셸은 계속 돈다. 한 셸에 여러 연결이 함께 붙을 수 있고 출력은 모두에게 간다.
 
-스트림 연결 규칙: `stream.attach`는 `hello` 다음 아무 때나 부를 수 있지만 `events.subscribe`를 부른 연결에서는 `INVALID_ARGUMENT`다. 데몬은 그 연결에서 먼저 받은 요청의 응답을 모두 쓴 뒤 attach를 처리하고, 성공 응답 줄 바로 다음 바이트부터 프레임이다(응답 줄 뒤에 앱이 미리 보낸 바이트도 프레임으로 읽는다). 거절된 attach는 오류 응답만 쓰고 연결은 JSON-RPC 그대로 남는다. 모르는 `kind`는 `INVALID_ARGUMENT`, `kind:"screen"`은 화면 스트림 구현 전까지 `CAPABILITY_UNSUPPORTED`다.
+스트림 연결 규칙: `stream.attach`는 `hello` 다음 아무 때나 부를 수 있지만 `events.subscribe`를 부른 연결에서는 `INVALID_ARGUMENT`다. 데몬은 그 연결에서 먼저 받은 요청의 응답을 모두 쓴 뒤 attach를 처리하고, 성공 응답 줄 바로 다음 바이트부터 프레임이다(응답 줄 뒤에 앱이 미리 보낸 바이트도 프레임으로 읽는다). 거절된 attach는 오류 응답만 쓰고 연결은 JSON-RPC 그대로 남는다. 모르는 `kind`는 `INVALID_ARGUMENT`다.
 
 ## 5. 모델
 

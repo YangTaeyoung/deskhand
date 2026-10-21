@@ -28,6 +28,7 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/daemon/paths"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/pty"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/qa"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/screen"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/store"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/tunnel"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/xfer"
@@ -98,6 +99,8 @@ type Deps struct {
 	Debug *debug.Manager
 	// QA serves the qa methods; nil leaves them out.
 	QA *qa.Manager
+	// Screens serves the screen streams; nil leaves them out.
+	Screens *screen.Hub
 	// Control serves the control methods and gives the UI operations their
 	// writer generation; nil leaves the methods out and sends writer
 	// generation 0.
@@ -155,6 +158,7 @@ func New(d Deps) *Server {
 	s.registerDiag()
 	s.registerQA()
 	s.registerControl()
+	s.registerScreen()
 	return s
 }
 
@@ -421,11 +425,7 @@ func (s *session) attach(req request, br *bufio.Reader) bool {
 	}
 	h, ok := s.srv.streams[p.Kind]
 	if !ok {
-		e := apierr.Invalid(fmt.Sprintf("stream.attach의 kind %q를 모릅니다. kind는 pty입니다", p.Kind))
-		if p.Kind == "screen" {
-			e = apierr.New(wire.CodeCapabilityUnsupported, "이 데몬은 아직 화면 스트림을 지원하지 않습니다. deskhand를 업데이트하세요", false, "")
-		}
-		s.reply(req.ID, nil, rpcErr(codeInvalidParams, e))
+		s.reply(req.ID, nil, rpcErr(codeInvalidParams, apierr.Invalid(fmt.Sprintf("stream.attach의 kind %q를 모릅니다. kind는 screen이나 pty로 주세요", p.Kind))))
 		return false
 	}
 	result, run, err := s.callStream(h, req)

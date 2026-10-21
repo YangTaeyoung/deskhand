@@ -80,13 +80,14 @@ type testAgent struct {
 // retrying for up to 5 s while the port is still bound.
 func startAgent(t *testing.T, port int, id transport.Identity, dataDir string, controllers ...string) *testAgent {
 	t.Helper()
-	return startAgentWith(t, port, id, dataDir, nil, nil, controllers...)
+	return startAgentWith(t, port, id, dataDir, nil, nil, nil, controllers...)
 }
 
 // startAgentWith is startAgent with the agent's diagnostics read from src,
-// or from the agent's own system when src is nil, and its ui and win ops
-// served by ui when it is set.
-func startAgentWith(t *testing.T, port int, id transport.Identity, dataDir string, src diag.Source, ui server.UI, controllers ...string) *testAgent {
+// or from the agent's own system when src is nil, its ui and win ops
+// served by ui when it is set, and the streams of extra served next to the
+// transfer, pty and tunnel streams.
+func startAgentWith(t *testing.T, port int, id transport.Identity, dataDir string, src diag.Source, ui server.UI, extra quicserve.StreamHandlers, controllers ...string) *testAgent {
 	t.Helper()
 	home := t.TempDir()
 	cfg := config.Agent{Listen: fmt.Sprintf("127.0.0.1:%d", port), ControllerFingerprints: controllers, DataDir: dataDir, Name: "pc"}
@@ -103,6 +104,7 @@ func startAgentWith(t *testing.T, port int, id transport.Identity, dataDir strin
 		streams := quicserve.TransferStreams(srv)
 		maps.Copy(streams, quicserve.PTYStreams(srv))
 		maps.Copy(streams, quicserve.TunnelStreams(srv))
+		maps.Copy(streams, extra)
 		go func() { done <- quicserve.Run(ctx, cfg, id, srv, streams) }()
 		select {
 		case err := <-done:
@@ -158,6 +160,9 @@ type setupOpts struct {
 	// agentUI serves the agent's ui and win ops; nil leaves the agent
 	// without them.
 	agentUI server.UI
+	// agentStreams are served by the agent next to its transfer, pty and
+	// tunnel streams.
+	agentStreams quicserve.StreamHandlers
 }
 
 func newID(t *testing.T, cn string) transport.Identity {
@@ -189,7 +194,7 @@ func setup(t *testing.T, o setupOpts) *env {
 	if !o.trustDaemon {
 		trusted = []string{newID(t, "other").Fingerprint}
 	}
-	agent := startAgentWith(t, freeUDPPort(t), agentID, t.TempDir(), o.agentDiag, o.agentUI, trusted...)
+	agent := startAgentWith(t, freeUDPPort(t), agentID, t.TempDir(), o.agentDiag, o.agentUI, o.agentStreams, trusted...)
 	fp := agentID.Fingerprint
 	if o.storedFP != nil {
 		fp = o.storedFP(agentID)
