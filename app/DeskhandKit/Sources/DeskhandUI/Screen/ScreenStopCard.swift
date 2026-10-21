@@ -224,7 +224,7 @@ struct ScreenStopCard: View {
         if primary {
             button.buttonStyle(.borderedProminent)
         } else {
-            button.buttonStyle(.borderedProminent).tint(DS.Color.neutral)
+            button.buttonStyle(.bordered)
         }
     }
 }

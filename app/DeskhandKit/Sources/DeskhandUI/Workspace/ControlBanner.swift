@@ -78,10 +78,11 @@ struct ControlBanner: View {
     }
 
     private var actions: ControlActions { store.controlActions }
+    private var repairFailed: Bool { kind == .blocked && store.repairError(for: host.hostID) != nil }
 
     var body: some View {
         VStack(spacing: 0) {
-            band
+            if !repairFailed { band }
             if let error = store.controlError(for: host.hostID) {
                 ControlFailureBar(title: String.ui("control.failed.read", "제어권 상태를 읽지 못했습니다"), error: error,
                                   retry: { Task { await store.loadControl(for: host.hostID) } },
@@ -95,7 +96,8 @@ struct ControlBanner: View {
             if let error = store.repairError(for: host.hostID) {
                 ControlFailureBar(title: String.ui("repair.failed", "다시 페어링하지 못했습니다"), error: error,
                                   retry: { store.requestRepair(host) },
-                                  dismiss: { store.dismissRepairError(for: host.hostID) })
+                                  dismiss: { store.dismissRepairError(for: host.hostID) },
+                                  diagnose: kind == .blocked ? { store.presentDoctor(for: host.hostID) } : nil)
             }
         }
     }
@@ -153,19 +155,23 @@ struct ControlBanner: View {
                            : String.ui("banner.blocked.message", "에이전트를 다시 설치했다면 다시 페어링하세요. 아니라면 다른 PC가 이 주소를 쓰는지 먼저 진단하세요.")) {
                 Button(String.ui("action.doctor", "진단 실행")) { store.presentDoctor(for: host.hostID) }
                     .buttonStyle(.bordered)
-                    .disabled(repairing)
-                Button { store.requestRepair(host) } label: {
-                    if repairing {
-                        HStack(spacing: DS.Space.s) {
-                            ProgressView().controlSize(.small)
-                            Text(String.ui("settings.connection.progress.repair", "다시 페어링하는 중…"))
-                        }
-                    } else {
+                    .allowsHitTesting(!repairing)
+                if repairing {
+                    HStack(spacing: DS.Space.s) {
+                        ProgressView().controlSize(.small)
+                        Text(String.ui("settings.connection.progress.repair", "다시 페어링하는 중…"))
+                            .foregroundStyle(.primary)
+                    }
+                    .padding(.horizontal, DS.Space.m)
+                    .padding(.vertical, DS.Space.xs)
+                    .overlay(RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous).strokeBorder(.separator))
+                    .accessibilityElement(children: .combine)
+                } else {
+                    Button { store.requestRepair(host) } label: {
                         Label(String.ui("action.repair.ask", "다시 페어링…"), systemImage: "arrow.triangle.2.circlepath")
                     }
+                    .buttonStyle(.borderedProminent)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(repairing)
             }
         case .observing:
             EmptyView()
@@ -377,6 +383,7 @@ struct ControlFailureBar: View {
     let error: OperationError
     let retry: () -> Void
     let dismiss: () -> Void
+    var diagnose: (() -> Void)?
 
     var body: some View {
         HStack(alignment: .center, spacing: DS.Space.m) {
@@ -399,6 +406,10 @@ struct ControlFailureBar: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
+            if let diagnose {
+                Button(String.ui("action.doctor", "진단 실행"), action: diagnose)
+                    .buttonStyle(.bordered)
+            }
             Button(action: retry) {
                 Label(String.ui("action.retry", "다시 시도"), systemImage: "arrow.clockwise")
             }
