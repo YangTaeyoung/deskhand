@@ -43,7 +43,7 @@ public struct TakeoverConfirmView: View {
                     .frame(width: 48, height: 48)
                     .overlay {
                         Image(systemName: ControlActions.Action.takeOver.symbol)
-                            .font(.system(size: 22, weight: .medium))
+                            .font(.system(.title, weight: .medium))
                             .foregroundStyle(DS.Color.human)
                     }
                     .accessibilityHidden(true)

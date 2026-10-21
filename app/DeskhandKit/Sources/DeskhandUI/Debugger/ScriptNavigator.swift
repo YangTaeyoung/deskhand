@@ -159,7 +159,7 @@ private struct ScriptRow: View {
         Button(action: open) {
             HStack(spacing: DS.Space.s) {
                 Image(systemName: "doc.text")
-                    .font(.system(size: 12))
+                    .font(.system(.callout))
                     .foregroundStyle(highlighted ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(.secondary))
                     .frame(width: 16)
                     .accessibilityHidden(true)

@@ -347,7 +347,7 @@ private struct LevelChip: View {
             }
             .font(DS.Font.caption.weight(.medium))
             .padding(.horizontal, DS.Space.s)
-            .frame(height: 22)
+            .frame(minHeight: 22)
             .background(background, in: Capsule())
             .overlay(Capsule().strokeBorder(isOn ? level.tint.opacity(0.35) : DS.Color.separator, lineWidth: 1))
             .contentShape(Capsule())
@@ -474,7 +474,7 @@ struct EventTableView: View {
         switch EventColumn(rawValue: column) ?? .message {
         case .level:
             let cell = table.makeView(withIdentifier: EventLevelCell.identifier, owner: nil) as? EventLevelCell ?? EventLevelCell()
-            cell.configure(event)
+            cell.configure(event, metrics: table.textMetrics)
             return cell
         case .time:
             let cell = DataTextCell.make(table, "event.time", monospacedDigits: true)
@@ -534,14 +534,15 @@ final class EventLevelCell: NSTableCellView {
 
     required init?(coder: NSCoder) { nil }
 
-    func configure(_ event: EventLogEntry) {
+    func configure(_ event: EventLogEntry, metrics: DS.TableMetrics) {
         let level = event.eventLevel
         icon.image = NSImage(systemSymbolName: level?.symbol ?? "questionmark.circle", accessibilityDescription: nil)
         tint = level.map { NSColor($0.tint) } ?? .secondaryLabelColor
         textTint = level?.textColorNS ?? .labelColor
         critical = level == .critical
         label.stringValue = level?.title ?? event.level
-        label.font = .systemFont(ofSize: NSFont.systemFontSize, weight: critical ? .semibold : .regular)
+        label.font = .systemFont(ofSize: metrics.textSize, weight: critical ? .semibold : .regular)
+        icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: metrics.symbolSize, weight: .regular)
         recolor()
     }
 
@@ -655,7 +656,7 @@ private struct EventDetailView: View {
         let log = model.filter.log.title
         return HStack(alignment: .top, spacing: DS.Space.m) {
             Image(systemName: level?.symbol ?? "questionmark.circle")
-                .font(.system(size: 20))
+                .font(.system(.title))
                 .foregroundStyle(level?.tint ?? DS.Color.neutral)
                 .frame(width: 24)
                 .accessibilityHidden(true)

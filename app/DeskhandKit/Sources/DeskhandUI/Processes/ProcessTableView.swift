@@ -159,7 +159,7 @@ struct ProcessTableView: View {
         switch ProcessColumn(rawValue: column) ?? .name {
         case .name:
             let cell = table.makeView(withIdentifier: ProcessNameCell.identifier, owner: nil) as? ProcessNameCell ?? ProcessNameCell()
-            cell.configure(item)
+            cell.configure(item, metrics: table.textMetrics)
             cell.onToggle = { [weak model] in model?.toggleCollapsed(process.pid) }
             return cell
         case .pid:
@@ -329,8 +329,11 @@ final class ProcessNameCell: NSTableCellView {
 
     required init?(coder: NSCoder) { nil }
 
-    func configure(_ item: ProcessTableItem) {
+    func configure(_ item: ProcessTableItem, metrics: DS.TableMetrics) {
         self.item = item
+        label.font = .systemFont(ofSize: metrics.textSize)
+        icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: metrics.symbolSize, weight: .regular)
+        deskhandTag.textSize = (metrics.smallTextSize - 1).rounded()
         let row = item.row
         let process = row.process
         leading?.constant = 2 + (item.tree ? CGFloat(row.depth) * Self.indent : 0)

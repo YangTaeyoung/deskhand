@@ -36,7 +36,7 @@ struct RunList: View {
             HStack(spacing: DS.Space.s) {
                 HStack(spacing: DS.Space.xs) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(.subheadline, weight: .medium))
                         .foregroundStyle(DS.Status.neutralText)
                         .accessibilityHidden(true)
                     TextField(String.ui("qa.search.placeholder", "이름·시나리오·실행 ID"), text: $model.search)
@@ -94,7 +94,7 @@ struct RunList: View {
                         .font(DS.Font.caption.weight(.semibold))
                         .foregroundStyle(DS.Status.accentText)
                         .padding(.horizontal, DS.Space.s)
-                        .frame(height: 18)
+                        .frame(minHeight: 18)
                         .background(DS.Color.accent.opacity(DS.Status.badgeOpacity), in: Capsule())
                     }
                     .buttonStyle(.plain)
@@ -131,7 +131,7 @@ struct RunList: View {
             .pickerStyle(.inline)
         } label: {
             Image(systemName: model.filter == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-                .font(.system(size: 14))
+                .font(.system(.title3))
                 .foregroundStyle(model.filter == .all ? AnyShapeStyle(DS.Status.neutralText) : AnyShapeStyle(DS.Color.accent))
         }
         .menuStyle(.borderlessButton)
@@ -288,7 +288,7 @@ struct RunRow: View {
                         .accessibilityHidden(true)
                 }
                 RunDuration(run: run)
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(.subheadline, design: .monospaced))
                     .foregroundStyle(secondary)
                     .lineLimit(1)
                     .fixedSize()
@@ -412,7 +412,7 @@ struct RunProgress: View {
                         .frame(width: 64 * CGFloat(done) / CGFloat(max(run.stepsTotal, 1)), height: 4)
                 }
             Text(String.ui("qa.progress", "\(String(done))/\(String(run.stepsTotal))단계"))
-                .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                .font(.system(.subheadline, weight: .semibold).monospacedDigit())
                 .foregroundStyle(inverted ? DS.Color.onFill : DS.Status.accentText)
                 .lineLimit(1)
                 .fixedSize()

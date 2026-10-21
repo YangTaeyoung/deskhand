@@ -14,7 +14,7 @@ struct StepRow: View {
             StepStatusMark(step: step, selected: selected)
                 .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
             Text(String(step.index))
-                .font(.system(size: 11, design: .monospaced))
+                .font(.system(.subheadline, design: .monospaced))
                 .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(DS.Status.neutralText))
                 .frame(width: 26, alignment: .trailing)
             VStack(alignment: .leading, spacing: DS.Space.xs) {
@@ -55,7 +55,7 @@ struct StepRow: View {
             }
             Spacer(minLength: DS.Space.s)
             StepDuration(step: step, inverted: selected)
-                .font(.system(size: 11, design: .monospaced))
+                .font(.system(.subheadline, design: .monospaced))
                 .fixedSize()
         }
         .padding(.horizontal, DS.Space.m)
@@ -126,7 +126,7 @@ struct StepStatusMark: View {
                     .scaleEffect(0.8)
             } else {
                 Image(systemName: StepRow.isHumanControl(step) ? "hand.raised.fill" : QAFormat.symbol(step: step))
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(.body, weight: .semibold))
                     .foregroundStyle(style)
             }
         }
@@ -156,7 +156,7 @@ struct StepKindChip: View {
         .font(DS.Font.caption)
         .foregroundStyle(inverted ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(DS.Status.neutralText))
         .padding(.horizontal, DS.Space.s)
-        .frame(height: 18)
+        .frame(minHeight: 18)
         .background(inverted ? AnyShapeStyle(.clear) : AnyShapeStyle(DS.Color.neutral.opacity(0.1)),
                     in: RoundedRectangle(cornerRadius: 4, style: .continuous))
         .overlay {
@@ -177,10 +177,10 @@ struct StepFlag: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 10, weight: .semibold))
+            .font(.system(.caption, weight: .semibold))
             .foregroundStyle(inverted ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(DS.Status.neutralText))
             .padding(.horizontal, DS.Space.xs)
-            .frame(height: 16)
+            .frame(minHeight: 16)
             .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous)
                 .strokeBorder(inverted ? AnyShapeStyle(DS.Color.onFill.opacity(0.6)) : AnyShapeStyle(DS.Color.separator), lineWidth: 1))
             .fixedSize()
@@ -222,13 +222,13 @@ struct StepPhaseHeader: View {
                 .font(DS.Font.caption.weight(.bold))
                 .foregroundStyle(.primary)
             Text(phase.rawValue)
-                .font(.system(size: 10, design: .monospaced))
+                .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(DS.Status.neutralText)
             Text(String(steps.count))
-                .font(.system(size: 10, weight: .semibold).monospacedDigit())
+                .font(.system(.caption, weight: .semibold).monospacedDigit())
                 .foregroundStyle(DS.Status.neutralText)
                 .padding(.horizontal, DS.Space.xs)
-                .frame(height: 15)
+                .frame(minHeight: 16)
                 .background(DS.Color.neutral.opacity(0.12), in: Capsule())
             Spacer(minLength: 0)
             StepTally(counts: counts)
@@ -282,7 +282,7 @@ struct StepTally: View {
             item("stop.fill", counts.cancelStopped, DS.Status.neutralText)
             item("minus", counts.notRun, DS.Status.neutralText)
         }
-        .font(.system(size: 11, weight: .semibold).monospacedDigit())
+        .font(.system(.subheadline, weight: .semibold).monospacedDigit())
         .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Self.spoken(counts))

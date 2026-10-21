@@ -187,7 +187,7 @@ private struct QAToolbar: View {
             if narrow, hasRuns {
                 Button(action: toggleList) {
                     Image(systemName: "sidebar.left")
-                        .font(.system(size: 13))
+                        .font(.system(.body))
                         .foregroundStyle(listShown ? AnyShapeStyle(DS.Color.accent) : AnyShapeStyle(DS.Status.neutralText))
                         .frame(width: 28, height: 24)
                         .contentShape(Rectangle())
@@ -278,7 +278,7 @@ struct QAScopeSwitch: View {
                 .frame(maxWidth: maxWidth)
                 .fixedSize(horizontal: maxWidth == nil, vertical: false)
                 .padding(.horizontal, DS.Space.m)
-                .frame(height: 22)
+                .frame(minHeight: 22)
                 .background {
                     if selected {
                         RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous)

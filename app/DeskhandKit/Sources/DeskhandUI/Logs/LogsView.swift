@@ -186,7 +186,7 @@ private struct LogFileStrip: View {
         let name = FilePath.lastComponent(path, style: .windows)
         HStack(spacing: DS.Space.m) {
             Image(systemName: "doc.text")
-                .font(.system(size: 18))
+                .font(.system(.title2))
                 .foregroundStyle(DS.Color.accent)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: DS.Space.xs) {
@@ -210,7 +210,7 @@ private struct LogFileStrip: View {
             actions(transfer)
             Button(action: close) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.system(.caption, weight: .bold))
                     .foregroundStyle(.secondary)
                     .frame(width: 18, height: 18)
                     .contentShape(Rectangle())

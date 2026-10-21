@@ -283,7 +283,7 @@ private struct ProcessDetailBar: View {
         let block = ProcessGuard.block(for: process)
         HStack(alignment: .top, spacing: DS.Space.m) {
             Image(systemName: ProcessFormat.symbol(for: process))
-                .font(.system(size: 20))
+                .font(.system(.title))
                 .foregroundStyle(.secondary)
                 .frame(width: 28, height: 28)
                 .accessibilityHidden(true)
@@ -390,10 +390,10 @@ private struct ProcessDetailBar: View {
 struct DeskhandTag: View {
     var body: some View {
         Text(String.ui("processes.tag.deskhand", "Deskhand가 시작함"))
-            .font(.system(size: NSFont.smallSystemFontSize - 1, weight: .semibold))
+            .font(.system(.caption, weight: .semibold))
             .foregroundStyle(DS.Status.accentText)
             .padding(.horizontal, DS.Space.s)
-            .frame(height: 16)
+            .frame(minHeight: 16)
             .background(DS.Color.accent.opacity(0.14), in: Capsule())
             .help(String.ui("processes.tag.deskhand.help", "Deskhand가 이 PC에서 실행한 명령·앱·셸이거나 그 하위 프로세스입니다."))
     }

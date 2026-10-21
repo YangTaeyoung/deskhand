@@ -96,7 +96,7 @@ public struct ControlBadge: View {
 
     public var body: some View {
         Image(systemName: owner.symbol)
-            .font(.system(size: 10, weight: .bold))
+            .font(.system(.caption, weight: .bold))
             .foregroundStyle(.white)
             .frame(width: 20, height: 20)
             .background(owner.fill.gradient, in: Circle())

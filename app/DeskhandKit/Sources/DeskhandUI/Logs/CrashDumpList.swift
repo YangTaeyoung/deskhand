@@ -98,7 +98,7 @@ private struct CrashDumpRow: View {
         let startError = model.downloadErrors[dump.path]
         HStack(alignment: .center, spacing: DS.Space.m) {
             Image(systemName: kind?.symbol ?? "doc")
-                .font(.system(size: 18))
+                .font(.system(.title2))
                 .foregroundStyle(DS.Color.danger.opacity(kind == .report ? 0.7 : 0.9))
                 .frame(width: 28)
                 .accessibilityHidden(true)
@@ -111,7 +111,7 @@ private struct CrashDumpRow: View {
                         .font(DS.Font.caption.weight(.medium))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, DS.Space.s)
-                        .frame(height: 18)
+                        .frame(minHeight: 18)
                         .background(DS.Color.neutral.opacity(0.14), in: Capsule())
                 }
                 Text(dump.path)

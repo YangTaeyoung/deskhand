@@ -662,7 +662,7 @@ private struct PaneErrorStrip: View {
             Spacer(minLength: DS.Space.s)
             Button(action: dismiss) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.system(.caption, weight: .bold))
                     .foregroundStyle(.secondary)
                     .frame(width: 18, height: 18)
             }

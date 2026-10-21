@@ -91,7 +91,7 @@ public struct LaunchSheet: View {
     private var header: some View {
         HStack(alignment: .top, spacing: DS.Space.m) {
             Image(systemName: "play.rectangle")
-                .font(.system(size: 26))
+                .font(.system(.largeTitle))
                 .foregroundStyle(DS.Color.accent)
                 .frame(width: 36)
                 .accessibilityHidden(true)

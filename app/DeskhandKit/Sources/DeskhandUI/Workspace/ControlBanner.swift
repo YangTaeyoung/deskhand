@@ -310,7 +310,7 @@ struct BannerBand<Actions: View>: View {
             .overlay {
                 if let symbol {
                     Image(systemName: symbol)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(.body, weight: .semibold))
                         .foregroundStyle(isSolid ? AnyShapeStyle(.white) : AnyShapeStyle(tint))
                 } else {
                     ProgressView()
@@ -364,7 +364,7 @@ struct ControlFailureBar: View {
     var body: some View {
         HStack(alignment: .center, spacing: DS.Space.m) {
             Image(systemName: "exclamationmark.octagon.fill")
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(.title3, weight: .semibold))
                 .foregroundStyle(DS.Color.danger)
                 .frame(width: 28)
                 .accessibilityHidden(true)
@@ -389,7 +389,7 @@ struct ControlFailureBar: View {
             .tint(DS.Color.accent)
             Button(action: dismiss) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(.subheadline, weight: .bold))
                     .frame(width: 20, height: 20)
                     .contentShape(Rectangle())
             }

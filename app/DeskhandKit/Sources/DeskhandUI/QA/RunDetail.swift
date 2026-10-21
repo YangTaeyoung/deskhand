@@ -187,11 +187,11 @@ private struct RunHeader: View {
     private func fact(_ symbol: String, _ text: String, mono: Bool = false, help: String? = nil) -> some View {
         HStack(spacing: DS.Space.xs) {
             Image(systemName: symbol)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(.caption, weight: .semibold))
                 .foregroundStyle(DS.Status.neutralText)
                 .accessibilityHidden(true)
             Text(text)
-                .font(mono ? .system(size: 11, design: .monospaced) : DS.Font.caption)
+                .font(mono ? .system(.subheadline, design: .monospaced) : DS.Font.caption)
                 .foregroundStyle(DS.Status.neutralText)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -221,7 +221,7 @@ private struct CountPill: View {
         .font(DS.Font.caption)
         .foregroundStyle(text)
         .padding(.horizontal, DS.Space.s)
-        .frame(height: 20)
+        .frame(minHeight: 20)
         .background(tint.opacity(DS.Status.badgeOpacity), in: Capsule())
         .fixedSize()
         .accessibilityElement(children: .ignore)
@@ -491,7 +491,7 @@ private struct ExportStrip: View {
             model.dismissExport(run.runID)
         } label: {
             Image(systemName: "xmark")
-                .font(.system(size: 10, weight: .bold))
+                .font(.system(.caption, weight: .bold))
                 .foregroundStyle(DS.Status.neutralText)
                 .frame(width: 20, height: 20)
                 .contentShape(Rectangle())

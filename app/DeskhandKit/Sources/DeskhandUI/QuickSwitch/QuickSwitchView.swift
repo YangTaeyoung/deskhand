@@ -113,7 +113,7 @@ public struct QuickSwitchPalette: View {
     private var searchBar: some View {
         HStack(spacing: DS.Space.m) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 18, weight: .medium))
+                .font(.system(.title2, weight: .medium))
                 .foregroundStyle(DS.Status.neutralText)
                 .accessibilityHidden(true)
             QuickSwitchField(text: $model.query,
@@ -218,7 +218,7 @@ struct QuickSwitchRowView: View {
                         .font(DS.Font.caption)
                         .foregroundStyle(secondary)
                         .padding(.horizontal, DS.Space.s)
-                        .frame(height: 20)
+                        .frame(minHeight: 20)
                         .background(selected ? .clear : DS.Color.neutral.opacity(0.12), in: Capsule())
                         .overlay(Capsule().strokeBorder(selected ? DS.Color.onFill.opacity(0.6) : .clear, lineWidth: 1))
                         .accessibilityHidden(true)
@@ -270,7 +270,7 @@ struct QuickSwitchRowView: View {
             .frame(width: 28, height: 28)
             .overlay {
                 Image(systemName: item.symbol)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(.title3, weight: .medium))
                     .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(tint))
             }
             .overlay(alignment: .bottomTrailing) {

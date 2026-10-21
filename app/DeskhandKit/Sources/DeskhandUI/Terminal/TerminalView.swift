@@ -277,7 +277,7 @@ private struct DetachedShellRow: View {
         let shell = TerminalShell(job: job)
         HStack(spacing: DS.Space.m) {
             Image(systemName: shell.symbol)
-                .font(.system(size: 16))
+                .font(.system(.title3))
                 .foregroundStyle(.secondary)
                 .frame(width: DS.Space.xl)
                 .accessibilityHidden(true)
@@ -478,7 +478,7 @@ private struct TerminalNoticeToast: View {
             }
             Button(action: dismiss) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.system(.caption, weight: .bold))
                     .foregroundStyle(.secondary)
                     .frame(width: 18, height: 18)
             }

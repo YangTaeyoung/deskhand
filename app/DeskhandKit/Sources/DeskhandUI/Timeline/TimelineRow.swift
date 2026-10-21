@@ -134,7 +134,7 @@ struct ActorBadge: View {
             .frame(width: Self.size, height: Self.size)
             .overlay {
                 Image(systemName: entry.actorSymbol)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(.subheadline, weight: .semibold))
                     .foregroundStyle(entry.actorTint)
             }
             .help(entry.actorTitle)

@@ -107,7 +107,8 @@ struct FileTableView: NSViewRepresentable {
         table.coordinator = coordinator
         table.style = .inset
         table.usesAlternatingRowBackgroundColors = true
-        table.rowHeight = 24
+        table.metrics = DS.TableMetrics(context.environment.dynamicTypeSize)
+        table.rowHeight = table.metrics.rowHeight
         table.intercellSpacing = NSSize(width: 8, height: 0)
         table.allowsMultipleSelection = true
         table.allowsEmptySelection = true
@@ -167,6 +168,7 @@ struct FileTableView: NSViewRepresentable {
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
+        (scroll.documentView as? FileNSTableView)?.apply(DS.TableMetrics(context.environment.dynamicTypeSize))
         context.coordinator.update(self)
     }
 
@@ -290,7 +292,7 @@ struct FileTableView: NSViewRepresentable {
             switch column {
             case .name:
                 let cell = tableView.makeView(withIdentifier: FileNameCell.identifier, owner: nil) as? FileNameCell ?? FileNameCell()
-                cell.configure(item)
+                cell.configure(item, metrics: tableView.textMetrics)
                 cell.actionsProvider = { [weak self] in self?.accessibilityActions(for: item) ?? [] }
                 return cell
             case .modified, .size, .kind:
@@ -302,7 +304,7 @@ struct FileTableView: NSViewRepresentable {
                 case .size: item.sizeText
                 default: item.kind
                 }
-                cell.configure(text, hidden: item.isHidden)
+                cell.configure(text, hidden: item.isHidden, metrics: tableView.textMetrics)
                 return cell
             }
         }
@@ -520,8 +522,17 @@ private final class MenuAction: NSObject {
 }
 
 /// The table: keyboard commands, pane activation and the end of drags.
-final class FileNSTableView: NSTableView {
+final class FileNSTableView: NSTableView, TextScaledTable {
     weak var coordinator: FileTableView.Coordinator?
+    var metrics = DS.TableMetrics(.large)
+
+    /// Takes `metrics` for its rows and cells; redraws the rows when they change.
+    func apply(_ metrics: DS.TableMetrics) {
+        guard metrics != self.metrics else { return }
+        self.metrics = metrics
+        rowHeight = metrics.rowHeight
+        reloadData()
+    }
 
     override func keyDown(with event: NSEvent) {
         if let command = FileTableCommand(event: event), coordinator?.handle(command) == true { return }
@@ -646,8 +657,11 @@ final class FileNameCell: NSTableCellView {
         actionsProvider?()
     }
 
-    func configure(_ item: FileItem) {
+    func configure(_ item: FileItem, metrics: DS.TableMetrics) {
         self.item = item
+        label.font = .systemFont(ofSize: metrics.textSize)
+        previewTag.font = .systemFont(ofSize: metrics.smallTextSize, weight: .semibold)
+        icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: metrics.textSize, weight: .regular)
         label.stringValue = item.name
         label.isEditable = false
         label.isSelectable = false
@@ -726,7 +740,8 @@ final class FileTextCell: NSTableCellView {
 
     required init?(coder: NSCoder) { nil }
 
-    func configure(_ text: String, hidden: Bool) {
+    func configure(_ text: String, hidden: Bool, metrics: DS.TableMetrics) {
+        label.font = .monospacedDigitSystemFont(ofSize: metrics.smallTextSize + 1, weight: .regular)
         label.stringValue = text
         alphaValue = hidden ? 0.55 : 1
         recolor()

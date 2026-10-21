@@ -285,7 +285,7 @@ struct ScenarioProblemBox: View {
                     .font(DS.Font.headline)
                 HStack(spacing: DS.Space.xs) {
                     Image(systemName: "doc.text")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(.caption, weight: .semibold))
                         .foregroundStyle(DS.Status.neutralText)
                         .accessibilityHidden(true)
                     Text((problem.file as NSString).lastPathComponent + ":" + String(problem.line))
@@ -359,7 +359,7 @@ struct VarsEditor: View {
                         Group {
                             if row.isSecret {
                                 Image(systemName: "lock.fill")
-                                    .font(.system(size: 11))
+                                    .font(.system(.subheadline))
                                     .foregroundStyle(DS.Status.accentText)
                                     .help(String.ui("qa.vars.masked.help", "결과와 보고서에 ***로 남고 다음 실행을 위해 저장하지 않습니다"))
                             }

@@ -48,7 +48,7 @@ public struct AddHostSheet: View {
                 .frame(width: 40, height: 40)
                 .overlay {
                     Image(systemName: headerSymbol)
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(.title2, weight: .semibold))
                         .foregroundStyle(.white)
                 }
                 .accessibilityHidden(true)

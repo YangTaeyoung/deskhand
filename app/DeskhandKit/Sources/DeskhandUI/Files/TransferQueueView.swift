@@ -83,7 +83,7 @@ struct TransferQueueView: View {
             } label: {
                 HStack(spacing: DS.Space.s) {
                     Image(systemName: "chevron.up")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.system(.caption, weight: .bold))
                         .rotationEffect(.degrees(preferences.queueExpanded ? 180 : 0))
                         .foregroundStyle(.secondary)
                     Image(systemName: "arrow.up.arrow.down.circle")
@@ -157,7 +157,7 @@ struct TransferQueueView: View {
         } else if queue.visible.isEmpty {
             VStack(spacing: DS.Space.s) {
                 Image(systemName: "tray")
-                    .font(.system(size: 24))
+                    .font(.system(.largeTitle))
                     .foregroundStyle(.tertiary)
                     .accessibilityHidden(true)
                 Text(String.ui("queue.empty", "전송 기록이 없습니다"))
@@ -197,7 +197,7 @@ struct TransferRow: View {
         let row = self.row
         HStack(alignment: .top, spacing: DS.Space.m) {
             Image(systemName: row.direction.isUpload ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
-                .font(.system(size: 22))
+                .font(.system(.title))
                 .foregroundStyle(row.tone == .neutral ? AnyShapeStyle(.secondary) : AnyShapeStyle(row.tone.color))
                 .frame(width: 28)
                 .accessibilityHidden(true)

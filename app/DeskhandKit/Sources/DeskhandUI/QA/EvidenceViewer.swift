@@ -84,12 +84,12 @@ struct EvidenceViewer: View {
         let artifact = item.artifact
         return HStack(spacing: DS.Space.m) {
             Image(systemName: QAEvidenceStore.isImage(artifact) ? "photo" : EvidenceChip.symbol(artifact.kind))
-                .font(.system(size: 18))
+                .font(.system(.title2))
                 .foregroundStyle(DS.Status.neutralText)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: DS.Space.xs) {
                 Text(artifact.name)
-                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .font(.system(.body, design: .monospaced, weight: .semibold))
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .textSelection(.enabled)
@@ -103,7 +103,7 @@ struct EvidenceViewer: View {
                 HStack(spacing: DS.Space.xs) {
                     navButton("chevron.left", String.ui("qa.viewer.previous", "이전 증거 (←)")) { step(by: -1) }
                     Text(String.ui("qa.viewer.position", "\(String(position + 1)) / \(String(items.count))"))
-                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                        .font(.system(.subheadline, weight: .semibold).monospacedDigit())
                         .foregroundStyle(DS.Status.neutralText)
                         .frame(minWidth: 40)
                     navButton("chevron.right", String.ui("qa.viewer.next", "다음 증거 (→)")) { step(by: 1) }
@@ -116,7 +116,7 @@ struct EvidenceViewer: View {
                 close()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(.subheadline, weight: .bold))
                     .foregroundStyle(DS.Status.neutralText)
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
@@ -132,7 +132,7 @@ struct EvidenceViewer: View {
     private func navButton(_ symbol: String, _ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(.subheadline, weight: .semibold))
                 .frame(width: 24, height: 24)
                 .contentShape(Rectangle())
         }

@@ -86,7 +86,7 @@ struct StepDetail: View {
             HStack(spacing: DS.Space.m) {
                 StepKindChip(action: step.action)
                 Text(step.action)
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(.subheadline, design: .monospaced))
                     .foregroundStyle(DS.Status.neutralText)
                 meta("text.alignleft", String.ui("qa.detail.line", "\(String(step.line))번째 줄"))
                 meta("square.stack.3d.up", QAFormat.phase(step.stepPhase))
@@ -357,7 +357,7 @@ struct AssertionsTable: View {
                 Text(kind)
                     .font(DS.Font.body)
                 Text(assertion.kind)
-                    .font(.system(size: 10, design: .monospaced))
+                    .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(DS.Status.neutralText)
             }
             .frame(width: Self.kindWidth, alignment: .leading)
@@ -409,7 +409,7 @@ struct ValueGrid: View {
             ForEach(values.keys.sorted(), id: \.self) { key in
                 GridRow {
                     Text(key)
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.system(.subheadline, design: .monospaced))
                         .foregroundStyle(DS.Status.neutralText)
                         .gridColumnAlignment(.leading)
                     Text(QAFormat.value(values[key] ?? .null))
@@ -488,7 +488,7 @@ struct EvidenceThumbnail: View {
                 case .failed:
                     VStack(spacing: DS.Space.xs) {
                         Image(systemName: "photo.badge.exclamationmark")
-                            .font(.system(size: 18))
+                            .font(.system(.title2))
                         Text(String.ui("qa.evidence.unreadable", "읽을 수 없음"))
                             .font(DS.Font.caption)
                     }
@@ -513,7 +513,7 @@ struct EvidenceThumbnail: View {
                     .opacity(hovering ? 1 : 0)
             }
             Text(artifact.name)
-                .font(.system(size: 11, design: .monospaced))
+                .font(.system(.subheadline, design: .monospaced))
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(width: Self.size.width, alignment: .leading)
@@ -556,12 +556,12 @@ struct EvidenceChip: View {
     var body: some View {
         HStack(spacing: DS.Space.s) {
             Image(systemName: Self.symbol(artifact.kind))
-                .font(.system(size: 16))
+                .font(.system(.title3))
                 .foregroundStyle(DS.Status.neutralText)
                 .frame(width: 24)
             VStack(alignment: .leading, spacing: DS.Space.xs) {
                 Text(artifact.name)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(.system(.callout, design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text(Self.kindTitle(artifact.kind) + " · " + DS.Format.bytes(artifact.size))

@@ -412,7 +412,7 @@ private struct ToolbarIconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 13, weight: .regular))
+                .font(.system(.body, weight: .regular))
                 .foregroundStyle(selected ? AnyShapeStyle(DS.Color.accent) : AnyShapeStyle(.secondary))
                 .frame(width: 28, height: 24)
                 .background(hovering ? DS.Color.neutral.opacity(0.16) : .clear,
@@ -439,7 +439,7 @@ private struct ControlButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(.body, weight: .semibold))
                 .foregroundStyle(foreground)
                 .frame(width: 32, height: 24)
                 .background(hovering && enabled ? DS.Color.neutral.opacity(0.16) : .clear,
@@ -667,7 +667,7 @@ private struct RecentLaunchRow: View {
     var body: some View {
         HStack(spacing: DS.Space.m) {
             Image(systemName: "macwindow")
-                .font(.system(size: 14))
+                .font(.system(.title3))
                 .foregroundStyle(.secondary)
                 .frame(width: 24)
                 .accessibilityHidden(true)
@@ -676,7 +676,7 @@ private struct RecentLaunchRow: View {
                     .font(DS.Font.body.weight(.medium))
                     .lineLimit(1)
                 Text(([launch.path] + (launch.args.isEmpty ? [] : [ArgumentSplitter.join(launch.args)])).joined(separator: "  "))
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(.subheadline, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)

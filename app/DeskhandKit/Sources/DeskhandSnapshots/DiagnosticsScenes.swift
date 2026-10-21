@@ -40,14 +40,16 @@ enum DiagnosticsScenes {
     }
 
     static func processesScene(_ name: String, _ setup: Setup, _ processes: Processes = Processes(), size: CGSize = WorkspaceScenes.size,
-                               sheet: ((AppStore) -> AnyView)? = nil) -> SnapshotScene {
+                               textSize: DynamicTypeSize = .large, sheet: ((AppStore) -> AnyView)? = nil) -> SnapshotScene {
         SnapshotScene(name: name, size: size) {
             let store = WorkspaceScenes.store(setup)
             let _ = seed(store, hostID: setup.selected, processes)
             if let sheet {
                 SheetStandIn(base: SplitStandIn(store: store)) { sheet(store) }
+                    .environment(\.dynamicTypeSize, textSize)
             } else {
                 SplitStandIn(store: store)
+                    .environment(\.dynamicTypeSize, textSize)
             }
         }
     }
@@ -141,6 +143,8 @@ enum DiagnosticsScenes {
         return [
             processesScene("processes", Setup(selected: dev, tab: .processes, inspector: nil), Processes(selected: 9272)),
             processesScene("processes-search", Setup(selected: dev, tab: .processes, inspector: nil), Processes(query: "node")),
+            processesScene("processes-large-text", Setup(selected: dev, tab: .processes, inspector: nil), Processes(selected: 9272),
+                           textSize: .xxxLarge),
             processesScene("processes-tree", Setup(selected: dev, tab: .processes), Processes(
                 sort: ProcessSort(column: .pid, ascending: true), tree: true, collapsed: [4, 1104, 1392],
                 selected: PreviewFixtures.deskhandShellPID)),

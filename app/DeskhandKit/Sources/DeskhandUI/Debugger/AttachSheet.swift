@@ -95,7 +95,7 @@ public struct AttachSheet: View {
         VStack(alignment: .leading, spacing: DS.Space.l) {
             HStack(alignment: .top, spacing: DS.Space.m) {
                 Image(systemName: "cable.connector")
-                    .font(.system(size: 26))
+                    .font(.system(.largeTitle))
                     .foregroundStyle(DS.Color.accent)
                     .frame(width: 36)
                     .accessibilityHidden(true)
@@ -309,12 +309,12 @@ private struct CandidateRow: View {
                             .font(DS.Font.body.weight(.medium))
                             .lineLimit(1)
                         Text(String.ui("processes.pidLabel", "PID \(String(candidate.process.pid))"))
-                            .font(.system(size: 11, design: .monospaced))
+                            .font(.system(.subheadline, design: .monospaced))
                             .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill.opacity(0.85)) : AnyShapeStyle(.secondary))
                         badge
                     }
                     Text(candidate.process.cmd ?? candidate.process.path ?? "")
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.system(.subheadline, design: .monospaced))
                         .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill.opacity(0.85)) : AnyShapeStyle(.secondary))
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -346,10 +346,10 @@ private struct CandidateRow: View {
 
     private func tag(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: NSFont.smallSystemFontSize - 1, weight: .semibold))
+            .font(.system(.caption, weight: .semibold))
             .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(DS.Color.accent))
             .padding(.horizontal, DS.Space.s)
-            .frame(height: 16)
+            .frame(minHeight: 16)
             .background(selected ? DS.Color.onFill.opacity(0.2) : DS.Color.accent.opacity(0.14), in: Capsule())
     }
 }

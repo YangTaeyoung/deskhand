@@ -20,7 +20,7 @@ struct TargetsList: View {
                     Button(String.ui("debugger.attach.menu", "실행 중인 앱에 연결…"), systemImage: "cable.connector", action: attach)
                 } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(.callout, weight: .semibold))
                         .frame(width: 20, height: 20)
                         .contentShape(Rectangle())
                 }
@@ -115,7 +115,7 @@ private struct SessionRow: View {
     private var header: some View {
         HStack(alignment: .top, spacing: DS.Space.s) {
             Image(systemName: session.info.sessionKind == .attach ? "cable.connector" : "macwindow")
-                .font(.system(size: 14))
+                .font(.system(.title3))
                 .foregroundStyle(.secondary)
                 .frame(width: Self.iconSize, height: Self.iconSize)
                 .background(DS.Color.neutral.opacity(0.12), in: RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
@@ -149,7 +149,7 @@ private struct SessionRow: View {
                 model.dismiss(session.id)
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.system(.caption, weight: .bold))
                     .foregroundStyle(.secondary)
                     .frame(width: 20, height: 20)
                     .contentShape(Rectangle())
@@ -247,7 +247,7 @@ struct SessionStateBadge: View {
                     .font(.system(size: symbol == "circle.fill" ? 6 : 8, weight: .bold))
             }
             Text(title)
-                .font(.system(size: NSFont.smallSystemFontSize - 1, weight: .semibold))
+                .font(.system(.caption, weight: .semibold))
                 .lineLimit(1)
         }
         .help(title)
@@ -255,7 +255,7 @@ struct SessionStateBadge: View {
         .foregroundStyle(text)
         .padding(.horizontal, DS.Space.s)
         .frame(minWidth: Self.width)
-        .frame(height: 16)
+        .frame(minHeight: 16)
         .background(tint.opacity(DS.Status.badgeOpacity), in: Capsule())
         .fixedSize()
     }
@@ -336,7 +336,7 @@ private struct TargetRow: View {
                 .foregroundStyle(selected ? DS.Color.onFill : DS.Color.warning)
         } else if target.pausePending {
             Image(systemName: "pause.circle")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(.subheadline, weight: .semibold))
                 .foregroundStyle(selected ? DS.Color.onFill : DS.Color.warning)
                 .help(String.ui("debugger.target.pausePending.help", "일시정지를 요청했습니다. 다음 코드가 실행되면 멈춥니다."))
         } else {

@@ -130,7 +130,8 @@ struct DataTable<Row: Identifiable & Equatable>: NSViewRepresentable where Row.I
         let table = DataNSTableView()
         table.keyHandler = { [weak coordinator] key in coordinator?.handle(key) ?? false }
         table.style = .inset
-        table.rowHeight = rowHeight
+        table.metrics = DS.TableMetrics(context.environment.dynamicTypeSize)
+        table.rowHeight = table.metrics.rowHeight
         table.intercellSpacing = NSSize(width: 8, height: 0)
         table.allowsMultipleSelection = false
         table.allowsEmptySelection = true
@@ -197,6 +198,7 @@ struct DataTable<Row: Identifiable & Equatable>: NSViewRepresentable where Row.I
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
+        context.coordinator.table?.apply(DS.TableMetrics(context.environment.dynamicTypeSize))
         context.coordinator.update(self)
     }
 
@@ -399,8 +401,17 @@ private final class DataTableMenuAction: NSObject {
 }
 
 /// The table of `DataTable`: reports its keyboard commands.
-final class DataNSTableView: NSTableView {
+final class DataNSTableView: NSTableView, TextScaledTable {
     var keyHandler: ((DataTableKey) -> Bool)?
+    var metrics = DS.TableMetrics(.large)
+
+    /// Takes `metrics` for its rows and cells; redraws the rows when they change.
+    func apply(_ metrics: DS.TableMetrics) {
+        guard metrics != self.metrics else { return }
+        self.metrics = metrics
+        rowHeight = metrics.rowHeight
+        reloadData()
+    }
 
     override func keyDown(with event: NSEvent) {
         if let key = Self.key(for: event), keyHandler?(key) == true { return }
@@ -505,15 +516,20 @@ final class DataTextCell: NSTableCellView {
     static func make(_ table: NSTableView, _ identifier: String, alignment: NSTextAlignment = .left, monospacedDigits: Bool = false,
                      truncation: NSLineBreakMode = .byTruncatingTail) -> DataTextCell {
         let id = NSUserInterfaceItemIdentifier(identifier)
-        return table.makeView(withIdentifier: id, owner: nil) as? DataTextCell
+        let cell = table.makeView(withIdentifier: id, owner: nil) as? DataTextCell
             ?? DataTextCell(identifier: id, alignment: alignment, monospacedDigits: monospacedDigits, truncation: truncation)
+        cell.textSize = table.textMetrics.textSize
+        return cell
     }
+
+    /// Point size of the text, from the table's metrics.
+    var textSize = NSFont.systemFontSize
 
     func configure(_ text: String, style: Style, help: String? = nil, weight: NSFont.Weight = .regular) {
         label.stringValue = text
         label.font = monospacedDigits
-            ? .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: weight)
-            : .systemFont(ofSize: NSFont.systemFontSize, weight: weight)
+            ? .monospacedDigitSystemFont(ofSize: textSize, weight: weight)
+            : .systemFont(ofSize: textSize, weight: weight)
         self.style = style
         toolTip = help
         recolor()
@@ -555,19 +571,26 @@ final class TagView: NSView {
     var textColor: NSColor? {
         didSet { needsDisplay = true }
     }
+    /// Point size of the text.
+    var textSize = NSFont.smallSystemFontSize - 1 {
+        didSet {
+            invalidateIntrinsicContentSize()
+            needsDisplay = true
+        }
+    }
     var emphasized = false {
         didSet { needsDisplay = true }
     }
 
     private var attributes: [NSAttributedString.Key: Any] {
-        [.font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize - 1, weight: .semibold),
+        [.font: NSFont.systemFont(ofSize: textSize, weight: .semibold),
          .foregroundColor: emphasized ? NSColor.alternateSelectedControlTextColor : (textColor ?? tint)]
     }
 
     private var textWidth: CGFloat { ceil((text as NSString).size(withAttributes: attributes).width) + 12 }
 
     override var intrinsicContentSize: NSSize {
-        NSSize(width: textWidth, height: 16)
+        NSSize(width: textWidth, height: ceil(textSize * 1.6))
     }
 
     override func draw(_ dirtyRect: NSRect) {

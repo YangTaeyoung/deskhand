@@ -249,19 +249,19 @@ struct TerminalStatusIcon: View {
                 .controlSize(.mini)
         case .live:
             Image(systemName: session.shell.symbol)
-                .font(.system(size: 11))
+                .font(.system(.subheadline))
                 .foregroundStyle(.secondary)
         case .reconnecting:
             Image(systemName: "bolt.horizontal.circle.fill")
-                .font(.system(size: 11))
+                .font(.system(.subheadline))
                 .foregroundStyle(DS.Color.warning)
         case .exited(let code):
             Image(systemName: code == 0 ? "checkmark.circle" : "xmark.circle")
-                .font(.system(size: 11))
+                .font(.system(.subheadline))
                 .foregroundStyle(code == 0 ? AnyShapeStyle(.secondary) : AnyShapeStyle(DS.Status.warningText))
         case .failed:
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 11))
+                .font(.system(.subheadline))
                 .foregroundStyle(DS.Color.danger)
         }
     }
@@ -295,7 +295,7 @@ struct NewTabButton: View {
                 workspace.open(preferred)
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(.callout, weight: .semibold))
                     .frame(width: 26, height: 24)
                     .contentShape(Rectangle())
             }
@@ -387,7 +387,7 @@ private struct TerminalActionsMenu: View {
                 .disabled(!session.isShellRunning)
         } label: {
             Image(systemName: "ellipsis.circle")
-                .font(.system(size: 13))
+                .font(.system(.body))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -535,7 +535,7 @@ struct ExitedBar: View {
     var body: some View {
         HStack(spacing: DS.Space.m) {
             Image(systemName: code == 0 ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                .font(.system(size: 16))
+                .font(.system(.title3))
                 .foregroundStyle(code == 0 ? DS.Color.success : DS.Color.warning)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: DS.Space.xs) {

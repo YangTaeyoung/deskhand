@@ -249,7 +249,7 @@ struct DebuggerPausedBanner: View {
     var body: some View {
         HStack(spacing: DS.Space.s) {
             Image(systemName: "pause.circle.fill")
-                .font(.system(size: 14))
+                .font(.system(.title3))
                 .foregroundStyle(DS.Color.warning)
                 .accessibilityHidden(true)
             Text(message)
@@ -266,7 +266,7 @@ struct DebuggerPausedBanner: View {
             Spacer(minLength: DS.Space.s)
             Button(action: dismiss) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.system(.caption, weight: .bold))
                     .foregroundStyle(.secondary)
                     .frame(width: 20, height: 20)
                     .contentShape(Rectangle())
