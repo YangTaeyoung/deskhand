@@ -163,6 +163,10 @@ func TestHumanTakeoverCutsInFlightAIInput(t *testing.T) {
 	if code, _ := codeOf(res.err); code != wire.CodeControlPreempted || len(res.acks) != 1 || res.acks[0].OK {
 		t.Fatalf("the cut text returned %+v, %v", res.acks, res.err)
 	}
+	eventually(t, "the agent to apply the release_all of the cut", func() bool {
+		_, _, _, releases := r.agent.stream(0)
+		return len(releases) > 0
+	})
 	_, evs, typed, releases := r.agent.stream(0)
 	if n := len([]rune(typed)); n >= len([]rune(long)) {
 		t.Fatalf("the whole text was typed (%d runes)", n)
