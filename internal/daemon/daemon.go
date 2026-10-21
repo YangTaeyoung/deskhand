@@ -40,7 +40,35 @@ const (
 	eventKeep = 30 * 24 * time.Hour
 	// requestKeep is how long settled requests are kept.
 	requestKeep = 7 * 24 * time.Hour
+	// pruneInterval is the time between two prunes of the store while the
+	// daemon runs.
+	pruneInterval = 24 * time.Hour
 )
+
+// pruneStore removes the stored events older than eventKeep and the settled
+// requests older than requestKeep.
+func pruneStore(st *store.Store, lg *log.Logger) {
+	now := time.Now()
+	if err := st.Prune(now.Add(-eventKeep), now.Add(-requestKeep)); err != nil {
+		lg.Printf("prune the store: %v", err)
+	}
+}
+
+// pruneEvery runs pruneStore every interval until ctx ends, then closes
+// done.
+func pruneEvery(ctx context.Context, st *store.Store, lg *log.Logger, interval time.Duration, done chan<- struct{}) {
+	defer close(done)
+	tick := time.NewTicker(interval)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+			pruneStore(st, lg)
+		}
+	}
+}
 
 // ErrAlreadyRunning is returned by New when another daemon holds the lock.
 var ErrAlreadyRunning = errors.New("Deskhand 데몬이 이미 실행 중입니다. deskhand daemon status로 확인하세요")
@@ -77,6 +105,9 @@ type Daemon struct {
 	ln    net.Listener
 	lg    *log.Logger
 	Hosts *hosts.Registry
+	// stopPrune ends pruneEvery; pruned is closed when it has returned.
+	stopPrune context.CancelFunc
+	pruned    chan struct{}
 }
 
 // ControllerIdentity loads the controller certificate of the home folder,
@@ -140,10 +171,10 @@ func New(opt Options) (*Daemon, error) {
 	if n, err := d.st.MarkSentUnknown(); err == nil && n > 0 {
 		lg.Printf("%d requests were in flight when the daemon stopped; they are recorded unknown", n)
 	}
-	now := time.Now()
-	if err := d.st.Prune(now.Add(-eventKeep), now.Add(-requestKeep)); err != nil {
-		lg.Printf("prune the store: %v", err)
-	}
+	pruneStore(d.st, lg)
+	pruneCtx, stopPrune := context.WithCancel(context.Background())
+	d.stopPrune, d.pruned = stopPrune, make(chan struct{})
+	go pruneEvery(pruneCtx, d.st, lg, pruneInterval, d.pruned)
 	bus := events.NewBus(d.st, lg)
 	drop := opt.DropAfterSend
 	if drop == "" {
@@ -224,8 +255,8 @@ func (d *Daemon) Serve(ctx context.Context) error {
 	return err
 }
 
-// Close stops the local API, the connections and the store, removes the
-// socket and gives the lock up.
+// Close stops the local API, the connections, the store prunes and the
+// store, removes the socket and gives the lock up.
 func (d *Daemon) Close() {
 	if d.srv != nil {
 		d.srv.Close()
@@ -259,6 +290,11 @@ func (d *Daemon) Close() {
 	if d.mgr != nil {
 		d.mgr.Close()
 		d.mgr = nil
+	}
+	if d.stopPrune != nil {
+		d.stopPrune()
+		<-d.pruned
+		d.stopPrune = nil
 	}
 	if d.st != nil {
 		d.st.Close()

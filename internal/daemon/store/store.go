@@ -408,6 +408,29 @@ func (s *Store) AppendEvent(ts time.Time, hostID, jobID, kind string, payload js
 	return res.LastInsertId()
 }
 
+// Event is a row of events.
+type Event struct {
+	Seq     int64
+	TS      time.Time
+	HostID  string
+	JobID   string
+	Kind    string
+	Payload json.RawMessage
+}
+
+// GetEvent returns the stored event seq.
+func (s *Store) GetEvent(seq int64) (Event, error) {
+	var e Event
+	var ts, payload string
+	err := s.db.QueryRow(`SELECT seq, ts, host_id, job_id, kind, payload_json FROM events WHERE seq = ?`, seq).
+		Scan(&e.Seq, &ts, &e.HostID, &e.JobID, &e.Kind, &payload)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Event{}, ErrNotFound
+	}
+	e.TS, e.Payload = parseTime(ts), json.RawMessage(payload)
+	return e, err
+}
+
 // Request is a row of requests.
 type Request struct {
 	RequestID string
