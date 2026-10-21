@@ -178,8 +178,18 @@ func (s *Store) PutHost(h Host) error {
 
 // UpdateHost replaces the fields of the host h.HostID except its creation time.
 func (s *Store) UpdateHost(h Host) error {
-	res, err := s.db.Exec(`UPDATE hosts SET name = ?, address = ?, port = ?, agent_fp = ?, os = ?, arch = ?, ssh_alias = ? WHERE host_id = ?`,
-		h.Name, h.Address, h.Port, h.AgentFP, h.OS, h.Arch, h.SSHAlias, h.HostID)
+	return s.UpdateHostWithScope(h, nil)
+}
+
+// UpdateHostWithScope changes the host and, when scope is non-nil, its AI
+// scope in one SQLite statement. An empty scope clears the stored limit.
+func (s *Store) UpdateHostWithScope(h Host, scope *string) error {
+	var value any
+	if scope != nil {
+		value = *scope
+	}
+	res, err := s.db.Exec(`UPDATE hosts SET name = ?, address = ?, port = ?, agent_fp = ?, os = ?, arch = ?, ssh_alias = ?, ai_scope = COALESCE(?, ai_scope) WHERE host_id = ?`,
+		h.Name, h.Address, h.Port, h.AgentFP, h.OS, h.Arch, h.SSHAlias, value, h.HostID)
 	return affected(res, err)
 }
 

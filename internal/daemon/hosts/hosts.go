@@ -296,13 +296,12 @@ func (r *Registry) Update(ref string, p UpdateParams, c model.Caller) (model.Hos
 	if len(changed) == 0 {
 		return r.Model(row), nil
 	}
-	if err := r.opt.Store.UpdateHost(next); err != nil {
-		return model.Host{}, apierr.Internal(fmt.Sprintf("PC 설정을 저장하지 못했습니다(%v). 데몬 로그를 확인하세요", err))
-	}
+	var storedScope *string
 	if p.AIScope != nil {
-		if err := r.opt.Store.SetHostAIScope(row.HostID, scopeJSON); err != nil {
-			return model.Host{}, apierr.Internal(fmt.Sprintf("AI 범위를 저장하지 못했습니다(%v). 데몬 로그를 확인하세요", err))
-		}
+		storedScope = &scopeJSON
+	}
+	if err := r.opt.Store.UpdateHostWithScope(next, storedScope); err != nil {
+		return model.Host{}, apierr.Internal(fmt.Sprintf("PC 설정을 저장하지 못했습니다(%v). 데몬 로그를 확인하세요", err))
 	}
 	if h := r.opt.Manager.Get(row.HostID); h != nil {
 		h.SetTarget(target(next))

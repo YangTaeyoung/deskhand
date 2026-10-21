@@ -132,12 +132,34 @@ func TestHostsRoundTrip(t *testing.T) {
 	if err := s.UpdateHost(h); err != nil {
 		t.Fatal(err)
 	}
+	scope := `{"screen":false,"files":"none"}`
+	h.Name = "개발 PC"
+	if err := s.UpdateHostWithScope(h, &scope); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.HostAIScope(h.HostID); err != nil || got != scope {
+		t.Fatalf("scope after combined update = %q, %v", got, err)
+	}
+	h.AgentFP = "ef"
+	if err := s.UpdateHost(h); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.HostAIScope(h.HostID); err != nil || got != scope {
+		t.Fatalf("scope after host-only update = %q, %v", got, err)
+	}
+	empty := ""
+	if err := s.UpdateHostWithScope(h, &empty); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.HostAIScope(h.HostID); err != nil || got != "" {
+		t.Fatalf("scope after clear = %q, %v", got, err)
+	}
 	seen := created.Add(time.Minute)
 	if err := s.TouchHost("windows-dev", seen); err != nil {
 		t.Fatal(err)
 	}
 	list, err := s.ListHosts()
-	if err != nil || len(list) != 1 || list[0].AgentFP != "cd" || !list[0].LastSeen.Equal(seen) {
+	if err != nil || len(list) != 1 || list[0].AgentFP != "ef" || list[0].Name != "개발 PC" || !list[0].LastSeen.Equal(seen) {
 		t.Fatalf("list = %+v, %v", list, err)
 	}
 	if err := s.DeleteHost("windows-dev"); err != nil {
