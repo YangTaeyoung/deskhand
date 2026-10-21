@@ -18,14 +18,15 @@ extension DS {
 
         // MARK: Sizes and counts
 
-        /// `563 B`, `2.1 KB`, `2.4 MB`, `5.0 GB`: under 1024 bytes the whole count and ` B`; otherwise the
-        /// count divided by 1024 (KB), 1024² (MB) or 1024³ (GB) — the largest whose power the count
-        /// reaches — with one decimal as printf `%.1f` rounds it, a space and the unit.
+        /// `563 B`, `2.1 KB`, `2.4 MB`, `5.0 GB`, `1.8 TB`: under 1024 bytes the whole count and ` B`;
+        /// otherwise the count divided by 1024 (KB), 1024² (MB), 1024³ (GB) or 1024⁴ (TB) — the
+        /// largest whose power the count reaches — with one decimal as printf `%.1f` rounds it, a
+        /// space and the unit.
         public static func bytes(_ count: Int) -> String {
             let value = max(count, 0)
             if value < 1024 { return String(value) + " B" }
-            let units: [(Double, String)] = [(1_073_741_824, "GB"), (1_048_576, "MB"), (1024, "KB")]
-            let (divisor, unit) = units.first { Double(value) >= $0.0 } ?? units[2]
+            let units: [(Double, String)] = [(1_099_511_627_776, "TB"), (1_073_741_824, "GB"), (1_048_576, "MB"), (1024, "KB")]
+            let (divisor, unit) = units.first { Double(value) >= $0.0 } ?? units[3]
             return String(format: "%.1f", Double(value) / divisor) + " " + unit
         }
 

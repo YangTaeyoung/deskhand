@@ -27,7 +27,10 @@ final class FormatTests: XCTestCase {
         XCTAssertEqual(DS.Format.bytes(1_048_575), "1024.0 KB", "the unit follows the byte count, not the rounded value")
         XCTAssertEqual(DS.Format.bytes(2_516_992), "2.4 MB")
         XCTAssertEqual(DS.Format.bytes(5_368_709_120), "5.0 GB")
-        XCTAssertEqual(DS.Format.bytes(3 << 40), "3072.0 GB", "GB is the largest unit")
+        XCTAssertEqual(DS.Format.bytes(3 << 40), "3.0 TB")
+        XCTAssertEqual(DS.Format.bytes(1 << 40), "1.0 TB")
+        XCTAssertEqual(DS.Format.bytes((1 << 40) - 1), "1024.0 GB", "TB starts at 1024 GB, as the daemon's byteSize")
+        XCTAssertEqual(DS.Format.bytes(2_000_398_934_016), "1.8 TB")
     }
 
     func testMemoryInKilobytesUsesTheSizeRule() {
