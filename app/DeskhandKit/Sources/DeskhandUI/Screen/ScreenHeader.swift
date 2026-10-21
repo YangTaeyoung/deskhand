@@ -13,6 +13,8 @@ struct ScreenHeader: View {
     let owner: ControlOwner
     let live: Bool
     let captured: Bool
+    /// False while the PC is not connected: the display picker and the menus are disabled.
+    let enabled: Bool
 
     /// How much the bar shows: everything, without the display detail and long status, or
     /// short display numbers and icon-only menus.
@@ -51,6 +53,7 @@ struct ScreenHeader: View {
                 keyboardMenu(iconOnly: density == .tight)
                 statisticsToggle
             }
+            .disabled(!enabled)
         }
         .fixedSize(horizontal: false, vertical: true)
     }
@@ -71,6 +74,7 @@ struct ScreenHeader: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .fixedSize()
+                .disabled(!enabled)
                 .help(String.ui("screen.display.help", "보여 줄 디스플레이를 고릅니다. 바꾸면 화면을 다시 불러옵니다."))
                 if density == .full, let info = host.displays.first(where: { $0.index == display }) {
                     Text(info.detail)

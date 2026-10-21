@@ -32,6 +32,15 @@ enum ScreenAvailability: Equatable {
             }
         }
     }
+
+    /// True while the PC is connected or reconnecting: the header's quality, keyboard,
+    /// statistics and display controls work.
+    var allowsStreamSettings: Bool {
+        switch self {
+        case .offline, .blocked, .connecting: false
+        case .streamable, .reconnecting, .locked, .unavailable: true
+        }
+    }
 }
 
 /// A fixed screen for snapshot scenes: a seeded session and a still frame drawn in place of the
@@ -144,7 +153,7 @@ public struct ScreenView: View {
     public var body: some View {
         VStack(spacing: 0) {
             ScreenHeader(preferences: preferences, host: host, display: display, owner: owner,
-                         live: isLive, captured: shown.isCaptured)
+                         live: isLive, captured: shown.isCaptured, enabled: availability.allowsStreamSettings)
                 .layoutPriority(1)
             stage
                 .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)

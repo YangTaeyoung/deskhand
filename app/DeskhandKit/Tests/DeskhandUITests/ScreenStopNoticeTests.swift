@@ -12,6 +12,20 @@ final class ScreenStopNoticeTests: XCTestCase {
         .accessLost, .noOutput, .noEncoder, .other("capture_failed"),
     ]
 
+    /// The header's quality, keyboard, statistics and display controls work while the PC is
+    /// connected or reconnecting, and not while it is offline, blocked or still connecting.
+    func testStreamSettingsNeedAConnectedPC() {
+        var host = dev
+        for state in ConnectionState.allCases {
+            host.state = state.rawValue
+            let expected = [ConnectionState.ready, .degraded, .reconnecting].contains(state)
+            XCTAssertEqual(ScreenAvailability(host: host).allowsStreamSettings, expected, "\(state)")
+        }
+        host.state = ConnectionState.ready.rawValue
+        host.session?.locked = true
+        XCTAssertTrue(ScreenAvailability(host: host).allowsStreamSettings, "a locked session keeps its connection")
+    }
+
     func testEveryReasonExplainsItselfWithoutTheRawCode() {
         for reason in reasons {
             let notice = ScreenStopNotice.paused(reason, host: dev, display: 0)
