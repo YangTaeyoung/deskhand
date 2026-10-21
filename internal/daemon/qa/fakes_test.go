@@ -501,30 +501,34 @@ func (c fakeControl) Check(context.Context, string, model.Caller) (uint64, error
 }
 
 type fakeInput struct {
-	mu     sync.Mutex
-	clicks [][2]int
-	typed  []string
-	keys   []string
+	mu      sync.Mutex
+	clicks  [][2]int
+	typed   []string
+	keys    []string
+	callers []model.Caller
 }
 
-func (in *fakeInput) Click(_ context.Context, _ string, x, y int, _ string, _ int) (map[string]any, error) {
+func (in *fakeInput) Click(_ context.Context, _ string, c model.Caller, x, y int, _ string, _ int) (map[string]any, error) {
 	in.mu.Lock()
 	defer in.mu.Unlock()
 	in.clicks = append(in.clicks, [2]int{x, y})
+	in.callers = append(in.callers, c)
 	return map[string]any{"executed": true}, nil
 }
 
-func (in *fakeInput) Type(_ context.Context, _, text, _ string) (map[string]any, error) {
+func (in *fakeInput) Type(_ context.Context, _ string, c model.Caller, text, _ string) (map[string]any, error) {
 	in.mu.Lock()
 	defer in.mu.Unlock()
 	in.typed = append(in.typed, text)
+	in.callers = append(in.callers, c)
 	return map[string]any{"executed": true}, nil
 }
 
-func (in *fakeInput) Key(_ context.Context, _, keys string) (map[string]any, error) {
+func (in *fakeInput) Key(_ context.Context, _ string, c model.Caller, keys string) (map[string]any, error) {
 	in.mu.Lock()
 	defer in.mu.Unlock()
 	in.keys = append(in.keys, keys)
+	in.callers = append(in.callers, c)
 	return map[string]any{"executed": true}, nil
 }
 

@@ -529,6 +529,14 @@ steps:
 		if strings.Join(in.typed, "") != "안녕" || strings.Join(in.keys, "") != "enter" {
 			t.Fatalf("typed %v keys %v", in.typed, in.keys)
 		}
+		if len(in.callers) != 4 {
+			t.Fatalf("callers %v", in.callers)
+		}
+		for _, c := range in.callers {
+			if c != tester {
+				t.Fatalf("input sent for %+v, not the run's caller %+v", c, tester)
+			}
+		}
 	})
 }
 

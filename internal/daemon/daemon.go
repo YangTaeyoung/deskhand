@@ -22,6 +22,7 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/daemon/hosts"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/jobs"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/localapi"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/observe"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/paths"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/pty"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/qa"
@@ -194,8 +195,12 @@ func New(opt Options) (*Daemon, error) {
 	var hub *pty.Hub
 	var dbgMgr *debug.Manager
 	var ctl *control.Manager
+	var obs *observe.Service
 	d.mgr = conn.NewManager(conn.Options{Identity: id, Controller: controller, Dial: opt.Dial, Requests: d.st,
 		OnEvent: func(ev conn.Event) {
+			if obs != nil {
+				obs.HandleConnEvent(ev)
+			}
 			reg.HandleConnEvent(ev)
 			if dbgMgr != nil && ev.Kind == conn.KindConnectionState {
 				if st := conn.ConnState(ev.Payload.String("state")); st != conn.StateReady && st != conn.StateDegraded {
@@ -221,6 +226,7 @@ func New(opt Options) (*Daemon, error) {
 	if err := ctl.Load(); err != nil {
 		return nil, fmt.Errorf("저장된 제어권 상태를 읽지 못했습니다. %s를 확인하세요: %w", paths.DB(), err)
 	}
+	obs = observe.New(observe.Options{Agents: observe.AgentsFrom(d.mgr), Control: ctl, Logger: lg})
 	jreg = jobs.New(d.st, bus, d.mgr)
 	d.jobs = jreg
 	if n := jreg.SettleInterrupted(); n > 0 {
@@ -238,7 +244,7 @@ func New(opt Options) (*Daemon, error) {
 	d.dbg = debug.New(debug.Deps{Tunnels: d.tuns, Hosts: debug.HostsFrom(reg), Writer: ctl, Bus: bus, Jobs: jreg, Version: opt.Version, Logger: lg})
 	dbgMgr = d.dbg
 	d.qa = qa.New(qa.Options{Store: d.st, Bus: bus, Jobs: jreg, Hosts: qa.HostsFrom(reg), Push: qa.XferPusher(xmgr),
-		Control: qa.ControlFrom(ctl), Version: opt.Version, Logger: lg})
+		Control: qa.ControlFrom(ctl), Input: obs, Version: opt.Version, Logger: lg})
 	if n := d.qa.Load(); n > 0 {
 		lg.Printf("%d QA runs were running when the daemon stopped; they are recorded as interrupted", n)
 	}
@@ -247,7 +253,7 @@ func New(opt Options) (*Daemon, error) {
 		return nil, err
 	}
 	d.srv = localapi.New(localapi.Deps{Store: d.st, Bus: bus, Hosts: reg, Jobs: jreg, Transfers: xmgr, PTYs: hub, Tunnels: d.tuns, Debug: d.dbg, QA: d.qa,
-		Control: ctl, Screens: d.scr, Version: opt.Version, Logger: lg})
+		Control: ctl, Screens: d.scr, Observe: obs, Version: opt.Version, Logger: lg})
 	if err := reg.Load(); err != nil {
 		return nil, fmt.Errorf("저장된 PC 목록을 읽지 못했습니다. %s를 확인하세요: %w", paths.DB(), err)
 	}

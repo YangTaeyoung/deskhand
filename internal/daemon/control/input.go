@@ -11,6 +11,7 @@ import (
 
 	"github.com/YangTaeyoung/deskhand/internal/daemon/apierr"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/conn"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
 	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
@@ -284,6 +285,55 @@ func (m *Manager) stream(ctx context.Context, hostID string, lk *aiLink, gen uin
 	return ns, nil
 }
 
+// SendOpts tune a Send. Check, when set, runs once the input stream is
+// open and before its first event is written, with the generation of the
+// stream's connection; its error refuses the input unsent. AsAI sends the
+// input as AI input of the client whatever its actor (SendAI).
+type SendOpts struct {
+	Check func(connGen uint64) error
+	AsAI  bool
+}
+
+// inputWriter is whose input a send carries: check gives the writer
+// generation before the send (CheckAI or CheckHuman) and still tells
+// before each event whether that generation may still go out.
+type inputWriter struct {
+	check func() (uint64, error)
+	still func(gen uint64) error
+}
+
+// aiWriter is the input writer of client c's AI input on hostID, under
+// its lease.
+func (m *Manager) aiWriter(hostID string, c ClientInfo) inputWriter {
+	return inputWriter{check: func() (uint64, error) { return m.CheckAI(hostID, c) },
+		still: func(gen uint64) error { return m.StillAI(hostID, c, gen) }}
+}
+
+// writerOf is the input writer of client c on hostID: an AI client's
+// under its lease, a person's under CheckHuman.
+func (m *Manager) writerOf(hostID string, c ClientInfo) inputWriter {
+	if c.Actor == model.ActorAI {
+		return m.aiWriter(hostID, c)
+	}
+	return inputWriter{check: func() (uint64, error) { return m.CheckHuman(hostID, c) },
+		still: func(gen uint64) error { return m.StillHuman(hostID, gen) }}
+}
+
+// StillHuman returns nil while a person holds control of hostID at
+// generation gen, and why the input of gen may no longer go out
+// otherwise.
+func (m *Manager) StillHuman(hostID string, gen uint64) error {
+	cur := m.current(hostID)
+	if cur.gen == gen && cur.owner == OwnerHuman {
+		return nil
+	}
+	if cur.leased(time.Now()) {
+		return apierr.New(wire.CodeControlPreempted,
+			fmt.Sprintf("AI 클라이언트(%s)가 조작 중이라 남은 입력을 보내지 않았습니다. 제어권을 가져온 뒤 다시 시도하세요", clientLabel(cur)), false, apierr.NextCheckState)
+	}
+	return apierr.New(wire.CodeControlPreempted, "보내는 사이 제어권이 바뀌어 남은 입력을 보내지 않았습니다. 화면을 다시 확인한 뒤 다시 시도하세요", false, apierr.NextCheckState)
+}
+
 // SendAI sends evs as AI input of client c to hostID's agent and returns
 // the acks that came back, in order. It checks control first (CheckAI) and
 // checks again before each event, stopping at the first event the writer
@@ -292,22 +342,39 @@ func (m *Manager) stream(ctx context.Context, hostID string, lk *aiLink, gen uin
 // A failed ack is the error of its code; a stream that ends before every
 // ack is EXECUTION_OUTCOME_UNKNOWN.
 func (m *Manager) SendAI(ctx context.Context, hostID string, c ClientInfo, evs []wire.InputEvent) ([]wire.InputAck, error) {
+	return m.send(ctx, hostID, m.aiWriter(hostID, c), evs, SendOpts{})
+}
+
+// Send sends evs as input of client c as SendAI does: an AI client's
+// under its lease (CheckAI, StillAI), a person's under CheckHuman, which
+// takes control nobody holds and refuses while an AI lease runs, and
+// StillHuman. opt.Check runs before the first event.
+func (m *Manager) Send(ctx context.Context, hostID string, c ClientInfo, evs []wire.InputEvent, opt SendOpts) ([]wire.InputAck, error) {
+	w := m.writerOf(hostID, c)
+	if opt.AsAI {
+		w = m.aiWriter(hostID, c)
+	}
+	return m.send(ctx, hostID, w, evs, opt)
+}
+
+// send sends evs as the input of w; see SendAI.
+func (m *Manager) send(ctx context.Context, hostID string, w inputWriter, evs []wire.InputEvent, opt SendOpts) ([]wire.InputAck, error) {
 	if len(evs) == 0 {
 		return nil, apierr.Invalid("보낼 입력이 없습니다. 입력 이벤트를 하나 이상 주세요")
 	}
-	gen, err := m.CheckAI(hostID, c)
+	gen, err := w.check()
 	if err != nil {
 		return nil, err
 	}
 	lk := m.link(hostID)
 	lk.sendMu.Lock()
 	defer lk.sendMu.Unlock()
-	if err := m.StillAI(hostID, c, gen); err != nil {
+	if err := w.still(gen); err != nil {
 		return nil, err
 	}
 	s, err := m.stream(ctx, hostID, lk, gen)
 	if apierr.CodeOf(err) == wire.CodeControlPreempted && m.Resync(hostID, gen) {
-		if gen, err = m.CheckAI(hostID, c); err != nil {
+		if gen, err = w.check(); err != nil {
 			return nil, err
 		}
 		s, err = m.stream(ctx, hostID, lk, gen)
@@ -315,16 +382,21 @@ func (m *Manager) SendAI(ctx context.Context, hostID string, c ClientInfo, evs [
 	if err != nil {
 		return nil, err
 	}
+	if opt.Check != nil {
+		if err := opt.Check(s.connGen); err != nil {
+			return nil, err
+		}
+	}
 	var waits []chan wire.InputAck
 	var stopped error
 	for _, ev := range evs {
-		if err := m.StillAI(hostID, c, gen); err != nil {
+		if err := w.still(gen); err != nil {
 			stopped = err
 			break
 		}
 		ch, err := s.send(ev)
 		if err != nil {
-			if stopped = m.StillAI(hostID, c, gen); stopped == nil {
+			if stopped = w.still(gen); stopped == nil {
 				stopped = outcomeUnknown()
 			}
 			break

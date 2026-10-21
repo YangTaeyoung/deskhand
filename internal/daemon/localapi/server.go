@@ -25,6 +25,7 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/daemon/ids"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/jobs"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/observe"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/paths"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/pty"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/qa"
@@ -105,6 +106,9 @@ type Deps struct {
 	// writer generation; nil leaves the methods out and sends writer
 	// generation 0.
 	Control *control.Manager
+	// Observe serves screen.capture, the input methods and observe; nil
+	// leaves them out.
+	Observe *observe.Service
 	Version string
 	Logger  *log.Logger
 }
@@ -159,6 +163,8 @@ func New(d Deps) *Server {
 	s.registerQA()
 	s.registerControl()
 	s.registerScreen()
+	s.registerInput()
+	s.registerUI()
 	return s
 }
 

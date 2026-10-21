@@ -92,7 +92,7 @@ func (r *runner) do(ctx context.Context, st Step, i int, timeout int64) stepOut 
 	case *ClickSpec:
 		return r.click(ctx, s)
 	case *TypeSpec:
-		res, err := r.m.opt.Input.Type(ctx, r.host.HostID, s.Text, s.Method)
+		res, err := r.m.opt.Input.Type(ctx, r.host.HostID, r.caller, s.Text, s.Method)
 		if err != nil {
 			return fromError(err)
 		}
@@ -100,7 +100,7 @@ func (r *runner) do(ctx context.Context, st Step, i int, timeout int64) stepOut 
 		out.result = res
 		return out
 	case *KeySpec:
-		res, err := r.m.opt.Input.Key(ctx, r.host.HostID, s.Keys)
+		res, err := r.m.opt.Input.Key(ctx, r.host.HostID, r.caller, s.Keys)
 		if err != nil {
 			return fromError(err)
 		}
@@ -406,7 +406,7 @@ func (r *runner) click(ctx context.Context, s *ClickSpec) stepOut {
 		wy, _ := w["y"].(float64)
 		x, y = int(wx)+*s.X, int(wy)+*s.Y
 	}
-	res, err := r.m.opt.Input.Click(ctx, r.host.HostID, x, y, s.Button, s.Count)
+	res, err := r.m.opt.Input.Click(ctx, r.host.HostID, r.caller, x, y, s.Button, s.Count)
 	if err != nil {
 		return fromError(err)
 	}

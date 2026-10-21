@@ -23,7 +23,7 @@
   "session_id": "s-01JB…",
   "connection_generation": 4,
   "status": "succeeded|failed|running|waiting_for_user|unknown|cancelled",
-  "action": {"executed": true, "outcome": "done|not_started|unknown"},
+  "action": {"executed": true, "outcome": "done|not_started|unknown|partial"},
   "error": null,
   "next_action": null,
   "artifacts": []
@@ -60,20 +60,33 @@
 - writer 동작: 데몬은 에이전트의 writer op(`app.launch`, `debug.electron.launch`, `ui.act`, `win.action`, `clipboard.set` — protocol.md §3.1)와 입력 스트림에 `gen`을 붙여 보낸다. AI 클라이언트의 요청은 보내기 전에 제어권을 확인하고(위 lease 규칙, 없으면 lease를 얻는다), 거절되면 PC에 아무것도 보내지 않고 봉투 `failed`/`not_started` + 위 오류다(`debug.electron.launch`는 세션·job을 만들지 않고 `session:null`). 사람·데몬의 요청은 현재 `gen`을 붙인다. 연결을 기다린 요청을 포함해 writer op는 연결로 내보내기 직전에 다시 확인한다: AI 요청은 같은 클라이언트가 같은 `gen`으로 쥐고 있을 때만, 사람·데몬의 요청은 `gen`이 그대로일 때만 나가고, 아니면 보내지 않고 같은 봉투(AI는 위 오류, 사람은 `CONTROL_PREEMPTED`·`retryable:true`)다.
 
 ### 관찰·입력 (AI·CLI)
+코드: `internal/daemon/observe`.
+
 | 메서드 | 파라미터 | 결과 |
 |---|---|---|
-| `screen.capture` | `host_id`, `display`, `max_width`(기본 1568), `format` | `capture_id`, `width`, `height`, `scale`, `origin`, `dpi`, `ts`, artifact(이미지 파일) |
-| `input.click` | `host_id`, `capture_id`, `x`, `y`(캡처 좌표), `button`, `count` | 봉투 + `observation` |
-| `input.move` / `input.drag` | `capture_id`, 좌표들 | 봉투 |
-| `input.scroll` | `capture_id`, `x`, `y`, `dx`, `dy` | 봉투 |
-| `input.key` | `keys`(예: `ctrl+shift+esc`, `enter`) | 봉투 |
-| `input.type` | `text`, `method`(`auto`/`unicode`/`paste`) | 봉투 |
-| `observe` | `host_id`, `level`(`none`/`summary`/`image`/`ui`), `settle_ms` | `foreground`, `focused`, `changed`, `capture`(선택), `ui`(선택) |
+| `screen.capture` | `host_id`, `display`(기본 0), `max_width`(기본 1568, 0은 디스플레이 폭), `format`(`png` 기본/`jpeg`), `quality`(`jpeg`) | `capture_id`, `host_id`, `display`, `width`, `height`, `scale`, `origin`{`x`,`y`}, `dpi`, `ts`(데몬이 이미지를 받은 시각), `mono_us`, `method`(`dd`/`gdi`), `format`, `connection_generation`, `expires_at`(좌표를 쓸 수 있는 끝), `artifact`(Artifact, `kind:"screenshot"`) |
+| `input.click` | `host_id`, `capture_id`, `x`, `y`(캡처 좌표), `button`(`left` 기본/`right`/`middle`/`x1`/`x2`), `count`(1–3, 기본 1), `observe?` | 봉투 + `target` + `events_total`·`events_done` + `observation` |
+| `input.move` | `host_id`, `capture_id`, `x`, `y`, `observe?` | 봉투 + `target` + … |
+| `input.drag` | `host_id`, `capture_id`, `x`, `y`(시작), `to_x`, `to_y`(끝, 같은 캡처), `button`, `steps`(1–100, 기본 10), `duration_ms`(0–10000, 0은 300), `observe?` | 봉투 + `target`·`to` + … |
+| `input.scroll` | `host_id`, `capture_id`, `x`, `y`, `dx`, `dy`(휠 칸 수, 한 칸 = 120, `dy` 양수 위·`dx` 양수 오른쪽, 각 ±100 안), `observe?` | 봉투 + `target` + … |
+| `input.key` | `host_id`, `keys`(예: `ctrl+shift+esc`, `enter`, `ctrl+a delete`), `observe?` | 봉투 + `keys`(정규화한 이름) + … |
+| `input.type` | `host_id`, `text`, `method`(`auto` 기본/`unicode`/`paste`), `observe?` | 봉투 + `method`(쓴 방법) + `chars` + … |
+| `observe` | `host_id`, `level`(`none`/`summary` 기본/`image`/`ui`), `settle_ms`(0–30000), `display`(기본 0), `max_width`·`format`(`image`) | `host_id`, `level`, `foreground`, `focused`, `changed`, `settled`, `waited_ms`, `capture?`, `ui?`, `errors`, `connection_generation` |
 
-좌표는 `capture_id`의 이미지 좌표다. 데몬이 원본 픽셀로 환산한다. `capture_id`가 다른 `connection_generation`이나 바뀐 디스플레이 구성에서 나왔으면 `STALE_TARGET`.
+- **캡처와 좌표**: `screen.capture`는 에이전트 `screen.capture`(protocol.md §3.1)의 정지 이미지를 `<home>/artifacts/captures/<host_id>/<capture_id>.png|.jpg`에 저장하고(24시간 뒤 지운다) 좌표 환산 표를 `capture_id`별로 10분 동안 둔다. 입력의 `x`, `y`는 그 이미지의 좌표다(0 ≤ `x` < `width`, 0 ≤ `y` < `height`, 밖이면 JSON-RPC `INVALID_ARGUMENT`). 데몬은 점이 든 이미지 픽셀 `floor(x)`의 가운데를 원본으로 옮긴 픽셀 `floor((floor(x)+0.5)/scale)`(디스플레이 크기 `round(width/scale)` 안으로 맞춘다)을 그 디스플레이의 픽셀로 보낸다. `target`은 {`capture_id`, `display`, `x`, `y`(디스플레이 왼쪽 위 기준 원본 픽셀), `screen_x`, `screen_y`(가상 데스크톱 좌표 = `origin` + 원본 픽셀, 음수일 수 있다)}다. 같은 이미지의 좌표는 디스플레이가 어디 있든(왼쪽·위의 음수 원점 포함) 그 디스플레이 안으로만 간다.
+- **오래된 capture_id**: 모르는 `capture_id`(10분이 지났거나 데몬이 다시 시작함), 다른 `connection_generation`에서 찍은 것, 찍은 뒤 그 PC의 `display.changed`를 받은 것은 PC에 아무것도 보내지 않고 봉투 `failed`/`not_started` + `STALE_TARGET`(`next_action:"screen_capture"`)다. 연결 세대는 입력 스트림이 열린 연결로 첫 이벤트를 쓰기 직전에 다시 확인한다. 다른 PC의 `capture_id`는 JSON-RPC `INVALID_ARGUMENT`다.
+- **제어권**: 입력은 §3 제어권의 writer 동작과 같다. AI 클라이언트의 입력은 `CheckAI`(lease를 얻거나 60초로 갱신)를 거쳐 그 `gen`의 입력 스트림으로 가고, 사람의 입력(`app`/`cli`)은 아무도 쥐지 않았으면 사람 제어권을 얻고 AI lease가 살아 있으면 `CONTROL_PREEMPTED`다. 거절은 PC에 보내지 않고 봉투 `failed`/`not_started` + 그 오류이고 타임라인 `outcome:"denied"`다. 이벤트마다 쓰기 직전에 다시 확인해 제어권이 바뀌면 남은 이벤트를 보내지 않는다.
+- **결과**: `action.executed`는 모든 이벤트에 에이전트의 확인(`0x42` ok)이 왔을 때만 true(`succeeded`/`done`)다. 확인 전에 입력 스트림이나 연결이 끊기면 `unknown`(`executed:null`, `EXECUTION_OUTCOME_UNKNOWN`, `next_action:"check_state"`)이고 데몬은 다시 보내지 않는다. 일부 이벤트만 주입됐거나 실패한 `text`가 앞부분을 쳤을 수 있으면 `failed` + `action:{executed:false, outcome:"partial"}`(`next_action:"check_state"`), 아무 이벤트도 주입되지 않았으면 `failed`/`not_started`이고 오류는 에이전트 확인의 코드다(protocol.md §6). `events_total`은 보낸(보내려던) 이벤트 수, `events_done`은 앞에서부터 확인 ok를 받은 수다.
+- **키**: `keys`는 공백으로 나눈 조합(최대 50개)이고 조합은 `+`로 잇는다: 수정 키(`ctrl`·`shift`·`alt`·`win`, 각 `l`/`r` 형태, `altgr`=`ralt`) 뒤에 키 하나(수정 키만도 된다). 대소문자는 가리지 않고 두 글자 이상 이름의 `_`는 무시한다(`page_down`=`pagedown`). 이름은 Windows 키 이름이다: `a`–`z`, `0`–`9`, `-` `=` `[` `]` `\` `;` `'` `,` `.` `/` `` ` ``(별칭 `minus`·`equal`·`comma`·`slash` 등), `esc`, `enter`, `tab`, `space`, `backspace`, `delete`, `insert`, `home`, `end`, `pageup`, `pagedown`, `up`/`down`/`left`/`right`, `f1`–`f24`, `capslock`, `numlock`, `scrolllock`, `printscreen`, `pause`, `menu`, `numpad0`–`numpad9`, `numpad_add`/`subtract`/`multiply`/`divide`/`decimal`/`enter`, `hangul`(`한영`, `한/영`), `hanja`(`한자`), `volumeup`/`volumedown`/`volumemute`, `mediaplaypause`/`medianext`/`mediaprev`/`mediastop`. 조합은 키를 차례로 누르고 거꾸로 뗀다. 위치가 정해진 키는 set 1 스캔코드(E0 키는 `ext`)로, `f13`–`f24`·`printscreen`·`pause`·`numlock`·`hangul`(VK_HANGUL)·`hanja`(VK_HANJA)·음량·미디어 키는 가상 키로 보낸다. 모르는 이름(`cmd` 등)·빈 이름(`ctrl+`)·같은 키 두 번·키 뒤의 키(`a+b`, `enter+ctrl`)는 아는 이름 목록을 담은 JSON-RPC `INVALID_ARGUMENT`다.
+- **글자**: `auto`는 글이 2000자(에이전트 기준: 코드 포인트, `\r\n`은 2자) 이하이고 모든 글자를 `unicode`가 한 글자씩 칠 수 있으면(기본 다국어 평면의 글자, 제어 문자는 `\t`·`\r`·`\n`만) `unicode`, 아니면(더 길거나 이모지 같은 평면 밖 글자, 다른 제어 문자) `paste`다. 실패한 `unicode` 입력을 `paste`로 다시 보내지 않는다(앞부분이 이미 쳐졌을 수 있다). 100000자를 넘는 글은 `\r\n`을 가르지 않고 100000자 이하의 `text` 이벤트 여럿으로 나눠 한 번에 보낸다. 타임라인에는 글 내용 없이 방법과 글자 수만 남긴다.
+- **관찰**: `observe`는 `settle_ms`가 있으면 그 디스플레이를 폭 256 PNG로 0.1초마다 찍어(산출물로 남기지 않는다) 화면이 두 간격(0.2초) 동안 바뀌지 않고 에이전트 창 이벤트(`window.opened`·`window.closed`·`window.foreground`·`window.title`·`dialog.opened`)도 없을 때까지, 최대 `settle_ms` 기다린다(`settled`, `waited_ms`). 화면을 찍지 못하면(잠김 등) 창 이벤트가 0.2초 동안 없을 때까지 기다리고 `errors`에 `screen` 항목을 남긴다. 화면 비교는 디스플레이를 64×36칸으로 나눈 칸별 평균 밝기(0–255)이고, 4를 넘게 달라진 칸이 있으면 바뀐 것이다(커서·깜빡이는 캐럿 정도는 바뀐 것으로 치지 않는다). `changed`는 관찰 끝의 화면을 그 PC에서 마지막으로 본 화면(앞의 `screen.capture`·`observe`, 입력의 `observe`는 그 `capture_id`의 화면)과 비교한 값이고, 둘 중 하나라도 볼 수 없으면 `null`이다. `settled`는 `settle_ms`가 0이면 `null`이다. `level`: `none`은 위만, `summary`는 `foreground`(`win.list`의 앞 창)와 `focused`(`ui.focused`의 `node`), `image`는 `summary`에 `capture`(`screen.capture`와 같은 결과, `display`·`max_width`·`format`), `ui`는 `summary`에 `ui`(앞 창의 `ui.tree{filter:"interactive", depth:12, max:300}`)를 더한다. 읽지 못한 부분은 `null`이고 `errors`([{`part`(`screen`/`capture`/`foreground`/`focused`/`ui`), `code`, `message`}])에 남는다. PC와 연결돼 있지 않으면 JSON-RPC `OFFLINE`이다.
+- **입력 뒤 관찰**: 입력 메서드의 `observe`{`level`(기본 `summary`), `settle_ms`, `display?`(기본: 좌표 입력은 그 디스플레이, 아니면 0)}는 입력이 (일부라도) 실행됐을 때 그 뒤에 `observe`를 하고 결과를 `observation`에 담는다. 관찰이 실패하면 `observation:null`과 `observation_error`이고 입력 결과(봉투)는 그대로다 — 관찰 실패로 입력을 다시 보내지 않는다. `observe`가 없거나 입력이 실행되지 않았으면 `observation:null`.
+- **기록**: 입력은 타임라인 `kind:"input"`, `screen.capture`·`observe`와 아래 UI 읽기는 `kind:"observe"`로 그 클라이언트를 행위자로 남긴다(`screen.capture`는 그 산출물과 함께).
 
 ### UI Automation
-`ui.tree`, `ui.find`, `ui.text`, `ui.rect`, `ui.act`, `ui.focused`, `ui.at`, `win.list`, `win.action` — 에이전트 op와 같은 파라미터에 `host_id`. `ui.act`·`win.action`은 제어권 검사를 거친다.
+`ui.tree`, `ui.find`, `ui.text`, `ui.rect`, `ui.focused`, `ui.at`, `win.list`(읽기)와 `ui.act`, `win.action`(writer 동작) — 에이전트 op와 같은 파라미터에 `host_id`.
+- 읽기는 제어권과 상관없이(사람이 쥐고 있어도) 에이전트 결과에 `host_id`·`connection_generation`을 더해 돌려주고, 실패는 JSON-RPC 오류(에이전트의 코드)다. `ui.at`은 `x`, `y`와 함께 `capture_id`를 주면 그 이미지 좌표를 위 규칙으로 가상 데스크톱 좌표로 바꿔 보내고 `target`을 더한다(오래된 `capture_id`는 JSON-RPC `STALE_TARGET`).
+- `ui.act`·`win.action`은 §3 제어권의 writer 동작이다: AI 클라이언트의 요청은 lease를 얻거나 갱신하고, 사람이 쥐었거나 긴급 정지 중이면 PC에 보내지 않고 봉투 `failed`/`not_started` + `CONTROL_HELD_BY_HUMAN`이다. 연결을 기다린 요청도 쓰기 직전에 다시 확인한다. 결과는 봉투 + 에이전트 결과 필드이고 타임라인 `kind:"input"`이다.
 
 ### 명령·터미널·프로세스
 | 메서드 | 결과 |
@@ -224,7 +237,7 @@ QA 시나리오 실행기. 세부 규칙은 [§10](#10-qa-세부-계약).
 | QARun | `run_id`(`q-…`), `job_id`, `host_id`, `name`(시나리오 `name`), `scenario_path?`(이 Mac의 시나리오 파일 절대 경로, 글로 준 시나리오는 없음), `status`(`running`/`passed`/`failed`/`blocked`/`cancelled`/`error`), `rev`(실행마다 바뀔 때마다 1씩 오르는 정수, 데몬을 다시 시작해도 줄지 않는다 — 클라이언트는 더 큰 rev만 반영), `started_at`, `updated_at`, `finished_at?`, `steps_total`, `steps_passed`, `steps_failed`, `steps_blocked`, `steps_not_run`(진행 중에는 아직 끝나지 않은 단계가 이 넷 어디에도 들지 않는다), `current_step?`(실행 중인 단계의 `index`), `cancel_requested`(bool), `error?`({`code`, `message`} — 실행 전체를 멈춘 이유: 시간 초과 `TIMEOUT`, 데몬 재시작 `EXECUTION_OUTCOME_UNKNOWN`), `unsupported`([{`action`, `code`, `reason`}] — 이 PC·데몬이 할 수 없어 `blocked`가 된 단계 종류, 종류마다 한 번), `report_dir?`(끝난 뒤 결과 묶음 폴더), `report?`{`json`, `md`, `html`, `manifest`}(결과 묶음 파일의 절대 경로), `steps`([QAStep] — `qa.run`·`qa.get`·`qa.cancel`에만 있다) |
 | QAStep | `index`(1부터, setup·steps·teardown을 이은 실행 순서), `phase`(`setup`/`steps`/`teardown`), `name`, `action`(단계 종류, §10), `line`(시나리오 파일의 줄), `params`(치환 뒤 단계 값, `secret_` 변수는 `***`), `optional`, `continue_on_fail`, `status`(`pending`/`running`/`pass`/`fail`/`blocked`/`not_run` — 실행이 끝나면 `pending`·`running`은 남지 않는다), `started_at?`, `duration_ms?`, `message?`(사람이 읽는 한 줄), `error?`({`code`, `message`}), `assertions`([QAAssertion]), `result?`(종류별 결과 객체, §10), `evidence`([Artifact]) |
 | QAAssertion | `kind`(§10), `expected`, `actual`(문자열은 최대 2000자, 넘으면 `…`), `passed` |
-| TimelineEntry | `seq`, `ts`, `host_id`, `actor`(`human`/`ai`/`system`), `client_id?`, `client_name?`, `kind`(`input`/`exec`/`file`/`control`/`qa`/`debug`/`connection`/`install`), `summary`, `outcome`(`ok`/`failed`/`unknown`/`denied`), `job_id?`, `artifacts`([Artifact]) |
+| TimelineEntry | `seq`, `ts`, `host_id`, `actor`(`human`/`ai`/`system`), `client_id?`, `client_name?`, `kind`(`input`/`observe`/`exec`/`file`/`control`/`qa`/`debug`/`connection`/`install`), `summary`, `outcome`(`ok`/`failed`/`unknown`/`denied`), `job_id?`, `artifacts`([Artifact]) |
 | Artifact | `artifact_id`, `job_id?`, `kind`(`screenshot`/`ui_tree`/`log`/`file`/`report`/`trace`), `name`, `path`, `size`, `mime`, `sha256`, `created_at` |
 
 - 데몬 로그: `<home>/logs/daemon.log`.
@@ -387,7 +400,7 @@ YAML 1.2의 부분집합이다: 블록 매핑·블록 시퀀스, 흐름 시퀀�
 - 흐름: `optional`도 `continue_on_fail`도 아닌 단계가 `fail`·`blocked`면 그 뒤의 setup·steps 단계는 `not_run`이다. teardown 단계는 앞의 결과와 상관없이 모두 차례로 실행한다. `optional` 단계는 결과를 그대로 남기지만 흐름과 실행 상태 계산에서 빠진다.
 - 실행 `status`: 취소가 단계를 멈추거나 건너뛰게 했으면 `cancelled`, 데몬이 멈춰 끊겼거나 결과 묶음을 쓰지 못했으면 `error`(`error`에 이유, `report` 없음), 그 밖에는 `optional`이 아닌 단계(teardown 포함) 중 `fail`이 있으면 `failed`, 아니면 `blocked`가 있으면 `blocked`, 아니면 `passed`. 실행 제한(`timeout_ms`)은 setup·steps에만 걸리고 그것들이 끝나면 멈춘다: 넘으면 그때 실행 중인 단계가 `fail`(`TIMEOUT`), 남은 setup·steps는 `not_run`, teardown을 실행하고 실행은 `failed` + `error`(`TIMEOUT`)다. 제한이 지났어도 멈추거나 건너뛴 단계가 없으면 결과는 단계로 정한다.
 - **제어권**: `launch`·`click`·`type`·`key`·`ui_act`·`close`는 단계마다 실행 직전에 제어권(§3 제어권, design §5.1)을 확인한다. 사람이 쥐고 있으면 PC에 아무것도 보내지 않고 `blocked` + `CONTROL_HELD_BY_HUMAN`("사람이 조작 중입니다 …")이다. 실행기는 제어권을 가져오거나 기다리지 않는다. 확인은 실행을 시작한 클라이언트의 AI 입력으로 한다(누가 시작했든, §3 제어권의 lease를 얻고 갱신한다): 다른 AI 클라이언트의 lease가 살아 있으면 `blocked` + `CONTROL_PREEMPTED`이고, 그 단계의 writer op는 확인에서 받은 `gen`을 싣는다. 다른 단계(관찰·확인·명령·파일)는 제어권과 상관없이 실행한다.
-- **기능**: 단계에 필요한 caps(호스트 `caps`, 에이전트가 알린 기능만)가 `ready`가 아니면 PC에 보내지 않고 `blocked` + `CAPABILITY_UNSUPPORTED`(caps의 `reason`)이고 `run.unsupported`에 남는다. 이 데몬은 아직 마우스·키보드 입력을 보내지 못해 `click`·`type`·`key`는 항상 `blocked` + `CAPABILITY_UNSUPPORTED`이고, `screenshot`과 실패 스크린샷은 에이전트의 `screen`이 `ready`일 때만 찍는다.
+- **기능**: 단계에 필요한 caps(호스트 `caps`, 에이전트가 알린 기능만)가 `ready`가 아니면 PC에 보내지 않고 `blocked` + `CAPABILITY_UNSUPPORTED`(caps의 `reason`)이고 `run.unsupported`에 남는다. `click`·`type`·`key`는 실행을 시작한 클라이언트의 AI 입력(§3 관찰·입력)으로 보낸다: `click`의 화면 픽셀은 그때 읽은 `display.list`로 디스플레이와 그 안의 픽셀로 바꾸고(그 사이 PC와 다시 연결됐으면 `STALE_TARGET`으로 보내지 않는다, 어느 디스플레이에도 없으면 `INVALID_ARGUMENT`), `type`의 `method`와 `key`의 이름은 `input.type`·`input.key`와 같다. 입력이 일부만 실행됐거나 결과를 모르면 그 오류 코드의 단계 결과다. `screenshot`과 실패 스크린샷은 에이전트의 `screen`이 `ready`일 때만 찍는다.
 - **취소**: `qa.cancel`은 바로 답한다(`run.cancel_requested:true`, 봉투 `running`). 실행 중인 setup·steps 단계의 요청을 멈춰 그 단계는 `blocked`("취소로 멈췄습니다"), 남은 setup·steps는 `not_run`, 그다음 teardown을 실행하고 실행은 `cancelled`, job은 `cancelled`로 끝난다. 첫 `qa.cancel`은 teardown을 멈추지 않는다(teardown 중에 받아도 teardown은 끝까지 가고, 멈춘 단계가 없으면 결과는 단계로 정한다). 첫 취소 뒤 teardown 중에 다시 받은 `qa.cancel`은 teardown도 멈춘다(실행 중인 teardown 단계 `blocked`, 남은 teardown `not_run`, 실행 `cancelled`). 이미 `cancelled`인 실행은 그대로 돌려주고(봉투 `cancelled`), 다른 상태로 끝난 실행은 JSON-RPC `INVALID_ARGUMENT`다. 진행 중 `push`의 전송은 함께 취소한다.
 - **데몬 재시작**: 끝나지 않은 실행은 데몬이 시작할 때 `error` + `error`(`EXECUTION_OUTCOME_UNKNOWN`)로 끝낸다. 실행 중이던 단계는 `blocked`(`EXECUTION_OUTCOME_UNKNOWN`), 남은 단계(teardown 포함)는 `not_run`이고 결과 묶음을 그때 쓴다. 데몬은 단계를 다시 보내지 않는다.
 - `qa.list`: `limit` 기본 50·최대 500(0이면 기본값, 그 밖은 `INVALID_ARGUMENT`), `cursor`는 이전 결과의 `next_cursor`(불투명 문자열), 다음 페이지가 있을 때만 `next_cursor`.

@@ -80,14 +80,16 @@ type testAgent struct {
 // retrying for up to 5 s while the port is still bound.
 func startAgent(t *testing.T, port int, id transport.Identity, dataDir string, controllers ...string) *testAgent {
 	t.Helper()
-	return startAgentWith(t, port, id, dataDir, nil, nil, nil, controllers...)
+	return startAgentWith(t, port, id, dataDir, nil, nil, nil, nil, controllers...)
 }
 
 // startAgentWith is startAgent with the agent's diagnostics read from src,
 // or from the agent's own system when src is nil, its ui and win ops
 // served by ui when it is set, and the streams of extra served next to the
-// transfer, pty and tunnel streams.
-func startAgentWith(t *testing.T, port int, id transport.Identity, dataDir string, src diag.Source, ui server.UI, extra quicserve.StreamHandlers, controllers ...string) *testAgent {
+// transfer, pty and tunnel streams; tune, when set, changes the agent's
+// options last.
+func startAgentWith(t *testing.T, port int, id transport.Identity, dataDir string, src diag.Source, ui server.UI, extra quicserve.StreamHandlers,
+	tune func(*server.Options), controllers ...string) *testAgent {
 	t.Helper()
 	home := t.TempDir()
 	cfg := config.Agent{Listen: fmt.Sprintf("127.0.0.1:%d", port), ControllerFingerprints: controllers, DataDir: dataDir, Name: "pc"}
@@ -97,7 +99,11 @@ func startAgentWith(t *testing.T, port int, id transport.Identity, dataDir strin
 		done   chan error
 	)
 	for deadline := time.Now().Add(5 * time.Second); ; {
-		srv = server.New(server.Options{Clipboard: fakeClipboard{}, HomeDir: home, AllowExec: true, DataDir: dataDir, Version: "test", Logger: quiet, Diag: src, UI: ui})
+		opt := server.Options{Clipboard: fakeClipboard{}, HomeDir: home, AllowExec: true, DataDir: dataDir, Version: "test", Logger: quiet, Diag: src, UI: ui}
+		if tune != nil {
+			tune(&opt)
+		}
+		srv = server.New(opt)
 		var ctx context.Context
 		ctx, cancel = context.WithCancel(context.Background())
 		done = make(chan error, 1)
@@ -163,6 +169,8 @@ type setupOpts struct {
 	// agentStreams are served by the agent next to its transfer, pty and
 	// tunnel streams.
 	agentStreams quicserve.StreamHandlers
+	// agentTune changes the agent's options.
+	agentTune func(*server.Options)
 }
 
 func newID(t *testing.T, cn string) transport.Identity {
@@ -194,7 +202,7 @@ func setup(t *testing.T, o setupOpts) *env {
 	if !o.trustDaemon {
 		trusted = []string{newID(t, "other").Fingerprint}
 	}
-	agent := startAgentWith(t, freeUDPPort(t), agentID, t.TempDir(), o.agentDiag, o.agentUI, o.agentStreams, trusted...)
+	agent := startAgentWith(t, freeUDPPort(t), agentID, t.TempDir(), o.agentDiag, o.agentUI, o.agentStreams, o.agentTune, trusted...)
 	fp := agentID.Fingerprint
 	if o.storedFP != nil {
 		fp = o.storedFP(agentID)

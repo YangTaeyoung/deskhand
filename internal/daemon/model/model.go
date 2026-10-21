@@ -30,11 +30,13 @@ const (
 	StatusCancelled      = "cancelled"
 )
 
-// Action outcomes.
+// Action outcomes. OutcomePartial is an input of which only some events
+// were injected.
 const (
 	OutcomeDone       = "done"
 	OutcomeNotStarted = "not_started"
 	OutcomeUnknown    = "unknown"
+	OutcomePartial    = "partial"
 )
 
 // Time formats t for the API; the zero time is "".
@@ -258,6 +260,8 @@ const (
 	TimelineInstall    = "install"
 	TimelineQA         = "qa"
 	TimelineControl    = "control"
+	TimelineInput      = "input"
+	TimelineObserve    = "observe"
 
 	TimelineOK      = "ok"
 	TimelineFailed  = "failed"
@@ -324,6 +328,10 @@ func NotStarted() Action { f := false; return Action{Executed: &f, Outcome: Outc
 
 // UnknownAction returns the action of an operation whose outcome is unknown.
 func UnknownAction() Action { return Action{Outcome: OutcomeUnknown} }
+
+// PartialAction returns the action of an input of which only some events
+// ran.
+func PartialAction() Action { f := false; return Action{Executed: &f, Outcome: OutcomePartial} }
 
 // Envelope is the common result of the methods that change state or run
 // something remotely (local-api.md §2).

@@ -24,6 +24,9 @@ const (
 	// NextHumanResumeAI: the emergency stop paused AI input; wait until a
 	// person gives control back to the AI.
 	NextHumanResumeAI = "human_resume_ai"
+	// NextScreenCapture: the coordinates of a capture no longer hold; take
+	// a new screen.capture and use its capture_id.
+	NextScreenCapture = "screen_capture"
 )
 
 // ShellWord quotes s with single quotes when it holds a space or a tab.

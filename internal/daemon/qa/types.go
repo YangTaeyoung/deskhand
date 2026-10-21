@@ -84,12 +84,13 @@ type Control interface {
 	Recheck(hostID string, c model.Caller, gen uint64) error
 }
 
-// Input sends mouse and keyboard input to a host; x and y are pixels of
-// the virtual desktop.
+// Input sends mouse and keyboard input to a host as AI input of the
+// run's caller c (observe.Service); x and y are pixels of the virtual
+// desktop.
 type Input interface {
-	Click(ctx context.Context, hostID string, x, y int, button string, count int) (map[string]any, error)
-	Type(ctx context.Context, hostID, text, method string) (map[string]any, error)
-	Key(ctx context.Context, hostID, keys string) (map[string]any, error)
+	Click(ctx context.Context, hostID string, c model.Caller, x, y int, button string, count int) (map[string]any, error)
+	Type(ctx context.Context, hostID string, c model.Caller, text, method string) (map[string]any, error)
+	Key(ctx context.Context, hostID string, c model.Caller, keys string) (map[string]any, error)
 }
 
 // Pusher copies a file or folder from this Mac to a host and returns the
