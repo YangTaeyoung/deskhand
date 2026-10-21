@@ -140,8 +140,8 @@ func (s *agentVideo) flush() error {
 			return err
 		}
 	}
-	if target.maxWidth != applied.maxWidth {
-		if err := s.control(wire.VideoControl{Op: wire.ControlConfig, MaxWidth: target.maxWidth}); err != nil {
+	if target.maxWidth != applied.maxWidth || target.maxFPS != applied.maxFPS {
+		if err := s.control(wire.VideoControl{Op: wire.ControlConfig, MaxWidth: target.maxWidth, MaxFPS: target.maxFPS}); err != nil {
 			return err
 		}
 	}

@@ -168,9 +168,15 @@ func noticeOf(typ string) func([]byte) bool {
 
 func attachScreen(t *testing.T, params map[string]any) (*client.Stream, error) {
 	t.Helper()
+	return attachScreenAs(t, "app", params)
+}
+
+// attachScreenAs attaches a screen stream as a client of kind.
+func attachScreenAs(t *testing.T, kind string, params map[string]any) (*client.Stream, error) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	s, err := client.Attach(ctx, client.Options{Start: func(context.Context) error { return errors.New("no daemon") }}, "app", "Deskhand", "screen", params)
+	s, err := client.Attach(ctx, client.Options{Start: func(context.Context) error { return errors.New("no daemon") }}, kind, "Deskhand", "screen", params)
 	if err == nil {
 		t.Cleanup(func() { s.Close() })
 	}
@@ -249,5 +255,26 @@ func TestScreenStreamAttachRefusals(t *testing.T) {
 		if got := apiCode(err); got != tc.code {
 			t.Fatalf("stream.attach screen %v: %v, want %s", tc.params, err, tc.code)
 		}
+	}
+}
+
+func TestScreenStreamMaxFPSReachesTheAgentAndIsValidated(t *testing.T) {
+	agent := newScreenAgent()
+	e := setup(t, setupOpts{trustDaemon: true, agentStreams: agent.streams()})
+	e.waitState(t, "ready")
+	for _, fps := range []int{-1, 241} {
+		if _, err := attachScreen(t, map[string]any{"host_id": "pc", "display": 0, "max_fps": fps}); apiCode(err) != wire.CodeInvalidArgument {
+			t.Fatalf("max_fps %d: %v", fps, err)
+		}
+	}
+	s, err := attachScreen(t, map[string]any{"host_id": "pc", "display": 0, "max_fps": 30})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Result["max_fps"] != float64(30) {
+		t.Fatalf("stream.attach result %v", s.Result)
+	}
+	if h := agent.videoHeaders(); len(h) != 1 || h[0].MaxFPS != 30 {
+		t.Fatalf("agent video headers %+v", h)
 	}
 }

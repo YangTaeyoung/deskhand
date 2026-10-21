@@ -123,6 +123,7 @@ func (s *Store) migrate() error {
 // schema lacks; migrate adds them.
 var addedColumns = []struct{ table, column, definition string }{
 	{"transfers", "job_id", "TEXT NOT NULL DEFAULT ''"},
+	{"hosts", "ai_scope", "TEXT NOT NULL DEFAULT ''"},
 }
 
 // Close closes the database.
@@ -179,6 +180,23 @@ func (s *Store) PutHost(h Host) error {
 func (s *Store) UpdateHost(h Host) error {
 	res, err := s.db.Exec(`UPDATE hosts SET name = ?, address = ?, port = ?, agent_fp = ?, os = ?, arch = ?, ssh_alias = ? WHERE host_id = ?`,
 		h.Name, h.Address, h.Port, h.AgentFP, h.OS, h.Arch, h.SSHAlias, h.HostID)
+	return affected(res, err)
+}
+
+// HostAIScope returns the stored AI scope JSON of the host; "" while none
+// was set.
+func (s *Store) HostAIScope(hostID string) (string, error) {
+	var v string
+	err := s.db.QueryRow(`SELECT ai_scope FROM hosts WHERE host_id = ?`, hostID).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	return v, err
+}
+
+// SetHostAIScope stores the AI scope JSON of the host; "" clears it.
+func (s *Store) SetHostAIScope(hostID, scope string) error {
+	res, err := s.db.Exec(`UPDATE hosts SET ai_scope = ? WHERE host_id = ?`, scope, hostID)
 	return affected(res, err)
 }
 

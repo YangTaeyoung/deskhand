@@ -223,21 +223,30 @@ func (f *feed) shutdown() {
 	}
 }
 
-// bestLocked returns the quality of the best preset of the viewers and
-// the attaches waiting; f.mu is held.
+// bestLocked returns the quality of the best preset and the highest
+// max_fps of the viewers and the attaches waiting; f.mu is held.
 func (f *feed) bestLocked() (quality, bool) {
 	var best quality
 	found := false
-	pick := func(p Preset) {
-		if q := qualities[p]; !found || q.rank > best.rank {
+	fps := 0
+	pick := func(v *Viewer) {
+		if q := qualities[v.preset]; !found || q.rank > best.rank {
 			best, found = q, true
+		}
+		if want := v.maxFPS; want == 0 {
+			fps = max(fps, defaultFPS)
+		} else {
+			fps = max(fps, want)
 		}
 	}
 	for v := range f.viewers {
-		pick(v.preset)
+		pick(v)
 	}
 	for v := range f.waiting {
-		pick(v.preset)
+		pick(v)
+	}
+	if fps != defaultFPS {
+		best.maxFPS = fps
 	}
 	return best, found
 }
@@ -381,7 +390,7 @@ func (f *feed) open() (*agentVideo, error) {
 	f.mu.Unlock()
 	ctx, cancel := context.WithTimeout(f.h.base, openTimeout)
 	defer cancel()
-	st, connGen, err := a.OpenStream(ctx, wire.StreamHeader{S: "video", Display: f.key.display, MaxWidth: q.maxWidth, Bitrate: q.bitrate})
+	st, connGen, err := a.OpenStream(ctx, wire.StreamHeader{S: "video", Display: f.key.display, MaxWidth: q.maxWidth, MaxFPS: q.maxFPS, Bitrate: q.bitrate})
 	if err != nil {
 		return nil, err
 	}

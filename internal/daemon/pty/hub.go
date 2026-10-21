@@ -348,6 +348,15 @@ func (h *Hub) find(ref Ref) (store.Job, error) {
 	return store.Job{}, apierr.Invalid("stream.attach{kind:\"pty\"}에는 pty_id나 job_id가 필요합니다")
 }
 
+// HostOf returns the host of the pty job ref names.
+func (h *Hub) HostOf(ref Ref) (string, error) {
+	j, err := h.find(ref)
+	if err != nil {
+		return "", err
+	}
+	return j.HostID, nil
+}
+
 // ended is the NOT_FOUND error of an attach to a pty job that finished.
 func ended(j store.Job) *apierr.Error {
 	var res struct {

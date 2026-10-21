@@ -453,11 +453,11 @@ func TestAttachRefusals(t *testing.T) {
 		{-1, PresetSharp, wire.CodeInvalidArgument},
 		{0, "ultra", wire.CodeInvalidArgument},
 	} {
-		if _, err := r.hub.Attach(ctx, "pc", tc.display, tc.preset, human); apierr.CodeOf(err) != tc.code {
+		if _, err := r.hub.Attach(ctx, "pc", tc.display, tc.preset, 0, human); apierr.CodeOf(err) != tc.code {
 			t.Fatalf("attach display %d preset %q: %v, want %s", tc.display, tc.preset, err, tc.code)
 		}
 	}
-	if _, err := r.hub.Attach(ctx, "other", 0, PresetSharp, human); apierr.CodeOf(err) == "" {
+	if _, err := r.hub.Attach(ctx, "other", 0, PresetSharp, 0, human); apierr.CodeOf(err) == "" {
 		t.Fatalf("attach to a host without an agent connection: %v", err)
 	}
 }
@@ -568,13 +568,45 @@ func TestAgentRefusalsAreKoreanSentencesThatKeepTheCode(t *testing.T) {
 	r := newRig(t)
 	r.agent.refuseVideo[4] = wire.CodeCapabilityUnsupported
 	r.agent.refuseVideo[5] = wire.CodeInternal
-	_, err := r.hub.Attach(context.Background(), "pc", 4, PresetSharp, human)
+	_, err := r.hub.Attach(context.Background(), "pc", 4, PresetSharp, 0, human)
 	var e *apierr.Error
 	if !errors.As(err, &e) || e.Code != wire.CodeCapabilityUnsupported || e.Message != "이 PC의 에이전트가 화면 스트림을 지원하지 않습니다. 에이전트를 업데이트하세요." {
 		t.Fatalf("refusal of an agent without screen streams: %#v", err)
 	}
-	_, err = r.hub.Attach(context.Background(), "pc", 5, PresetSharp, human)
+	_, err = r.hub.Attach(context.Background(), "pc", 5, PresetSharp, 0, human)
 	if !errors.As(err, &e) || e.Code != wire.CodeInternal || strings.Contains(e.Message, "refused by the fake agent") || !strings.Contains(e.Message, "다시 붙") {
 		t.Fatalf("refusal with another code: %#v", err)
+	}
+}
+
+func TestMaxFPSOpensAtTheHighestAndApplyTheRestWithConfig(t *testing.T) {
+	r := newRig(t)
+	a := r.attachFPS(0, PresetBalanced, 30, human)
+	v := r.agent.video(0)
+	if v.hdr.MaxFPS != 30 {
+		t.Fatalf("stream header max_fps %d", v.hdr.MaxFPS)
+	}
+	b := r.attachFPS(0, PresetBalanced, 120, human2)
+	if c := v.control(t, wire.ControlConfig); c.MaxFPS != 120 || c.MaxWidth != 2560 {
+		t.Fatalf("config for a 120 fps viewer %+v", c)
+	}
+	b.close()
+	if c := v.control(t, wire.ControlConfig); c.MaxFPS != 30 || c.MaxWidth != 2560 {
+		t.Fatalf("config after the 120 fps viewer left %+v", c)
+	}
+	d := r.attach(0, PresetBalanced, human2)
+	if c := v.control(t, wire.ControlConfig); c.MaxFPS != 0 || c.MaxWidth != 2560 {
+		t.Fatalf("config for a default fps viewer %+v", c)
+	}
+	a.close()
+	d.close()
+}
+
+func TestAttachRefusesMaxFPSOutOfRange(t *testing.T) {
+	r := newRig(t)
+	for _, fps := range []int{-1, 241} {
+		if _, err := r.hub.Attach(context.Background(), "pc", 0, PresetSharp, fps, human); apierr.CodeOf(err) != wire.CodeInvalidArgument {
+			t.Fatalf("max_fps %d: %v", fps, err)
+		}
 	}
 }

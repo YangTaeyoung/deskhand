@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/YangTaeyoung/deskhand/internal/daemon/apierr"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/screen"
 	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
@@ -22,6 +23,7 @@ type screenParams struct {
 	HostID  string `json:"host_id"`
 	Display int    `json:"display"`
 	Preset  string `json:"preset"`
+	MaxFPS  int    `json:"max_fps"`
 }
 
 // screenStream attaches a viewer of the session's client to a display of
@@ -38,12 +40,19 @@ func (s *Server) screenStream(ctx context.Context, sess *session, raw json.RawMe
 	if err != nil {
 		return nil, nil, err
 	}
-	v, err := s.d.Screens.Attach(ctx, row.HostID, p.Display, screen.Preset(p.Preset), sess.Caller())
+	if sess.Caller().Actor == model.ActorAI && !s.d.Hosts.AIScope(row.HostID).Screen {
+		return nil, nil, s.denied(sess, row.HostID, model.TimelineObserve, "stream.attach", scopeRefusal("화면 스트림을"))
+	}
+	v, err := s.d.Screens.Attach(ctx, row.HostID, p.Display, screen.Preset(p.Preset), p.MaxFPS, sess.Caller())
 	if err != nil {
 		if apierr.CodeOf(err) == wire.CodeInvalidArgument {
 			return nil, nil, &paramError{e: apierr.As(err)}
 		}
 		return nil, nil, err
 	}
-	return map[string]any{"host_id": row.HostID, "display": p.Display, "preset": string(v.Preset())}, v.Run, nil
+	if sess.Caller().Actor == model.ActorAI && !s.d.Hosts.AIScope(row.HostID).Screen {
+		v.Close()
+		return nil, nil, s.denied(sess, row.HostID, model.TimelineObserve, "stream.attach", scopeRefusal("화면 스트림을"))
+	}
+	return map[string]any{"host_id": row.HostID, "display": p.Display, "preset": string(v.Preset()), "max_fps": p.MaxFPS}, v.Run, nil
 }

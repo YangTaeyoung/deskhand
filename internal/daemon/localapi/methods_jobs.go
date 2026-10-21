@@ -27,7 +27,7 @@ type jobsListParams struct {
 	Limit  int    `json:"limit"`
 }
 
-func (s *Server) jobsList(_ context.Context, _ *session, raw json.RawMessage) (any, error) {
+func (s *Server) jobsList(_ context.Context, sess *session, raw json.RawMessage) (any, error) {
 	var p jobsListParams
 	if err := decode(raw, &p); err != nil {
 		return nil, err
@@ -41,6 +41,15 @@ func (s *Server) jobsList(_ context.Context, _ *session, raw json.RawMessage) (a
 	list, err := s.d.Jobs.List(store.JobFilter{HostID: hostID, Kind: p.Kind, Status: p.Status, Limit: p.Limit})
 	if err != nil {
 		return nil, apierr.Internal("job 목록을 읽지 못했습니다. 데몬 로그를 확인하세요")
+	}
+	if sess.Caller().Actor == model.ActorAI {
+		allowed := list[:0:0]
+		for _, j := range list {
+			if s.aiJobAllowed(j) {
+				allowed = append(allowed, j)
+			}
+		}
+		list = allowed
 	}
 	return map[string]any{"jobs": list}, nil
 }

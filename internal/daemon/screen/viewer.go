@@ -41,6 +41,7 @@ type Viewer struct {
 	hostID  string
 	caller  model.Caller
 	initial Preset
+	maxFPS  int
 	q       *queue
 
 	// f, preset, needKey and stale are guarded by f.mu once the viewer
@@ -138,6 +139,10 @@ func (v *Viewer) read(rw io.Reader) {
 		}
 	}
 }
+
+// Close ends the viewer; Run, called or not yet called, then closes its
+// connection and takes it off its display.
+func (v *Viewer) Close() { v.end() }
 
 // end closes the viewer's queue and connection.
 func (v *Viewer) end() {

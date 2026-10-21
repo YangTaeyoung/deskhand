@@ -103,12 +103,29 @@ const (
 	PresetSaver    Preset = "saver"
 )
 
-// quality is what a preset asks of the agent's video stream: max_width
-// (0 for the display's width) and the bitrate in bps.
+// quality is what the viewers ask of the agent's video stream: max_width
+// (0 for the display's width), the bitrate in bps and max_fps (0 for the
+// agent's default).
 type quality struct {
 	rank     int
 	maxWidth int
 	bitrate  int
+	maxFPS   int
+}
+
+// Frame rate bounds of protocol.md §2 (video max_fps); 0 is the agent's
+// default of defaultFPS.
+const (
+	maxFPSLimit = 240
+	defaultFPS  = 60
+)
+
+// CheckMaxFPS reports whether fps is a max_fps a viewer may ask for.
+func CheckMaxFPS(fps int) error {
+	if fps < 0 || fps > maxFPSLimit {
+		return apierr.Invalid(fmt.Sprintf("max_fps %d는 쓸 수 없습니다. max_fps는 1–%d 사이로 주거나, 기본값을 쓰려면 생략하세요", fps, maxFPSLimit))
+	}
+	return nil
 }
 
 var qualities = map[Preset]quality{
@@ -232,12 +249,16 @@ func (h *Hub) agent(hostID string) Agent {
 // errClosed refuses attaches after Close.
 var errClosed = apierr.New(wire.CodeInternal, "Deskhand 데몬이 끝나는 중입니다. 데몬을 다시 시작한 뒤 다시 붙으세요", true, apierr.NextRetry)
 
-// Attach attaches a viewer of client c to display of hostID at preset:
+// Attach attaches a viewer of client c to display of hostID at preset and
+// maxFPS (0 for the default):
 // the display's agent stream is opened for the first viewer and shared
 // by the others. The viewer runs once Run is given its connection.
-func (h *Hub) Attach(ctx context.Context, hostID string, display int, preset Preset, c model.Caller) (*Viewer, error) {
+func (h *Hub) Attach(ctx context.Context, hostID string, display int, preset Preset, maxFPS int, c model.Caller) (*Viewer, error) {
 	p, err := ParsePreset(string(preset))
 	if err != nil {
+		return nil, err
+	}
+	if err := CheckMaxFPS(maxFPS); err != nil {
 		return nil, err
 	}
 	if display < 0 {
@@ -247,6 +268,7 @@ func (h *Hub) Attach(ctx context.Context, hostID string, display int, preset Pre
 		return nil, apierr.NotFound(fmt.Sprintf("PC %s가 등록돼 있지 않습니다. host.list로 PC를 확인하세요", hostID))
 	}
 	v := newViewer(h, hostID, c, p)
+	v.maxFPS = maxFPS
 	key := feedKey{hostID: hostID, display: display}
 	for {
 		f, err := h.feedFor(key)
@@ -418,4 +440,17 @@ func (h *Hub) hostViewers(hostID string) []*Viewer {
 		f.mu.Unlock()
 	}
 	return out
+}
+
+// CloseAIViewers ends the viewers of AI clients on hostID; each viewer's
+// connection closes.
+func (h *Hub) CloseAIViewers(hostID string) int {
+	n := 0
+	for _, v := range h.hostViewers(hostID) {
+		if v.caller.Actor == model.ActorAI {
+			v.end()
+			n++
+		}
+	}
+	return n
 }

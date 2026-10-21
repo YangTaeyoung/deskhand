@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/YangTaeyoung/deskhand/internal/daemon/apierr"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/conn"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/hosts"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
+	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
 // installTimeout bounds host.add and host.repair.
@@ -16,6 +18,7 @@ const installTimeout = 10 * time.Minute
 func (s *Server) registerHosts() {
 	s.methods["host.list"] = s.hostList
 	s.methods["host.add"] = s.hostAdd
+	s.methods["host.update"] = s.hostUpdate
 	s.methods["host.remove"] = s.hostRemove
 	s.methods["host.connect"] = s.hostConnect
 	s.methods["host.disconnect"] = s.hostDisconnect
@@ -171,4 +174,46 @@ func (s *Server) sessionInspect(ctx context.Context, _ *session, raw json.RawMes
 		return nil, err
 	}
 	return s.d.Hosts.Inspect(ctx, p.HostID)
+}
+
+type updateParams struct {
+	HostID   string               `json:"host_id"`
+	Name     *string              `json:"name"`
+	Address  *string              `json:"address"`
+	Port     *int                 `json:"port"`
+	SSHAlias *string              `json:"ssh_alias"`
+	SSH      *string              `json:"ssh"`
+	AIScope  *model.AIScopeUpdate `json:"ai_scope"`
+}
+
+func (s *Server) hostUpdate(_ context.Context, sess *session, raw json.RawMessage) (any, error) {
+	var p updateParams
+	if err := decode(raw, &p); err != nil {
+		return nil, err
+	}
+	if err := hostRequired(p.HostID); err != nil {
+		return nil, &paramError{e: apierr.As(err)}
+	}
+	if sess.Caller().Actor == model.ActorAI {
+		return nil, apierr.New(wire.CodePermissionDenied,
+			"AI 클라이언트는 PC 설정과 AI 범위를 바꿀 수 없습니다. Deskhand 앱이나 deskhand CLI에서 사람이 바꿔야 합니다", false, "")
+	}
+	if p.SSH != nil && (p.SSHAlias != nil && *p.SSHAlias != *p.SSH) {
+		return nil, &paramError{e: apierr.Invalid("ssh와 ssh_alias가 서로 다릅니다. 하나만 주세요")}
+	}
+	if p.SSHAlias == nil {
+		p.SSHAlias = p.SSH
+	}
+	h, err := s.d.Hosts.Update(p.HostID, hosts.UpdateParams{Name: p.Name, Address: p.Address, Port: p.Port,
+		SSHAlias: p.SSHAlias, AIScope: p.AIScope}, sess.Caller())
+	if err != nil {
+		if apierr.CodeOf(err) == wire.CodeInvalidArgument {
+			return nil, &paramError{e: apierr.As(err)}
+		}
+		return nil, err
+	}
+	if p.AIScope != nil && !h.AIScope.Screen && s.d.Screens != nil {
+		s.d.Screens.CloseAIViewers(h.HostID)
+	}
+	return h, nil
 }

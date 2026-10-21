@@ -83,6 +83,7 @@ type Host struct {
 	Displays             []any                 `json:"displays"`
 	Owner                string                `json:"owner"`
 	OwnerClient          string                `json:"owner_client,omitempty"`
+	AIScope              AIScope               `json:"ai_scope"`
 	AgentVersion         string                `json:"agent_version,omitempty"`
 	ConnectionGeneration uint64                `json:"connection_generation"`
 	LastSeen             string                `json:"last_seen,omitempty"`

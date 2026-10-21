@@ -597,9 +597,22 @@ func (r *rig) attach(display int, p Preset, who model.Caller) *viewerClient {
 // attachSlow attaches a viewer that reads nothing until startReading.
 func (r *rig) attachSlow(display int, p Preset, who model.Caller) *viewerClient {
 	r.t.Helper()
+	return r.attachSlowFPS(display, p, 0, who)
+}
+
+// attachFPS attaches a viewer that asks for maxFPS.
+func (r *rig) attachFPS(display int, p Preset, maxFPS int, who model.Caller) *viewerClient {
+	r.t.Helper()
+	c := r.attachSlowFPS(display, p, maxFPS, who)
+	c.startReading()
+	return c
+}
+
+func (r *rig) attachSlowFPS(display int, p Preset, maxFPS int, who model.Caller) *viewerClient {
+	r.t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	v, err := r.hub.Attach(ctx, "pc", display, p, who)
+	v, err := r.hub.Attach(ctx, "pc", display, p, maxFPS, who)
 	if err != nil {
 		r.t.Fatalf("attach display %d: %v", display, err)
 	}

@@ -60,7 +60,7 @@ func (s *Server) transferStart(ctx context.Context, sess *session, raw json.RawM
 	return s.envelope(row.HostID, res.JobID, res.Info, o, nil).Map(map[string]any{"transfer_id": res.Transfer.TransferID}), nil
 }
 
-func (s *Server) transferList(_ context.Context, _ *session, raw json.RawMessage) (any, error) {
+func (s *Server) transferList(_ context.Context, sess *session, raw json.RawMessage) (any, error) {
 	var p transferParams
 	if err := decode(raw, &p); err != nil {
 		return nil, err
@@ -76,6 +76,15 @@ func (s *Server) transferList(_ context.Context, _ *session, raw json.RawMessage
 	list, err := s.d.Transfers.List(hostID)
 	if err != nil {
 		return nil, err
+	}
+	if sess.Caller().Actor == model.ActorAI {
+		allowed := list[:0:0]
+		for _, t := range list {
+			if s.d.Hosts.AIScope(t.HostID).Files == model.FilesAll {
+				allowed = append(allowed, t)
+			}
+		}
+		list = allowed
 	}
 	return map[string]any{"transfers": list}, nil
 }

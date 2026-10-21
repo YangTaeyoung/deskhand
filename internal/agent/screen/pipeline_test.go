@@ -640,6 +640,38 @@ func TestReinitOnSizeChange(t *testing.T) {
 	}
 }
 
+func TestASwitchFromDuplicationToGDISendsInfoAndAKeyFrame(t *testing.T) {
+	frames := periodic(time.Second / 30)
+	p := func(s *fakeSource, now uint64, timeout time.Duration) (capture.Frame, error, time.Duration) {
+		f, err, wait := frames(s, now, timeout)
+		if err == nil && now >= 1_000_000 {
+			f.CPU = []byte{0, 0, 0, 0}
+			f.Texture = 0
+		}
+		return f, err, wait
+	}
+	hs := newHarness(p, 1920, 1080)
+	hs.run(t, wire.StreamHeader{S: "video"}, 2_000_000, nil)
+	got := hs.rec.all(false)
+	t.Logf("frames:%s", describe(t, got))
+	is := infos(t, got)
+	if len(is) != 2 || is[0].Capture != capture.MethodDD || is[1].Capture != capture.MethodGDI || is[1].Width != 1920 {
+		t.Fatalf("infos %+v, want dd and then gdi", is)
+	}
+	var after []wire.AU
+	for _, au := range hs.rec.aus(t) {
+		if au.CaptureMonoUS >= 1_000_000 {
+			after = append(after, au)
+		}
+	}
+	if len(after) < 20 || !after[0].Key || !after[0].HasConfig {
+		t.Fatalf("%d access units after the switch, the first %+v", len(after), after)
+	}
+	if encs := hs.encs.list(); len(encs) != 1 {
+		t.Fatalf("%d encoders, want the one of the same size to go on", len(encs))
+	}
+}
+
 func TestASwitchFromGDIToDuplicationSendsInfoAndAKeyFrame(t *testing.T) {
 	frames := periodic(time.Second / 30)
 	switched := false

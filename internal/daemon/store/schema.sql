@@ -8,7 +8,8 @@ CREATE TABLE IF NOT EXISTS hosts (
 	arch       TEXT NOT NULL DEFAULT '',
 	ssh_alias  TEXT NOT NULL DEFAULT '',
 	created_at TEXT NOT NULL,
-	last_seen  TEXT NOT NULL DEFAULT ''
+	last_seen  TEXT NOT NULL DEFAULT '',
+	ai_scope   TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS jobs (

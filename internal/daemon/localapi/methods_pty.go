@@ -53,10 +53,17 @@ func (s *Server) ptyOpen(_ context.Context, sess *session, raw json.RawMessage) 
 
 // ptyStream attaches a stream to the pty that pty_id or job_id names; the
 // result carries the job id, the shell's pid and the host.
-func (s *Server) ptyStream(ctx context.Context, _ *session, raw json.RawMessage) (any, func(io.ReadWriteCloser), error) {
+func (s *Server) ptyStream(ctx context.Context, sess *session, raw json.RawMessage) (any, func(io.ReadWriteCloser), error) {
 	var ref pty.Ref
 	if err := decode(raw, &ref); err != nil {
 		return nil, nil, err
+	}
+	if sess.Caller().Actor == model.ActorAI {
+		if hostID, err := s.d.PTYs.HostOf(ref); err == nil {
+			if err := s.checkPrivileged(sess, "stream.attach", hostID); err != nil {
+				return nil, nil, err
+			}
+		}
 	}
 	relay, err := s.d.PTYs.Attach(ctx, ref)
 	if err != nil {

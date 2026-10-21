@@ -90,7 +90,7 @@ func TestFirstImageOfEachDuplicationIsTheDesktop(t *testing.T) {
 	reference := 0.0
 	for i := range 6 {
 		src := openOrSkip(t, 0)
-		if _, ok := src.(*ddSource); !ok {
+		if _, ok := served(src).(*ddSource); !ok {
 			src.Close()
 			t.Skipf("the source is %T, not Desktop Duplication", src)
 		}
@@ -99,7 +99,7 @@ func TestFirstImageOfEachDuplicationIsTheDesktop(t *testing.T) {
 		share := litShare(t, src.Device(), f)
 		t.Logf("duplication %d: first image after %v, %.4f lit", i, time.Since(start), share)
 		if i == 0 {
-			g, err := openGDI(nil, src.(*ddSource).disp, 1)
+			g, err := openGDI(nil, served(src).(*ddSource).disp, 1)
 			if err != nil {
 				t.Fatalf("openGDI: %v", err)
 			}
@@ -134,7 +134,7 @@ func TestGDIImageFillsTheDuplicationTexture(t *testing.T) {
 	defer runtime.UnlockOSThread()
 	src := openOrSkip(t, 0)
 	defer src.Close()
-	s, ok := src.(*ddSource)
+	s, ok := served(src).(*ddSource)
 	if !ok {
 		t.Skipf("the source is %T, not Desktop Duplication", src)
 	}
@@ -188,10 +188,16 @@ func TestNextNoNewFrameOnStaticScreen(t *testing.T) {
 
 // served is the source that src serves frames from now.
 func served(src Source) Source {
-	if s, ok := src.(*switchSource); ok {
-		return s.cur
+	for {
+		switch s := src.(type) {
+		case *switchSource:
+			src = s.cur
+		case *stallSource:
+			src = s.cur
+		default:
+			return src
+		}
 	}
-	return src
 }
 
 func TestSecondOpenOfADisplayServesGDIUntilTheFirstCloses(t *testing.T) {
@@ -204,7 +210,7 @@ func TestSecondOpenOfADisplayServesGDIUntilTheFirstCloses(t *testing.T) {
 			first.Close()
 		}
 	}()
-	if _, ok := first.(*ddSource); !ok {
+	if _, ok := served(first).(*ddSource); !ok {
 		t.Skipf("the first source is %T, not Desktop Duplication", first)
 	}
 	start := time.Now()
@@ -278,7 +284,7 @@ func TestOpenGetsDuplicationWhenTheOtherSourceClosesWithinTheRetries(t *testing.
 	if first == nil {
 		t.Skip("display 0 cannot be opened now")
 	}
-	if _, ok := first.(*ddSource); !ok {
+	if _, ok := served(first).(*ddSource); !ok {
 		close(release)
 		<-done
 		t.Skipf("the first source is %T, not Desktop Duplication", first)
@@ -290,7 +296,7 @@ func TestOpenGetsDuplicationWhenTheOtherSourceClosesWithinTheRetries(t *testing.
 	<-done
 	took := time.Since(start)
 	t.Logf("Open gave %T after %v", second, took)
-	if _, ok := second.(*ddSource); !ok || took > time.Second {
+	if _, ok := served(second).(*ddSource); !ok || took > time.Second {
 		t.Fatalf("Open while another source of the display closed within 300 ms gave %T after %v", second, took)
 	}
 	firstImage(t, second)
@@ -434,7 +440,7 @@ func TestGDIFrameStaysWhileNoNewFrameComes(t *testing.T) {
 	first := openOrSkip(t, index)
 	defer first.Close()
 	src := Source(first)
-	if _, ok := first.(*ddSource); ok {
+	if _, ok := served(first).(*ddSource); ok {
 		src = openOrSkip(t, index)
 		defer src.Close()
 	}
@@ -451,5 +457,28 @@ func TestGDIFrameStaysWhileNoNewFrameComes(t *testing.T) {
 		if !bytes.Equal(f.CPU, kept) {
 			t.Fatal("the pixels of the latest frame changed while Next returned ErrNoNewFrame")
 		}
+	}
+}
+
+func TestOpenGuardsDuplicationAndKeepsItOnAHealthyScreen(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	src := openOrSkip(t, 0)
+	defer src.Close()
+	g, ok := src.(*stallSource)
+	if !ok {
+		t.Skipf("Open gave %T, not a guarded duplication", src)
+	}
+	end := time.Now().Add(stallAfter + 2*stallProbeEvery)
+	for time.Now().Before(end) {
+		if _, err := src.Next(context.Background(), 50*time.Millisecond); err != nil && !errors.Is(err, ErrNoNewFrame) && !errors.Is(err, ErrReset) {
+			t.Fatalf("Next: %v", err)
+		}
+	}
+	if g.stalled {
+		t.Fatalf("a duplication of a screen without changes counts as stalled; serving %T", g.cur)
+	}
+	if _, ok := g.cur.(*ddSource); !ok {
+		t.Fatalf("serving %T", g.cur)
 	}
 }

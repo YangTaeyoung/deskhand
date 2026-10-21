@@ -28,7 +28,8 @@ const probeTTL = 5 * time.Second
 var openMu sync.Mutex
 
 // Open opens a source of the display with index displayIndex of
-// display.List on a device of its own: Desktop Duplication, or GDI when
+// display.List on a device of its own: Desktop Duplication, which switches
+// to GDI for good once it presents no image while the screen changes, or GDI when
 // duplication is refused, unsupported or already open for the display in
 // this process, or when the display is rotated. While DuplicateOutput
 // fails with E_INVALIDARG it tries again every dupRetryEvery for up to
@@ -66,8 +67,25 @@ func Open(displayIndex int) (Source, error) {
 	if g, ok := src.(*gdiSource); ok && passingRefusal(hr) {
 		return newSwitchSource(g, func() (Source, bool) { return duplicateAgain(dev, g.disp) }, ddRetryEvery, dev.Close), nil
 	}
+	if d, ok := src.(*ddSource); ok && d.gdiAllowed() {
+		return guarded(d, dev.Close), nil
+	}
 	ownDevice(src)
 	return src, nil
+}
+
+// guarded serves the Desktop Duplication source dd and switches to GDI on
+// its device when the duplication stalls; done closes the device after the
+// source served last.
+func guarded(dd *ddSource, done func()) Source {
+	return newStallSource(dd, func() (Source, error) {
+		g, err := openGDI(dd.dev, dd.disp, 2)
+		if err != nil {
+			return nil, err
+		}
+		g.reg = register()
+		return g, nil
+	}, done)
 }
 
 // duplicateAgain makes a Desktop Duplication source of display d on dev,
@@ -81,7 +99,7 @@ func duplicateAgain(dev *d3d.Device, d display.Info) (Source, bool) {
 		return nil, false
 	}
 	dd.reg = register()
-	return dd, true
+	return guarded(dd, nil), true
 }
 
 // openOn opens a source of display d on dev, which the source closes with

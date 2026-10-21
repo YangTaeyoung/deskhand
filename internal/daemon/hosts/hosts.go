@@ -5,11 +5,13 @@ package hosts
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -60,6 +62,9 @@ type Registry struct {
 
 	// pairMu runs one pairing at a time.
 	pairMu sync.Mutex
+
+	// updateMu runs one host.update at a time.
+	updateMu sync.Mutex
 
 	mu   sync.Mutex
 	prev map[string]conn.ConnState
@@ -140,7 +145,7 @@ func (r *Registry) Model(row store.Host) model.Host {
 	cs := r.opt.Control(row.HostID)
 	m := model.Host{HostID: row.HostID, Name: row.Name, OS: row.OS, Arch: row.Arch, Address: row.Address, Port: row.Port,
 		SSHAlias: row.SSHAlias, State: string(conn.StateOffline), Caps: map[string]model.Capability{}, Displays: []any{},
-		Owner: cs.Owner, OwnerClient: cs.OwnerClient, LastSeen: model.Time(row.LastSeen)}
+		Owner: cs.Owner, OwnerClient: cs.OwnerClient, AIScope: r.AIScope(row.HostID), LastSeen: model.Time(row.LastSeen)}
 	h := r.opt.Manager.Get(row.HostID)
 	if h == nil {
 		return m
@@ -165,6 +170,152 @@ func (r *Registry) Model(row store.Host) model.Host {
 		m.Reason = apierr.As(err).Message
 	}
 	return m
+}
+
+// AIScope returns what an AI client may reach of the host: everything
+// while no scope is stored, nothing when the stored scope cannot be read.
+func (r *Registry) AIScope(hostID string) model.AIScope {
+	raw, err := r.opt.Store.HostAIScope(hostID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		r.opt.Logger.Printf("hosts: read the AI scope of %s: %v", hostID, err)
+		return model.AIScope{Files: model.FilesNone, WorkRoots: []string{}}
+	}
+	if raw == "" {
+		return model.UnrestrictedAIScope()
+	}
+	var s model.AIScope
+	if err := json.Unmarshal([]byte(raw), &s); err != nil {
+		r.opt.Logger.Printf("hosts: parse the AI scope of %s: %v", hostID, err)
+		return model.AIScope{Files: model.FilesNone, WorkRoots: []string{}}
+	}
+	if s.WorkRoots == nil {
+		s.WorkRoots = []string{}
+	}
+	return s
+}
+
+// AnyAIRestricted reports whether any host holds something back from AI
+// clients.
+func (r *Registry) AnyAIRestricted() bool {
+	rows, err := r.opt.Store.ListHosts()
+	if err != nil {
+		return true
+	}
+	for _, row := range rows {
+		if r.AIScope(row.HostID).Restricted() {
+			return true
+		}
+	}
+	return false
+}
+
+// UpdateParams are the parameters of host.update; a nil field stays as it
+// is.
+type UpdateParams struct {
+	Name     *string
+	Address  *string
+	Port     *int
+	SSHAlias *string
+	AIScope  *model.AIScopeUpdate
+}
+
+// Update changes the name, address, port, SSH alias and AI scope of a
+// stored host. A changed address or port reconnects a host that is
+// connecting or connected.
+func (r *Registry) Update(ref string, p UpdateParams, c model.Caller) (model.Host, error) {
+	if p.Name == nil && p.Address == nil && p.Port == nil && p.SSHAlias == nil && p.AIScope == nil {
+		return model.Host{}, apierr.Invalid("바꿀 값이 없습니다. name, address, port, ssh_alias, ai_scope 중 하나 이상을 주세요")
+	}
+	r.updateMu.Lock()
+	defer r.updateMu.Unlock()
+	row, err := r.Resolve(ref)
+	if err != nil {
+		return model.Host{}, err
+	}
+	next := row
+	var changed []string
+	if p.Name != nil {
+		next.Name = strings.TrimSpace(*p.Name)
+		if next.Name == "" {
+			return model.Host{}, apierr.Invalid("name이 비어 있습니다. PC 이름을 주세요")
+		}
+		if next.Name != row.Name {
+			if other, err := r.opt.Store.HostByName(next.Name); err == nil && other.HostID != row.HostID {
+				return model.Host{}, apierr.Invalid(fmt.Sprintf("'%s' 이름의 PC가 이미 등록돼 있습니다. 다른 이름을 주세요", next.Name))
+			}
+			changed = append(changed, "이름")
+		}
+	}
+	if p.Address != nil {
+		next.Address = strings.TrimSpace(*p.Address)
+		if next.Address == "" || strings.ContainsAny(next.Address, " \t/") {
+			return model.Host{}, apierr.Invalid("address가 올바르지 않습니다. PC의 IP 주소나 호스트 이름을 주세요")
+		}
+		if next.Address != row.Address {
+			changed = append(changed, "주소")
+		}
+	}
+	if p.Port != nil {
+		next.Port = *p.Port
+		if next.Port < 1 || next.Port > 65535 {
+			return model.Host{}, apierr.Invalid("port는 1~65535여야 합니다. 포트를 고쳐서 다시 실행하세요")
+		}
+		if next.Port != row.Port {
+			changed = append(changed, "포트")
+		}
+	}
+	if p.SSHAlias != nil {
+		next.SSHAlias = strings.TrimSpace(*p.SSHAlias)
+		if strings.ContainsAny(next.SSHAlias, " \t") {
+			return model.Host{}, apierr.Invalid("ssh_alias에는 공백을 쓸 수 없습니다. ~/.ssh/config의 호스트 별칭을 주세요")
+		}
+		if next.SSHAlias != row.SSHAlias {
+			changed = append(changed, "SSH 별칭")
+		}
+	}
+	scope := r.AIScope(row.HostID)
+	var scopeJSON string
+	if p.AIScope != nil {
+		ns, err := p.AIScope.Apply(scope)
+		if err != nil {
+			return model.Host{}, err
+		}
+		if !reflect.DeepEqual(ns, scope) {
+			changed = append(changed, "AI 범위")
+		}
+		scope = ns
+		b, err := json.Marshal(ns)
+		if err != nil {
+			return model.Host{}, apierr.Internal(fmt.Sprintf("AI 범위를 저장 형식으로 바꾸지 못했습니다(%v)", err))
+		}
+		scopeJSON = string(b)
+		if !ns.Restricted() {
+			scopeJSON = ""
+		}
+	}
+	if len(changed) == 0 {
+		return r.Model(row), nil
+	}
+	if err := r.opt.Store.UpdateHost(next); err != nil {
+		return model.Host{}, apierr.Internal(fmt.Sprintf("PC 설정을 저장하지 못했습니다(%v). 데몬 로그를 확인하세요", err))
+	}
+	if p.AIScope != nil {
+		if err := r.opt.Store.SetHostAIScope(row.HostID, scopeJSON); err != nil {
+			return model.Host{}, apierr.Internal(fmt.Sprintf("AI 범위를 저장하지 못했습니다(%v). 데몬 로그를 확인하세요", err))
+		}
+	}
+	if h := r.opt.Manager.Get(row.HostID); h != nil {
+		h.SetTarget(target(next))
+		if (next.Address != row.Address || next.Port != row.Port) && h.State() != conn.StateOffline {
+			h.Disconnect()
+			h.Connect()
+		}
+	}
+	m := r.Model(next)
+	summary := "PC 설정 변경: " + next.Name + " (" + strings.Join(changed, ", ") + ")"
+	_, _ = r.opt.Bus.Record(c.Entry(row.HostID, model.TimelineInstall, summary, model.TimelineOK, ""))
+	r.opt.Bus.Publish(row.HostID, "", events.HostUpdated, map[string]any{"host": m})
+	return m, nil
 }
 
 // List returns every host.

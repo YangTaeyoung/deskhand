@@ -383,6 +383,10 @@ func (s *session) dispatch(req request) {
 			fmt.Sprintf("이 데몬은 %s를 지원하지 않습니다. deskhand를 업데이트하거나 메서드 이름을 확인하세요", req.Method), false, "")))
 		return
 	}
+	if err := s.srv.checkScope(s, req.Method, req.Params); err != nil {
+		s.reply(req.ID, nil, rpcErr(codeServer, apierr.As(err)))
+		return
+	}
 	res, err := s.call(h, req)
 	if err != nil {
 		code := codeServer
