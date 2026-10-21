@@ -49,6 +49,15 @@ final class ScreenStopNoticeTests: XCTestCase {
         XCTAssertTrue(ScreenStopNotice.isUnsupported(OperationError(code: "CAPABILITY_UNSUPPORTED", message: "화면 스트림은 아직 지원하지 않습니다")))
     }
 
+    /// The title names what failed; the body is the cause, then a remedy — the code's, or try
+    /// again and run the diagnosis for a code without one, which then also offers 진단.
+    func testAFailedAttachWithoutACodeRemedySaysToRetryThenDiagnose() {
+        let notice = ScreenStopNotice.failed(OperationError(code: "INTERNAL", message: "캡처 장치를 만들지 못했습니다 (DXGI_ERROR_UNSUPPORTED)"))
+        XCTAssertEqual(notice.title, "화면 스트림을 열지 못했습니다")
+        XCTAssertEqual(notice.message, "캡처 장치를 만들지 못했습니다 (DXGI_ERROR_UNSUPPORTED). 다시 시도하고, 계속되면 진단을 실행하세요.")
+        XCTAssertEqual(notice.actions, [.retry("다시 시도"), .diagnose])
+    }
+
     func testDisconnectedAndSuppressedSessionsOfferTheConsoleCommand() {
         let session = dev.session!.sessionID
         for reason in [PauseReason.sessionDisconnected, .rdpOutputSuppressed] {

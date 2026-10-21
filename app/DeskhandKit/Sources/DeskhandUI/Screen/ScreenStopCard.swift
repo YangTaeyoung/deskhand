@@ -107,14 +107,17 @@ struct ScreenStopNotice: Equatable {
             codeLabel: .ui("error.codeLabel", "오류 코드"), code: error.code ?? "DISPLAY_UNAVAILABLE")
     }
 
-    /// The notice for an attach that failed with `error`: the daemon's message and the fix as
-    /// sentences, and retry.
+    /// The notice for an attach that failed with `error`: the title names what failed, the body
+    /// is the daemon's message (the cause) and the code's remedy as sentences, and retry. A code
+    /// without a remedy says to try again and run the diagnosis, and offers 진단.
     static func failed(_ error: OperationError) -> ScreenStopNotice {
-        ScreenStopNotice(
+        let retry = Action.retry(.ui("screen.stop.retry", "다시 시도"))
+        let fix = error.fix ?? .ui("screen.failed.fix", "다시 시도하고, 계속되면 진단을 실행하세요.")
+        return ScreenStopNotice(
             symbol: "exclamationmark.octagon", symbolTint: DS.Color.danger,
             title: .ui("screen.failed.title", "화면 스트림을 열지 못했습니다"),
-            message: error.sentences,
-            actions: [.retry(.ui("screen.stop.retry", "다시 시도"))],
+            message: String.sentences(error.message, fix),
+            actions: error.fix == nil ? [retry, .diagnose] : [retry],
             codeLabel: .ui("error.codeLabel", "오류 코드"), code: error.code ?? "INTERNAL")
     }
 

@@ -16658,6 +16658,17 @@
         }
       }
     },
+    "screen.failed.fix": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 시도하고, 계속되면 진단을 실행하세요."
+          }
+        }
+      }
+    },
     "screen.failed.title": {
       "comment": "Remote screen UI text",
       "extractionState": "manual",

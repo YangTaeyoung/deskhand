@@ -100,7 +100,7 @@ enum ScreenScenes {
                 selected: PreviewFixtures.qaLaptopID,
                 screens: [PreviewFixtures.qaLaptopID: standIn(
                     host(PreviewFixtures.qaLaptopID), phase: .failed(OperationError(
-                        code: "INTERNAL", message: "화면 스트림을 준비하지 못했습니다. 데몬 로그를 확인하세요")),
+                        code: "INTERNAL", message: "캡처 장치를 만들지 못했습니다 (DXGI_ERROR_UNSUPPORTED)")),
                     hasFrame: false)])),
             WorkspaceScenes.scene("screen-mac-input", Setup(selected: dev, controls: [dev: human],
                                                             screens: [dev: standIn(host(dev), captured: true, markedText: "한")])),
