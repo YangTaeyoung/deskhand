@@ -240,7 +240,7 @@ final class GatedBackend: Backend, LocalOverlayProviding {
         return FileEntryPage(entries: all.entries, total: all.entries.count)
     }
 
-    func filesStat(hostID: String, path: String) async throws -> FileEntry { try await base.filesStat(hostID: hostID, path: path) }
+    func filesStat(hostID: String, path: String) async throws -> FileStat { try await base.filesStat(hostID: hostID, path: path) }
 
     func filesMkdir(hostID: String, path: String) async throws {
         record(FileCall(method: "files.mkdir", path: path))

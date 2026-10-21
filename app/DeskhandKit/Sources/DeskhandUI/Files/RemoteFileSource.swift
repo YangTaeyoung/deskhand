@@ -16,7 +16,7 @@ public struct RemoteFileSource: FileListingSource {
 
     public func list(path: String, cursor: String?, limit: Int) async throws -> FileListPage {
         let page = try await backend.filesList(hostID: hostID, path: path, cursor: cursor, limit: limit)
-        return FileListPage(items: page.entries.map { FileItem(entry: $0, style: style) },
+        return FileListPage(items: page.entries.map { FileItem(entry: $0, style: style) }, path: page.path,
                             nextCursor: page.nextCursor, total: page.total, truncated: page.truncated)
     }
 

@@ -300,7 +300,7 @@ public final class FilesModel {
             for candidate in candidates {
                 if listed {
                     if let item = remote.item(named: candidate.name) { found[candidate.destination] = item }
-                } else if let entry = try? await backend.filesStat(hostID: hostID, path: candidate.destination) {
+                } else if let stat = try? await backend.filesStat(hostID: hostID, path: candidate.destination), let entry = stat.entry {
                     found[candidate.destination] = FileItem(entry: entry, style: remote.style)
                 }
             }
@@ -531,11 +531,18 @@ public final class FilesModel {
         guard side == .remote else { return }
         Task {
             do {
-                let entry = try await backend.filesStat(hostID: hostID, path: item.path)
+                let stat = try await backend.filesStat(hostID: hostID, path: item.path)
                 guard info?.item.path == item.path else { return }
+                guard let entry = stat.entry else {
+                    info?.isLoading = false
+                    info?.missing = true
+                    return
+                }
                 var fresh = FileItem(entry: entry, style: remote.style)
                 fresh.name = item.name
-                info = FileInfoState(item: fresh, side: side, isLoading: false)
+                fresh.isHidden = item.isHidden
+                fresh.isReadOnly = item.isReadOnly
+                info = FileInfoState(item: fresh, side: side, isLoading: false, stat: stat)
             } catch {
                 guard info?.item.path == item.path else { return }
                 info?.isLoading = false

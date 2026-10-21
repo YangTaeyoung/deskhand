@@ -8324,6 +8324,28 @@
         }
       }
     },
+    "info.locked": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다른 프로그램이 사용 중"
+          }
+        }
+      }
+    },
+    "info.missing": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 PC에 이 항목이 더 이상 없습니다. 아래는 목록에 있던 정보입니다."
+          }
+        }
+      }
+    },
     "info.modified": {
       "extractionState": "manual",
       "localizations": {
@@ -8342,6 +8364,39 @@
           "stringUnit": {
             "state": "translated",
             "value": "없음"
+          }
+        }
+      }
+    },
+    "info.owner": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "소유자"
+          }
+        }
+      }
+    },
+    "info.owner.administrators": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Administrators 그룹"
+          }
+        }
+      }
+    },
+    "info.owner.user": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인한 사용자"
           }
         }
       }

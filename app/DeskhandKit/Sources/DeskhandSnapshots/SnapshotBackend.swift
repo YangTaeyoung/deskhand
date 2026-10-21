@@ -89,7 +89,7 @@ final class SnapshotBackend: Backend {
         try await base.filesList(hostID: hostID, path: path, cursor: cursor, limit: limit)
     }
 
-    func filesStat(hostID: String, path: String) async throws -> FileEntry { try await base.filesStat(hostID: hostID, path: path) }
+    func filesStat(hostID: String, path: String) async throws -> FileStat { try await base.filesStat(hostID: hostID, path: path) }
     func filesMkdir(hostID: String, path: String) async throws {}
     func filesRename(hostID: String, from: String, to: String) async throws {}
     func filesTrash(hostID: String, path: String) async throws {}

@@ -3,6 +3,8 @@ import Foundation
 /// One page of a folder listing.
 public struct FileListPage: Sendable, Equatable {
     public var items: [FileItem]
+    /// The folder as its file system spells it, when the source reports it.
+    public var path: String?
     /// Cursor of the next page; nil when this page ends the folder.
     public var nextCursor: String?
     /// Items in the folder, when the source knows it.
@@ -10,8 +12,9 @@ public struct FileListPage: Sendable, Equatable {
     /// The source stopped listing before the end of the folder.
     public var truncated: Bool
 
-    public init(items: [FileItem], nextCursor: String? = nil, total: Int? = nil, truncated: Bool = false) {
+    public init(items: [FileItem], path: String? = nil, nextCursor: String? = nil, total: Int? = nil, truncated: Bool = false) {
         self.items = items
+        self.path = path
         self.nextCursor = nextCursor
         self.total = total
         self.truncated = truncated

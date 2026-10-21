@@ -271,8 +271,9 @@ private struct TransferIDParams: Encodable {
     let transferID: String
 }
 
-/// `{entries, next_cursor?, total?, truncated?}`.
+/// `{host_id, path, entries, total, next_cursor?, truncated, skipped?}`; `path` is the folder as the PC spells it.
 private struct FileListResult: Decodable {
+    let path: String?
     let entries: [FileEntry]
     let nextCursor: String?
     let total: Int?
@@ -302,11 +303,11 @@ extension LiveBackend {
     public func filesList(hostID: String, path: String, cursor: String?, limit: Int) async throws -> FileEntryPage {
         let result: FileListResult = try await client.call(
             "files.list", FileListParams(hostID: hostID, path: path, cursor: cursor, limit: min(max(limit, 1), 5000)))
-        return FileEntryPage(entries: result.entries, nextCursor: result.nextCursor, total: result.total,
+        return FileEntryPage(entries: result.entries, path: result.path, nextCursor: result.nextCursor, total: result.total,
                              truncated: result.truncated ?? false)
     }
 
-    public func filesStat(hostID: String, path: String) async throws -> FileEntry {
+    public func filesStat(hostID: String, path: String) async throws -> FileStat {
         try await client.call("files.stat", FilePathParams(hostID: hostID, path: path))
     }
 

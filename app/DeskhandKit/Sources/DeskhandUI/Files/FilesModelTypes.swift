@@ -93,6 +93,19 @@ public struct FileInfoState: Sendable, Equatable, Identifiable {
     public var side: FileSide
     public var isLoading: Bool
     public var error: OperationError?
+    /// `files.stat` of a remote item: its owner and whether another program holds it open.
+    public var stat: FileStat?
+    /// `files.stat` found nothing at the path.
+    public var missing = false
+
+    public init(item: FileItem, side: FileSide, isLoading: Bool, error: OperationError? = nil, stat: FileStat? = nil, missing: Bool = false) {
+        self.item = item
+        self.side = side
+        self.isLoading = isLoading
+        self.error = error
+        self.stat = stat
+        self.missing = missing
+    }
 
     public var id: String { item.path }
 }

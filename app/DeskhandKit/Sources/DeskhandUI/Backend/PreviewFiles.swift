@@ -282,22 +282,30 @@ extension PreviewBackend {
         return host
     }
 
+    /// Pages as the daemon does (local-api.md §8): folders first, then names without regard to
+    /// case; `total` on every page; the folder as the PC spells it.
     public func filesList(hostID: String, path: String, cursor: String?, limit: Int) async throws -> FileEntryPage {
         _ = try readyHost(hostID)
         await pause(fraction: 0.35)
-        let all = try files.tree(hostID) { try $0.list(path) }
+        let (listed, spelled) = try files.tree(hostID) { tree in (try tree.list(path), tree.entry(at: path)?.path) }
+        let all = listed.sorted { a, b in
+            a.dir != b.dir ? a.dir : a.name.localizedStandardCompare(b.name) == .orderedAscending
+        }
         let start = min(all.count, max(0, Int(cursor ?? "") ?? 0))
         let end = start + min(max(1, limit), all.count - start)
-        return FileEntryPage(entries: Array(all[start..<end]), nextCursor: end < all.count ? String(end) : nil, total: all.count)
+        return FileEntryPage(entries: Array(all[start..<end]), path: spelled ?? FilePath.normalized(path, style: .windows),
+                             nextCursor: end < all.count ? String(end) : nil, total: all.count)
     }
 
-    public func filesStat(hostID: String, path: String) async throws -> FileEntry {
+    /// `exists: false` for a missing path, as the daemon answers.
+    public func filesStat(hostID: String, path: String) async throws -> FileStat {
         _ = try readyHost(hostID)
-        guard let entry = files.tree(hostID, { $0.entry(at: path) }) else {
-            let name = FilePath.lastComponent(path, style: .windows)
-            throw RPCErrorInfo(message: "‘\(name)’ 항목이 없습니다", code: "NOT_FOUND")
+        let (entry, locked) = files.tree(hostID) { tree in (tree.entry(at: path), tree.locked.contains(PreviewFileStore.Tree.key(path))) }
+        guard let entry else {
+            return FileStat(exists: false, path: FilePath.normalized(path, style: .windows), name: FilePath.lastComponent(path, style: .windows))
         }
-        return entry
+        return FileStat(exists: true, path: entry.path, name: entry.name, dir: entry.dir, size: entry.size, link: entry.link, mtime: entry.mtime,
+                        owner: entry.path.lowercased().hasPrefix("c:\\windows") ? "system" : "user", locked: entry.dir ? nil : locked)
     }
 
     public func filesMkdir(hostID: String, path: String) async throws {

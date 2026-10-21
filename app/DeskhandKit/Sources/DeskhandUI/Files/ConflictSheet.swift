@@ -209,9 +209,18 @@ struct FileInfoSheet: View {
                 row(String.ui("info.location", "위치"), FilePath.parent(item.path, style: item.path.contains("\\") ? .windows : .posix) ?? item.path, mono: true)
                 row(String.ui("info.size", "크기"), item.size.map { "\(DS.Format.bytes($0)) (\(DS.Format.exactBytes($0)))" } ?? "—")
                 row(String.ui("info.modified", "수정한 날짜"), item.modified.map { DS.Format.fullDateTime($0) } ?? "—")
+                if let owner = state.stat?.owner {
+                    row(String.ui("info.owner", "소유자"), Self.ownerName(owner))
+                }
                 row(String.ui("info.attributes", "속성"), attributes(item))
             }
-            if let error = state.error {
+            if state.missing {
+                Label(String.ui("info.missing", "원격 PC에 이 항목이 더 이상 없습니다. 아래는 목록에 있던 정보입니다."),
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(DS.Font.caption)
+                    .foregroundStyle(DS.Status.warningText)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let error = state.error {
                 Label(String.ui("info.statFailed", "최신 정보를 읽지 못해 목록의 정보를 보여 줍니다: \(error.message)"),
                       systemImage: "exclamationmark.triangle.fill")
                     .font(DS.Font.caption)
@@ -231,11 +240,22 @@ struct FileInfoSheet: View {
         .frame(width: 460)
     }
 
+    /// The owner `files.stat` names: the signed-in user, the Administrators group, SYSTEM, or an SID.
+    static func ownerName(_ owner: String) -> String {
+        switch owner {
+        case "user": .ui("info.owner.user", "로그인한 사용자")
+        case "administrators": .ui("info.owner.administrators", "Administrators 그룹")
+        case "system": "SYSTEM"
+        default: owner
+        }
+    }
+
     private func attributes(_ item: FileItem) -> String {
         var parts: [String] = []
         if item.isReadOnly { parts.append(.ui("info.readOnly", "읽기 전용")) }
         if item.isHidden { parts.append(.ui("info.hidden", "숨김")) }
         if item.isLink { parts.append(.ui("info.link", "링크")) }
+        if state.stat?.locked == true { parts.append(.ui("info.locked", "다른 프로그램이 사용 중")) }
         return parts.isEmpty ? String.ui("info.none", "없음") : parts.joined(separator: " · ")
     }
 

@@ -91,9 +91,11 @@ public protocol ScreenBackend: Sendable {
 /// `files.*`, `app.launch` and `transfer.*` (local-api.md §3). Calls that change remote state
 /// throw `OperationError` when their envelope reports a failure or an unknown outcome.
 public protocol FilesBackend: Sendable {
-    /// One page of the folder at `path`: at most `limit` entries after `cursor`.
+    /// One page of the folder at `path`: at most `limit` entries after `cursor`. The daemon lists
+    /// the folder again for every page (local-api.md §8).
     func filesList(hostID: String, path: String, cursor: String?, limit: Int) async throws -> FileEntryPage
-    func filesStat(hostID: String, path: String) async throws -> FileEntry
+    /// What `path` leads to; a missing path is `exists: false`.
+    func filesStat(hostID: String, path: String) async throws -> FileStat
     func filesMkdir(hostID: String, path: String) async throws
     func filesRename(hostID: String, from: String, to: String) async throws
     /// Moves `path` to the remote computer's recycle bin.

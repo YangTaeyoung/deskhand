@@ -168,9 +168,9 @@ public final class FileBrowser {
 
     // MARK: Loading
 
-    /// Lists `target`. With `keepRows`, the open folder stays shown while it reloads, and as
-    /// many pages are fetched as were loaded before so the revealed rows and the selection
-    /// survive.
+    /// Lists `target`, then shows the folder as the source spells it. With `keepRows`, the open
+    /// folder stays shown while it reloads, and as many pages are fetched as were loaded before so
+    /// the revealed rows and the selection survive.
     private func load(_ target: String, keepRows: Bool = false) async {
         token += 1
         let current = token
@@ -192,7 +192,8 @@ public final class FileBrowser {
         }
         loadMoreError = nil
         do {
-            var page = try await source.list(path: target, cursor: nil, limit: Self.pageSize)
+            let first = try await source.list(path: target, cursor: nil, limit: Self.pageSize)
+            var page = first
             var collected = page.items
             if refreshing {
                 while collected.count < previousCount, let cursor = page.nextCursor {
@@ -205,7 +206,7 @@ public final class FileBrowser {
                 }
             }
             guard current == token else { return }
-            path = target
+            path = first.path.map { FilePath.normalized($0, style: style) } ?? target
             nextCursor = page.nextCursor
             total = page.total
             truncated = page.truncated
