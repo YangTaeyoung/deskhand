@@ -69,7 +69,7 @@ struct RunList: View {
                         .accessibilityHidden(true)
                     Text(String.ui("qa.list.reloadFailed", "목록을 새로 읽지 못했습니다"))
                         .font(DS.Font.caption.weight(.semibold))
-                        .help(error.message)
+                        .help(error.sentences)
                     Button(String.ui("action.retry", "다시 시도")) { Task { await model.load(scope) } }
                         .buttonStyle(.link)
                         .tint(DS.Status.accentText)
@@ -217,7 +217,7 @@ struct RunList: View {
                     VStack(spacing: DS.Space.xs) {
                         Text(String.ui("qa.list.moreFailed", "이전 실행을 불러오지 못했습니다"))
                             .font(DS.Font.caption.weight(.semibold))
-                        Text(error.message)
+                        Text(error.sentences)
                             .font(DS.Font.caption)
                             .foregroundStyle(DS.Status.neutralText)
                             .multilineTextAlignment(.center)

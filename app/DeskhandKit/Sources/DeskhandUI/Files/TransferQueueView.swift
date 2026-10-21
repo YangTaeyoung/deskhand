@@ -147,7 +147,7 @@ struct TransferQueueView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = queue.loadError, queue.visible.isEmpty {
             VStack {
-                ErrorBanner(message: String.ui("queue.loadFailed", "전송 목록을 불러오지 못했습니다"), fix: error.message, code: error.code) {
+                ErrorBanner(message: String.ui("queue.loadFailed", "전송 목록을 불러오지 못했습니다"), fix: error.sentences, code: error.code) {
                     Task { await queue.reload() }
                 }
                 .frame(maxWidth: 520)

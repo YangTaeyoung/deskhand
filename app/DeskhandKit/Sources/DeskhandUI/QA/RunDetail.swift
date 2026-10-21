@@ -368,7 +368,7 @@ private struct RunNotes: View {
             if let refreshError {
                 NoteStrip(symbol: "exclamationmark.arrow.circlepath", tint: DS.Color.warning,
                           title: String.ui("qa.note.refreshFailed", "실행 상태를 다시 읽지 못했습니다. 보이는 내용이 최신이 아닐 수 있습니다."),
-                          detail: refreshError.message, code: refreshError.code) {
+                          detail: refreshError.sentences, code: refreshError.code) {
                     Button(String.ui("action.retry", "다시 시도")) { Task { await model.refresh(run.runID) } }
                 }
             }
@@ -473,7 +473,7 @@ private struct ExportStrip: View {
             }
         case .failed(let error, let dir):
             NoteStrip(symbol: "exclamationmark.octagon.fill", tint: DS.Color.danger, title: title(error),
-                      detail: [error.message, fix(error)].compactMap { $0 }.joined(separator: "\n"), code: error.code) {
+                      detail: [error.message.asSentence, fix(error)].compactMap { $0 }.joined(separator: "\n"), code: error.code) {
                 if error.code == "HASH_MISMATCH" {
                     if let reportDir = run.reportDir {
                         Button(String.ui("qa.export.revealSource", "원본 폴더 보기")) { FinderReveal.reveal(path: reportDir) }
