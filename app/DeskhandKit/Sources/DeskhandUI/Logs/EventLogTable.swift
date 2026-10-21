@@ -31,6 +31,15 @@ extension EventLevel {
         case .information, .verbose: DS.Color.neutral
         }
     }
+
+    /// Text in the level's hue, legible on rows and tints.
+    var textColorNS: NSColor {
+        switch self {
+        case .critical, .error: DS.Status.dangerTextNS
+        case .warning: DS.Status.warningTextNS
+        case .information, .verbose: DS.Status.neutralTextNS
+        }
+    }
 }
 
 extension EventLogName {
@@ -355,7 +364,7 @@ private struct LevelChip: View {
     }
 
     private var background: AnyShapeStyle {
-        if isOn { return AnyShapeStyle(level.tint.opacity(0.12)) }
+        if isOn { return AnyShapeStyle(level.tint.opacity(DS.Status.badgeOpacity)) }
         return hovering ? AnyShapeStyle(DS.Color.neutral.opacity(0.12)) : AnyShapeStyle(.clear)
     }
 }
@@ -501,6 +510,7 @@ final class EventLevelCell: NSTableCellView {
     private let icon = NSImageView()
     private let label = NSTextField(labelWithString: "")
     private var tint: NSColor = .secondaryLabelColor
+    private var textTint: NSColor = .labelColor
     private var critical = false
 
     init() {
@@ -532,6 +542,7 @@ final class EventLevelCell: NSTableCellView {
         let level = event.eventLevel
         icon.image = NSImage(systemSymbolName: level?.symbol ?? "questionmark.circle", accessibilityDescription: nil)
         tint = level.map { NSColor($0.tint) } ?? .secondaryLabelColor
+        textTint = level?.textColorNS ?? .labelColor
         critical = level == .critical
         label.stringValue = level?.title ?? event.level
         label.font = .systemFont(ofSize: NSFont.systemFontSize, weight: critical ? .semibold : .regular)
@@ -545,7 +556,7 @@ final class EventLevelCell: NSTableCellView {
     private func recolor() {
         let emphasized = backgroundStyle == .emphasized
         icon.contentTintColor = emphasized ? .alternateSelectedControlTextColor : tint
-        label.textColor = emphasized ? .alternateSelectedControlTextColor : (critical ? tint : .labelColor)
+        label.textColor = emphasized ? .alternateSelectedControlTextColor : (critical ? textTint : .labelColor)
     }
 }
 

@@ -389,8 +389,8 @@ struct DeskhandTag: View {
     var body: some View {
         Text(String.ui("processes.tag.deskhand", "Deskhand가 시작함"))
             .font(.system(size: NSFont.smallSystemFontSize - 1, weight: .semibold))
-            .foregroundStyle(DS.Color.accent)
-            .padding(.horizontal, 6)
+            .foregroundStyle(DS.Status.accentText)
+            .padding(.horizontal, DS.Space.s)
             .frame(height: 16)
             .background(DS.Color.accent.opacity(0.14), in: Capsule())
             .help(String.ui("processes.tag.deskhand.help", "Deskhand가 이 PC에서 실행한 명령·앱·셸이거나 그 하위 프로세스입니다."))

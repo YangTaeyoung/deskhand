@@ -567,7 +567,7 @@ private struct FilePaneStatus: View {
                 Text(paging).lineLimit(1)
             } else if side == .local, browser.items.contains(where: \.isPreviewOnly) {
                 Text(String.ui("files.preview.note.short", "미리보기에서는 이 Mac에 쓰지 않습니다"))
-                    .foregroundStyle(DS.Color.warning)
+                    .foregroundStyle(DS.Status.warningText)
                     .lineLimit(1)
                     .help(String.ui("files.preview.note", "미리보기에서는 이 Mac에 쓰지 않습니다. 받은 항목은 앱을 닫으면 사라집니다."))
             } else if browser.truncated {

@@ -149,7 +149,7 @@ private struct ConflictSide: View {
                 if newer {
                     Text(String.ui("conflict.newer", "더 최근"))
                         .font(DS.Font.caption.weight(.semibold))
-                        .foregroundStyle(DS.Color.accent)
+                        .foregroundStyle(DS.Status.accentText)
                         .padding(.horizontal, 6)
                         .background(DS.Color.accent.opacity(0.12), in: Capsule())
                 }
@@ -215,7 +215,7 @@ struct FileInfoSheet: View {
                 Label(String.ui("info.statFailed", "최신 정보를 읽지 못해 목록의 정보를 보여 줍니다: \(error.message)"),
                       systemImage: "exclamationmark.triangle.fill")
                     .font(DS.Font.caption)
-                    .foregroundStyle(DS.Color.warning)
+                    .foregroundStyle(DS.Status.warningText)
             }
             HStack(spacing: DS.Space.s) {
                 Button(String.ui("files.menu.copyPath", "경로 복사"), action: copyPath)

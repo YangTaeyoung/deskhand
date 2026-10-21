@@ -232,15 +232,15 @@ struct SessionStateBadge: View {
     var body: some View {
         let title = Self.title(session)
         if session.isClosed {
-            badge(title, tint: DS.Color.neutral, symbol: nil)
+            badge(title, tint: DS.Color.neutral, text: DS.Status.neutralText, symbol: nil)
         } else if !session.pausedTargets.isEmpty {
-            badge(title, tint: DS.Color.warning, symbol: "pause.fill")
+            badge(title, tint: DS.Color.warning, text: DS.Status.warningText, symbol: "pause.fill")
         } else {
-            badge(title, tint: DS.Color.success, symbol: "circle.fill")
+            badge(title, tint: DS.Color.success, text: DS.Status.successText, symbol: "circle.fill")
         }
     }
 
-    private func badge(_ title: String, tint: Color, symbol: String?) -> some View {
+    private func badge(_ title: String, tint: Color, text: Color, symbol: String?) -> some View {
         HStack(spacing: DS.Space.xs) {
             if let symbol {
                 Image(systemName: symbol)
@@ -252,11 +252,11 @@ struct SessionStateBadge: View {
         }
         .help(title)
         .accessibilityLabel(title)
-        .foregroundStyle(tint == DS.Color.neutral ? AnyShapeStyle(.secondary) : AnyShapeStyle(tint))
+        .foregroundStyle(text)
         .padding(.horizontal, DS.Space.s)
         .frame(minWidth: Self.width)
         .frame(height: 16)
-        .background(tint.opacity(0.14), in: Capsule())
+        .background(tint.opacity(DS.Status.badgeOpacity), in: Capsule())
         .fixedSize()
     }
 }

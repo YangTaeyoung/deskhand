@@ -100,14 +100,14 @@ public struct ControlPill: View {
     private var foreground: AnyShapeStyle {
         switch look {
         case .notice: AnyShapeStyle(.primary)
-        case .owner: owner == .none ? AnyShapeStyle(.secondary) : AnyShapeStyle(.white)
+        case .owner: owner == .none ? AnyShapeStyle(DS.Status.neutralText) : AnyShapeStyle(DS.Color.onFill)
         }
     }
 
     private var background: AnyShapeStyle {
         switch look {
         case .notice: AnyShapeStyle(DS.Color.warning.opacity(0.18))
-        case .owner: owner == .none ? AnyShapeStyle(DS.Color.observe.opacity(0.14)) : AnyShapeStyle(owner.fill.gradient)
+        case .owner: owner == .none ? AnyShapeStyle(DS.Color.neutral.opacity(DS.Status.badgeOpacity)) : AnyShapeStyle(owner.fill)
         }
     }
 }

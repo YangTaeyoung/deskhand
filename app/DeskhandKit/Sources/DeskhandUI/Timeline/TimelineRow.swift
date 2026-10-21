@@ -164,6 +164,13 @@ struct OutcomeBadge: View {
             }
         }
 
+        var textColor: Color {
+            switch self {
+            case .failed, .denied: DS.Status.dangerText
+            case .unknown: DS.Status.warningText
+            }
+        }
+
         var help: String {
             switch self {
             case .failed: .ui("outcome.failed.help", "동작이 실행됐지만 실패했습니다")
@@ -178,9 +185,9 @@ struct OutcomeBadge: View {
     var body: some View {
         Text(outcome.title)
             .font(DS.Font.caption.weight(.semibold))
-            .foregroundStyle(outcome.tint)
+            .foregroundStyle(outcome.textColor)
             .padding(.horizontal, DS.Space.s)
-            .background(outcome.tint.opacity(0.14), in: Capsule())
+            .background(outcome.tint.opacity(DS.Status.badgeOpacity), in: Capsule())
             .fixedSize()
             .help(outcome.help)
     }

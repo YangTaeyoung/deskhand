@@ -258,7 +258,7 @@ struct TerminalStatusIcon: View {
         case .exited(let code):
             Image(systemName: code == 0 ? "checkmark.circle" : "xmark.circle")
                 .font(.system(size: 11))
-                .foregroundStyle(code == 0 ? AnyShapeStyle(.secondary) : AnyShapeStyle(DS.Color.warning))
+                .foregroundStyle(code == 0 ? AnyShapeStyle(.secondary) : AnyShapeStyle(DS.Status.warningText))
         case .failed:
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 11))

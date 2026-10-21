@@ -194,7 +194,7 @@ private struct LogFileStrip: View {
                 if let error = model.downloadErrors[path] {
                     Text(error.message)
                         .font(DS.Font.caption)
-                        .foregroundStyle(DS.Color.danger)
+                        .foregroundStyle(DS.Status.dangerText)
                 }
             }
             Spacer(minLength: DS.Space.s)

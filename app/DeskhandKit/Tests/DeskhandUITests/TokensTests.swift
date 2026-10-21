@@ -139,6 +139,7 @@ final class TokensTests: XCTestCase {
             ("success", DS.Status.successTextNS, .systemGreen), ("danger", DS.Status.dangerTextNS, .systemRed),
             ("warning", DS.Status.warningTextNS, .systemOrange), ("accent", DS.Status.accentTextNS, .systemIndigo),
             ("neutral", DS.Status.neutralTextNS, .systemGray), ("human", DS.Status.humanTextNS, .systemBlue),
+            ("ai", DS.Status.aiTextNS, .systemPurple),
         ]
         for name in [NSAppearance.Name.aqua, .darkAqua] {
             let appearance = try XCTUnwrap(NSAppearance(named: name))
@@ -147,7 +148,7 @@ final class TokensTests: XCTestCase {
                 appearance.performAsCurrentDrawingAppearance { resolved = color.usingColorSpace(.sRGB) ?? color }
                 let hues = label == "neutral" ? DS.Status.tintHues : [hue]
                 let backgrounds = DS.Status.backgrounds(in: appearance, hues: hues)
-                XCTAssertEqual(backgrounds.count, 3 * (3 + hues.count * 3 + DS.Status.neutralOpacities.count))
+                XCTAssertEqual(backgrounds.count, 3 * (3 + hues.count * 4 + DS.Status.neutralOpacities.count))
                 for (index, background) in backgrounds.enumerated() {
                     let ratio = DS.Terminal.contrast(resolved, background)
                     XCTAssertGreaterThanOrEqual(ratio, 4.5, "\(label) on background \(index) in \(name.rawValue): \(ratio)")
@@ -157,24 +158,28 @@ final class TokensTests: XCTestCase {
     }
 
     /// Draws each status text color on the window, the text background and the run list's
-    /// backdrop, bare and under its badge, box, hovered badge and neutral chip tints — the neutral
-    /// gray also under every other hue's box — in an offscreen sRGB window; the drawn pixels reach
-    /// 4.5:1. White on the selection fill of selected rows does too.
+    /// backdrop, bare and under its badge, box, band, hovered badge and neutral chip tints — the
+    /// neutral gray also under every other hue's box and band — in an offscreen sRGB window; the
+    /// drawn pixels reach 4.5:1. White on the selection, human and AI fills does too.
     @MainActor
     func testDrawnStatusTextReachesFourAndAHalfToOneOnItsDrawnBackgrounds() throws {
         let colors: [(String, Color, Color)] = [
             ("success", DS.Status.successText, DS.Color.success), ("danger", DS.Status.dangerText, DS.Color.danger),
             ("warning", DS.Status.warningText, DS.Color.warning), ("accent", DS.Status.accentText, DS.Color.accent),
             ("neutral", DS.Status.neutralText, DS.Color.neutral), ("human", DS.Status.humanText, DS.Color.human),
+            ("ai", DS.Status.aiText, DS.Color.ai),
         ]
+        let fills: [(String, Color)] = [("selection", DS.Status.selectionFill), ("human", DS.Color.humanFill), ("ai", DS.Color.aiFill)]
         let bases: [(String, Color, Color?)] = [("window", DS.Color.surface, nil), ("text", DS.Code.background, nil),
                                                 ("list", DS.Color.surface, DS.Status.listBackground)]
         let layers: [(String, (Color) -> [Color])] = [
             ("bare", { _ in [] }), ("badge", { [$0.opacity(DS.Status.badgeOpacity)] }), ("box", { [$0.opacity(DS.Status.boxOpacity)] }),
+            ("band", { [$0.opacity(DS.Status.bandOpacity)] }),
             ("hovered badge", { [DS.Color.neutral.opacity(0.08), $0.opacity(DS.Status.badgeOpacity)] }),
         ] + DS.Status.neutralOpacities.map { opacity in ("neutral \(opacity)", { _ in [DS.Color.neutral.opacity(opacity)] }) }
-            + [DS.Color.success, DS.Color.danger, DS.Color.warning, DS.Color.accent, DS.Color.human].map { tint in
-                ("box of another hue", { _ in [tint.opacity(DS.Status.boxOpacity)] })
+            + [DS.Color.success, DS.Color.danger, DS.Color.warning, DS.Color.accent, DS.Color.human, DS.Color.ai].flatMap { tint in
+                [("box of another hue", { _ in [tint.opacity(DS.Status.boxOpacity)] }),
+                 ("band of another hue", { _ in [tint.opacity(DS.Status.bandOpacity)] })]
             }
         let cell: CGFloat = 24
         let rows = bases.count * layers.count
@@ -192,29 +197,31 @@ final class TokensTests: XCTestCase {
                             }
                             .frame(width: cell, height: cell)
                         }
-                        ZStack {
-                            DS.Status.selectionFill
-                            Rectangle().fill(DS.Color.onFill).frame(width: cell / 2, height: cell / 2)
+                        ForEach(Array(fills.enumerated()), id: \.offset) { _, fill in
+                            ZStack {
+                                fill.1
+                                Rectangle().fill(DS.Color.onFill).frame(width: cell / 2, height: cell / 2)
+                            }
+                            .frame(width: cell, height: cell)
                         }
-                        .frame(width: cell, height: cell)
                     }
                 }
             }
         }
-        let size = CGSize(width: cell * CGFloat(colors.count + 1), height: cell * CGFloat(rows))
+        let size = CGSize(width: cell * CGFloat(colors.count + fills.count), height: cell * CGFloat(rows))
         for name in [NSAppearance.Name.aqua, .darkAqua] {
             let bitmap = try Self.draw(swatches, size: size, appearance: name)
             let scale = CGFloat(bitmap.pixelsWide) / size.width
             for row in 0..<rows {
-                for column in 0...colors.count {
+                for column in 0..<(colors.count + fills.count) {
                     let origin = CGPoint(x: CGFloat(column) * cell * scale, y: CGFloat(row) * cell * scale)
                     let swatch = Self.pixel(bitmap, x: Int(origin.x + cell * scale / 2), y: Int(origin.y + cell * scale / 2))
                     let ground = Self.pixel(bitmap, x: Int(origin.x + 2), y: Int(origin.y + 2))
                     let ratio = DS.Terminal.contrast(swatch, ground)
-                    let label = column == colors.count ? "white on the selection fill" : colors[column].0
+                    let label = column >= colors.count ? "white on the \(fills[column - colors.count].0) fill" : colors[column].0
                     let base = bases[row / layers.count].0
                     let layer = layers[row % layers.count].0
-                    if layer == "box of another hue", label != "neutral" { continue }
+                    if layer.hasSuffix("of another hue"), label != "neutral" { continue }
                     XCTAssertGreaterThanOrEqual(ratio, 4.5, "\(label) on \(layer) over \(base) in \(name.rawValue): \(ratio)")
                 }
             }

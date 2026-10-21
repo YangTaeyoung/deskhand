@@ -142,7 +142,7 @@ public struct LaunchSheet: View {
                         if !looksExecutable {
                             Label(String.ui("debugger.launch.notExe", "Windows 실행 파일(.exe) 경로가 아닙니다."), systemImage: "exclamationmark.triangle.fill")
                                 .font(DS.Font.caption)
-                                .foregroundStyle(DS.Color.warning)
+                                .foregroundStyle(DS.Status.warningText)
                         }
                     }
                 }

@@ -232,7 +232,7 @@ public struct BreakpointSheet: View {
             Label(String.ui("debugger.breakpoint.sheet.badRegex", "이 정규식은 이 Mac에서 읽을 수 없습니다. 추가하면 데몬이 대상에서 확인합니다."),
                   systemImage: "exclamationmark.triangle.fill")
                 .font(DS.Font.caption)
-                .foregroundStyle(DS.Color.warning)
+                .foregroundStyle(DS.Status.warningText)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }

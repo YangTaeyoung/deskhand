@@ -192,7 +192,7 @@ struct DoctorSummary: View {
             if counts[.fail] == nil && counts[.warn] == nil {
                 Label(String.ui("doctor.allPassed", "모든 항목을 통과했습니다"), systemImage: DoctorStatus.pass.symbol)
                     .font(DS.Font.headline)
-                    .foregroundStyle(DS.Color.success)
+                    .foregroundStyle(DS.Status.successText)
             }
             ForEach([DoctorStatus.fail, .warn, .pass, .skip], id: \.self) { status in
                 if let count = counts[status] {

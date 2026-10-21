@@ -284,7 +284,7 @@ struct BannerBand<Actions: View>: View {
                 .lineLimit(2)
             Text(message)
                 .font(DS.Font.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(isSolid ? DS.Color.onFill : DS.Status.secondaryOnTint)
                 .lineLimit(2)
                 .help(message)
         }
@@ -331,7 +331,7 @@ struct BannerBand<Actions: View>: View {
     private var background: some ShapeStyle {
         switch style {
         case .solid(let color): AnyShapeStyle(color)
-        case .tinted(let color): AnyShapeStyle(color.opacity(0.1))
+        case .tinted(let color): AnyShapeStyle(color.opacity(DS.Status.bandOpacity))
         }
     }
 

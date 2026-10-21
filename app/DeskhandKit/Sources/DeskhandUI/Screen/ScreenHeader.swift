@@ -218,22 +218,22 @@ private struct InputStatus: View {
         if captured {
             HStack(spacing: DS.Space.s) {
                 Label(String.ui("screen.input.captured", "입력 중"), systemImage: "keyboard.fill")
-                    .foregroundStyle(DS.Color.human)
+                    .foregroundStyle(DS.Status.humanText)
                     .fontWeight(.semibold)
                 if !compact {
                     Text(String.ui("screen.input.release", "⌃⌥를 눌렀다 떼면 해제"))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DS.Status.secondaryOnTint)
                 }
             }
             .padding(.horizontal, DS.Space.s)
             .padding(.vertical, DS.Space.xs)
-            .background(DS.Color.human.opacity(0.12), in: Capsule())
+            .background(DS.Color.human.opacity(DS.Status.badgeOpacity), in: Capsule())
         } else if owner == .ai {
             Label(compact
                   ? String.ui("screen.input.ai.short", "클릭하면 가져오기")
                   : String.ui("screen.input.ai", "화면을 클릭하면 제어권을 가져옵니다"),
                   systemImage: "hand.tap")
-                .foregroundStyle(DS.Color.ai)
+                .foregroundStyle(DS.Status.aiText)
         } else {
             Label(compact
                   ? String.ui("screen.input.idle.short", "클릭하여 조작")

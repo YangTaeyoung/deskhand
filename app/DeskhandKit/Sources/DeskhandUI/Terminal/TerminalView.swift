@@ -421,7 +421,7 @@ public struct PasteConfirmSheet: View {
                     if request.removedControls > 0 {
                         let removed = request.removedControls
                         Label(String.ui("terminal.paste.removed", "제어 문자열 \(removed)개를 지웠습니다"), systemImage: "eraser")
-                            .foregroundStyle(DS.Color.warning)
+                            .foregroundStyle(DS.Status.warningText)
                     }
                 }
                 .font(DS.Font.caption)
@@ -431,11 +431,11 @@ public struct PasteConfirmSheet: View {
             case .nothingToSend:
                 Label(String.ui("terminal.paste.nothing", "붙여 넣을 글자가 없습니다 (제어 문자만 있었습니다)"), systemImage: "text.badge.xmark")
                     .font(DS.Font.body)
-                    .foregroundStyle(DS.Color.warning)
+                    .foregroundStyle(DS.Status.warningText)
             case .disconnected:
                 Label(String.ui("terminal.paste.disconnected", "연결이 끊겨 보낼 수 없습니다"), systemImage: "bolt.horizontal.circle")
                     .font(DS.Font.body)
-                    .foregroundStyle(DS.Color.warning)
+                    .foregroundStyle(DS.Status.warningText)
             case nil:
                 EmptyView()
             }

@@ -207,7 +207,7 @@ struct PrerequisiteRow: View {
         HStack(alignment: .firstTextBaseline, spacing: DS.Space.m) {
             Text(verbatim: "\(index)")
                 .font(DS.Font.caption.weight(.bold))
-                .foregroundStyle(DS.Color.accent)
+                .foregroundStyle(DS.Status.accentText)
                 .frame(width: 20, height: 20)
                 .background(DS.Color.accent.opacity(0.14), in: Circle())
                 .accessibilityHidden(true)

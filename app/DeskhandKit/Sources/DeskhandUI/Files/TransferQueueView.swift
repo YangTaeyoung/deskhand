@@ -2,6 +2,7 @@ import DeskhandClient
 import SwiftUI
 
 extension TransferTone {
+    /// The tone's hue, for symbols and progress.
     var color: Color {
         switch self {
         case .active: DS.Color.accent
@@ -9,6 +10,17 @@ extension TransferTone {
         case .warning: DS.Color.warning
         case .danger: DS.Color.danger
         case .neutral: DS.Color.neutral
+        }
+    }
+
+    /// Text in the tone, legible on the window and on status tints.
+    var textColor: Color {
+        switch self {
+        case .active: DS.Status.accentText
+        case .success: DS.Status.successText
+        case .warning: DS.Status.warningText
+        case .danger: DS.Status.dangerText
+        case .neutral: DS.Status.neutralText
         }
     }
 }
@@ -210,12 +222,12 @@ struct TransferRow: View {
                     Label(String.ui("files.preview.note", "미리보기에서는 이 Mac에 쓰지 않습니다. 받은 항목은 앱을 닫으면 사라집니다."),
                           systemImage: "eye")
                         .font(DS.Font.caption)
-                        .foregroundStyle(DS.Color.warning)
+                        .foregroundStyle(DS.Status.warningText)
                 }
                 if let error = queue.actionErrors[transfer.transferID] {
                     Label(error.message, systemImage: "exclamationmark.octagon.fill")
                         .font(DS.Font.caption)
-                        .foregroundStyle(DS.Color.danger)
+                        .foregroundStyle(DS.Status.dangerText)
                 }
                 if transfer.files.count > 1 || hasFileDetail { filesSection }
             }
@@ -246,7 +258,7 @@ struct TransferRow: View {
             if row.direction.isMove {
                 Text(String.ui("files.drop.moveBadge", "이동"))
                     .font(DS.Font.caption.weight(.semibold))
-                    .foregroundStyle(DS.Color.warning)
+                    .foregroundStyle(DS.Status.warningText)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1)
                     .overlay(Capsule().strokeBorder(DS.Color.warning.opacity(0.6), lineWidth: 1))
@@ -327,7 +339,7 @@ struct TransferRow: View {
                 Text(filesTitle)
             }
             .font(DS.Font.caption.weight(.medium))
-            .foregroundStyle(DS.Color.accent)
+            .foregroundStyle(DS.Status.accentText)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -430,7 +442,7 @@ private struct StateChip: View {
     var body: some View {
         Label(row.headline, systemImage: symbol)
             .font(DS.Font.caption.weight(.semibold))
-            .foregroundStyle(row.tone == .neutral ? AnyShapeStyle(.secondary) : AnyShapeStyle(row.tone.color))
+            .foregroundStyle(row.tone.textColor)
             .lineLimit(1)
             .fixedSize()
     }
@@ -474,14 +486,14 @@ private struct TransferFileRow: View {
                 }
                 Text(row.title)
                     .font(DS.Font.caption.weight(.semibold))
-                    .foregroundStyle(row.tone == .neutral ? AnyShapeStyle(.secondary) : AnyShapeStyle(row.tone.color))
+                    .foregroundStyle(row.tone.textColor)
                     .frame(minWidth: 52, alignment: .trailing)
                     .fixedSize()
             }
             if let message = row.errorMessage {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(message)
-                        .foregroundStyle(row.tone == .danger ? DS.Color.danger : DS.Color.warning)
+                        .foregroundStyle(row.tone == .danger ? DS.Status.dangerText : DS.Status.warningText)
                     if let fix = row.fix {
                         Text(fix)
                             .foregroundStyle(.secondary)

@@ -294,6 +294,7 @@ final class ProcessNameCell: NSTableCellView {
         label.setContentHuggingPriority(.defaultLow, for: .horizontal)
         deskhandTag.text = String.ui("processes.tag.deskhand", "Deskhand가 시작함")
         deskhandTag.tint = NSColor(DS.Color.accent)
+        deskhandTag.textColor = DS.Status.accentTextNS
         deskhandTag.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(400), for: .horizontal)
         deskhandTag.setContentHuggingPriority(.required, for: .horizontal)
         lock.image = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: String.ui("processes.a11y.protected", "보호된 프로세스"))

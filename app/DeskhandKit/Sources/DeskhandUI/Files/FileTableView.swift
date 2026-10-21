@@ -613,7 +613,7 @@ final class FileNameCell: NSTableCellView {
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         previewTag.translatesAutoresizingMaskIntoConstraints = false
         previewTag.font = .systemFont(ofSize: NSFont.smallSystemFontSize, weight: .semibold)
-        previewTag.textColor = NSColor(DS.Color.warning)
+        previewTag.textColor = DS.Status.warningTextNS
         previewTag.setContentCompressionResistancePriority(.required, for: .horizontal)
         previewTag.setContentHuggingPriority(.required, for: .horizontal)
         previewTag.isHidden = true
@@ -671,7 +671,7 @@ final class FileNameCell: NSTableCellView {
     private func recolor() {
         let emphasized = backgroundStyle == .emphasized
         label.textColor = emphasized ? .alternateSelectedControlTextColor : .labelColor
-        previewTag.textColor = emphasized ? .alternateSelectedControlTextColor : NSColor(DS.Color.warning)
+        previewTag.textColor = emphasized ? .alternateSelectedControlTextColor : DS.Status.warningTextNS
         if emphasized {
             icon.contentTintColor = .alternateSelectedControlTextColor
         } else {

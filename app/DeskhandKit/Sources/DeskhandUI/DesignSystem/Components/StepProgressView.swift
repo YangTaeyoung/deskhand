@@ -42,7 +42,7 @@ public struct StepProgressView: View {
                 if let detail = step.detail {
                     Text(detail)
                         .font(DS.Font.caption)
-                        .foregroundStyle(step.status == .failed ? AnyShapeStyle(DS.Color.danger) : AnyShapeStyle(.secondary))
+                        .foregroundStyle(step.status == .failed ? AnyShapeStyle(DS.Status.dangerText) : AnyShapeStyle(.secondary))
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }

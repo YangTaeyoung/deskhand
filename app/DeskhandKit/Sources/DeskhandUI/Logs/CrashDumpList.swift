@@ -124,7 +124,7 @@ private struct CrashDumpRow: View {
                 if let message = errorText(transfer: transfer, startError: startError) {
                     Text(message)
                         .font(DS.Font.caption)
-                        .foregroundStyle(DS.Color.danger)
+                        .foregroundStyle(DS.Status.dangerText)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -223,7 +223,7 @@ private struct DownloadControl: View {
             HStack(spacing: DS.Space.s) {
                 Label(String.ui("logs.download.done", "받음"), systemImage: "checkmark.circle.fill")
                     .font(DS.Font.caption.weight(.medium))
-                    .foregroundStyle(DS.Color.success)
+                    .foregroundStyle(DS.Status.successText)
                     .labelStyle(.titleAndIcon)
                 Button(String.ui("logs.download.reveal", "Finder에서 보기")) { model.reveal(transfer) }
                     .controlSize(.small)

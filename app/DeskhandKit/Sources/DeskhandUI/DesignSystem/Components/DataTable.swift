@@ -551,13 +551,17 @@ final class TagView: NSView {
     var tint: NSColor = .controlAccentColor {
         didSet { needsDisplay = true }
     }
+    /// Color of the text and the narrow dot; `tint` when nil.
+    var textColor: NSColor? {
+        didSet { needsDisplay = true }
+    }
     var emphasized = false {
         didSet { needsDisplay = true }
     }
 
     private var attributes: [NSAttributedString.Key: Any] {
         [.font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize - 1, weight: .semibold),
-         .foregroundColor: emphasized ? NSColor.alternateSelectedControlTextColor : tint]
+         .foregroundColor: emphasized ? NSColor.alternateSelectedControlTextColor : (textColor ?? tint)]
     }
 
     private var textWidth: CGFloat { ceil((text as NSString).size(withAttributes: attributes).width) + 12 }
@@ -567,7 +571,7 @@ final class TagView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let ink = emphasized ? NSColor.alternateSelectedControlTextColor : tint
+        let ink = emphasized ? NSColor.alternateSelectedControlTextColor : (textColor ?? tint)
         guard bounds.width >= textWidth - 0.5 else {
             ink.setFill()
             let side: CGFloat = 7
@@ -575,7 +579,7 @@ final class TagView: NSView {
             return
         }
         let rect = bounds.insetBy(dx: 0.5, dy: 0.5)
-        let fill = emphasized ? NSColor.alternateSelectedControlTextColor.withAlphaComponent(0.22) : tint.withAlphaComponent(0.14)
+        let fill = emphasized ? NSColor.alternateSelectedControlTextColor.withAlphaComponent(0.22) : tint.withAlphaComponent(DS.Status.badgeOpacity)
         fill.setFill()
         NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2).fill()
         let size = (text as NSString).size(withAttributes: attributes)
