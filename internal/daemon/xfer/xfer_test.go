@@ -12,10 +12,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YangTaeyoung/deskhand/internal/agent/server"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/apierr"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/conn"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/xfer"
+	"github.com/YangTaeyoung/deskhand/internal/proto"
 	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
@@ -820,5 +822,45 @@ func TestAMovePullWhoseSourceIsGoneCountsItRemoved(t *testing.T) {
 		}
 		tr := h.waitFinished(h.start("move_pull", dst, src, "").TransferID)
 		checkDone(t, tr, "written")
+	}
+}
+
+func TestPullSurvivesTheAgentsTooManyRequestsRefusalWithoutResending(t *testing.T) {
+	var mu sync.Mutex
+	var opened []int64
+	refused := 0
+	h := newHarnessRewriting(t, xfer.Hooks{Opened: func(_, _ string, offset int64) {
+		mu.Lock()
+		opened = append(opened, offset)
+		mu.Unlock()
+	}}, func(req, res proto.Message) proto.Message {
+		if req.String("op") != "fs.stat" || !req.Bool("sha256") {
+			return res
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if refused > 0 {
+			return res
+		}
+		refused++
+		return server.TooManyRequests(res["id"])
+	})
+	data := randomBytes(t, 9*mib+5)
+	local, remote := filepath.Join(h.mac, "big.bin"), filepath.Join(h.agent.home, "big.bin")
+	writeFile(t, remote, data)
+	id := h.start("pull", local, remote, "").TransferID
+	tr := h.waitFinished(id)
+	checkDone(t, tr, "written")
+	sameBytes(t, "the pulled file", readFile(t, local), data)
+	mu.Lock()
+	defer mu.Unlock()
+	if refused != 1 {
+		t.Fatalf("the verification was refused %d times, want once", refused)
+	}
+	if len(opened) != 1 || opened[0] != 0 {
+		t.Fatalf("get streams opened at offsets %v, want one from 0 and no second sending of the received bytes", opened)
+	}
+	if p := parts(t, h.mac); len(p) != 0 {
+		t.Fatalf("part files left: %v", p)
 	}
 }

@@ -275,7 +275,7 @@ func (s *Server) ServeConn(ctx context.Context, rw io.ReadWriteCloser, peer stri
 					s.dispatch(ctx, m, cn.sendReply)
 				}(m)
 			default:
-				send(proto.Message{"t": "res", "id": m["id"], "ok": false, "error": tooManyRequests()})
+				send(TooManyRequests(m["id"]))
 			}
 		case "welcome":
 		default:

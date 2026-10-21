@@ -312,10 +312,12 @@ func (s *Server) respond(ctx context.Context, req proto.Message) (proto.Message,
 	return res, line
 }
 
-// tooManyRequests is the error of a request that arrives while maxInFlight
-// requests of its connection run.
-func tooManyRequests() string {
-	return fmt.Sprintf("%d requests are running on this connection; wait for an answer before sending another", maxInFlight)
+// TooManyRequests is the answer to the request id that arrives while
+// maxInFlight requests of its connection run: a retryable IN_PROGRESS
+// refusal of a request that did not run.
+func TooManyRequests(id any) proto.Message {
+	return proto.Message{"t": "res", "id": id, "ok": false, "code": wire.CodeInProgress, "retryable": true,
+		"error": fmt.Sprintf("%d requests are running on this connection; wait for an answer before sending another", maxInFlight)}
 }
 
 func (s *Server) invoke(ctx context.Context, req proto.Message) (out proto.Message, err error) {

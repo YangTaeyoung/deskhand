@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/proto"
+	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
 func startServerS(t *testing.T, opt Options) (*Server, *proto.Reader, *proto.Writer, net.Conn) {
@@ -296,8 +297,9 @@ func TestRequestsOverTheInFlightLimitAreRefused(t *testing.T) {
 	}
 	res := expect(t, r, "res")
 	want := "256 requests are running on this connection; wait for an answer before sending another"
-	if res.Int("id") != maxInFlight+1 || res["ok"] != false || res.String("error") != want {
-		t.Fatalf("res %v", res)
+	if res.Int("id") != maxInFlight+1 || res["ok"] != false || res.String("error") != want || res.String("code") != wire.CodeInProgress ||
+		res["retryable"] != true {
+		t.Fatalf("res %v, want a retryable IN_PROGRESS refusal", res)
 	}
 	close(release)
 	for i := 0; i < maxInFlight; i++ {

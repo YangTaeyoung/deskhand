@@ -1,11 +1,13 @@
 package xfer_test
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -28,6 +30,7 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/store"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/xfer"
+	"github.com/YangTaeyoung/deskhand/internal/proto"
 	"github.com/YangTaeyoung/deskhand/internal/transport"
 )
 
@@ -140,6 +143,9 @@ type harness struct {
 	mac   string
 	hooks xfer.Hooks
 	drop  string
+	// rewrite, when set, gets each request on the rpc stream with the
+	// agent's answer and returns the answer the daemon reads.
+	rewrite func(req, res proto.Message) proto.Message
 	// gate, when set, holds every reconnect until it is closed.
 	gateMu sync.Mutex
 	gate   chan struct{}
@@ -168,8 +174,21 @@ func newHarness(t *testing.T, hooks xfer.Hooks) *harness {
 // first request of the op drop.
 func newHarnessDropping(t *testing.T, hooks xfer.Hooks, drop string) *harness {
 	t.Helper()
+	return newHarnessWith(t, hooks, drop, nil)
+}
+
+// newHarnessRewriting is newHarness whose daemon reads the agent's answers
+// through rewrite.
+func newHarnessRewriting(t *testing.T, hooks xfer.Hooks, rewrite func(req, res proto.Message) proto.Message) *harness {
+	t.Helper()
+	return newHarnessWith(t, hooks, "", rewrite)
+}
+
+func newHarnessWith(t *testing.T, hooks xfer.Hooks, drop string, rewrite func(req, res proto.Message) proto.Message) *harness {
+	t.Helper()
 	t.Setenv("DESKHAND_HOME", t.TempDir())
-	h := &harness{t: t, db: filepath.Join(t.TempDir(), "deskhand.db"), ctl: newID(t, "controller"), mac: t.TempDir(), hooks: hooks, drop: drop}
+	h := &harness{t: t, db: filepath.Join(t.TempDir(), "deskhand.db"), ctl: newID(t, "controller"), mac: t.TempDir(), hooks: hooks, drop: drop,
+		rewrite: rewrite}
 	h.agent = &pcAgent{t: t, port: freeUDPPort(t), id: newID(t, "agent"), home: t.TempDir(), dataDir: t.TempDir(), trusted: h.ctl.Fingerprint}
 	h.agent.start()
 	t.Cleanup(h.agent.halt)
@@ -199,7 +218,7 @@ func (h *harness) open() {
 	sub := bus.Subscribe()
 	d := &daemonSide{st: st, bus: bus}
 	d.conns = conn.NewManager(conn.Options{Identity: h.ctl, Controller: "test", Requests: st, Logger: quiet, DropAfterSend: h.drop,
-		ReadyWait: 3 * time.Second,
+		ReadyWait: 3 * time.Second, Dial: h.dialer(),
 		OnReady: func(hostID string, _ uint64) {
 			if m := h.manager(); m != nil {
 				go m.HostReady(hostID)
@@ -241,6 +260,114 @@ func (h *harness) open() {
 		h.t.Fatal(err)
 	}
 	d.conns.Add(conn.Target{HostID: row.HostID, Name: row.Name, Address: row.Address, Port: row.Port, Fingerprint: row.AgentFP}).Connect()
+}
+
+// dialer returns the QUIC dialer whose rpc stream answers go through
+// h.rewrite, or nil without one.
+func (h *harness) dialer() conn.Dialer {
+	if h.rewrite == nil {
+		return nil
+	}
+	return func(ctx context.Context, t conn.Target, id transport.Identity) (conn.Session, error) {
+		sess, err := conn.DialQUIC(ctx, t, id)
+		if err != nil {
+			return nil, err
+		}
+		return &rewriteSession{Session: sess, rewrite: h.rewrite}, nil
+	}
+}
+
+// rewriteSession is a connection whose first stream, the rpc stream, is a
+// rewriteStream; the data streams pass through.
+type rewriteSession struct {
+	conn.Session
+	rewrite func(req, res proto.Message) proto.Message
+
+	mu     sync.Mutex
+	opened bool
+}
+
+func (s *rewriteSession) OpenStream(ctx context.Context) (conn.Stream, error) {
+	st, err := s.Session.OpenStream(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	first := !s.opened
+	s.opened = true
+	s.mu.Unlock()
+	if !first {
+		return st, nil
+	}
+	return &rewriteStream{Stream: st, rewrite: s.rewrite, br: bufio.NewReader(st), reqs: map[string]proto.Message{}}, nil
+}
+
+// rewriteStream records the requests the daemon writes and hands each
+// answer line with its request to rewrite before the daemon reads it.
+type rewriteStream struct {
+	conn.Stream
+	rewrite func(req, res proto.Message) proto.Message
+	br      *bufio.Reader
+	rbuf    []byte
+
+	mu   sync.Mutex
+	wbuf []byte
+	reqs map[string]proto.Message
+}
+
+func (s *rewriteStream) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	s.wbuf = append(s.wbuf, p...)
+	for {
+		i := bytes.IndexByte(s.wbuf, '\n')
+		if i < 0 {
+			break
+		}
+		var m proto.Message
+		if json.Unmarshal(s.wbuf[:i], &m) == nil && m.Type() == "req" {
+			s.reqs[fmt.Sprint(m["id"])] = m
+		}
+		s.wbuf = s.wbuf[i+1:]
+	}
+	s.mu.Unlock()
+	return s.Stream.Write(p)
+}
+
+func (s *rewriteStream) Read(p []byte) (int, error) {
+	if len(s.rbuf) == 0 {
+		line, err := s.br.ReadBytes('\n')
+		if err != nil {
+			s.rbuf = line
+			n := copy(p, s.rbuf)
+			s.rbuf = s.rbuf[n:]
+			return n, err
+		}
+		s.rbuf = s.rewriteLine(line)
+	}
+	n := copy(p, s.rbuf)
+	s.rbuf = s.rbuf[n:]
+	return n, nil
+}
+
+// rewriteLine returns the line the daemon reads for the agent's line.
+func (s *rewriteStream) rewriteLine(line []byte) []byte {
+	var m proto.Message
+	if json.Unmarshal(line, &m) != nil || m.Type() != "res" {
+		return line
+	}
+	key := fmt.Sprint(m["id"])
+	s.mu.Lock()
+	req := s.reqs[key]
+	delete(s.reqs, key)
+	s.mu.Unlock()
+	if req == nil {
+		return line
+	}
+	b, err := json.Marshal(s.rewrite(req, m))
+	if err != nil {
+		return line
+	}
+	return append(b, '\n')
 }
 
 func (h *harness) manager() *xfer.Manager {
