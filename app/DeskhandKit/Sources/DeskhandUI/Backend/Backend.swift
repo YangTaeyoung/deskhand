@@ -77,8 +77,9 @@ public protocol ControlBackend: Sendable {
 
 /// `timeline.list` (local-api.md §3, §6, §7).
 public protocol TimelineBackend: Sendable {
-    /// Entries newest first; with `cursor` (a previous `next_cursor`) the page older than it.
-    func timelineList(hostID: String, since: Int?, limit: Int, cursor: String?) async throws -> TimelinePage
+    /// Entries newest first, from `since` on when it is given (sent as RFC 3339); with `cursor`
+    /// (a previous `next_cursor`) the page older than it.
+    func timelineList(hostID: String, since: Date?, limit: Int, cursor: String?) async throws -> TimelinePage
 }
 
 /// `stream.attach` with kind `screen` (local-api.md §4).

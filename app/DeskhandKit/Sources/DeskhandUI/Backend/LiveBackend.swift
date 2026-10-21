@@ -189,7 +189,8 @@ extension LiveBackend {
 
 private struct TimelineParams: Encodable {
     let hostID: String
-    let since: Int?
+    /// RFC 3339 UTC with milliseconds.
+    let since: Timestamp?
     let limit: Int
     let cursor: String?
 }
@@ -201,9 +202,9 @@ private struct TimelineResult: Decodable {
 }
 
 extension LiveBackend {
-    public func timelineList(hostID: String, since: Int?, limit: Int, cursor: String?) async throws -> TimelinePage {
+    public func timelineList(hostID: String, since: Date?, limit: Int, cursor: String?) async throws -> TimelinePage {
         let result: TimelineResult = try await client.call(
-            "timeline.list", TimelineParams(hostID: hostID, since: since, limit: limit, cursor: cursor))
+            "timeline.list", TimelineParams(hostID: hostID, since: since.map(Timestamp.init(date:)), limit: limit, cursor: cursor))
         return TimelinePage(entries: result.entries, nextCursor: result.nextCursor)
     }
 }

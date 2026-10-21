@@ -209,7 +209,7 @@ final class GatedBackend: Backend, LocalOverlayProviding {
         }
     }
 
-    func timelineList(hostID: String, since: Int?, limit: Int, cursor: String?) async throws -> TimelinePage {
+    func timelineList(hostID: String, since: Date?, limit: Int, cursor: String?) async throws -> TimelinePage {
         if let failure = state.withLock({ $0.timelineFailure }) { throw failure }
         return try await base.timelineList(hostID: hostID, since: since, limit: limit, cursor: cursor)
     }

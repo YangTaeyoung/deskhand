@@ -69,7 +69,7 @@ final class SnapshotBackend: Backend {
         return controls[hostID] ?? ControlState(owner: "none", gen: 0, aiPaused: false)
     }
 
-    func timelineList(hostID: String, since: Int?, limit: Int, cursor: String?) async throws -> TimelinePage {
+    func timelineList(hostID: String, since: Date?, limit: Int, cursor: String?) async throws -> TimelinePage {
         switch timelines[hostID] ?? .entries([]) {
         case .entries(let entries):
             return TimelinePage(entries: entries)
