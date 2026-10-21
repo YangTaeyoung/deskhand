@@ -584,7 +584,7 @@ func classify(err error, sess Session) error {
 
 func unreachable(name string, err error) *apierr.Error {
 	return apierr.New(wire.CodeOffline,
-		fmt.Sprintf("%s PC에 연결하지 못했습니다(%v). PC가 켜져 있고 같은 네트워크에 있는지 확인한 뒤 deskhand host doctor %s을 실행하세요", name, err, name),
+		fmt.Sprintf("'%s'에 연결하지 못했습니다(%v). PC가 켜져 있고 같은 네트워크에 있는지 확인한 뒤 다음 명령을 실행하세요: deskhand host doctor %q", name, err, name),
 		true, apierr.NextHostDoctor)
 }
 
