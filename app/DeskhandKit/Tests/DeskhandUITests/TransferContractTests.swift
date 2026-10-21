@@ -202,6 +202,23 @@ final class TransferContractTests: XCTestCase {
         await client.close()
     }
 
+    func testShowingTheDestinationOfARenamedPushSelectsTheFileItWrote() async throws {
+        let dev = PreviewFixtures.devPCID
+        let store = AppStore.seeded(backend: GatedBackend(PreviewBackend(stepDelay: .zero)),
+                                    defaults: UserDefaults(suiteName: "transfer-contract-\(UUID())")!,
+                                    hosts: PreviewFixtures.hosts(), selectedHostID: dev)
+        let model = store.files(for: try XCTUnwrap(store.host(dev)))
+        let downloads = "C:\\Users\\taeyoung\\Downloads"
+        let transfer = Transfer(transferID: "t-renamed", hostID: dev, direction: "push", local: "/Users/me/report.html",
+                                remote: downloads + "\\report.html", onConflict: "rename", state: "done", bytesDone: 10, bytesTotal: 10,
+                                filesDone: 1, filesTotal: 1, rateBps: 0, outcome: "renamed", rev: 5)
+        model.transfers.seed([TransferDetail(transfer, files: [TransferFile(rel: "report.html", size: 10, bytesDone: 10, state: "done",
+                                                                            outcome: "renamed", path: downloads + "\\report (1).html")])])
+        await model.showLocation(.showDestination, for: transfer)
+        XCTAssertEqual(model.remote.path, downloads)
+        XCTAssertEqual(model.remote.selection, [downloads + "\\report (1).html"])
+    }
+
     func testPreviewTransfersFollowTheDaemonShapes() async throws {
         let base = PreviewBackend(stepDelay: .zero)
         let dev = PreviewFixtures.devPCID

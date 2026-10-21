@@ -370,12 +370,12 @@ public final class FilesModel {
         }
     }
 
-    /// Shows a transfer's destination or source.
+    /// Shows a transfer's destination (where its file was written, once the queue read it) or source.
     public func showLocation(_ action: TransferAction, for transfer: Transfer) async {
         let presentation = TransferPresentation(transfer, hostName: hostName)
         let wantsDestination = action == .showDestination
         let onRemote = presentation.direction.isUpload == wantsDestination
-        let path = wantsDestination ? presentation.destinationPath : presentation.sourcePath
+        let path = wantsDestination ? transfers.writtenPath(of: transfer) : presentation.sourcePath
         let folder = wantsDestination ? presentation.destinationFolder : presentation.sourceFolder
         if onRemote {
             await open(.remote, path: folder)
