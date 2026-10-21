@@ -67,7 +67,7 @@ struct RunDetail: View {
         switch model.stepLoads[run.runID] {
         case .failed(let error):
             VStack {
-                ErrorBanner(message: String.ui("qa.steps.failed", "단계를 불러오지 못했습니다"), fix: error.fix ?? error.message, code: error.code) {
+                ErrorBanner(message: String.ui("qa.steps.failed", "단계를 불러오지 못했습니다"), fix: error.sentences, code: error.code) {
                     Task { await model.refresh(run.runID) }
                 }
                 .frame(maxWidth: 520)
