@@ -4,7 +4,11 @@
 
 - Mac: `feat/phase2-integration` 브랜치의 앱·데몬·MCP 빌드. Windows: `ssh windows`(192.168.88.165), Windows 11 x64, 로그인된 콘솔 세션 1, `deskhand-agentw` 실행.
 - PC는 기존 에이전트의 다른 컨트롤러 인증서로 페어링되어 있었다. 새 Mac 데몬의 신원으로 `deskhand host add 'Windows PC' --ssh windows --force`를 실행해 재페어링했다. 결과는 `host_id:windows-pc`, `state:ready`, `caps.screen/input/uia:ready`, 연결 세대 1. 기존 컨트롤러 신원은 교체되었다.
-- 통합 앱 `app/build/Deskhand.app`에서 `Windows PC`가 연결됨으로 표시되고 원격 1024×768 화면이 실제로 렌더링됐다. 뷰어 통계에서 `PC→Mac 11 ms`, 인코더 `NVIDIA H.264 Encoder MFT · 하드웨어`가 표시됐다. 정지 화면에서 순간 `0 fps`로 관찰됐으므로 지속 FPS 성능 판정은 하지 않는다.
+- 첫 실기기 실행에서는 화면이 첫 프레임 뒤 `0 fps`로 멈췄다. 캡처 소스가 Desktop Duplication의 정지를 감지해 GDI로 전환하도록 수정한 뒤 다시 설치했다(`internal/agent/capture/stall.go`, `open_windows.go`). 움직이는 테스트 창을 전면에 놓고 독립 로컬 API `stream.attach`로 20초 동안 261개의 H.264 access unit을 받았다(평균 13.0 fps). 앱에서도 연속 화면과 하드웨어 H.264 인코더, PC→Mac 약 24 ms가 보였다. **정지 문제는 해소됐지만 프레임률 품질은 미달**이다.
+- Mac에서 PC의 `192.168.88.165:47600/udp`로 직접 보낸 패킷은 `No route to host`였고, TCP SSH는 연결됐다. Mac의 Deskhand 로컬 네트워크 권한은 켜져 있었다. 실기기 재검증은 저장소의 시험용 `scripts/e2e/udprelay`를 SSH로 연결해 `127.0.0.1:47651` ↔ PC `127.0.0.1:47600`으로 중계했다. 따라서 이 통과 결과는 **직접 LAN QUIC 연결의 통과를 뜻하지 않는다**. 직접 UDP가 차단되는 원인은 확인 필요하다.
+- 로그인된 Windows 세션의 캡처 성능 측정에서 GDI `BitBlt` 1024×768은 실행에 따라 p50 약 77–153 ms였고, 지연 대부분이 `BitBlt` 호출 자체였다. 별도 Desktop Duplication 프로브는 움직이는 테스트 창이 보이는 동안 8초간 업데이트 0개, 타임아웃 31개를 기록했다. `TestWarmFeedCPU`의 하드웨어 warm 8.1 fps와 소프트웨어 warm 1.8 fps도 목표 30 fps에 못 미쳤다. `Windows.Graphics.Capture` 등의 다른 캡처 경로는 공식 API만 조사했으며 구현·측정하지 않았다.
+- 같은 PC에서 `BitBlt` 캡처 높이를 768→384→192→96픽셀로 줄여도 p50은 각각 76.83/76.57/76.57/76.60 ms였다. 전체 화면 캡처를 1·2·4개 작업자로 병렬 수행해도 합계 처리량은 12.4/13.0/12.8 fps였다. 따라서 이 환경에서는 GDI 캡처 면적 축소나 병렬 호출만으로 목표 프레임률을 얻지 못했다. 측정용 코드는 저장소에서 제거했다.
+- 추가 실기기 프로브로 WinRT `GraphicsCaptureItem.CreateForMonitor`와 `Direct3D11CaptureFramePool.CreateFreeThreaded`를 호출했다. 움직이는 테스트 창을 전면에 둔 8초 동안 WGC도 103프레임(12.9 fps)만 전달했다. 같은 세션에서 `DwmFlush`는 p50 76.53 ms, p95 77.27 ms였다. [Microsoft 문서](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/nf-dwmapi-dwmflush)에 따르면 `DwmFlush`는 다음 Present까지 기다린다. 이것은 이 실행에서 화면 합성 자체가 약 13 Hz로 진행됐다는 근거이며, 그 원인(디스플레이·드라이버·전원·원격 세션 설정)은 아직 확인하지 못했다. WGC 프로브는 제품에 통합하지 않았고 측정용 코드는 제거했다.
 - MCP go-sdk `CommandTransport` 프로브에서 `screen_capture`가 1024×768 PNG 이미지 콘텐츠와 `capture_id`, 연결 세대, 유효 시각을 반환했다. `win_list`에서 테스트용 `Deskhand Fixture` 창을 찾고 `ui_tree`에서 Message·Send·Transcript를 읽었다.
 - MCP `input_type{method:auto,text:"Deskhand 검증 😀 첫 줄"}`는 `paste`로 실행됐다. 같은 캡처 ID의 좌표로 `input_click`을 보내자 `ui_text` Transcript에 `You: Deskhand 검증 😀 첫 줄`이 나타났다.
 - 사람 제어권 선점 실기기: MCP가 `unicode` 80,000자 입력 중일 때 CLI 로컬 API가 `control.acquire{as:"human",force:true}`를 호출했다. 응답은 `gen:11`, `owner:human`. 진행 중 입력은 `typed 200 of 80000 characters` 뒤 `CONTROL_PREEMPTED`, `action.outcome:partial`, `next_action:check_state`로 끝났고, 이어진 `input_key`는 `CONTROL_HELD_BY_HUMAN`, `not_started`였다. 테스트 뒤 `control.release`로 `owner:none`을 확인했다. 눌린 키 상태를 독립적으로 측정한 결과는 없다.
@@ -13,5 +17,5 @@
 ## 남은 확인
 
 - 한글·이모지 입력은 위 MCP 경로에서 확인했다. 줄바꿈을 포함한 텍스트를 fixture의 파일로 저장해 바이트 단위로 대조하는 시나리오는 아직 없다. 현재 fixture의 Message는 한 줄 입력이다(`cmd/deskhand-fixture/main_windows.go`). 이 항목은 미검증이다.
-- UI 적대적 검수에서 지적된 사항의 수정과 재검수는 별도 진행 중이다. 현 실기기 화면 표시가 상업용 UX의 최종 승인 근거는 아니다.
-- `host.update`, `stream.attach.max_fps`, AI 전달 범위의 데몬 적용, 산출물 보존 설정은 현재 통합 계획의 후속 계약 항목이며 이 검증에서 확인하지 않았다. 앱의 개인정보 설정은 AI 범위가 아직 적용되지 않는다고 명시한다.
+- UI 적대적 검수에서 지적된 한글 셀 간격과 ANSI 대비, 재페어링 시트 문구·위험 버튼을 수정했다. Sonnet 독립 검수는 터미널·재페어링 장면의 밝은/어두운 스냅샷 4장에 **PASS(합성 이미지의 시각 범위만)**를 줬다. 후속 지적에 따라 키 교체 확인 버튼의 Return 기본 동작도 제거했다. 커서·선택·반전, 실제 창 리사이즈, 상호작용은 이 검수에서 증명되지 않는다.
+- `host.update`로 테스트용 주소를 바꿔 재접속한 것은 확인했다. `stream.attach.max_fps`와 AI 전달 범위, 산출물 보존 설정은 실기기에서 확인하지 않았다. `docs/local-api.md` §8에 기록한 AI 범위의 우회 경로와 앱 개인정보 설정의 미적용 상태가 남아 있다.
