@@ -211,7 +211,7 @@ struct TransferRow: View {
                 if let fix = row.fix {
                     Text(fix)
                         .font(DS.Font.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DS.Status.neutralText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if row.state == .failed || row.outcome == .failed, let code = transfer.error?.code {
@@ -507,7 +507,7 @@ private struct TransferFileRow: View {
                         .foregroundStyle(row.tone == .danger ? DS.Status.dangerText : DS.Status.warningText)
                     if let fix = row.fix {
                         Text(fix)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(DS.Status.neutralText)
                     }
                     if let code = file.error?.code {
                         ErrorCodeLine(code: code)
