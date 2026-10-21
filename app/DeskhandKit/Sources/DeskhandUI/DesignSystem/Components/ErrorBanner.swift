@@ -37,7 +37,7 @@ public struct ErrorBanner: View {
                     if let fix {
                         Text(fix)
                             .font(DS.Font.body)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(DS.Status.secondaryOnTint)
                     }
                     if let code {
                         ErrorCodeLine(code: code)

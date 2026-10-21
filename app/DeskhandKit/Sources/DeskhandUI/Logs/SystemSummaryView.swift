@@ -75,7 +75,7 @@ private struct SummaryErrorStrip: View {
                     .font(DS.Font.body.weight(.semibold))
                 Text(LogsModel.explanation(error))
                     .font(DS.Font.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DS.Status.secondaryOnTint)
                     .lineLimit(2)
                     .help(error.sentences)
             }

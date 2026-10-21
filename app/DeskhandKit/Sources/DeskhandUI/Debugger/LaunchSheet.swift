@@ -220,7 +220,7 @@ public struct LaunchSheet: View {
                          ? String.ui("debugger.launch.noteBrk", "빈 포트 두 개를 골라 --inspect-brk와 --remote-debugging-port를 붙여 실행합니다. 메인 프로세스에 먼저 연결해 중단점을 건 뒤 렌더러를 기다립니다. 세션을 닫으면 Deskhand가 실행한 이 앱도 종료됩니다.")
                          : String.ui("debugger.launch.note", "빈 포트 두 개를 골라 --inspect와 --remote-debugging-port를 붙여 실행합니다. 연결되기 전에 실행된 코드에서는 멈추지 않습니다. 세션을 닫으면 Deskhand가 실행한 이 앱도 종료됩니다."))
                         .font(DS.Font.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DS.Status.secondaryOnTint)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(DS.Space.m)

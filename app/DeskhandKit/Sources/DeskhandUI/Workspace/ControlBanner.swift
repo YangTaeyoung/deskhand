@@ -373,7 +373,7 @@ struct ControlFailureBar: View {
                     .font(DS.Font.headline)
                 Text(error.sentences)
                     .font(DS.Font.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DS.Status.secondaryOnTint)
                     .lineLimit(3)
                     .help(error.sentences)
                 if let code = error.code {

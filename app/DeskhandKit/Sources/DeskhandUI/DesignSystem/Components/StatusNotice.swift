@@ -28,7 +28,7 @@ struct StatusNotice: View {
                     .font(DS.Font.headline)
                 Text(message)
                     .font(DS.Font.body)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DS.Status.secondaryOnTint)
                     .fixedSize(horizontal: false, vertical: true)
                 if let code {
                     ErrorCodeLine(code: code)

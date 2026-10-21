@@ -258,7 +258,7 @@ struct DebuggerPausedBanner: View {
                 .truncationMode(.middle)
             Text("·")
                 .font(DS.Font.body)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DS.Status.secondaryOnTint)
                 .accessibilityHidden(true)
             Button(String.ui("debugger.pausedBanner.show", "디버거 보기"), action: show)
                 .buttonStyle(.link)

@@ -202,7 +202,7 @@ private struct NoticeToast: View {
                 if let detail = notice.detail {
                     Text(detail)
                         .font(DS.Font.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DS.Status.secondaryOnTint)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if let code = notice.code {

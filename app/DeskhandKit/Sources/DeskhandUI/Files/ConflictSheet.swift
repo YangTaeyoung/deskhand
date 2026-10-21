@@ -145,7 +145,7 @@ private struct ConflictSide: View {
             HStack(spacing: DS.Space.xs) {
                 Text(title)
                     .font(DS.Font.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DS.Status.secondaryOnTint)
                 if newer {
                     Text(String.ui("conflict.newer", "더 최근"))
                         .font(DS.Font.caption.weight(.semibold))
@@ -161,7 +161,7 @@ private struct ConflictSide: View {
                 .font(DS.Font.body.monospacedDigit())
             Text(modified.map { DS.Format.dateTime($0) } ?? "—")
                 .font(DS.Font.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DS.Status.secondaryOnTint)
         }
         .padding(DS.Space.m)
         .frame(maxWidth: .infinity, alignment: .leading)

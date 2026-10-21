@@ -422,7 +422,7 @@ private struct PaneErrorStrip: View {
                 if let detail = notice.detail {
                     Text(detail)
                         .font(DS.Font.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DS.Status.secondaryOnTint)
                 }
                 if let code = notice.code {
                     ErrorCodeLine(code: code)
