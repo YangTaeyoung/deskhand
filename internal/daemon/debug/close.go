@@ -89,7 +89,7 @@ func (s *session) finishClose(reason string, killTree bool, c model.Caller) Sess
 		s.mu.Unlock()
 		return snap
 	}
-	s.closedOnce = true
+	s.markClosedLocked()
 	s.state = StateClosed
 	s.closeReason = reason
 	s.closedAt = time.Now()

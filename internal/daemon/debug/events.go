@@ -271,15 +271,23 @@ func (s *session) enqueueConsole(e ConsoleEntry) {
 }
 
 // consolePump stores and publishes the queued console entries off the
-// dispatch goroutine; it ends with the manager.
+// dispatch goroutine; it ends when the session finishes or the manager
+// shuts down.
 func (s *session) consolePump() {
+	defer close(s.pumpDone)
 	for {
 		select {
 		case e := <-s.consoleCh:
 			s.mu.Lock()
+			if s.closedOnce {
+				s.mu.Unlock()
+				return
+			}
 			stored := s.console.add(e)
 			s.mu.Unlock()
 			s.publish(evConsole, map[string]any{"debug_id": s.debugID, "entry": stored})
+		case <-s.done:
+			return
 		case <-s.m.base.Done():
 			return
 		}

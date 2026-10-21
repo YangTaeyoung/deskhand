@@ -242,7 +242,7 @@ func (m *Manager) launchFailed(s *session, c model.Caller, oe *OpError) (Session
 		reason = CloseProcessExited
 	}
 	s.state = StateClosed
-	s.closedOnce = true
+	s.markClosedLocked()
 	s.closeReason = reason
 	s.closedAt = time.Now()
 	pid := s.pid

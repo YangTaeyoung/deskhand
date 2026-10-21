@@ -444,3 +444,43 @@ func TestSessionListsMainBeforeTheRendererWhateverAttachedFirst(t *testing.T) {
 		t.Fatalf("targets = %+v, want node-1 then page-1 and page-2 in the order they attached", got)
 	}
 }
+
+// waitPumpEnded fails the test unless the console pump of s returns soon.
+func waitPumpEnded(t *testing.T, s *session) {
+	t.Helper()
+	select {
+	case <-s.pumpDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the console pump of the closed session is still running")
+	}
+}
+
+func TestClosingASessionEndsItsConsolePump(t *testing.T) {
+	t.Run("close", func(t *testing.T) {
+		node := nodeServer(t)
+		browser := newCDPServer(t, "Chrome/120")
+		e, snap := launchBoth(t, node, browser, false)
+		s, err := e.m.get(snap.DebugID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := e.m.Close(bctx(t), snap.DebugID, false, testCaller); err != nil {
+			t.Fatalf("close: %v", err)
+		}
+		waitPumpEnded(t, s)
+	})
+	t.Run("failed launch", func(t *testing.T) {
+		e := newDebugEnv(t, closedPort(t), closedPort(t))
+		code := 0
+		e.a.treeDer = func() (bool, *int) { return false, &code }
+		snap, err := e.m.Launch(bctx(t), LaunchParams{HostRef: "h", Path: "App"}, testCaller)
+		if _, ok := AsOpError(err); !ok {
+			t.Fatalf("launch error = %v, want a failed launch", err)
+		}
+		s, err := e.m.get(snap.DebugID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		waitPumpEnded(t, s)
+	})
+}

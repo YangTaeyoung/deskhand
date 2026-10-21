@@ -106,6 +106,11 @@ type session struct {
 	// consoleCh carries console entries off the CDP dispatch goroutine to
 	// the console pump; a full channel drops the entry.
 	consoleCh chan ConsoleEntry
+	// done is closed when the session finishes: on its close or a failed
+	// launch or attach.
+	done chan struct{}
+	// pumpDone is closed when the console pump returns.
+	pumpDone chan struct{}
 }
 
 // newSessionShell returns an empty session.
@@ -113,7 +118,7 @@ func newSessionShell(m *Manager, id, kind string, host HostInfo, agent Agent, c 
 	s := &session{m: m, debugID: id, hostID: host.HostID, host: host, agent: agent, kind: kind, name: "",
 		state: StateRunning, bpActive: true, exceptions: exceptionsDefault, createdBy: actorOf(c), createdAt: time.Now(),
 		rev: 1, args: []string{}, breakpoints: []*Breakpoint{}, targets: map[string]*targetState{},
-		consoleCh: make(chan ConsoleEntry, consoleQueue)}
+		consoleCh: make(chan ConsoleEntry, consoleQueue), done: make(chan struct{}), pumpDone: make(chan struct{})}
 	go s.consolePump()
 	return s
 }
@@ -122,6 +127,19 @@ func (s *session) closedTime() time.Time {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.closedAt
+}
+
+// markClosedLocked starts the session's one-time close: it sets
+// closedOnce, closes done and drops the console entries. The caller holds
+// the lock.
+func (s *session) markClosedLocked() {
+	s.closedOnce = true
+	select {
+	case <-s.done:
+	default:
+		close(s.done)
+	}
+	s.console.entries = nil
 }
 
 // bumpRev raises the session rev; the caller holds the lock.
