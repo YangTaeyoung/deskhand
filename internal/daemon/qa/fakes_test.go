@@ -1,12 +1,16 @@
 package qa
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 	"strings"
 	"sync"
@@ -36,12 +40,70 @@ type fakeElem struct {
 	hiddenFor int
 }
 
+// fakeDisplay is a display of the fake desktop: its index, its origin in
+// virtual desktop pixels and its image.
+type fakeDisplay struct {
+	index, x, y int
+	img         *image.NRGBA
+}
+
+// desktopPixel is the colour of the virtual desktop pixel (x, y) on the
+// fake displays.
+func desktopPixel(x, y int) color.NRGBA {
+	return color.NRGBA{R: uint8(x), G: uint8(y), B: uint8(x>>8<<4 | y>>8), A: 0xff}
+}
+
+// newFakeDisplay is the display index of w×h pixels at (x, y), each pixel
+// coloured by desktopPixel.
+func newFakeDisplay(index, x, y, w, h int) fakeDisplay {
+	img := image.NewNRGBA(image.Rect(0, 0, w, h))
+	for py := 0; py < h; py++ {
+		for px := 0; px < w; px++ {
+			img.SetNRGBA(px, py, desktopPixel(x+px, y+py))
+		}
+	}
+	return fakeDisplay{index: index, x: x, y: y, img: img}
+}
+
+// capture answers screen.capture from the fake displays: the display's
+// image, narrowed by nearest pixel to max_width, as PNG.
+func (pc *fakePC) capture(params proto.Message) (proto.Message, error) {
+	for _, d := range pc.displays {
+		if d.index != params.Int("display") {
+			continue
+		}
+		b := d.img.Bounds()
+		scale := 1.0
+		if mw := params.Int("max_width"); mw > 0 && mw < b.Dx() {
+			scale = float64(mw) / float64(b.Dx())
+		}
+		w, h := int(float64(b.Dx())*scale+0.5), int(float64(b.Dy())*scale+0.5)
+		out := image.NewNRGBA(image.Rect(0, 0, w, h))
+		for y := 0; y < h; y++ {
+			for x := 0; x < w; x++ {
+				out.SetNRGBA(x, y, d.img.NRGBAAt(int(float64(x)/scale), int(float64(y)/scale)))
+			}
+		}
+		var buf bytes.Buffer
+		if err := png.Encode(&buf, out); err != nil {
+			return nil, err
+		}
+		return proto.Message{"data": base64.StdEncoding.EncodeToString(buf.Bytes()), "width": float64(w), "height": float64(h),
+			"scale": scale, "origin": map[string]any{"x": float64(d.x), "y": float64(d.y)}, "capture_id": "cap-2", "method": "dd"}, nil
+	}
+	return nil, apierr.New(wire.CodeNotFound, "no such display", false, "")
+}
+
 // fakePC answers the agent ops a run sends, from a small model of a
 // desktop, a file system and a shell.
 type fakePC struct {
 	mu      sync.Mutex
 	caps    map[string]Capability
 	windows []map[string]any
+	// displays answer display.list and screen.capture with images; without
+	// any, display.list is unknown and screen.capture answers a fixed
+	// image.
+	displays []fakeDisplay
 	// windowsAfter is how many more win.list calls see no window.
 	windowsAfter int
 	elems        []*fakeElem
@@ -370,8 +432,25 @@ func (pc *fakePC) Call(ctx context.Context, op string, params proto.Message, opt
 		}
 		return proto.Message{"code": float64(0), "stdout": "ok\n", "stderr": "", "timed_out": false, "truncated": false}, nil
 	case "screen.capture":
+		if params["window"] != nil {
+			return nil, apierr.New(wire.CodeCapabilityUnsupported, "screen.capture of one window is not supported by this agent; capture its display and crop the image to the window's x, y, w and h from win.list", false, "")
+		}
+		if len(pc.displays) > 0 {
+			return pc.capture(params)
+		}
 		return proto.Message{"data": base64.StdEncoding.EncodeToString([]byte("\x89PNG\r\n\x1a\nfake")), "width": float64(1920), "height": float64(1080),
 			"capture_id": "cap-1", "method": "dd"}, nil
+	case "display.list":
+		if len(pc.displays) == 0 {
+			break
+		}
+		list := make([]any, 0, len(pc.displays))
+		for _, d := range pc.displays {
+			b := d.img.Bounds()
+			list = append(list, map[string]any{"index": float64(d.index), "x": float64(d.x), "y": float64(d.y),
+				"width": float64(b.Dx()), "height": float64(b.Dy())})
+		}
+		return proto.Message{"displays": list}, nil
 	case "diag.system":
 		return proto.Message{"os": map[string]any{"name": "Windows 11 Pro", "build": "26200.9278"}, "computer_name": "DEV-PC"}, nil
 	case "diag.events":

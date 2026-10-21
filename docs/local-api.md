@@ -352,7 +352,7 @@ YAML 1.2의 부분집합이다: 블록 매핑·블록 시퀀스, 흐름 시퀀�
 | `assert_screen_text` | 포함할 글, 또는 `{contains?, not_contains?, matches?, window?}`(`contains`·`not_contains`는 글 또는 글 목록, 하나 이상) | 창의 `ui.tree{filter:"all", max:2000}` 항목(정적 글 포함)의 이름·값(값은 항목마다 앞 200자)을 줄로 이은 글. 맞을 때까지 300 ms마다 | 5000 | — | `uia` |
 | `assert_file` | `{path, exists?(기본 true), contains?, not_contains?, matches?, sha256?, size?}` | `fs.stat`(`sha256`이 있으면 해시 포함)과, 내용 기준이 있으면 `fs.read`(앞 8 MiB, UTF-16LE 파일은 UTF-8로 바꿔 비교). 맞을 때까지 300 ms마다 | 5000 | — | `files` |
 | `exec` | 명령 글(`cmd`, 셸 기본값), 또는 `{argv? \| cmd?, shell?, cwd?, expect_code?(기본 0), stdout_contains?, stderr_contains?}` | `exec.run{timeout_ms}` | 120000 | — | `exec` |
-| `screenshot` | 비움·이름, 또는 `{name?, display?(기본 0), window?, max_width?(기본 1920)}` | `screen.capture{format:"png"}` | 30000 | — | `screen` |
+| `screenshot` | 비움·이름, 또는 `{name?, display?(기본 0), window?, max_width?(기본 1920)}` | `screen.capture{format:"png"}`. `window`(선택자의 `window`와 같은 값)가 있으면 `win.list`로 그 창을 찾고, 창 가운데가 있는 디스플레이(`display.list`로 정하고, 정하지 못하면 `display`)를 `max_width`로 찍어 창 영역만 잘라 저장한다. 창이 그 화면에 보이지 않으면(최소화 등) `NOT_FOUND` | 30000 | — | `screen`(`window`가 있으면 `uia`도) |
 | `collect` | `{file, max_bytes?(기본 8 MiB, 최대 64 MiB), name?}`, `{events: {log?, since?(기본 실행 시작 시각), until?, levels?, provider?, max?}, name?}`, `{crashes: {since?(기본 실행 시작 시각)}, name?}` 중 하나 | 파일 끝 `max_bytes`(`fs.read`) / `diag.events` / `diag.crashes`를 증거로 저장 | 120000 | — | `files` / `diag` / `diag` |
 | `sleep` | 밀리초 정수, 또는 `{ms}`(최대 600000) | 기다린다 | — | — | — |
 | `close` | 비움·창, 또는 `{window?}` | `win.action{action:"close"}` | 15000 | 예 | `uia` |

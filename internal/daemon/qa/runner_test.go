@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -1056,5 +1059,127 @@ func TestBundleFailureEndsTheRunInError(t *testing.T) {
 	job, _ := e.jr.Get(context.Background(), done.JobID)
 	if job.Status != model.StatusUnknown {
 		t.Fatalf("job %+v", job)
+	}
+}
+
+// evidenceImage decodes the PNG evidence a.
+func evidenceImage(t *testing.T, a model.Artifact) image.Image {
+	t.Helper()
+	f, err := os.Open(a.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	img, err := png.Decode(f)
+	if err != nil {
+		t.Fatalf("evidence %s: %v", a.Name, err)
+	}
+	return img
+}
+
+// evidenceNames are the kind:name pairs of the evidence of s.
+func evidenceNames(s StepResult) string {
+	var out []string
+	for _, a := range s.Evidence {
+		out = append(out, a.Kind+":"+a.Name)
+	}
+	return strings.Join(out, " ")
+}
+
+// desktopPC is the fixture PC with a ready screen on two displays and the
+// foreground window 메모장 at (700, 40), 120×80, on the second display.
+func desktopPC() *fakePC {
+	pc := fixturePC()
+	pc.setCap("screen", "ready")
+	pc.displays = []fakeDisplay{newFakeDisplay(0, 0, 0, 640, 360), newFakeDisplay(1, 640, 0, 400, 300)}
+	pc.mu.Lock()
+	pc.windows = append(pc.windows, map[string]any{"id": "0x20", "title": "메모장", "process": "notepad.exe", "pid": float64(77),
+		"x": float64(700), "y": float64(40), "w": float64(120), "h": float64(80), "foreground": true})
+	pc.mu.Unlock()
+	return pc
+}
+
+func TestAWindowScreenshotIsItsDisplayCroppedToTheWindow(t *testing.T) {
+	pc := desktopPC()
+	e := newEnv(t, pc, testOpts{})
+	run := e.run(t, `name: window shot
+steps:
+  - screenshot: {window: 메모장, max_width: 200}
+  - screenshot: {name: 앞 창, window: foreground}
+  - assert_ui: {name: Missing}
+    timeout_ms: 40
+`)
+	if statuses(run) != "pass pass fail" {
+		t.Fatalf("statuses %s %+v", statuses(run), run.Steps)
+	}
+	shots := pc.callsOf("screen.capture")
+	if len(shots) != 3 {
+		t.Fatalf("screen.capture calls %+v", shots)
+	}
+	for _, c := range shots[:2] {
+		if _, ok := c.params["window"]; ok || c.params.Int("display") != 1 {
+			t.Fatalf("screen.capture %v", c.params)
+		}
+	}
+	if shots[0].params.Int("max_width") != 200 {
+		t.Fatalf("screen.capture %v", shots[0].params)
+	}
+	for i, want := range []struct{ w, h, lastX, lastY int }{{60, 40, 818, 118}, {120, 80, 819, 119}} {
+		s := run.Steps[i]
+		if len(s.Evidence) != 1 || s.Evidence[0].Kind != "screenshot" {
+			t.Fatalf("step %d evidence %+v", i+1, s.Evidence)
+		}
+		img := evidenceImage(t, s.Evidence[0])
+		b := img.Bounds()
+		if b.Dx() != want.w || b.Dy() != want.h || s.Result["width"] != float64(want.w) || s.Result["height"] != float64(want.h) {
+			t.Fatalf("step %d: image %v, result %+v", i+1, b, s.Result)
+		}
+		if got := color.NRGBAModel.Convert(img.At(b.Min.X, b.Min.Y)); got != desktopPixel(700, 40) {
+			t.Fatalf("step %d: top left %v, want the desktop pixel (700, 40) %v", i+1, got, desktopPixel(700, 40))
+		}
+		if got := color.NRGBAModel.Convert(img.At(b.Max.X-1, b.Max.Y-1)); got != desktopPixel(want.lastX, want.lastY) {
+			t.Fatalf("step %d: bottom right %v, want the desktop pixel (%d, %d)", i+1, got, want.lastX, want.lastY)
+		}
+	}
+	if got := evidenceNames(run.Steps[2]); !strings.Contains(got, "screenshot:03-assert_ui-screenshot.png") {
+		t.Fatalf("failure evidence %s", got)
+	}
+}
+
+func TestAFailedWindowScreenshotKeepsTheFailureScreenshots(t *testing.T) {
+	pc := desktopPC()
+	e := newEnv(t, pc, testOpts{})
+	run := e.run(t, `name: missing window
+steps:
+  - screenshot: {window: 없는 창}
+    continue_on_fail: true
+  - assert_ui: {name: Missing}
+    timeout_ms: 40
+`)
+	if statuses(run) != "fail fail" || run.Steps[0].Error == nil || run.Steps[0].Error.Code != wire.CodeNotFound {
+		t.Fatalf("statuses %s %+v", statuses(run), run.Steps)
+	}
+	if got := evidenceNames(run.Steps[0]); got != "screenshot:01-screenshot-screenshot.png" {
+		t.Fatalf("step 1 evidence %s", got)
+	}
+	if got := evidenceNames(run.Steps[1]); !strings.Contains(got, "screenshot:02-assert_ui-screenshot.png") {
+		t.Fatalf("step 2 evidence %s", got)
+	}
+}
+
+func TestAWindowScreenshotWithoutUIAIsBlocked(t *testing.T) {
+	pc := desktopPC()
+	pc.setCap("uia", "unavailable")
+	e := newEnv(t, pc, testOpts{})
+	run := e.run(t, `name: no uia
+steps:
+  - screenshot: {window: 메모장}
+`)
+	s := run.Steps[0]
+	if run.Status != RunBlocked || s.Status != StepBlocked || s.Error == nil || s.Error.Code != wire.CodeCapabilityUnsupported {
+		t.Fatalf("run %s %+v", run.Status, s)
+	}
+	if ops := strings.Join(pc.ops(), " "); strings.Contains(ops, "win.list") || strings.Contains(ops, "screen.capture") {
+		t.Fatalf("ops sent %s", ops)
 	}
 }

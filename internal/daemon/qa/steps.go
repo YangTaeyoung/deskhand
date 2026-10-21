@@ -400,8 +400,8 @@ func (r *runner) click(ctx context.Context, s *ClickSpec) stepOut {
 	return out
 }
 
-// findWindow returns the window ref names, or the current window when ref
-// is "".
+// findWindow returns the window ref names (a win.list id, foreground or a
+// title part), or the current window when ref is "".
 func (r *runner) findWindow(ctx context.Context, ref string) (map[string]any, error) {
 	if ref == "" {
 		return r.window, nil
@@ -417,7 +417,7 @@ func (r *runner) findWindow(ctx context.Context, ref string) (map[string]any, er
 			continue
 		}
 		title, _ := w["title"].(string)
-		if w["id"] == ref || strings.Contains(strings.ToLower(title), strings.ToLower(ref)) {
+		if w["id"] == ref || (ref == "foreground" && w["foreground"] == true) || strings.Contains(strings.ToLower(title), strings.ToLower(ref)) {
 			return w, nil
 		}
 	}
@@ -823,11 +823,13 @@ func (r *runner) exec(ctx context.Context, s *ExecSpec, i int, timeout int64) st
 }
 
 func (r *runner) shot(ctx context.Context, s *ScreenshotSpec, i int) stepOut {
+	if s.Window != "" {
+		if c, ok := r.agent.Caps()["uia"]; ok && c.State != "ready" {
+			return blockedOut(wire.CodeCapabilityUnsupported, fmt.Sprintf("이 PC에서 창을 찾을 수 없습니다(uia: %s). window 없이 화면 전체를 찍으세요", c.Reason))
+		}
+	}
 	data, res, err := r.screenshot(ctx, s.Display, s.Window, s.MaxWidth)
 	if err != nil {
-		if apierr.CodeOf(err) == wire.CodeCapabilityUnsupported {
-			r.screenOff = true
-		}
 		return fromError(err)
 	}
 	a, err := r.save(i, ActScreenshot, s.Name, ".png", "screenshot", data)

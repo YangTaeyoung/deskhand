@@ -452,30 +452,42 @@ func (r *runner) capture(ctx context.Context, i int, action, suffix string, disp
 	}
 	data, _, err := r.screenshot(ctx, display, window, maxWidth)
 	if err != nil {
-		if apierr.CodeOf(err) == wire.CodeCapabilityUnsupported {
-			r.screenOff = true
-		}
 		return model.Artifact{}, false
 	}
 	a, err := r.save(i, action, suffix, ".png", "screenshot", data)
 	return a, err == nil
 }
 
-// screenshot reads a PNG of a display or a window of the host.
+// screenshot reads a PNG of a display of the host, or of the window
+// window: the display that holds the window's centre (display, when
+// display.list names none) captured at maxWidth and cropped to the
+// window's win.list rectangle. A CAPABILITY_UNSUPPORTED screen.capture
+// turns the screenshots of the run off.
 func (r *runner) screenshot(ctx context.Context, display int, window string, maxWidth int) ([]byte, proto.Message, error) {
-	params := proto.Message{"display": display, "format": "png", "max_width": maxWidth}
+	var win map[string]any
 	if window != "" {
-		params["window"] = window
+		w, err := r.findWindow(ctx, window)
+		if err != nil {
+			return nil, nil, err
+		}
+		win = w
+		display = r.displayOf(ctx, win, display)
 	}
-	res, err := r.agent.Call(ctx, "screen.capture", params, conn.CallOpts{})
+	res, err := r.agent.Call(ctx, "screen.capture", proto.Message{"display": display, "format": "png", "max_width": maxWidth}, conn.CallOpts{})
 	if err != nil {
+		if apierr.CodeOf(err) == wire.CodeCapabilityUnsupported {
+			r.screenOff = true
+		}
 		return nil, nil, err
 	}
 	data, err := decodeBase64(res.String("data"))
 	if err != nil {
 		return nil, nil, apierr.Internal("에이전트가 보낸 화면을 읽지 못했습니다. 에이전트를 업데이트하세요")
 	}
-	return data, res, nil
+	if win == nil {
+		return data, res, nil
+	}
+	return r.cropToWindow(data, res, win, window, display)
 }
 
 // save writes data as the evidence file evidence/<NN>-<action>[-suffix]<ext>
