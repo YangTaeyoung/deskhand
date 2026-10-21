@@ -16,7 +16,8 @@ func TestByteSizeUsesOneDecimalOnBase1024(t *testing.T) {
 		{1048575, "1024.0 KB"},
 		{2516992, "2.4 MB"},
 		{1 << 30, "1.0 GB"},
-		{3 << 40, "3072.0 GB"},
+		{1<<40 - 1, "1024.0 GB"},
+		{3 << 40, "3.0 TB"},
 	} {
 		if got := byteSize(tc.n); got != tc.want {
 			t.Errorf("byteSize(%d) = %q, want %q", tc.n, got, tc.want)
