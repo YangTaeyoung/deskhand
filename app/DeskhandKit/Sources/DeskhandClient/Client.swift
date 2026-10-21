@@ -49,9 +49,11 @@ public actor DeskhandClient {
         let hostID: String?
         let continuation: AsyncThrowingStream<DaemonEvent, Error>.Continuation
 
+        /// The kind filter applies to every event; the host filter to every event but
+        /// `events.dropped`, which concerns the whole connection and carries no `host_id`.
         func matches(_ event: DaemonEvent) -> Bool {
             if let kinds, !kinds.contains(event.kind) { return false }
-            if let hostID, event.hostID != hostID { return false }
+            if let hostID, event.hostID != hostID, event.kind != "events.dropped" { return false }
             return true
         }
     }

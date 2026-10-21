@@ -61,7 +61,7 @@ public final class TransferQueue {
 
     /// Subscribes to `transfer.updated`, then loads the host's transfers, and follows the events
     /// until `stop()`. After the stream ends it subscribes and loads again; whenever the daemon
-    /// connection comes back it loads again.
+    /// connection comes back or reports `events.dropped` it loads again.
     func start() {
         guard eventsTask == nil else { return }
         let backend = self.backend
@@ -75,7 +75,7 @@ public final class TransferQueue {
         }
         eventsTask = Task { [weak self] in
             while !Task.isCancelled {
-                let stream = backend.events(kinds: [EventKind.transferUpdated], hostID: hostID)
+                let stream = backend.events(kinds: EventKind.transferKinds, hostID: hostID)
                 await self?.reload()
                 do {
                     for try await event in stream {
@@ -88,8 +88,13 @@ public final class TransferQueue {
         }
     }
 
-    /// Applies a `transfer.updated` event; one whose `transfer` does not decode is logged and counted.
+    /// Applies a `transfer.updated` event; one whose `transfer` does not decode is logged and
+    /// counted. `events.dropped` loads the list again.
     func handle(_ event: DaemonEvent) {
+        if event.kind == EventKind.eventsDropped {
+            Task { await reload() }
+            return
+        }
         guard event.kind == EventKind.transferUpdated else { return }
         do {
             guard let value = event.payload["transfer"] else { throw DecodingError.valueNotFound(

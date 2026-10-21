@@ -198,8 +198,8 @@ public final class DebuggerModel {
     // MARK: Lifecycle
 
     /// Follows `debug.*` events of the computer and loads its sessions. When the event stream
-    /// ends it subscribes again with backoff; whenever the daemon connection comes back it reads
-    /// the sessions and the missed console entries again.
+    /// ends it subscribes again with backoff; whenever the daemon connection comes back or reports
+    /// `events.dropped` it reads the sessions and the missed console entries again.
     public func start() {
         guard eventsTask == nil else { return }
         let backend = backend
@@ -350,6 +350,10 @@ public final class DebuggerModel {
 
     func handle(_ event: DaemonEvent) {
         let p = event.payload
+        if event.kind == EventKind.eventsDropped {
+            Task { await reload() }
+            return
+        }
         guard let debugID = p["debug_id"]?.stringValue else { return }
         switch event.kind {
         case EventKind.debugSessionChanged:

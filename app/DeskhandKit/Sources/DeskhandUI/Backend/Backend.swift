@@ -468,16 +468,19 @@ public enum EventKind {
     /// Every kind the QA tab follows.
     public static let qaKinds = [qaUpdated, eventsDropped]
 
+    /// Every kind a computer's transfer queue follows.
+    public static let transferKinds = [transferUpdated, eventsDropped]
+
     /// Every kind the debugger tab follows.
     public static let debuggerKinds = [
         debugSessionChanged, debugTargetChanged, debugBreakpointChanged, debugPaused, debugResumed, debugConsole, debugConsoleCleared,
-        debugClosed,
+        debugClosed, eventsDropped,
     ]
 
     /// Every kind `AppStore` subscribes to.
     public static let storeKinds = [
         connectionState, controlChanged, timelineAppended, hostAdded, hostRemoved, hostUpdated,
-        capsChanged, sessionChanged, displayChanged, installProgress,
+        capsChanged, sessionChanged, displayChanged, installProgress, eventsDropped,
     ]
 }
 

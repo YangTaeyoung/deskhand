@@ -122,6 +122,100 @@ final class ReconnectResyncTests: XCTestCase {
     }
 }
 
+/// The store, the transfer queue and the debugger read their state again when the daemon reports
+/// `events.dropped`, which carries no `host_id`.
+@MainActor
+final class DroppedEventsResyncTests: XCTestCase {
+    private let dev = PreviewFixtures.devPCID
+    private static let dropped = #"{"seq":0,"ts":"2026-10-20T10:02:00.000Z","kind":"events.dropped","count":12}"#
+    private static let host = #"{"host_id":"windows-dev","name":"개발 PC","os":"windows","arch":"amd64","address":"a","port":1,"ssh_alias":"","state":"connected","caps":{},"displays":[],"owner":"none","connection_generation":1}"#
+
+    private func connected(_ daemon: MockDaemon) async throws -> (LiveBackend, DeskhandClient) {
+        let host = Self.host
+        daemon.setHandler { request in
+            switch request.method {
+            case "host.list": .result(#"{"hosts":[\#(host)]}"#)
+            case "debug.list": .result(#"{"sessions":[]}"#)
+            case "transfer.list": .result(#"{"transfers":[]}"#)
+            case "timeline.list": .result(#"{"entries":[]}"#)
+            case "control.get": .result(#"{"owner":"none","gen":1,"ai_paused":false}"#)
+            default: nil
+            }
+        }
+        try daemon.start()
+        let client = DeskhandClient(socketPath: daemon.path, reconnectInitialDelay: 0.02, reconnectMaxDelay: 0.1)
+        try await client.connect(kind: "app", name: "test", version: "0")
+        return (LiveBackend(client: client), client)
+    }
+
+    func testAHostScopedSubscriptionReceivesEventsDropped() async throws {
+        let daemon = MockDaemon()
+        defer { daemon.stop() }
+        let (_, client) = try await connected(daemon)
+        let stream = client.events(kinds: [EventKind.transferUpdated, EventKind.eventsDropped], hostID: dev)
+        try await waitUntilAsync { await client.subscriptionCount == 1 }
+        XCTAssertTrue(daemon.waitForRequests(method: "events.subscribe", count: 1))
+        let reader = Task { () -> String? in
+            var iterator = stream.makeAsyncIterator()
+            return try await iterator.next()?.kind
+        }
+        daemon.emit(Self.dropped)
+        let timeout = Task {
+            try await Task.sleep(for: .seconds(2))
+            reader.cancel()
+        }
+        let kind = try? await reader.value
+        timeout.cancel()
+        XCTAssertEqual(kind, EventKind.eventsDropped)
+        await client.close()
+    }
+
+    func testTheStoreReadsTheComputersAndControlAgainOnEventsDropped() async throws {
+        let daemon = MockDaemon()
+        defer { daemon.stop() }
+        let (backend, client) = try await connected(daemon)
+        let store = AppStore(backend: backend, defaults: UserDefaults(suiteName: "dropped-store-\(UUID())")!)
+        await store.start()
+        try await waitUntil { store.hosts.map(\.hostID) == [self.dev] }
+        await store.loadControl(for: dev)
+        XCTAssertTrue(daemon.waitForRequests(method: "events.subscribe", count: 1))
+        let lists = daemon.requests(method: "host.list").count
+        let controls = daemon.requests(method: "control.get").count
+        daemon.emit(Self.dropped)
+        try await waitUntil(timeout: .seconds(5)) { daemon.requests(method: "host.list").count == lists + 1 }
+        try await waitUntil(timeout: .seconds(5)) { daemon.requests(method: "control.get").count == controls + 1 }
+        await client.close()
+    }
+
+    func testTheTransferQueueReloadsOnEventsDropped() async throws {
+        let daemon = MockDaemon()
+        defer { daemon.stop() }
+        let (backend, client) = try await connected(daemon)
+        let queue = TransferQueue(hostID: dev, backend: backend)
+        queue.start()
+        try await waitUntil { queue.loaded }
+        XCTAssertTrue(daemon.waitForRequests(method: "events.subscribe", count: 1))
+        daemon.emit(Self.dropped)
+        try await waitUntil(timeout: .seconds(5)) { daemon.requests(method: "transfer.list").count == 2 }
+        queue.stop()
+        await client.close()
+    }
+
+    func testTheDebuggerReloadsItsSessionsOnEventsDropped() async throws {
+        let daemon = MockDaemon()
+        defer { daemon.stop() }
+        let (backend, client) = try await connected(daemon)
+        let model = DebuggerModel(hostID: dev, backend: backend, defaults: UserDefaults(suiteName: "dropped-debug-\(UUID())")!)
+        model.start()
+        try await waitUntil { daemon.requests(method: "debug.list").count == 1 }
+        XCTAssertTrue(daemon.waitForRequests(method: "events.subscribe", count: 1))
+        daemon.emit(Self.dropped)
+        try await waitUntil(timeout: .seconds(5)) { daemon.requests(method: "debug.list").count == 2 }
+        model.stop()
+        await client.close()
+    }
+}
+
 /// Waits until an async `condition` holds, checking every few milliseconds.
 func waitUntilAsync(timeout: Duration = .seconds(3), _ condition: @Sendable () async -> Bool,
                     file: StaticString = #filePath, line: UInt = #line) async throws {

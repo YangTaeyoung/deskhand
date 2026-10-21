@@ -115,6 +115,7 @@ public final class AppStore {
     @ObservationIgnored private var eventsTask: Task<Void, Never>?
     @ObservationIgnored private var reconnectsTask: Task<Void, Never>?
     @ObservationIgnored private var reloadTask: Task<Void, Never>?
+    @ObservationIgnored private var resyncTask: Task<Void, Never>?
     @ObservationIgnored private var reloadToken = 0
 
     /// `loginItem` opens the app at login; without one, a `MemoryLoginItem` that never touches the system.
@@ -299,7 +300,8 @@ public final class AppStore {
     /// Consumes daemon events. When the stream ends or fails, the phase becomes `reconnecting`;
     /// after a backoff delay it subscribes again and reloads the computer list, returning to
     /// `ready` once the list loads. Whenever the daemon connection comes back under a stream that
-    /// lasts, it reads the computers, control states and loaded timelines again.
+    /// lasts, or the daemon reports `events.dropped`, it reads the computers, control states and
+    /// loaded timelines again.
     private func subscribe() {
         eventsTask?.cancel()
         reconnectsTask?.cancel()
@@ -404,6 +406,8 @@ public final class AppStore {
     func handle(_ event: DaemonEvent) {
         let p = event.payload
         switch event.kind {
+        case EventKind.eventsDropped:
+            requestResync()
         case EventKind.hostAdded, EventKind.hostUpdated:
             guard let value = p["host"], let host = try? LiveBackend.decode(Host.self, from: value) else {
                 return scheduleReload()
@@ -507,6 +511,15 @@ public final class AppStore {
         controls[hostID] = control
         syncOwner(at: i)
         return true
+    }
+
+    /// Runs `resync()` unless one is already running.
+    private func requestResync() {
+        guard resyncTask == nil else { return }
+        resyncTask = Task { [weak self] in
+            await self?.resync()
+            self?.resyncTask = nil
+        }
     }
 
     /// Reads the computers, the control state of every known host and the loaded timelines again.
