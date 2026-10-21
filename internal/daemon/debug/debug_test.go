@@ -3,10 +3,14 @@ package debug
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/daemon/apierr"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/events"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/tunnel"
 	"github.com/YangTaeyoung/deskhand/internal/wire"
@@ -566,4 +570,56 @@ func TestPauseOnStartAttachesTheRendererThatAnswersLater(t *testing.T) {
 		}
 		return false
 	})
+}
+
+func TestDebugEventsStoreOnlyTheirIDsAndOrder(t *testing.T) {
+	node := nodeServer(t)
+	browser := newCDPServer(t, "Chrome/120")
+	e, s := launchBoth(t, node, browser, false)
+	long := strings.Repeat("콘솔 글 ", 500)
+	node.emitAll("", "Runtime.consoleAPICalled", map[string]any{"type": "log",
+		"args": []any{map[string]any{"type": "string", "value": long}}})
+	console := e.waitEvent(t, evConsole)
+	node.pauseMain(pauseReasonOther, nil)
+	paused := e.waitEvent(t, evPaused)
+	changed := e.waitEvent(t, evSessionChanged)
+
+	stored := func(ev events.Event) map[string]any {
+		t.Helper()
+		row, err := e.st.GetEvent(ev.Seq)
+		if err != nil {
+			t.Fatalf("stored event %d: %v", ev.Seq, err)
+		}
+		if row.Kind != ev.Kind {
+			t.Fatalf("stored kind %q, want %q", row.Kind, ev.Kind)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(row.Payload, &m); err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	entry := console.Fields["entry"].(ConsoleEntry)
+	if got := stored(console); len(got) != 2 || got["debug_id"] != s.DebugID || toInt(got["seq"]) != int(entry.Seq) {
+		t.Fatalf("stored debug.console has %d bytes of fields %v, want debug_id and seq %d", len(fmt.Sprint(got)), keysOf(got), entry.Seq)
+	}
+	ps := paused.Fields["state"].(PauseState)
+	if got := stored(paused); len(got) != 4 || got["debug_id"] != s.DebugID || got["target_id"] != ps.TargetID ||
+		toInt(got["gen"]) != int(ps.Gen) || got["reason"] != ps.Reason {
+		t.Fatalf("stored debug.paused fields %v, want debug_id, target_id, gen and reason of the pause", keysOf(got))
+	}
+	snap := changed.Fields["session"].(Session)
+	if got := stored(changed); len(got) != 3 || got["debug_id"] != s.DebugID || toInt(got["rev"]) != int(snap.Rev) || got["state"] != snap.State {
+		t.Fatalf("stored debug.session_changed fields %v, want debug_id, rev and state", keysOf(got))
+	}
+}
+
+// keysOf returns the sorted keys of m.
+func keysOf(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }

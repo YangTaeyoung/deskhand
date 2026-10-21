@@ -352,6 +352,7 @@ type debugEnv struct {
 	a    *fakeAgent
 	tuns *tunnel.Manager
 	sub  *events.Sub
+	st   *store.Store
 }
 
 func newDebugEnv(t *testing.T, p1, p2 int) *debugEnv {
@@ -370,7 +371,7 @@ func newDebugEnv(t *testing.T, p1, p2 int) *debugEnv {
 	t.Cleanup(m.Shutdown)
 	sub := bus.Subscribe()
 	t.Cleanup(sub.Close)
-	return &debugEnv{m: m, a: a, tuns: tuns, sub: sub}
+	return &debugEnv{m: m, a: a, tuns: tuns, sub: sub, st: st}
 }
 
 // waitSession waits for a debug.session_changed of the session debugID

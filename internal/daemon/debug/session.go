@@ -180,11 +180,53 @@ func (s *session) snapshotLocked() Session {
 	return out
 }
 
-// publish sends a debugger event to the host's subscribers.
+// publish sends a debugger event to the host's subscribers and stores its
+// storedFields.
 func (s *session) publish(kind string, fields map[string]any) {
 	if s.m.d.Bus != nil {
-		s.m.d.Bus.Publish(s.hostID, s.jobID, kind, fields)
+		s.m.d.Bus.PublishStoring(s.hostID, s.jobID, kind, fields, storedFields(kind, fields))
 	}
+}
+
+// storedFields returns the payload the events table keeps of a debugger
+// event: its debug_id and the fields that order it. The console text, call
+// stacks and snapshots are read through the debug methods.
+func storedFields(kind string, f map[string]any) map[string]any {
+	out := map[string]any{"debug_id": f["debug_id"]}
+	switch kind {
+	case evConsole:
+		if e, ok := f["entry"].(ConsoleEntry); ok {
+			out["seq"] = e.Seq
+		}
+	case evSessionChanged:
+		if snap, ok := f["session"].(Session); ok {
+			out["rev"], out["state"] = snap.Rev, snap.State
+		}
+	case evTargetChanged:
+		if t, ok := f["target"].(Target); ok {
+			out["target_id"] = t.ID
+		}
+		out["removed"], out["rev"] = f["removed"], f["rev"]
+	case evBreakpointChanged:
+		if b, ok := f["breakpoint"].(Breakpoint); ok {
+			out["breakpoint_id"], out["rev"] = b.BreakpointID, b.Rev
+		}
+		out["removed"] = f["removed"]
+	case evPaused:
+		if st, ok := f["state"].(PauseState); ok {
+			out["target_id"], out["gen"], out["reason"] = st.TargetID, st.Gen, st.Reason
+		}
+	case evResumed:
+		out["target_id"], out["gen"] = f["target_id"], f["gen"]
+	case evConsoleCleared:
+		out["through_seq"] = f["through_seq"]
+	case evClosed:
+		out["reason"], out["rev"] = f["reason"], f["rev"]
+		if code, ok := f["exit_code"]; ok {
+			out["exit_code"] = code
+		}
+	}
+	return out
 }
 
 // emitSession publishes debug.session_changed with the current snapshot.

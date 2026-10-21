@@ -243,6 +243,8 @@ QA 시나리오 실행기. 세부 규칙은 [§10](#10-qa-세부-계약).
 | `debug.closed` | `debug_id`, `reason`(`requested`/`process_exited`/`connection_lost`), `exit_code?`, `rev` |
 | `qa.updated` | `run`(QARun — `steps` 없음), `step?`(이번에 바뀐 QAStep 하나). 실행이 시작할 때, 단계가 시작하고 끝날 때, 취소를 받았을 때, 실행이 끝나 결과 묶음을 쓴 뒤에 나간다. `run.rev`가 이벤트마다 1씩 오른다 |
 
+- 데몬은 지난 이벤트를 다시 보내지 않는다. `events.subscribe`는 구독한 뒤에 생긴 이벤트만 주고, 다시 연결했거나 `events.dropped`를 받은 클라이언트는 필요한 상태를 메서드로 다시 읽는다(`host.list`·`jobs.list`·`transfer.get`·`qa.get`·`debug.get`, 콘솔은 §9 `debug.console{cursor}`).
+- 데몬은 이벤트마다 `seq`와 요약을 기록해 30일 동안 두고 시작할 때와 24시간마다 오래된 기록을 지운다. 이 기록은 클라이언트에 나가지 않는다. `debug.*`의 기록은 `debug_id`와 순서를 정하는 필드(`debug.console`은 항목 `seq`, `debug.paused`·`debug.resumed`는 `target_id`·`gen`, 그 밖은 `rev` 등)뿐이고 콘솔 글·호출 스택·세션 스냅샷은 남기지 않는다.
 - `timeline.list{host_id, since?, limit?}` 결과: `{entries: [TimelineEntry], next_cursor?}`(최신순).
 - `host.doctor` 항목 `id`: `ssh_reachable`, `agent_version`, `quic_connect`, `fingerprint`, `session`, `firewall_rule`(규칙이 꺼져 있거나 호스트 `port`가 아닌 포트를 열면 `warn`).
 
