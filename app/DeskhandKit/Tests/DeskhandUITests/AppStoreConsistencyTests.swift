@@ -207,6 +207,19 @@ final class AppStoreConsistencyTests: XCTestCase {
         XCTAssertEqual(store.timeline(for: dev).count, PreviewFixtures.timeline(hostID: dev).count)
     }
 
+    // MARK: Disconnect
+
+    func testDisconnectAsksFirstAndClosesOnlyAfterConfirmation() async throws {
+        let (store, _) = await startedStore()
+        let dev = try XCTUnwrap(store.host(PreviewFixtures.devPCID))
+        store.requestDisconnect(dev)
+        XCTAssertEqual(store.pendingDisconnect?.hostID, dev.hostID)
+        XCTAssertEqual(store.connection(for: dev.hostID), .ready)
+        store.disconnect(dev.hostID)
+        XCTAssertNil(store.pendingDisconnect)
+        try await waitUntil { store.connection(for: dev.hostID) == .offline }
+    }
+
     // MARK: Add host
 
     func testFinishDoesNotSelectHostRemovedMeanwhile() async throws {

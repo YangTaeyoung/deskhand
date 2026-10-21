@@ -95,27 +95,22 @@ struct ControlBanner: View {
         switch kind {
         case .ai:
             BannerBand(style: .solid(DS.Color.aiFill), symbol: ControlOwner.ai.symbol, title: kind.title,
-                       message: String.ui("banner.ai.message", "언제든 제어권을 가져오거나 긴급 정지할 수 있습니다.")) {
+                       message: String.ui("banner.ai.message", "언제든 제어권을 가져올 수 있고, 툴바의 긴급 정지(⇧⌘.)로 AI 입력을 바로 멈출 수 있습니다.")) {
                 Button { actions.takeOver(host.hostID) } label: {
                     ControlActionLabel(action: .takeOver, running: actions.isRunning(.takeOver, on: host.hostID))
                 }
-                .buttonStyle(BandButtonStyle(kind: .primary(DS.Color.ai)))
+                .buttonStyle(BandButtonStyle(text: DS.Color.aiFill))
                 .disabled(actions.isRunning(.takeOver, on: host.hostID))
-                Button { actions.stop(host.hostID) } label: {
-                    ControlActionLabel(action: .stop, running: actions.isRunning(.stop, on: host.hostID))
-                }
-                .buttonStyle(BandButtonStyle(kind: .danger))
-                .disabled(actions.isRunning(.stop, on: host.hostID))
             }
         case .human:
             BannerBand(style: .tinted(DS.Color.human), symbol: ControlOwner.human.symbol, title: kind.title,
                        message: String.ui("banner.human.message", "AI의 입력은 거절됩니다. 작업을 마치면 AI에게 넘기세요.")) {
-                giveBackButton(prominent: false)
+                giveBackButton
             }
         case .aiPaused:
             BannerBand(style: .tinted(DS.Color.warning), symbol: "pause.circle.fill", title: kind.title,
                        message: String.ui("banner.aiPaused.message", "AI에게 넘기기 전까지 AI는 이 PC를 조작할 수 없습니다.")) {
-                giveBackButton(prominent: true)
+                giveBackButton
             }
         case .sessionLocked:
             BannerBand(style: .tinted(DS.Color.warning), symbol: "lock.fill", title: kind.title,
@@ -127,7 +122,7 @@ struct ControlBanner: View {
                        message: kind == .connecting
                            ? String.ui("banner.connecting.message", "보안 연결로 에이전트에 접속하고 있습니다.")
                            : String.ui("banner.reconnecting.message", "연결되면 바로 이어서 쓸 수 있습니다. 결과를 모르는 작업은 다시 실행하지 않습니다.")) {
-                Button(String.ui("action.disconnect", "연결 끊기")) { store.disconnect(host.hostID) }
+                Button(String.ui("action.disconnect.ask", "연결 끊기…")) { store.requestDisconnect(host) }
                     .buttonStyle(.bordered)
             }
         case .offline:
@@ -155,23 +150,15 @@ struct ControlBanner: View {
         }
     }
 
-    /// AI에게 넘기기: a deep purple prominent button with white text, or a plain bordered button
-    /// with label-colored text.
-    @ViewBuilder
-    private func giveBackButton(prominent: Bool) -> some View {
+    /// AI에게 넘기기: a deep purple prominent button with white text, in every band that offers it.
+    private var giveBackButton: some View {
         let running = actions.isRunning(.giveBack, on: host.hostID)
-        let button = Button { actions.giveBack(host.hostID) } label: {
+        return Button { actions.giveBack(host.hostID) } label: {
             ControlActionLabel(action: .giveBack, running: running)
         }
         .disabled(running)
-        if prominent {
-            button
-                .buttonStyle(.borderedProminent)
-                .tint(DS.Color.aiFill)
-        } else {
-            button
-                .buttonStyle(.bordered)
-        }
+        .buttonStyle(.borderedProminent)
+        .tint(DS.Color.aiFill)
     }
 }
 
@@ -343,15 +330,10 @@ struct BannerBand<Actions: View>: View {
     }
 }
 
-/// Capsule buttons drawn on a solid band: `primary` is a white capsule with tinted text,
-/// `danger` a red capsule with white text.
+/// The button on a solid band: a white capsule with `text`-colored text. `text` is a fill color
+/// that white reaches 4.5:1 against, such as `DS.Color.aiFill`, so the text reads on white.
 struct BandButtonStyle: ButtonStyle {
-    enum Kind {
-        case primary(Color)
-        case danger
-    }
-
-    let kind: Kind
+    let text: Color
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
@@ -359,24 +341,10 @@ struct BandButtonStyle: ButtonStyle {
             .font(DS.Font.body.weight(.semibold))
             .padding(.horizontal, DS.Space.m)
             .padding(.vertical, DS.Space.s)
-            .foregroundStyle(foreground)
-            .background(fill, in: Capsule())
+            .foregroundStyle(text)
+            .background(DS.Color.onFill, in: Capsule())
             .contentShape(Capsule())
             .opacity(configuration.isPressed ? 0.78 : (isEnabled ? 1 : 0.7))
-    }
-
-    private var foreground: Color {
-        switch kind {
-        case .primary(let tint): tint
-        case .danger: .white
-        }
-    }
-
-    private var fill: Color {
-        switch kind {
-        case .primary: .white
-        case .danger: DS.Color.danger
-        }
     }
 }
 

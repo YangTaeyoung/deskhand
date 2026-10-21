@@ -75,6 +75,8 @@ public final class AppStore {
     public var doctor: DoctorModel?
     /// The host awaiting removal confirmation.
     public var pendingRemoval: Host?
+    /// The host awaiting confirmation before its connection is closed.
+    public var pendingDisconnect: Host?
     /// Failure of the last host action (connect, disconnect, repair, remove).
     public var actionError: OperationError?
 
@@ -597,7 +599,13 @@ public final class AppStore {
         perform { try await $0.hostConnect(hostID: hostID) }
     }
 
+    /// Asks to confirm closing the host's connection; `disconnect(_:)` closes it.
+    public func requestDisconnect(_ host: Host) {
+        pendingDisconnect = host
+    }
+
     public func disconnect(_ hostID: String) {
+        pendingDisconnect = nil
         perform { try await $0.hostDisconnect(hostID: hostID) }
     }
 

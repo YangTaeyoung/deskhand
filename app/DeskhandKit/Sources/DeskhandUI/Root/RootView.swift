@@ -72,6 +72,17 @@ struct ComputersSplitView: View {
         } message: { _ in
             Text(String.ui("remove.message", "이 Mac에서 페어링 정보를 지웁니다. ‘에이전트까지 제거’는 SSH로 원격 PC의 에이전트와 예약 작업, 방화벽 규칙도 지웁니다."))
         }
+        .confirmationDialog(
+            disconnectTitle,
+            isPresented: Binding(get: { store.pendingDisconnect != nil }, set: { if !$0 { store.pendingDisconnect = nil } }),
+            titleVisibility: .visible,
+            presenting: store.pendingDisconnect
+        ) { host in
+            Button(String.ui("action.disconnect", "연결 끊기")) { store.disconnect(host.hostID) }
+            Button(String.ui("action.cancel", "취소"), role: .cancel) {}
+        } message: { _ in
+            Text(String.ui("settings.connection.disconnect.message", "‘연결’을 누를 때까지 다시 연결하지 않습니다. 진행 중인 전송은 다시 연결하면 이어지고, 실행 중인 명령은 중단될 수 있습니다."))
+        }
         .alert(
             String.ui("actionError.title", "작업을 완료하지 못했습니다"),
             isPresented: Binding(get: { store.actionError != nil }, set: { if !$0 { store.actionError = nil } }),
@@ -91,6 +102,11 @@ struct ComputersSplitView: View {
                 guard value == nil, let id = store.selectedHostID else { return }
                 store.controlActions.cancelTakeover(id)
             })
+    }
+
+    private var disconnectTitle: String {
+        guard let name = store.pendingDisconnect?.name else { return "" }
+        return .ui("settings.connection.disconnect.title", "‘\(name)’ 연결 끊기")
     }
 
     private var removalTitle: String {

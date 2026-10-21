@@ -125,7 +125,7 @@ struct HostActionsMenu: View {
         case .blocked:
             Button(String.ui("action.repair", "다시 페어링"), systemImage: "arrow.triangle.2.circlepath") { store.repair(host.hostID) }
         case .ready, .degraded, .connecting, .reconnecting:
-            Button(String.ui("action.disconnect", "연결 끊기"), systemImage: "bolt.horizontal.circle") { store.disconnect(host.hostID) }
+            Button(String.ui("action.disconnect.ask", "연결 끊기…"), systemImage: "bolt.horizontal.circle") { store.requestDisconnect(host) }
         }
         Button(String.ui("action.doctor", "진단 실행"), systemImage: "stethoscope") { store.presentDoctor(for: host.hostID) }
         Divider()

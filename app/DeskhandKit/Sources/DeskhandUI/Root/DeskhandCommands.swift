@@ -45,7 +45,7 @@ public struct DeskhandCommands: Commands {
                 case .blocked:
                     Button(String.ui("action.repair", "다시 페어링")) { store.repair(host.hostID) }
                 case .ready, .degraded, .connecting, .reconnecting:
-                    Button(String.ui("action.disconnect", "연결 끊기")) { store.disconnect(host.hostID) }
+                    Button(String.ui("action.disconnect.ask", "연결 끊기…")) { store.requestDisconnect(host) }
                 }
                 Divider()
                 Button(String.ui("action.remove", "제거…")) { store.pendingRemoval = host }

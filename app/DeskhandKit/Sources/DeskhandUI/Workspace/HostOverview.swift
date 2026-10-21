@@ -79,9 +79,9 @@ struct HostInfoPane: View {
             }
             if host.connection == .ready || host.connection == .degraded {
                 Button {
-                    store.disconnect(host.hostID)
+                    store.requestDisconnect(host)
                 } label: {
-                    Label(String.ui("action.disconnect", "연결 끊기"), systemImage: "bolt.horizontal.circle")
+                    Label(String.ui("action.disconnect.ask", "연결 끊기…"), systemImage: "bolt.horizontal.circle")
                 }
             }
         }
