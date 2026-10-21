@@ -37,6 +37,19 @@ type cdpServer struct {
 	mu    sync.Mutex
 	conns map[*ServerConn]bool
 	cmds  map[string]int
+	// versionHeld makes /json/version answer 503 until it is closed.
+	versionHeld chan struct{}
+}
+
+// holdVersion makes /json/version answer 503 until the returned function
+// runs.
+func (s *cdpServer) holdVersion() func() {
+	held := make(chan struct{})
+	s.mu.Lock()
+	s.versionHeld = held
+	s.mu.Unlock()
+	var once sync.Once
+	return func() { once.Do(func() { close(held) }) }
 }
 
 // commandCount returns how many times method was received.
@@ -64,6 +77,17 @@ func newCDPServer(t *testing.T, browser string) *cdpServer {
 	s := &cdpServer{t: t, ln: ln, browser: browser, wsPathS: "/ws", conns: map[*ServerConn]bool{}, cmds: map[string]int{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/json/version", func(w http.ResponseWriter, r *http.Request) {
+		s.mu.Lock()
+		held := s.versionHeld
+		s.mu.Unlock()
+		if held != nil {
+			select {
+			case <-held:
+			default:
+				http.Error(w, "not listening yet", http.StatusServiceUnavailable)
+				return
+			}
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"Browser": s.browser, "Protocol-Version": "1.3",
 			"webSocketDebuggerUrl": s.wsURL(s.wsPathS)})
 	})
@@ -347,6 +371,26 @@ func newDebugEnv(t *testing.T, p1, p2 int) *debugEnv {
 	sub := bus.Subscribe()
 	t.Cleanup(sub.Close)
 	return &debugEnv{m: m, a: a, tuns: tuns, sub: sub}
+}
+
+// waitSession waits for a debug.session_changed of the session debugID
+// whose session ok accepts.
+func (e *debugEnv) waitSession(t *testing.T, debugID string, ok func(Session) bool) Session {
+	t.Helper()
+	deadline := time.After(3 * e.m.tmo.Probe)
+	for {
+		select {
+		case ev := <-e.sub.C:
+			if ev.Kind != evSessionChanged {
+				continue
+			}
+			if s, _ := ev.Fields["session"].(Session); s.DebugID == debugID && ok(s) {
+				return s
+			}
+		case <-deadline:
+			t.Fatalf("no debug.session_changed of %s matched", debugID)
+		}
+	}
 }
 
 // waitEvent waits for a debugger event of kind with a matching debug_id.

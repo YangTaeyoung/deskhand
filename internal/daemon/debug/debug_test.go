@@ -484,3 +484,86 @@ func TestClosingASessionEndsItsConsolePump(t *testing.T) {
 		waitPumpEnded(t, s)
 	})
 }
+
+func TestPauseOnStartExitedEarly(t *testing.T) {
+	e := newDebugEnv(t, closedPort(t), closedPort(t))
+	other, err := e.tuns.Open(e.a, tunnel.OpenParams{RemotePort: closedPort(t), Owner: tunnel.OwnerUser})
+	if err != nil {
+		t.Fatalf("other tunnel: %v", err)
+	}
+	code := 3
+	e.a.treeDer = func() (bool, *int) { return false, &code }
+	snap, err := e.m.Launch(bctx(t), LaunchParams{HostRef: "h", Path: "App", PauseOnStart: true}, testCaller)
+	oe, ok := AsOpError(err)
+	if !ok || oe.Err.Code != wire.CodeExitedEarly {
+		t.Fatalf("launch error = %v, want EXITED_EARLY", err)
+	}
+	if snap.State != StateClosed || snap.CloseReason != CloseProcessExited || snap.ExitCode == nil || *snap.ExitCode != 3 {
+		t.Fatalf("session = %+v, want closed by process_exited with exit code 3", snap)
+	}
+	if ev := e.waitEvent(t, evClosed); toInt(ev.Fields["exit_code"]) != 3 || ev.Fields["reason"] != CloseProcessExited {
+		t.Fatalf("debug.closed = %+v", ev.Fields)
+	}
+	if len(e.a.kills) != 1 || e.a.kills[0] != 4321 {
+		t.Fatalf("launch tree was not ended once: %v", e.a.kills)
+	}
+	if list := e.tuns.List(""); len(list) != 1 || list[0].TunnelID != other.TunnelID {
+		t.Fatalf("tunnels after the failed launch = %+v, want only the other owner's", list)
+	}
+}
+
+func TestPauseOnStartReturnsOnceMainIsAttachedWhileTheRendererWaits(t *testing.T) {
+	node := nodeServer(t)
+	e := newDebugEnv(t, node.port(), closedPort(t))
+	start := time.Now()
+	s, err := e.m.Launch(bctx(t), LaunchParams{HostRef: "h", Path: "App", PauseOnStart: true, PauseOnExceptions: "all",
+		Breakpoints: []BreakpointSpec{{Match: matchURL, Pattern: "file:///app/main.js", Line: 10}}}, testCaller)
+	if err != nil {
+		t.Fatalf("launch: %v", err)
+	}
+	if took := time.Since(start); took >= e.m.tmo.Probe/2 {
+		t.Fatalf("launch took %s, want a return once main is attached", took)
+	}
+	if s.RendererUnavailableReason != RendererWaiting {
+		t.Fatalf("renderer_unavailable_reason = %q, want %q", s.RendererUnavailableReason, RendererWaiting)
+	}
+	if len(s.Targets) != 1 || s.Targets[0].Role != RoleMain || !s.Targets[0].Attached {
+		t.Fatalf("targets = %+v, want the attached main", s.Targets)
+	}
+	if node.commandCount("Debugger.setBreakpointByUrl") != 1 || node.commandCount("Debugger.setPauseOnExceptions") != 1 ||
+		node.commandCount("Runtime.runIfWaitingForDebugger") != 1 {
+		t.Fatalf("main was not set up and released before the launch returned: breakpoints %d, exceptions %d, run %d",
+			node.commandCount("Debugger.setBreakpointByUrl"), node.commandCount("Debugger.setPauseOnExceptions"),
+			node.commandCount("Runtime.runIfWaitingForDebugger"))
+	}
+	final := e.waitSession(t, s.DebugID, func(x Session) bool { return x.Rev > s.Rev && x.RendererUnavailableReason != RendererWaiting })
+	if final.RendererUnavailableReason != RemoteDebuggingDisabled {
+		t.Fatalf("renderer_unavailable_reason after the wait = %q, want %q", final.RendererUnavailableReason, RemoteDebuggingDisabled)
+	}
+}
+
+func TestPauseOnStartAttachesTheRendererThatAnswersLater(t *testing.T) {
+	node := nodeServer(t)
+	browser := newCDPServer(t, "Chrome/120").withPage(page{sessionID: "pg", targetID: "page-1", typ: "page", url: "file:///index.html"})
+	release := browser.holdVersion()
+	e := newDebugEnv(t, node.port(), browser.port())
+	s, err := e.m.Launch(bctx(t), LaunchParams{HostRef: "h", Path: "App", PauseOnStart: true}, testCaller)
+	if err != nil {
+		t.Fatalf("launch: %v", err)
+	}
+	if s.RendererUnavailableReason != RendererWaiting {
+		t.Fatalf("renderer_unavailable_reason = %q, want %q", s.RendererUnavailableReason, RendererWaiting)
+	}
+	release()
+	e.waitSession(t, s.DebugID, func(x Session) bool {
+		if x.Rev <= s.Rev || x.RendererUnavailableReason != "" {
+			return false
+		}
+		for _, tg := range x.Targets {
+			if tg.Role == RoleRenderer && tg.ID == "page-1" {
+				return true
+			}
+		}
+		return false
+	})
+}

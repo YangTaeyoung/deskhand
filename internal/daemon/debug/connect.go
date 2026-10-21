@@ -104,43 +104,97 @@ func sleep(ctx context.Context, d time.Duration) error {
 
 // connectLaunch connects to the inspector ports of a launch per §9 and
 // fills the session targets and unavailability reasons. It returns an
-// OpError when no port responds.
+// OpError when no side attaches. Without pause_on_start both ports are
+// awaited together and each side attaches as soon as it answers, applying
+// the breakpoints and exception mode immediately.
 func (s *session) connectLaunch(ctx context.Context, mainAddr, rendAddr string) *OpError {
-	start := s.pauseOnStart
+	if s.pauseOnStart {
+		return s.connectPaused(ctx, mainAddr, rendAddr)
+	}
 	mc := make(chan bool, 1)
 	rc := make(chan bool, 1)
-	// pause_on_start waits for P1 and attaches main first; otherwise both
-	// ports are awaited together and each side attaches as soon as it
-	// answers, applying the breakpoints and exception mode immediately.
-	go func() {
-		v, ok, opened := s.awaitPort(ctx, mainAddr)
-		if ok {
-			s.attachMain(ctx, mainAddr, v, start)
-		} else {
-			s.setMainReason(opened)
-		}
-		mc <- ok
-	}()
-	attachR := func() {
-		v, ok, opened := s.awaitPort(ctx, rendAddr)
-		if ok {
-			s.attachRenderer(ctx, rendAddr, v)
-		} else {
-			s.setRendererReason(opened)
-			go s.retryRenderer(rendAddr)
-		}
-		rc <- ok
-	}
-	if start {
-		<-mc
-		mc <- true
-		attachR()
-	} else {
-		go attachR()
-	}
+	go func() { mc <- s.connectMain(ctx, mainAddr, false) }()
+	go func() { rc <- s.connectRenderer(ctx, rendAddr) }()
 	mainOK := <-mc
 	rendOK := <-rc
 	return s.launchOutcome(mainOK, rendOK)
+}
+
+// connectPaused connects a pause_on_start launch. It waits for main first;
+// once main is attached, set up and released to its first-line stop, it
+// returns with renderer_unavailable_reason RendererWaiting and awaits the
+// renderer in the background. When main does not attach it awaits the
+// renderer and returns the launch outcome.
+func (s *session) connectPaused(ctx context.Context, mainAddr, rendAddr string) *OpError {
+	if !s.connectMain(ctx, mainAddr, true) {
+		return s.launchOutcome(false, s.connectRenderer(ctx, rendAddr))
+	}
+	s.mu.Lock()
+	s.rendReason = RendererWaiting
+	s.bumpRev()
+	s.mu.Unlock()
+	go s.awaitRenderer(rendAddr)
+	return nil
+}
+
+// connectMain waits for the inspector port at addr and attaches main; start
+// marks the --inspect-brk first-line stop. It reports whether main
+// attached and records main_unavailable_reason when it did not.
+func (s *session) connectMain(ctx context.Context, addr string, start bool) bool {
+	v, ok, opened := s.awaitPort(ctx, addr)
+	if !ok {
+		s.setMainReason(opened)
+		return false
+	}
+	return s.attachMain(ctx, addr, v, start)
+}
+
+// connectRenderer waits for the DevTools port at addr and attaches the
+// renderer. It reports whether the renderer attached; when it did not it
+// records renderer_unavailable_reason and starts retryRenderer.
+func (s *session) connectRenderer(ctx context.Context, addr string) bool {
+	v, ok, opened := s.awaitPort(ctx, addr)
+	if ok && s.attachRenderer(ctx, addr, v) {
+		return true
+	}
+	if !ok {
+		s.setRendererReason(opened)
+	}
+	go s.retryRenderer(addr)
+	return false
+}
+
+// awaitRenderer attaches the renderer of an open pause_on_start session
+// once its port answers within the probe time. Otherwise it sets the final
+// renderer_unavailable_reason, raises the rev, publishes
+// debug.session_changed and starts retryRenderer. It stops when the session
+// finishes.
+func (s *session) awaitRenderer(addr string) {
+	ctx, cancel := context.WithCancel(s.m.base)
+	defer cancel()
+	go func() {
+		select {
+		case <-s.done:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	v, ok, opened := s.awaitPort(ctx, addr)
+	if ok && s.attachRenderer(ctx, addr, v) {
+		return
+	}
+	s.mu.Lock()
+	if s.closedOnce || s.closing {
+		s.mu.Unlock()
+		return
+	}
+	if !ok {
+		s.setRendererReasonLocked(opened)
+	}
+	s.bumpRev()
+	s.mu.Unlock()
+	s.emitSession()
+	go s.retryRenderer(addr)
 }
 
 // retryRenderer keeps probing the renderer port while the session is open
@@ -171,7 +225,7 @@ func (s *session) retryRenderer(rendAddr string) {
 	}
 }
 
-// launchOutcome returns the failure when no port responded.
+// launchOutcome returns the failure when no side attached.
 func (s *session) launchOutcome(mainOK, rendOK bool) *OpError {
 	if mainOK || rendOK {
 		return nil
@@ -199,12 +253,18 @@ func (s *session) setMainReason(opened bool) {
 
 func (s *session) setRendererReason(opened bool) {
 	s.mu.Lock()
+	s.setRendererReasonLocked(opened)
+	s.mu.Unlock()
+}
+
+// setRendererReasonLocked records why the renderer port did not answer; the
+// caller holds the lock.
+func (s *session) setRendererReasonLocked(opened bool) {
 	if opened {
 		s.rendReason = RemoteDebuggingNotResponding
 	} else {
 		s.rendReason = RemoteDebuggingDisabled
 	}
-	s.mu.Unlock()
 }
 
 var errNoTarget = errors.New("the inspector listed no target")

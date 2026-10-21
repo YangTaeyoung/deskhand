@@ -39,29 +39,32 @@ const (
 	InspectorNotResponding       = "inspector_not_responding"
 	RemoteDebuggingDisabled      = "remote_debugging_disabled"
 	RemoteDebuggingNotResponding = "remote_debugging_not_responding"
-	exceptionsDefault            = "uncaught"
-	nextAttachTarget             = "attach_target"
-	consoleGroup                 = "console"
-	breakpointPrefix             = "bp-"
-	debugPrefix                  = "d-"
-	matchFileName                = "file_name"
-	matchURL                     = "url"
-	matchURLRegex                = "url_regex"
-	sourceMax                    = 2 << 20
-	variablesDefault             = 200
-	variablesMax                 = 1000
-	timelineKind                 = "debug"
-	accessorPreview              = "(...)"
-	exceptionSourceConsole       = "console"
-	exceptionSourceException     = "exception"
-	exceptionSourceBrowser       = "browser"
-	pauseReasonBreakpoint        = "breakpoint"
-	pauseReasonException         = "exception"
-	pauseReasonPromiseRejection  = "promise_rejection"
-	pauseReasonPauseRequest      = "pause_request"
-	pauseReasonStep              = "step"
-	pauseReasonStart             = "start"
-	pauseReasonOther             = "other"
+	// RendererWaiting is the renderer reason of a pause_on_start launch that
+	// attached main and still waits for the renderer port.
+	RendererWaiting             = "waiting"
+	exceptionsDefault           = "uncaught"
+	nextAttachTarget            = "attach_target"
+	consoleGroup                = "console"
+	breakpointPrefix            = "bp-"
+	debugPrefix                 = "d-"
+	matchFileName               = "file_name"
+	matchURL                    = "url"
+	matchURLRegex               = "url_regex"
+	sourceMax                   = 2 << 20
+	variablesDefault            = 200
+	variablesMax                = 1000
+	timelineKind                = "debug"
+	accessorPreview             = "(...)"
+	exceptionSourceConsole      = "console"
+	exceptionSourceException    = "exception"
+	exceptionSourceBrowser      = "browser"
+	pauseReasonBreakpoint       = "breakpoint"
+	pauseReasonException        = "exception"
+	pauseReasonPromiseRejection = "promise_rejection"
+	pauseReasonPauseRequest     = "pause_request"
+	pauseReasonStep             = "step"
+	pauseReasonStart            = "start"
+	pauseReasonOther            = "other"
 )
 
 // Actor is the client behind a request.

@@ -12,23 +12,24 @@ import (
 )
 
 // attachMain connects to the Node inspector at addr and attaches the main
-// target. start marks the --inspect-brk first-line stop.
-func (s *session) attachMain(ctx context.Context, addr string, v jsonVersion, start bool) {
+// target, reporting whether it attached. start marks the --inspect-brk
+// first-line stop.
+func (s *session) attachMain(ctx context.Context, addr string, v jsonVersion, start bool) bool {
 	var targets []jsonTarget
 	if err := getJSON(ctx, addr, "/json/list", &targets); err != nil || len(targets) == 0 {
 		s.setMainReason(true)
-		return
+		return false
 	}
 	t0 := targets[0]
 	path, err := wsPath(t0.WebSocketDebuggerURL)
 	if err != nil {
 		s.setMainReason(true)
-		return
+		return false
 	}
 	cdp, err := s.m.dial(ctx, addr, path, s.handler(true))
 	if err != nil {
 		s.setMainReason(true)
-		return
+		return false
 	}
 	s.mu.Lock()
 	s.mainConn = cdp
@@ -46,22 +47,30 @@ func (s *session) attachMain(ctx context.Context, addr string, v jsonVersion, st
 	s.emitTargetLocked(t, false)
 	s.mu.Unlock()
 	go s.watchConn(cdp, true)
+	return true
 }
 
 // attachRenderer connects to the DevTools browser endpoint at addr and
-// turns on auto-attach so pages attach as flattened sessions.
-func (s *session) attachRenderer(ctx context.Context, addr string, v jsonVersion) {
+// turns on auto-attach so pages attach as flattened sessions. It reports
+// whether the renderer connection was kept; a session that finished
+// meanwhile closes it.
+func (s *session) attachRenderer(ctx context.Context, addr string, v jsonVersion) bool {
 	path, err := wsPath(v.WebSocketDebuggerURL)
 	if err != nil {
 		s.setRendererReason(true)
-		return
+		return false
 	}
 	cdp, err := s.m.dial(ctx, addr, path, s.handler(false))
 	if err != nil {
 		s.setRendererReason(true)
-		return
+		return false
 	}
 	s.mu.Lock()
+	if s.closedOnce || s.closing {
+		s.mu.Unlock()
+		cdp.Close()
+		return false
+	}
 	s.rendConn = cdp
 	s.rendReason = ""
 	s.bumpRev()
@@ -72,6 +81,7 @@ func (s *session) attachRenderer(ctx context.Context, addr string, v jsonVersion
 		s.setRendererReason(true)
 	}
 	go s.watchConn(cdp, false)
+	return true
 }
 
 type attachedToTarget struct {
