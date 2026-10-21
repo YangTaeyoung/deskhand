@@ -338,7 +338,7 @@ public struct DaemonUnavailableView: View {
                     Button {
                         FinderReveal.reveal(path: failure.logPath)
                     } label: {
-                        Label(String.ui("daemon.openLog", "로그 열기"), systemImage: "doc.text.magnifyingglass")
+                        Label(String.ui("settings.daemon.openLogs", "Finder에서 로그 보기"), systemImage: "doc.text.magnifyingglass")
                     }
                     .help(String.ui("help.openLog", "Finder에서 데몬 로그를 엽니다"))
                     Button {

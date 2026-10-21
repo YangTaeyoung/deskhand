@@ -1547,18 +1547,6 @@
         }
       }
     },
-    "daemon.openLog": {
-      "comment": "Daemon start-up screen: open log",
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "로그 열기"
-          }
-        }
-      }
-    },
     "daemon.reconnecting.message": {
       "comment": "Banner while the event subscription is restored: what the user sees meanwhile",
       "extractionState": "manual",

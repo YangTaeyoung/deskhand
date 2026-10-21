@@ -403,7 +403,7 @@ struct TransferRow: View {
                 ProgressView().controlSize(.small)
             } else {
                 ForEach(row.actions, id: \.self) { action in
-                    actionButton(action)
+                    actionButton(action, in: row)
                 }
             }
         }
@@ -411,10 +411,10 @@ struct TransferRow: View {
     }
 
     @ViewBuilder
-    private func actionButton(_ action: TransferAction) -> some View {
+    private func actionButton(_ action: TransferAction, in row: TransferPresentation) -> some View {
         switch action {
         case .showDestination, .showSource:
-            Button(action.title) {
+            Button(row.title(of: action)) {
                 Task { await model.showLocation(action, for: transfer) }
             }
             .buttonStyle(.bordered)

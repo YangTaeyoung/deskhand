@@ -265,6 +265,17 @@ public struct TransferPresentation: Sendable, Equatable {
         return .ui("transfer.explain.partial", "\(total)개 중 \(ok)개를 보냈고 \(bad)개는 실패했습니다. 실패한 파일은 아래 목록에 이유가 있습니다.")
     }
 
+    /// The button title of `action`: Finder에서 보기 for a destination or source on this Mac,
+    /// the action's own title otherwise.
+    public func title(of action: TransferAction) -> String {
+        let onThisMac = switch action {
+        case .showDestination: !direction.isUpload
+        case .showSource: direction.isUpload
+        default: false
+        }
+        return onThisMac ? .ui("files.menu.showInFinder", "Finder에서 보기") : action.title
+    }
+
     /// Buttons for the current state, most important first.
     public var actions: [TransferAction] {
         switch state {

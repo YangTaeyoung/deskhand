@@ -121,6 +121,8 @@ final class FilesTests: XCTestCase {
         XCTAssertTrue(explanation.contains("원본은 개발 PC에 그대로 있습니다"), explanation)
         XCTAssertTrue(explanation.contains("Shop.exe"), explanation)
         XCTAssertEqual(row.actions.first, .showSource)
+        XCTAssertEqual(row.title(of: .showSource), "원본 보기")
+        XCTAssertEqual(row.title(of: .showDestination), "Finder에서 보기")
         XCTAssertEqual(TransferSummary([transfer]).failed, 1)
 
         await model.reload(.remote)
@@ -468,6 +470,20 @@ final class FilesTests: XCTestCase {
     private func transfer(_ state: TransferState, bytes: Int, rev: Int = 1, id: String = "t-rev") -> Transfer {
         Transfer(transferID: id, hostID: dev, direction: "push", local: "/a/b.zip", remote: "C:\\b.zip", onConflict: "fail",
                  state: state.rawValue, bytesDone: bytes, bytesTotal: 100, filesDone: 0, filesTotal: 1, rateBps: 10, rev: rev)
+    }
+
+    /// A location on this Mac is revealed as Finder에서 보기; one on the remote computer keeps
+    /// 받은 위치 보기 and 원본 보기.
+    func testRevealButtonsSayFinderForThisMac() {
+        var pull = transfer(.done, bytes: 100)
+        pull.direction = TransferDirection.pull.rawValue
+        XCTAssertEqual(TransferPresentation(pull, hostName: "개발 PC").title(of: .showDestination), "Finder에서 보기")
+        let push = transfer(.done, bytes: 100)
+        XCTAssertEqual(TransferPresentation(push, hostName: "개발 PC").title(of: .showDestination), "받은 위치 보기")
+        var movePush = transfer(.done, bytes: 100)
+        movePush.direction = TransferDirection.movePush.rawValue
+        XCTAssertEqual(TransferPresentation(movePush, hostName: "개발 PC").title(of: .showSource), "Finder에서 보기")
+        XCTAssertEqual(TransferPresentation(movePush, hostName: "개발 PC").title(of: .pause), TransferAction.pause.title)
     }
 
     func testTransferUpdatesApplyByRev() throws {
