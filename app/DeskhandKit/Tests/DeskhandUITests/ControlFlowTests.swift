@@ -32,6 +32,13 @@ final class ControlFlowTests: XCTestCase {
 
     // MARK: Brief
 
+    func testAIBannerStopsPromisingEmergencyStopAfterItFails() {
+        XCTAssertTrue(ControlBannerKind.aiMessage(stopFailed: false).contains("긴급 정지"))
+        let failed = ControlBannerKind.aiMessage(stopFailed: true)
+        XCTAssertTrue(failed.contains("실패"))
+        XCTAssertNotEqual(failed, ControlBannerKind.aiMessage(stopFailed: false))
+    }
+
     func testEmergencyStopCallsControlStop() async throws {
         let (store, backend) = await startedStore()
         let dev = PreviewFixtures.devPCID

@@ -2,7 +2,7 @@ import AppKit
 import SwiftTerm
 import SwiftUI
 
-/// The SwiftTerm view of one terminal session, drawn in SF Mono with the design system's
+/// The SwiftTerm view of one terminal session, drawn in D2Coding with the design system's
 /// terminal palette for its current appearance. Keyboard input, size changes, titles, the
 /// working directory and pastes go to the session through the callbacks; ⌘C copies the
 /// selection, ⌘V hands the clipboard text to `onPaste` while the shell accepts input, and the
@@ -34,6 +34,7 @@ final class TerminalSurfaceView: SwiftTerm.TerminalView {
         super.init(frame: .zero, font: Self.font(size: fontSize),
                    options: TerminalOptions(cols: size.cols, rows: size.rows, cursorStyle: .steadyBlock,
                                             scrollback: Self.scrollbackLines))
+        minimumTextContrast = 4.5
         terminalDelegate = self
         optionAsMetaKey = false
         allowMouseReporting = true
@@ -60,13 +61,9 @@ final class TerminalSurfaceView: SwiftTerm.TerminalView {
         }
     }
 
-    /// SF Mono at `size`, falling back to D2Coding or NanumGothicCoding for Hangul when installed.
+    /// One full-width Korean coding face keeps Latin and Hangul on the same cell grid.
     static func font(size: CGFloat) -> NSFont {
-        let base = DS.Terminal.font(size: size)
-        let cascade = ["D2Coding", "NanumGothicCoding"].filter { NSFont(name: $0, size: size) != nil }
-            .map { NSFontDescriptor(name: $0, size: size) }
-        guard !cascade.isEmpty else { return base }
-        return NSFont(descriptor: base.fontDescriptor.addingAttributes([.cascadeList: cascade]), size: size) ?? base
+        DS.Terminal.font(size: size)
     }
 
     /// Feeds bytes from the shell to the emulator.

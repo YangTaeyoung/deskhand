@@ -53,7 +53,8 @@ public struct DaemonInfo: Equatable, Sendable {
 public protocol HostsBackend: Sendable {
     func hostList() async throws -> [Host]
     /// Starts installation and pairing; progress arrives as `host.install.progress` events.
-    func hostAdd(name: String, ssh: String) async throws -> JobReceipt
+    /// `host.add`; `force` replaces the pairing of an agent that another controller already holds.
+    func hostAdd(name: String, ssh: String, force: Bool) async throws -> JobReceipt
     func hostRemove(hostID: String, uninstall: Bool) async throws
     func hostDoctor(hostID: String) async throws -> [DoctorCheck]
     func hostConnect(hostID: String) async throws
@@ -636,9 +637,25 @@ public struct OperationError: Error, Sendable, Equatable {
     /// The next action of a call the daemon did not answer in time: restart the daemon.
     public static let restartDaemon = "daemon_restart"
 
+    /// The next action of `host.add` when the PC's agent is paired with another controller.
+    public static let hostAddForce = "host_add_force"
+
+    /// True when the failure is an agent paired with another controller, which `host.add` with `force` replaces.
+    public var offersRepair: Bool {
+        nextAction == Self.hostAddForce
+    }
+
     /// The message and the remedy as sentences on one line.
     public var sentences: String {
         String.sentences(message, fix)
+    }
+
+    /// True when trying again with the same input fails the same way until something changes.
+    public var needsChangeBeforeRetry: Bool {
+        switch code {
+        case "ELEVATION_REQUIRED", "PERMISSION_DENIED", "CAPABILITY_UNSUPPORTED": true
+        default: false
+        }
     }
 
     /// How to resolve the failure, for error codes with a known remedy.

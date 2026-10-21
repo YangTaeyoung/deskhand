@@ -11,6 +11,8 @@ public final class AddHostFlow: Identifiable {
     public enum Stage: Equatable {
         case form
         case running
+        /// The PC's agent is paired with another controller; waits for the user to confirm replacing that pairing.
+        case confirmRepair(OperationError)
         case failed(OperationError)
         case succeeded(Host)
     }
@@ -32,6 +34,7 @@ public final class AddHostFlow: Identifiable {
     @ObservationIgnored private let backend: any Backend
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var watchdog: Task<Void, Never>?
+    @ObservationIgnored private var forced = false
     @ObservationIgnored private var lastProgress = ContinuousClock.now
 
     init(store: AppStore) {
@@ -68,7 +71,7 @@ public final class AddHostFlow: Identifiable {
         guard !trimmedAlias.isEmpty, !trimmedAlias.contains(where: \.isWhitespace) else { return false }
         switch stage {
         case .form, .failed: return true
-        case .running, .succeeded: return false
+        case .running, .confirmRepair, .succeeded: return false
         }
     }
 
@@ -81,6 +84,17 @@ public final class AddHostFlow: Identifiable {
 
     public func start() {
         guard canStart else { return }
+        run(force: false)
+    }
+
+    /// Pairs again with `force` after the user confirmed replacing the agent's existing pairing.
+    public func confirmRepair() {
+        guard case .confirmRepair = stage else { return }
+        run(force: true)
+    }
+
+    private func run(force: Bool) {
+        forced = force
         let alias = trimmedAlias
         let name = effectiveName
         formError = nil
@@ -92,7 +106,7 @@ public final class AddHostFlow: Identifiable {
         let backend = self.backend
         task = Task { [weak self] in
             do {
-                let receipt = try await backend.hostAdd(name: name, ssh: alias)
+                let receipt = try await backend.hostAdd(name: name, ssh: alias, force: force)
                 switch receipt.status {
                 case .failed, .cancelled:
                     self?.fail(receipt.error.map(OperationError.init) ?? OperationError(message: .ui("error.installFailed", "설치하지 못했습니다")))
@@ -180,8 +194,18 @@ public final class AddHostFlow: Identifiable {
         stage = .succeeded(host)
     }
 
+    /// Asks to replace the existing pairing when the daemon says only `force` can pair this PC.
+    private func askToRepair(_ error: OperationError) -> Bool {
+        guard error.offersRepair, !forced else { return false }
+        stopWatchdog()
+        steps = Self.pendingSteps()
+        stage = .confirmRepair(error)
+        return true
+    }
+
     /// Marks the running step failed and shows the error.
     private func fail(_ error: OperationError) {
+        if askToRepair(error) { return }
         if !steps.contains(where: { $0.status == .failed }), let i = steps.firstIndex(where: { $0.status == .active }) {
             steps[i].status = .failed
             steps[i].detail = error.message
@@ -194,6 +218,7 @@ public final class AddHostFlow: Identifiable {
     private func reject(_ error: OperationError) {
         let started = steps.contains { $0.status == .done || $0.status == .failed }
         if started { return fail(error) }
+        if askToRepair(error) { return }
         stopWatchdog()
         steps = Self.pendingSteps()
         formError = error

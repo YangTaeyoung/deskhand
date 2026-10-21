@@ -34,7 +34,7 @@ final class SnapshotBackend: Backend {
     func daemonInfo() async -> DaemonInfo { DaemonInfo(version: daemonVersion, apiVersion: daemonVersion == nil ? nil : 1) }
     func restartDaemon() async throws {}
     func hostList() async throws -> [Host] { try await base.hostList() }
-    func hostAdd(name: String, ssh: String) async throws -> JobReceipt { try await base.hostAdd(name: name, ssh: ssh) }
+    func hostAdd(name: String, ssh: String, force: Bool) async throws -> JobReceipt { try await base.hostAdd(name: name, ssh: ssh, force: force) }
     func hostRemove(hostID: String, uninstall: Bool) async throws {}
     func hostDoctor(hostID: String) async throws -> [DoctorCheck] { PreviewFixtures.doctor(hostID: hostID) }
     func hostConnect(hostID: String) async throws {}

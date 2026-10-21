@@ -38,8 +38,15 @@ enum ScreenAvailability: Equatable {
     var allowsStreamSettings: Bool {
         switch self {
         case .offline, .blocked, .connecting: false
-        case .streamable, .reconnecting, .locked, .unavailable: true
+        case .streamable, .reconnecting, .locked: true
+        case .unavailable: false
         }
+    }
+
+    /// `allowsStreamSettings`, and false after the agent refused to stream at all.
+    func allowsStreamSettings(phase: ScreenSession.Phase) -> Bool {
+        if case .failed(let error) = phase, ScreenStopNotice.isUnsupported(error) { return false }
+        return allowsStreamSettings
     }
 }
 
@@ -153,7 +160,7 @@ public struct ScreenView: View {
     public var body: some View {
         VStack(spacing: 0) {
             ScreenHeader(preferences: preferences, host: host, display: display, owner: owner,
-                         live: isLive, captured: shown.isCaptured, enabled: availability.allowsStreamSettings)
+                         live: isLive, captured: shown.isCaptured, enabled: availability.allowsStreamSettings(phase: shown.phase))
                 .layoutPriority(1)
             stage
                 .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
@@ -236,7 +243,9 @@ public struct ScreenView: View {
             case .failed(let error) where ScreenStopNotice.isUnsupported(error):
                 StageMessage(symbol: "display.trianglebadge.exclamationmark",
                              title: String.ui("screen.unsupported.title", "이 PC는 화면 스트리밍을 지원하지 않습니다"),
-                             message: error.sentences)
+                             message: error.sentences,
+                             actionTitle: String.ui("action.doctor", "진단 실행"),
+                             action: { store.presentDoctor(for: host.hostID) })
             case .failed(let error):
                 if shown.hasFrame { Scrim(rect: rect) }
                 ScreenStopCard(notice: .failed(error), perform: perform)
@@ -270,7 +279,9 @@ public struct ScreenView: View {
                          title: state == .unsupported
                              ? String.ui("screen.unsupported.title", "이 PC는 화면 스트리밍을 지원하지 않습니다")
                              : String.ui("screen.unavailable.title", "지금은 화면을 가져올 수 없습니다"),
-                         message: reason ?? String.ui("screen.unavailable.message", "에이전트가 화면 캡처를 준비하지 못했습니다. 진단을 실행해 원인을 확인하세요."))
+                         message: reason ?? String.ui("screen.unavailable.message", "에이전트가 화면 캡처를 준비하지 못했습니다. 진단을 실행해 원인을 확인하세요."),
+                         actionTitle: String.ui("action.doctor", "진단 실행"),
+                         action: { store.presentDoctor(for: host.hostID) })
         }
     }
 
@@ -502,9 +513,11 @@ private struct StageMessage: View {
     let symbol: String
     let title: String
     let message: String
+    var actionTitle: String?
+    var action: (() -> Void)?
 
     var body: some View {
-        EmptyStateView(symbol: symbol, title: title, message: message)
+        EmptyStateView(symbol: symbol, title: title, message: message, actionTitle: actionTitle, action: action)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

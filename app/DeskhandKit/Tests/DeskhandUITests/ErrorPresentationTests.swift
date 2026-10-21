@@ -26,6 +26,16 @@ final class ErrorPresentationTests: XCTestCase {
                        "PC가 오프라인입니다. PC가 켜져 있고 같은 네트워크나 VPN에 있는지 확인하세요.")
     }
 
+    func testOnlyCodesThatNeedAChangeSkipTheSameInputRetry() {
+        for code in ["ELEVATION_REQUIRED", "PERMISSION_DENIED", "CAPABILITY_UNSUPPORTED"] {
+            XCTAssertTrue(OperationError(code: code, message: "x").needsChangeBeforeRetry, code)
+        }
+        for code in ["OFFLINE", "TIMEOUT", "INTERNAL", "NOT_FOUND"] {
+            XCTAssertFalse(OperationError(code: code, message: "x").needsChangeBeforeRetry, code)
+        }
+        XCTAssertFalse(OperationError(message: "x").needsChangeBeforeRetry)
+    }
+
     func testATimeoutTheDaemonReportsPointsAtThePC() {
         let error = OperationError(RPCErrorInfo(message: "에이전트가 10초 안에 답하지 않았습니다", code: "TIMEOUT"))
         XCTAssertEqual(error.fix, "PC가 바쁘거나 연결이 느릴 수 있습니다. 잠시 뒤 다시 시도하고, 계속되면 진단을 실행하세요.")

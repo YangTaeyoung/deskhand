@@ -82,6 +82,7 @@ private struct HostIDParams: Encodable {
 private struct HostAddParams: Encodable {
     let name: String
     let ssh: String
+    let force: Bool
 }
 
 private struct HostRemoveParams: Encodable {
@@ -110,8 +111,8 @@ extension LiveBackend {
         return result.hosts
     }
 
-    public func hostAdd(name: String, ssh: String) async throws -> JobReceipt {
-        let envelope: Envelope<Empty> = try await client.call("host.add", HostAddParams(name: name, ssh: ssh), timeout: CallLimit.install)
+    public func hostAdd(name: String, ssh: String, force: Bool) async throws -> JobReceipt {
+        let envelope: Envelope<Empty> = try await client.call("host.add", HostAddParams(name: name, ssh: ssh, force: force), timeout: CallLimit.install)
         return JobReceipt(envelope)
     }
 

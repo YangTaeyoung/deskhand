@@ -5,6 +5,13 @@ import XCTest
 import struct DeskhandClient.Host
 @testable import DeskhandUI
 
+/// One `host.add` call as `GatedBackend` received it.
+struct HostAddCall: Equatable {
+    let name: String
+    let ssh: String
+    let force: Bool
+}
+
 /// One `control.*` call as `GatedBackend` received it.
 struct ControlCall: Equatable {
     let method: String
@@ -54,6 +61,8 @@ final class GatedBackend: Backend, LocalOverlayProviding {
         var restartFailure: (any Error & Sendable)?
         var restartCalls = 0
         var hostRemoveFailure: OperationError?
+        var hostAddCalls: [HostAddCall] = []
+        var hostAddReceipt: JobReceipt?
         var holdRepair = false
         var pendingRepairs: [CheckedContinuation<JobReceipt, Error>] = []
         var repairCalls = 0
@@ -187,7 +196,21 @@ final class GatedBackend: Backend, LocalOverlayProviding {
         }
     }
 
-    func hostAdd(name: String, ssh: String) async throws -> JobReceipt { try await base.hostAdd(name: name, ssh: ssh) }
+    var hostAddCalls: [HostAddCall] { state.withLock { $0.hostAddCalls } }
+
+    /// Makes `hostAdd` answer with `receipt`, or reach the preview daemon again when nil.
+    func failHostAdd(with receipt: JobReceipt?) {
+        state.withLock { $0.hostAddReceipt = receipt }
+    }
+
+    func hostAdd(name: String, ssh: String, force: Bool) async throws -> JobReceipt {
+        let override = state.withLock { s -> JobReceipt? in
+            s.hostAddCalls.append(HostAddCall(name: name, ssh: ssh, force: force))
+            return s.hostAddReceipt
+        }
+        if let override { return override }
+        return try await base.hostAdd(name: name, ssh: ssh, force: force)
+    }
     func hostRemove(hostID: String, uninstall: Bool) async throws {
         if let failure = state.withLock({ $0.hostRemoveFailure }) { throw failure }
         try await base.hostRemove(hostID: hostID, uninstall: uninstall)

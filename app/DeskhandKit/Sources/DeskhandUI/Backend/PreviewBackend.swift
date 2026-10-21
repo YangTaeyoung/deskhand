@@ -197,7 +197,10 @@ extension PreviewBackend {
         state.withLock { $0.hosts }
     }
 
-    public func hostAdd(name: String, ssh: String) async throws -> JobReceipt {
+    public func hostAdd(name: String, ssh: String, force: Bool) async throws -> JobReceipt {
+        if ssh == PreviewFixtures.pairedElsewhereAlias, !force {
+            return JobReceipt(jobID: "j-preview-paired", status: .failed, error: PreviewFixtures.pairedElsewhereError(name: name, alias: ssh))
+        }
         let job = try state.withLock { s -> Int in
             if s.hosts.contains(where: { $0.name == name }) {
                 throw RPCErrorInfo(message: "‘\(name)’ 이름의 PC가 이미 있습니다. 다른 이름을 쓰세요", code: "INVALID_ARGUMENT")

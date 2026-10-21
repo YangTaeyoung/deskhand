@@ -50,6 +50,13 @@ public enum ControlBannerKind: Equatable, Sendable {
         self == .human || self == .aiPaused
     }
 
+    /// The AI band's second line; after a failed emergency stop it no longer promises one.
+    public static func aiMessage(stopFailed: Bool) -> String {
+        stopFailed
+            ? .ui("banner.ai.stopFailed", "긴급 정지가 실패했습니다. 제어권을 직접 가져오세요.")
+            : .ui("banner.ai.message", "언제든 제어권을 가져올 수 있고, 툴바의 긴급 정지(⇧⌘.)로 AI 입력을 바로 멈출 수 있습니다.")
+    }
+
     /// The band title, also announced to VoiceOver when the kind changes.
     public var title: String {
         switch self {
@@ -107,7 +114,7 @@ struct ControlBanner: View {
         switch kind {
         case .ai:
             BannerBand(style: .solid(DS.Color.aiFill), symbol: ControlOwner.ai.symbol, title: kind.title,
-                       message: String.ui("banner.ai.message", "언제든 제어권을 가져올 수 있고, 툴바의 긴급 정지(⇧⌘.)로 AI 입력을 바로 멈출 수 있습니다.")) {
+                       message: ControlBannerKind.aiMessage(stopFailed: actions.failures(for: host.hostID).contains { $0.action == .stop })) {
                 Button { actions.takeOver(host.hostID) } label: {
                     ControlActionLabel(action: .takeOver, running: actions.isRunning(.takeOver, on: host.hostID))
                 }

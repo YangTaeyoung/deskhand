@@ -1,4 +1,5 @@
 import AppKit
+import CoreText
 import SwiftUI
 
 /// Deskhand design tokens. Screen code takes colors, spacing, radii and fonts from here only.
@@ -310,9 +311,17 @@ public enum DS {
         public static let minimumFontSize: CGFloat = 9
         public static let maximumFontSize: CGFloat = 28
 
-        /// SF Mono at `size`.
+        /// Register the bundled full-width Korean coding face once per process.
+        private static let bundledFontRegistered: Bool = {
+            guard let url = Bundle.module.url(forResource: "D2Coding-Regular", withExtension: "ttf") else { return false }
+            var error: Unmanaged<CFError>?
+            return CTFontManagerRegisterFontsForURL(url as CFURL, .process, &error)
+        }()
+
+        /// D2Coding keeps Hangul at exactly two terminal cells; SF Mono is a fallback.
         public static func font(size: CGFloat) -> NSFont {
-            NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+            _ = bundledFontRegistered
+            return NSFont(name: "D2Coding", size: size) ?? NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
         }
 
         /// Colors of a terminal in one appearance.
@@ -337,15 +346,15 @@ public enum DS {
             return palette ?? makePalette(dark: dark)
         }
 
-        /// Contrast each ANSI color keeps against the background: at least 4.5:1 (WCAG AA), except
-        /// black in the dark palette and white and bright white in the light one, which stay black,
-        /// light gray and white.
+        /// Contrast each ANSI text color keeps against the appearance's default background.
         static let normalContrast: (light: Double, dark: Double) = (6.5, 4.8)
         static let brightContrast: (light: Double, dark: Double) = (4.6, 7.0)
 
         private static func makePalette(dark: Bool) -> Palette {
             func srgb(_ color: NSColor) -> NSColor { color.usingColorSpace(.sRGB) ?? color }
-            let background = srgb(.textBackgroundColor)
+            // Keep ANSI black and white literal for background cells. SwiftTerm's
+            // per-cell text contrast adjustment handles their foreground use.
+            let background = srgb(dark ? .black : .textBackgroundColor)
             let foreground = srgb(.textColor)
             /// `color` blended toward black (light) or white (dark) until it reaches `ratio` against the background.
             func readable(_ color: NSColor, _ ratio: Double) -> NSColor {
@@ -366,11 +375,11 @@ public enum DS {
             let normal: [NSColor]
             let bright: [NSColor]
             if dark {
-                normal = [gray(0)] + hues.map { readable($0, normalContrast.dark) } + [gray(0.8)]
-                bright = [readable(gray(0.5), 5.6)] + hues.map { readable(srgb($0).blended(withFraction: 0.3, of: .white) ?? $0, brightContrast.dark) }
+                normal = [gray(0)] + hues.map { readable($0, normalContrast.dark) } + [gray(1)]
+                bright = [readable(gray(0.5), 8.0)] + hues.map { readable(srgb($0).blended(withFraction: 0.3, of: .white) ?? $0, brightContrast.dark) }
                     + [gray(1)]
             } else {
-                normal = [gray(0)] + hues.map { readable($0, normalContrast.light) } + [gray(0.78)]
+                normal = [gray(0)] + hues.map { readable($0, normalContrast.light) } + [gray(1)]
                 bright = [readable(gray(0.6), 5.6)] + hues.map { readable($0, brightContrast.light) } + [gray(1)]
             }
             return Palette(

@@ -512,19 +512,32 @@ private struct FolderErrorView: View {
         return error.fix
     }
 
+    private var goUpLeads: Bool {
+        canGoUp && (error.needsChangeBeforeRetry || error.code == LocalFileSource.localPermissionCode)
+    }
+
+    private var retryButton: some View {
+        Button(action: retry) {
+            Label(String.ui("action.retry", "다시 시도"), systemImage: "arrow.clockwise")
+        }
+    }
+
+    private var goUpButton: some View {
+        Button(action: goUp) {
+            Label(String.ui("files.goUp", "상위 폴더로"), systemImage: "arrow.up")
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.m) {
             ErrorBanner(message: error.message, fix: fix, code: error.code == LocalFileSource.localPermissionCode ? nil : error.code)
             HStack(spacing: DS.Space.s) {
-                Button(action: retry) {
-                    Label(String.ui("action.retry", "다시 시도"), systemImage: "arrow.clockwise")
-                }
-                .buttonStyle(.borderedProminent)
-                if canGoUp {
-                    Button(action: goUp) {
-                        Label(String.ui("files.goUp", "상위 폴더로"), systemImage: "arrow.up")
-                    }
-                    .buttonStyle(.bordered)
+                if goUpLeads {
+                    goUpButton.buttonStyle(.borderedProminent)
+                    retryButton.buttonStyle(.bordered)
+                } else {
+                    retryButton.buttonStyle(.borderedProminent)
+                    if canGoUp { goUpButton.buttonStyle(.bordered) }
                 }
                 if side == .local, error.code == LocalFileSource.localPermissionCode {
                     Button(String.ui("files.openPrivacy", "개인정보 보호 설정 열기")) {

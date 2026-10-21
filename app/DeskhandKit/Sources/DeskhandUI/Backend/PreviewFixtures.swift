@@ -18,6 +18,15 @@ public enum PreviewFixtures {
     /// SSH alias whose simulated installation fails at the `install` step.
     public static let failingAlias = "media-pc"
 
+    /// Alias of a PC whose agent is paired with another controller: `host.add` needs `force`.
+    public static let pairedElsewhereAlias = "paired-pc"
+
+    public static func pairedElsewhereError(name: String, alias: String) -> EnvelopeError {
+        EnvelopeError(code: "INVALID_ARGUMENT",
+                      message: "이 PC에는 이미 Deskhand 에이전트가 페어링돼 있습니다. 이 Mac과 다시 페어링하려면 deskhand host add \(name) --ssh \(alias) --force 를 실행하세요",
+                      retryable: false, nextAction: OperationError.hostAddForce)
+    }
+
     public static let sshAliases = ["windows", "qa-laptop", "build", "lab-pc", "media-pc", "nas"]
 
     static let allCapabilities = ["screen", "input", "uia", "exec", "files", "processes", "pty", "tunnel", "diag", "clipboard"]

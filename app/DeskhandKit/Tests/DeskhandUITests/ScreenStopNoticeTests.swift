@@ -26,6 +26,15 @@ final class ScreenStopNoticeTests: XCTestCase {
         XCTAssertTrue(ScreenAvailability(host: host).allowsStreamSettings, "a locked session keeps its connection")
     }
 
+    func testStreamSettingsStayOffWhenTheAgentCannotStream() {
+        XCTAssertFalse(ScreenAvailability.unavailable(.unsupported, reason: nil).allowsStreamSettings)
+        let unsupported = ScreenSession.Phase.failed(OperationError(code: "CAPABILITY_UNSUPPORTED", message: "지원하지 않습니다"))
+        let other = ScreenSession.Phase.failed(OperationError(code: "INTERNAL", message: "실패"))
+        XCTAssertFalse(ScreenAvailability.streamable.allowsStreamSettings(phase: unsupported))
+        XCTAssertTrue(ScreenAvailability.streamable.allowsStreamSettings(phase: other))
+        XCTAssertTrue(ScreenAvailability.streamable.allowsStreamSettings(phase: .live))
+    }
+
     func testEveryReasonExplainsItselfWithoutTheRawCode() {
         for reason in reasons {
             let notice = ScreenStopNotice.paused(reason, host: dev, display: 0)

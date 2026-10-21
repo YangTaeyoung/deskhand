@@ -71,6 +71,14 @@ enum RootScenes {
                         steps: steps(doneThrough: .initialize, then: .failed, at: .install, alias: alias)))
                 }
             },
+            SnapshotScene(name: "add-host-repair", size: size) {
+                SheetStandIn(base: SplitStandIn(store: empty)) {
+                    AddHostSheet(flow: AddHostFlow(
+                        backend: backend, alias: "windows", name: "개발 PC", aliases: PreviewFixtures.sshAliases,
+                        stage: .confirmRepair(OperationError(message: "이 PC는 이미 페어링돼 있습니다")),
+                        steps: steps(doneThrough: .copy, then: .failed, at: .initialize, alias: "windows")))
+                }
+            },
             SnapshotScene(name: "add-host-form", size: size) {
                 SheetStandIn(base: SplitStandIn(store: empty)) {
                     AddHostSheet(flow: AddHostFlow(

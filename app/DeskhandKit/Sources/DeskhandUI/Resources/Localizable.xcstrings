@@ -464,6 +464,66 @@
         }
       }
     },
+    "addHost.repair.title": {
+      "comment": "Add-computer sheet: title of the re-pairing confirmation",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 페어링할까요?"
+          }
+        }
+      }
+    },
+    "addHost.repair.notice.title": {
+      "comment": "Add-computer sheet: heading of the re-pairing warning",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기존 연결이 끊어집니다"
+          }
+        }
+      }
+    },
+    "addHost.repair.notice.message": {
+      "comment": "Add-computer sheet: what re-pairing replaces",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 PC의 에이전트는 다른 컨트롤러와 페어링돼 있습니다. 다시 페어링하면 에이전트 키가 바뀌고, 기존 컨트롤러의 연결이 해제됩니다."
+          }
+        }
+      }
+    },
+    "addHost.repair.confirm": {
+      "comment": "Add-computer sheet: confirm re-pairing",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기존 연결을 교체하고 다시 페어링"
+          }
+        }
+      }
+    },
+    "addHost.repair.back": {
+      "comment": "Add-computer sheet: return to the form from the re-pairing confirmation",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "돌아가기"
+          }
+        }
+      }
+    },
     "addHost.edit": {
       "comment": "Add-computer sheet: edit",
       "extractionState": "manual",
@@ -750,6 +810,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "작업 루트 %@곳"
+          }
+        }
+      }
+    },
+    "banner.ai.stopFailed": {
+      "comment": "Workspace banner while an AI client controls the computer: message after the emergency stop failed",
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "긴급 정지가 실패했습니다. 제어권을 직접 가져오세요."
           }
         }
       }

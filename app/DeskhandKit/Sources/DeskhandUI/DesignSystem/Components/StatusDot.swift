@@ -4,7 +4,7 @@ import SwiftUI
 ///
 /// Offline draws a hollow ring, connecting and reconnecting add a pulsing halo (steady when
 /// Reduce Motion is on), and every other state is a solid dot. On a selected row's highlight the
-/// dot is white and keeps its shape.
+/// dot keeps its state color and gains a white ring.
 public struct StatusDot: View {
     public let state: ConnectionState
     public let showsLabel: Bool
@@ -33,10 +33,8 @@ public struct StatusDot: View {
         .accessibilityLabel(String.ui("a11y.connectionState", "연결 상태: \(state.title)"))
     }
 
-    /// The state's tint, or white on a selected row's highlight.
-    private var tint: Color {
-        prominence == .increased ? DS.Color.onFill : state.tint
-    }
+    private var tint: Color { state.tint }
+    private var onHighlight: Bool { prominence == .increased }
 
     private var dot: some View {
         ZStack {
@@ -51,12 +49,13 @@ public struct StatusDot: View {
             }
             if state == .offline {
                 Circle()
-                    .strokeBorder(tint, lineWidth: 1.5)
+                    .strokeBorder(onHighlight ? DS.Color.onFill : tint, lineWidth: 1.5)
                     .frame(width: Self.dotSize, height: Self.dotSize)
             } else {
                 Circle()
                     .fill(tint)
                     .frame(width: Self.dotSize, height: Self.dotSize)
+                    .overlay(Circle().strokeBorder(DS.Color.onFill, lineWidth: onHighlight ? 1.5 : 0))
             }
         }
         .frame(width: Self.frameSize, height: Self.frameSize)

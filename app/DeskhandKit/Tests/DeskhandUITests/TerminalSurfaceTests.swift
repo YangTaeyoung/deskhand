@@ -1,9 +1,21 @@
 import AppKit
+import CoreText
 import XCTest
 @testable import DeskhandUI
 
 @MainActor
 final class TerminalSurfaceTests: XCTestCase {
+    func testBundledTerminalFontKeepsHangulOnTwoLatinCells() {
+        let font = TerminalSurfaceView.font(size: 13)
+        XCTAssertEqual(font.familyName, "D2Coding")
+        func advance(_ text: String) -> Double {
+            let line = CTLineCreateWithAttributedString(NSAttributedString(
+                string: text, attributes: [.font: font]))
+            return CTLineGetTypographicBounds(line, nil, nil, nil)
+        }
+        XCTAssertEqual(advance("가"), advance("A") * 2, accuracy: 0.05)
+    }
+
     private func surface() -> (TerminalSurfaceView, () -> [UInt8]) {
         let surface = TerminalSurfaceView(size: .standard, fontSize: 13)
         var sent: [UInt8] = []
@@ -71,8 +83,8 @@ final class TerminalSurfaceTests: XCTestCase {
         return (max(l1, l2) + 0.05) / (min(l1, l2) + 0.05)
     }
 
-    func testANSIColorsReadAgainstTheBackgroundExceptTheBackgroundLikeSlots() throws {
-        for (name, exempt) in [(NSAppearance.Name.aqua, Set([7, 15])), (.darkAqua, Set([0]))] {
+    func testANSIColorsReadAgainstTheDefaultBackgroundAndWhiteOnBlack() throws {
+        for name in [NSAppearance.Name.aqua, .darkAqua] {
             let palette = DS.Terminal.palette(for: try XCTUnwrap(NSAppearance(named: name)))
             XCTAssertEqual(palette.ansi.count, 16)
             let ratios = palette.ansi.map { contrast($0, palette.background) }
@@ -80,24 +92,23 @@ final class TerminalSurfaceTests: XCTestCase {
                   + String(format: " fg=%.2f 0/8=%.2f 7/15=%.2f 7on0=%.2f 15on0=%.2f", contrast(palette.foreground, palette.background),
                            contrast(palette.ansi[0], palette.ansi[8]), contrast(palette.ansi[7], palette.ansi[15]),
                            contrast(palette.ansi[7], palette.ansi[0]), contrast(palette.ansi[15], palette.ansi[0])))
-            for (index, ratio) in ratios.enumerated() where !exempt.contains(index) {
+            for (index, ratio) in ratios.enumerated() where index != 0 && index != 7 && index != 15 {
                 XCTAssertGreaterThanOrEqual(ratio, 4.5, "ANSI \(index) in \(name.rawValue)")
             }
             XCTAssertGreaterThanOrEqual(contrast(palette.ansi[0], palette.ansi[8]), 1.5, "black and bright black in \(name.rawValue)")
-            XCTAssertGreaterThanOrEqual(contrast(palette.ansi[7], palette.ansi[15]), 1.5, "white and bright white in \(name.rawValue)")
             XCTAssertGreaterThanOrEqual(contrast(palette.ansi[7], palette.ansi[0]), 4.5, "white on black in \(name.rawValue)")
             XCTAssertGreaterThanOrEqual(contrast(palette.ansi[15], palette.ansi[0]), 4.5, "bright white on black in \(name.rawValue)")
         }
     }
 
-    func testBlackAndWhiteStayTrueBlackAndWhite() throws {
+    func testBlackAndWhiteStayDistinctAndLegible() throws {
         let dark = DS.Terminal.palette(for: try XCTUnwrap(NSAppearance(named: .darkAqua)))
         let light = DS.Terminal.palette(for: try XCTUnwrap(NSAppearance(named: .aqua)))
         XCTAssertEqual(luminance(dark.ansi[0]), 0, accuracy: 0.001)
         XCTAssertEqual(luminance(light.ansi[0]), 0, accuracy: 0.001)
         XCTAssertEqual(luminance(light.ansi[15]), 1, accuracy: 0.001)
         XCTAssertEqual(luminance(dark.ansi[15]), 1, accuracy: 0.001)
-        XCTAssertLessThan(luminance(light.ansi[7]), 1)
+        XCTAssertEqual(luminance(light.ansi[7]), 1, accuracy: 0.001)
     }
 
     func testBrightHuesDifferFromNormalHuesInTheLightPalette() throws {

@@ -35,8 +35,13 @@ public struct AddHostSheet: View {
                 .padding(.vertical, DS.Space.l)
         }
         .frame(width: Self.width)
-        .frame(minHeight: 400)
+        .frame(minHeight: minimumHeight)
         .onAppear { if flow.stage == .form { focus = .alias } }
+    }
+
+    private var minimumHeight: CGFloat {
+        if case .confirmRepair = flow.stage { return 0 }
+        return 400
     }
 
     // MARK: Header
@@ -57,7 +62,7 @@ public struct AddHostSheet: View {
                     .font(DS.Font.title)
                 Text(headerSubtitle)
                     .font(DS.Font.body)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(isConfirmingRepair ? .primary : .secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -69,16 +74,22 @@ public struct AddHostSheet: View {
         switch flow.stage {
         case .form: .ui("addHost.title", "PC 추가")
         case .running: .ui("addHost.running.title", "PC 추가 중")
+        case .confirmRepair: .ui("addHost.repair.title", "다시 페어링할까요?")
         case .failed: .ui("addHost.failed.title", "PC를 추가하지 못했습니다")
         case .succeeded: .ui("addHost.succeeded.title", "연결됨")
         }
+    }
+
+    private var isConfirmingRepair: Bool {
+        if case .confirmRepair = flow.stage { return true }
+        return false
     }
 
     private var headerSubtitle: String {
         switch flow.stage {
         case .form:
             .ui("addHost.subtitle", "SSH로 접속되는 Windows PC에 에이전트를 설치하고 페어링합니다.")
-        case .running, .failed:
+        case .running, .confirmRepair, .failed:
             .ui("addHost.target", "\(flow.effectiveName) · ssh \(flow.trimmedAlias)")
         case .succeeded(let host):
             "\(host.name) · \(host.platformTitle)"
@@ -88,6 +99,7 @@ public struct AddHostSheet: View {
     private var headerSymbol: String {
         switch flow.stage {
         case .form, .running: "pc"
+        case .confirmRepair: "arrow.triangle.2.circlepath"
         case .failed: "exclamationmark.triangle.fill"
         case .succeeded: "checkmark"
         }
@@ -96,6 +108,7 @@ public struct AddHostSheet: View {
     private var headerTint: Color {
         switch flow.stage {
         case .form, .running: DS.Color.accent
+        case .confirmRepair: DS.Color.warning
         case .failed: DS.Color.danger
         case .succeeded: DS.Color.success
         }
@@ -116,6 +129,11 @@ public struct AddHostSheet: View {
                     .font(DS.Font.caption)
                     .foregroundStyle(.secondary)
             }
+        case .confirmRepair:
+            StatusNotice(symbol: "exclamationmark.triangle.fill", tint: DS.Color.warning,
+                         title: String.ui("addHost.repair.notice.title", "기존 연결이 끊어집니다"),
+                         message: String.ui("addHost.repair.notice.message", "이 PC의 에이전트는 다른 컨트롤러와 페어링돼 있습니다. 다시 페어링하면 에이전트 키가 바뀌고, 기존 컨트롤러의 연결이 해제됩니다."),
+                         code: nil)
         case .failed(let error):
             VStack(alignment: .leading, spacing: DS.Space.l) {
                 StepProgressView(steps: flow.steps)
@@ -270,14 +288,28 @@ public struct AddHostSheet: View {
                 Spacer()
                 Button(String.ui("addHost.continueInBackground", "백그라운드에서 계속")) { flow.dismiss() }
                     .keyboardShortcut(.cancelAction)
-            case .failed:
+            case .confirmRepair:
+                Button(String.ui("addHost.repair.back", "돌아가기"), role: .cancel) { flow.edit() }
+                    .keyboardShortcut(.cancelAction)
+                Spacer()
+                Button(String.ui("addHost.repair.confirm", "기존 연결을 교체하고 다시 페어링"), role: .destructive) { flow.confirmRepair() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color(nsColor: DS.Status.fillUnderWhite(.systemRed, by: 0.15)))
+            case .failed(let error):
                 Button(String.ui("action.close", "닫기")) { flow.dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button(String.ui("addHost.edit", "설정 수정")) { flow.edit() }
-                Button(String.ui("action.retry", "다시 시도")) { flow.start() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
+                if error.needsChangeBeforeRetry {
+                    Button(String.ui("action.retry", "다시 시도")) { flow.start() }
+                    Button(String.ui("addHost.edit", "설정 수정")) { flow.edit() }
+                        .keyboardShortcut(.defaultAction)
+                        .buttonStyle(.borderedProminent)
+                } else {
+                    Button(String.ui("addHost.edit", "설정 수정")) { flow.edit() }
+                    Button(String.ui("action.retry", "다시 시도")) { flow.start() }
+                        .keyboardShortcut(.defaultAction)
+                        .buttonStyle(.borderedProminent)
+                }
             case .succeeded:
                 Spacer()
                 Button(String.ui("action.done", "완료")) { flow.finish() }

@@ -12,7 +12,8 @@ let package = Package(
         .executable(name: "DeskhandSnapshots", targets: ["DeskhandSnapshots"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", exact: "1.19.0"),
+        // v1.19.0 with Deskhand's per-cell contrast hook; source and MIT license live in Vendor.
+        .package(path: "../Vendor/SwiftTerm"),
     ],
     targets: [
         // Local API client for the deskhand daemon (docs/local-api.md).
