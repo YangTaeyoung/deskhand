@@ -1,0 +1,21 @@
+{
+  "action": {
+    "executed": false,
+    "outcome": "not_started"
+  },
+  "artifacts": [],
+  "connection_generation": 1,
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "이 Mac의 /Users/me/missing를 읽지 못했습니다(no such file or directory). 경로를 확인한 뒤 다시 시도하세요",
+    "retryable": false
+  },
+  "host_id": "pc",
+  "job_id": null,
+  "next_action": null,
+  "request_id": null,
+  "schema_version": 1,
+  "session_id": null,
+  "status": "failed",
+  "transfer_id": null
+}

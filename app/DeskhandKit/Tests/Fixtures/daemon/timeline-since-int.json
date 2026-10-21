@@ -1,0 +1,9 @@
+{
+  "code": -32602,
+  "data": {
+    "code": "INVALID_ARGUMENT",
+    "next_action": "fix_params",
+    "retryable": false
+  },
+  "message": "파라미터를 읽지 못했습니다(json: cannot unmarshal number into Go struct field timelineParams.since of type string). docs/local-api.md의 파라미터 형식을 확인하세요"
+}

@@ -1,0 +1,110 @@
+[
+  {
+    "host_id": "pc",
+    "kind": "transfer.updated",
+    "seq": 8,
+    "transfer": {
+      "bytes_done": 0,
+      "bytes_total": 0,
+      "direction": "push",
+      "files_done": 0,
+      "files_failed": 0,
+      "files_total": 0,
+      "host_id": "pc",
+      "local": "/Users/me/Build",
+      "on_conflict": "fail",
+      "rate_bps": 0,
+      "remote": "/home/pc/Build",
+      "rev": 1,
+      "state": "queued",
+      "transfer_id": "t-01M5E700N2RMQC31QNXSJG2N38",
+      "updated_at": "2026-10-21T03:10:07.010Z"
+    },
+    "ts": "2026-10-21T03:10:07.010Z"
+  },
+  {
+    "host_id": "pc",
+    "kind": "transfer.updated",
+    "seq": 9,
+    "transfer": {
+      "bytes_done": 0,
+      "bytes_total": 0,
+      "direction": "push",
+      "files_done": 0,
+      "files_failed": 0,
+      "files_total": 0,
+      "host_id": "pc",
+      "local": "/Users/me/Build",
+      "on_conflict": "fail",
+      "rate_bps": 0,
+      "remote": "/home/pc/Build",
+      "rev": 2,
+      "state": "running",
+      "transfer_id": "t-01M5E700N2RMQC31QNXSJG2N38",
+      "updated_at": "2026-10-21T03:10:07.011Z"
+    },
+    "ts": "2026-10-21T03:10:07.011Z"
+  },
+  {
+    "changed_files": [
+      {
+        "bytes_done": 300000,
+        "outcome": "written",
+        "path": "/home/pc/Build/app.bin",
+        "rel": "app.bin",
+        "sha256": "886715e4051e827f4fe215df3053af3f85ad0d352db2c829c7487af6d78efe30",
+        "size": 300000,
+        "state": "done"
+      },
+      {
+        "bytes_done": 0,
+        "error": {
+          "code": "INVALID_ARGUMENT",
+          "message": "/Users/me/Build/link.txt는 링크라 옮기지 않았습니다. 링크가 가리키는 항목을 따로 옮기세요",
+          "next_action": "fix_params",
+          "retryable": false
+        },
+        "rel": "link.txt",
+        "size": 0,
+        "state": "failed"
+      },
+      {
+        "bytes_done": 5,
+        "outcome": "written",
+        "path": "/home/pc/Build/notes.txt",
+        "rel": "notes.txt",
+        "sha256": "ab5aa97074c454a0632057e704220d9a6678fbf773a0a5806fc09b8173b07309",
+        "size": 5,
+        "state": "done"
+      }
+    ],
+    "host_id": "pc",
+    "kind": "transfer.updated",
+    "seq": 12,
+    "transfer": {
+      "bytes_done": 300005,
+      "bytes_total": 300005,
+      "direction": "push",
+      "error": {
+        "code": "INVALID_ARGUMENT",
+        "message": "1개 항목을 옮기지 못했습니다. 첫 항목 link.txt: /Users/me/Build/link.txt는 링크라 옮기지 않았습니다. 링크가 가리키는 항목을 따로 옮기세요",
+        "next_action": "fix_params",
+        "retryable": false
+      },
+      "files_done": 2,
+      "files_failed": 1,
+      "files_total": 3,
+      "host_id": "pc",
+      "local": "/Users/me/Build",
+      "on_conflict": "fail",
+      "outcome": "partial",
+      "rate_bps": 0,
+      "remote": "/home/pc/Build",
+      "rev": 3,
+      "state": "failed",
+      "transfer_id": "t-01M5E700N2RMQC31QNXSJG2N38",
+      "updated_at": "2026-10-21T03:10:07.043Z"
+    },
+    "ts": "2026-10-21T03:10:07.043Z"
+  }
+]

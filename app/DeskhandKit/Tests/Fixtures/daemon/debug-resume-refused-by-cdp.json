@@ -1,0 +1,27 @@
+{
+  "action": {
+    "executed": true,
+    "outcome": "done"
+  },
+  "artifacts": [],
+  "connection_generation": 0,
+  "error": null,
+  "host_id": "h-fake",
+  "job_id": null,
+  "next_action": null,
+  "request_id": null,
+  "schema_version": 1,
+  "session_id": null,
+  "status": "succeeded",
+  "target": {
+    "id": "node-1",
+    "role": "main",
+    "type": "node",
+    "url": "file:///app/main.js",
+    "title": "node",
+    "attached": true,
+    "paused": false,
+    "pause_pending": false,
+    "gen": 4
+  }
+}

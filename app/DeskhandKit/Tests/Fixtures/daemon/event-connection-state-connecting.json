@@ -1,0 +1,8 @@
+{
+  "connection_generation": 1,
+  "host_id": "pc",
+  "kind": "connection.state",
+  "seq": 16,
+  "state": "connecting",
+  "ts": "2026-10-21T03:10:09.061Z"
+}

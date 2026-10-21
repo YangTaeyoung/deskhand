@@ -1,0 +1,20 @@
+{
+  "action": {
+    "executed": false,
+    "outcome": "not_started"
+  },
+  "artifacts": [],
+  "connection_generation": 1,
+  "error": {
+    "code": "CAPABILITY_UNSUPPORTED",
+    "message": "fs.trash moves entries to the Windows Recycle Bin, and this agent runs on darwin; delete '/home/pc/listing/b.txt' permanently with fs.delete instead",
+    "retryable": false
+  },
+  "host_id": "pc",
+  "job_id": null,
+  "next_action": null,
+  "request_id": "r-01M5E700MQEGG2GMWZC6RMHG13",
+  "schema_version": 1,
+  "session_id": null,
+  "status": "failed"
+}

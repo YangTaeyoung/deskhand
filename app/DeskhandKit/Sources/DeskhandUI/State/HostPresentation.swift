@@ -35,7 +35,7 @@ extension Host {
     /// True while Windows shows the lock or sign-in screen, so screen and input are unavailable.
     public var isSessionLocked: Bool {
         guard let session else { return false }
-        return session.locked || session.inputDesktop == "Winlogon"
+        return session.locked == true || session.inputDesktop == "Winlogon"
     }
 
     /// Subtitle under the computer name in the toolbar: the signed-in session while connected,
@@ -100,7 +100,7 @@ public enum HostOS {
         let kind = session.protocolKind == "rdp"
             ? String.ui("session.rdp", "원격 데스크톱")
             : String.ui("session.console", "콘솔")
-        return session.locked ? .ui("session.locked", "\(kind) · 잠김") : kind
+        return session.locked == true ? .ui("session.locked", "\(kind) · 잠김") : kind
     }
 
     /// `input_desktop` as shown in the inspector.

@@ -1,0 +1,9 @@
+{
+  "code": -32000,
+  "data": {
+    "code": "INVALID_ARGUMENT",
+    "next_action": "fix_params",
+    "retryable": false
+  },
+  "message": "전송 t-01M5E700N2RMQC31QNXSJG2N38는 이미 failed 상태로 끝나 일시정지할 수 없습니다. 다시 보내려면 transfer.resume이나 transfer.start를 쓰세요"
+}

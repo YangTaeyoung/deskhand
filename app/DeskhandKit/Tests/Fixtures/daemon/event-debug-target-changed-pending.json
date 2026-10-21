@@ -1,0 +1,20 @@
+{
+  "debug_id": "d-01M5E6X4STF7J6RG854FVB3FEB",
+  "host_id": "h-fake",
+  "kind": "debug.target_changed",
+  "removed": false,
+  "rev": 3,
+  "seq": 7,
+  "target": {
+    "id": "node-1",
+    "role": "main",
+    "type": "node",
+    "url": "file:///app/main.js",
+    "title": "node",
+    "attached": true,
+    "paused": false,
+    "pause_pending": true,
+    "gen": 1
+  },
+  "ts": "2026-10-21T03:08:32.961Z"
+}

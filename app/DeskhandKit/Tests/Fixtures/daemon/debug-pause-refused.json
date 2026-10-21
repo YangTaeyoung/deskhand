@@ -1,0 +1,21 @@
+{
+  "action": {
+    "executed": false,
+    "outcome": "not_started"
+  },
+  "artifacts": [],
+  "connection_generation": 0,
+  "error": {
+    "code": "INTERNAL",
+    "message": "Can only perform operation while paused.",
+    "retryable": false
+  },
+  "host_id": "h-fake",
+  "job_id": null,
+  "next_action": null,
+  "request_id": null,
+  "schema_version": 1,
+  "session_id": null,
+  "status": "failed",
+  "target": null
+}

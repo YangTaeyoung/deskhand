@@ -1,0 +1,52 @@
+{
+  "ai_paused": false,
+  "caps": {
+    "clipboard": {
+      "state": "ready"
+    },
+    "diag": {
+      "reason": "diagnostics are read from Windows only; this agent runs on another system",
+      "state": "unsupported"
+    },
+    "exec": {
+      "state": "ready"
+    },
+    "files": {
+      "state": "ready"
+    },
+    "input": {
+      "reason": "input injection needs a Windows agent",
+      "state": "unsupported"
+    },
+    "processes": {
+      "state": "ready"
+    },
+    "pty": {
+      "shells": [
+        "sh"
+      ],
+      "state": "ready"
+    },
+    "screen": {
+      "reason": "screen capture needs a Windows agent; ask a Windows PC",
+      "state": "unsupported"
+    },
+    "tunnel": {
+      "state": "ready"
+    },
+    "uia": {
+      "reason": "UI Automation is only available on Windows",
+      "state": "unsupported"
+    }
+  },
+  "connect_state": "unknown",
+  "connection_generation": 1,
+  "displays": [],
+  "gen": 0,
+  "host_id": "pc",
+  "input_desktop": "unknown",
+  "owner": "none",
+  "protocol": "unknown",
+  "session_id": 0,
+  "user": ""
+}

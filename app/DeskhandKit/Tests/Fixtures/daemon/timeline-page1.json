@@ -1,0 +1,29 @@
+{
+  "entries": [
+    {
+      "actor": "human",
+      "artifacts": [],
+      "client_id": "c-01M5E700MM3W2F6R9QXVW8NTAN",
+      "client_name": "Deskhand",
+      "host_id": "pc",
+      "kind": "file",
+      "outcome": "failed",
+      "seq": 5,
+      "summary": "보내기 시작 못 함: /Users/me/missing → pc:/home/pc/Build (이 Mac의 /Users/me/missing를 읽지 못했습니다(no such file or directory). 경로를 확인한 뒤 다시 시도하세요)",
+      "ts": "2026-10-21T03:10:07.055Z"
+    },
+    {
+      "actor": "human",
+      "artifacts": [],
+      "client_id": "c-01M5E700MM3W2F6R9QXVW8NTAN",
+      "client_name": "Deskhand",
+      "host_id": "pc",
+      "kind": "file",
+      "outcome": "failed",
+      "seq": 4,
+      "summary": "보내기 실패: /Users/me/Build → pc:/home/pc/Build (1개 항목을 옮기지 못했습니다. 첫 항목 link.txt: /Users/me/Build/link.txt는 링크라 옮기지 않았습니다. 링크가 가리키는 항목을 따로 옮기세요)",
+      "ts": "2026-10-21T03:10:07.043Z"
+    }
+  ],
+  "next_cursor": "4"
+}

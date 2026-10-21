@@ -1,0 +1,42 @@
+{
+  "action": {
+    "executed": false,
+    "outcome": "not_started"
+  },
+  "artifacts": [],
+  "connection_generation": 0,
+  "error": {
+    "code": "CAPABILITY_UNSUPPORTED",
+    "message": "attaching to a running process by pid is not supported on this PC; start the app with --inspect and attach by its port, or launch it with debug.electron.launch",
+    "retryable": false
+  },
+  "host_id": "h-fake",
+  "job_id": null,
+  "next_action": null,
+  "request_id": null,
+  "schema_version": 1,
+  "session": {
+    "debug_id": "d-01M5E6X4T9XQ6KQZB7QXEKHPFG",
+    "host_id": "h-fake",
+    "kind": "attach",
+    "name": "",
+    "args": [],
+    "pause_on_start": false,
+    "ports": {},
+    "state": "closed",
+    "targets": [],
+    "breakpoints": [],
+    "breakpoints_active": true,
+    "pause_on_exceptions": "uncaught",
+    "created_by": {
+      "actor": "human",
+      "client_name": "tester"
+    },
+    "created_at": "2026-10-21T03:08:32.969Z",
+    "closed_at": "2026-10-21T03:08:32.969Z",
+    "close_reason": "requested",
+    "rev": 2
+  },
+  "session_id": null,
+  "status": "failed"
+}

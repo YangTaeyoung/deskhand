@@ -1,0 +1,21 @@
+{
+  "transfers": [
+    {
+      "transfer_id": "t-01JBXFER0000000000000000BB",
+      "host_id": "windows-dev",
+      "direction": "move_pull",
+      "local": "/Users/me/Downloads/logs",
+      "remote": "C:\\Users\\me\\logs",
+      "on_conflict": "fail",
+      "state": "verifying",
+      "bytes_done": 300,
+      "bytes_total": 300,
+      "files_done": 1,
+      "files_failed": 0,
+      "files_total": 1,
+      "rate_bps": 0,
+      "rev": 9,
+      "updated_at": "2026-10-21T03:04:01.767Z"
+    }
+  ]
+}

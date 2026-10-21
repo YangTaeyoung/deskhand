@@ -72,11 +72,12 @@ public struct SessionInfo: Codable, Sendable, Equatable {
     public var sid: String?
     public var connectState: String
     public var protocolKind: String
-    public var locked: Bool
+    /// Nil when the agent does not report the lock state.
+    public var locked: Bool?
     public var inputDesktop: String
     public var integrity: String?
 
-    public init(sessionID: Int, user: String, sid: String? = nil, connectState: String, protocolKind: String, locked: Bool, inputDesktop: String, integrity: String? = nil) {
+    public init(sessionID: Int, user: String, sid: String? = nil, connectState: String, protocolKind: String, locked: Bool?, inputDesktop: String, integrity: String? = nil) {
         self.sessionID = sessionID
         self.user = user
         self.sid = sid
@@ -105,7 +106,7 @@ public struct SessionInfo: Codable, Sendable, Equatable {
         sid = try c.decodeIfPresent(String.self, forKey: .sid)
         connectState = try c.decode(String.self, forKey: .connectState)
         protocolKind = try c.decode(String.self, forKey: .protocolKind)
-        locked = try c.decode(Bool.self, forKey: .locked)
+        locked = try c.decodeIfPresent(Bool.self, forKey: .locked)
         inputDesktop = try c.decode(String.self, forKey: .inputDesktop)
         integrity = try c.decodeIfPresent(String.self, forKey: .integrity)
     }

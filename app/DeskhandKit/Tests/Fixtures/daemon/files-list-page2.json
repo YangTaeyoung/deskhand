@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "dir": false,
+      "link": false,
+      "mtime": "2026-10-21T03:10:06.000Z",
+      "name": "b.txt",
+      "path": "/home/pc/listing/b.txt",
+      "size": 3
+    }
+  ],
+  "host_id": "pc",
+  "path": "/home/pc/listing",
+  "total": 3,
+  "truncated": false
+}
