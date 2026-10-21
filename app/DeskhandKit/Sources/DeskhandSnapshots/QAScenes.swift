@@ -181,7 +181,7 @@ enum QAScenes {
             scene("qa-empty", none, Tab(runs: { [] })),
             scene("qa-empty-all", none, Tab(runs: { [] }, showsAllHosts: true)),
             scene("qa-loading", none, Tab(phase: .loading)),
-            scene("qa-error", none, Tab(phase: .failed(OperationError(code: "TIMEOUT", message: "이 Mac의 데몬이 5초 안에 qa.list에 답하지 않았습니다")))),
+            scene("qa-error", none, Tab(phase: .failed(OperationError(ClientError.timeout(method: "qa.list"))))),
             scene("qa-runs", none, Tab(showsAllHosts: true, selected: Samples.loginRunID)),
             scene("qa-runs-filtered", none, Tab(selected: Samples.failedRunID, filter: .failed, search: "fixture")),
             scene("qa-run-passed", none, Tab(selected: Samples.loginRunID, selectedSteps: [Samples.loginRunID: 4])),

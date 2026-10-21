@@ -350,8 +350,7 @@ enum DebuggerScenes {
             scene("debugger-narrow", Setup(selected: dev, tab: .debugger), Tab(sessions: [paused()])),
             scene("debugger-narrow-navigator", Setup(selected: dev, tab: .debugger), Tab(sessions: [paused()], navigatorShown: true)),
             scene("debugger-loading", none, Tab(listPhase: .loading)),
-            scene("debugger-error", none, Tab(listPhase: .failed(OperationError(
-                code: "TIMEOUT", message: "이 Mac의 데몬이 5초 안에 debug.list에 답하지 않았습니다")))),
+            scene("debugger-error", none, Tab(listPhase: .failed(OperationError(ClientError.timeout(method: "debug.list"))))),
             scene("debugger-offline", Setup(selected: PreviewFixtures.designID, tab: .debugger, inspector: nil)),
             scene("debugger-offline-sessions", Setup(selected: PreviewFixtures.designID, tab: .debugger, inspector: nil),
                   Tab(sessions: [closed()])),

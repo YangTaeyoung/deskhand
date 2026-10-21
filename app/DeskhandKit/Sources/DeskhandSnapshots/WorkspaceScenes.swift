@@ -107,7 +107,7 @@ enum WorkspaceScenes {
             scene("workspace-inspector-hidden", Setup(selected: PreviewFixtures.qaLaptopID, inspector: nil)),
             scene("workspace-control-error", Setup(
                 selected: dev,
-                controlFailure: OperationError(code: "TIMEOUT", message: "데몬이 5초 안에 응답하지 않았습니다"))) { store in
+                controlFailure: OperationError(ClientError.timeout(method: "control.stop")))) { store in
                 store.controlActions.stop(dev)
             },
             SnapshotScene(name: "workspace-narrow", size: CGSize(width: 960, height: 600)) {
