@@ -88,7 +88,7 @@ public enum PreviewFixtures {
                  lastSeen: Timestamp(date: now.addingTimeInterval(-90))),
             Host(hostID: designID, name: "디자인 워크스테이션", os: "windows", arch: "amd64", address: "192.168.0.40", port: 47600,
                  sshAlias: "design", state: "offline",
-                 caps: caps("unavailable", reason: "컴퓨터가 오프라인입니다"),
+                 caps: caps("unavailable", reason: "PC가 오프라인입니다"),
                  owner: "none", agentVersion: "0.1.0", connectionGeneration: 1,
                  lastSeen: Timestamp(date: now.addingTimeInterval(-3 * 3600))),
             Host(hostID: labID, name: "실험실 PC", os: "windows", arch: "amd64", address: "192.168.0.77", port: 47600,
@@ -221,7 +221,7 @@ public enum PreviewFixtures {
                 DoctorCheck(id: "quic_connect", status: "pass", detail: "UDP 47600 연결 · 왕복 3 ms"),
                 DoctorCheck(id: "fingerprint", status: "pass", detail: "SHA256:4f9c2b7e…e21a · 페어링 때와 같음"),
                 DoctorCheck(id: "session", status: "warn", detail: "콘솔 세션이 잠겨 있어 화면과 입력을 쓸 수 없습니다",
-                            fix: "원격 컴퓨터에서 Windows 잠금을 해제하세요"),
+                            fix: "원격 PC에서 Windows 잠금을 해제하세요"),
                 DoctorCheck(id: "firewall_rule", status: "fail", detail: "인바운드 규칙 ‘Deskhand Agent’가 없습니다",
                             fix: #"New-NetFirewallRule -DisplayName "Deskhand Agent" -Direction Inbound -Protocol UDP -LocalPort 47600 -RemoteAddress LocalSubnet -Action Allow"#),
             ]
@@ -272,7 +272,7 @@ public enum PreviewFixtures {
     public static func newHost(id: String, name: String, alias: String, now: Date = .now) -> Host {
         Host(hostID: id, name: name, os: "windows", arch: "amd64", address: "192.168.0.52", port: 47600,
              sshAlias: alias, state: "ready",
-             caps: caps("ready", except: ["uia": Capability(state: "needs_user", reason: "UI 자동화 도우미를 처음 실행하려면 원격 컴퓨터에서 승인해야 합니다")]),
+             caps: caps("ready", except: ["uia": Capability(state: "needs_user", reason: "UI 자동화 도우미를 처음 실행하려면 원격 PC에서 승인해야 합니다")]),
              session: SessionInfo(sessionID: 1, user: "taeyoung", connectState: "active", protocolKind: "console",
                                   locked: false, inputDesktop: "Default"),
              displays: [display(width: 2560, height: 1440, scale: 1, adapter: "Intel UHD Graphics 770")],

@@ -248,7 +248,7 @@ struct SettingsHostPicker: View {
     @Binding var selection: String?
 
     var body: some View {
-        Picker(String.ui("settings.host.picker", "컴퓨터"), selection: $selection) {
+        Picker(String.ui("settings.host.picker", "PC"), selection: $selection) {
             ForEach(hosts, id: \.hostID) { host in
                 Text(host.name).tag(Optional(host.hostID))
             }

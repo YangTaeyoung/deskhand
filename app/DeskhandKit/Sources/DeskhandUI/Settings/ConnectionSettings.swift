@@ -4,7 +4,7 @@ import struct DeskhandClient.Host
 
 /// 연결: the paired computers in a list beside the selected one's address, SSH alias, agent,
 /// status and reconnection, with connecting, disconnecting, re-pairing and removal behind
-/// confirmations. 컴퓨터 추가… brings the main window (`main`) forward with the add-computer sheet.
+/// confirmations. PC 추가… brings the main window (`main`) forward with the add-computer sheet.
 struct ConnectionSettings: View {
     let store: AppStore
     @Bindable var model: SettingsModel
@@ -33,7 +33,7 @@ struct ConnectionSettings: View {
                 Button(String.ui("remove.uninstall", "에이전트까지 제거"), role: .destructive) { model.confirmRemoval(uninstall: true) }
                 Button(String.ui("action.cancel", "취소"), role: .cancel) {}
             } message: { _ in
-                Text(String.ui("remove.message", "이 Mac에서 페어링 정보를 지웁니다. ‘에이전트까지 제거’는 SSH로 원격 컴퓨터의 에이전트와 예약 작업, 방화벽 규칙도 지웁니다."))
+                Text(String.ui("remove.message", "이 Mac에서 페어링 정보를 지웁니다. ‘에이전트까지 제거’는 SSH로 원격 PC의 에이전트와 예약 작업, 방화벽 규칙도 지웁니다."))
             }
     }
 
@@ -42,24 +42,24 @@ struct ConnectionSettings: View {
         if case .daemonUnavailable = store.phase {
             SettingsEmptyState(symbol: "bolt.horizontal.circle",
                                title: String.ui("settings.connection.noDaemon.title", "데몬에 연결되지 않았습니다"),
-                               message: String.ui("settings.connection.noDaemon.message", "데몬이 실행되면 페어링한 컴퓨터가 여기에 나타납니다."),
+                               message: String.ui("settings.connection.noDaemon.message", "데몬이 실행되면 페어링한 PC가 여기에 나타납니다."),
                                actionTitle: String.ui("settings.connection.noDaemon.action", "일반 설정 보기")) {
                 model.pane = .general
             }
         } else if let error = store.hostsError, !store.hostsLoaded {
             SettingsEmptyState(symbol: "exclamationmark.triangle",
-                               title: String.ui("hosts.failed", "컴퓨터 목록을 불러오지 못했습니다"),
+                               title: String.ui("hosts.failed", "PC 목록을 불러오지 못했습니다"),
                                message: [error.message.asSentence, error.fix].compactMap { $0 }.joined(separator: " "),
                                actionTitle: String.ui("action.retry", "다시 시도")) {
                 Task { await store.reloadHosts() }
             }
         } else if !store.hostsLoaded {
-            LoadingView(title: String.ui("hosts.loading", "컴퓨터 목록을 불러오는 중"))
+            LoadingView(title: String.ui("hosts.loading", "PC 목록을 불러오는 중"))
         } else if store.hosts.isEmpty {
             SettingsEmptyState(symbol: "pc",
-                               title: String.ui("settings.connection.empty.title", "페어링한 컴퓨터가 없습니다"),
-                               message: String.ui("settings.connection.empty.message", "컴퓨터를 추가하면 주소, 포트, SSH 별칭과 페어링을 여기에서 관리합니다."),
-                               actionTitle: String.ui("settings.connection.empty.action", "컴퓨터 추가…")) {
+                               title: String.ui("settings.connection.empty.title", "페어링한 PC가 없습니다"),
+                               message: String.ui("settings.connection.empty.message", "PC를 추가하면 주소, 포트, SSH 별칭과 페어링을 여기에서 관리합니다."),
+                               actionTitle: String.ui("settings.connection.empty.action", "PC 추가…")) {
                 openWindow(id: "main")
                 store.presentAddHost()
             }
@@ -73,7 +73,7 @@ struct ConnectionSettings: View {
                 }
                 .listStyle(.inset)
                 .frame(width: 216)
-                .accessibilityLabel(String.ui("settings.connection.list", "컴퓨터 목록"))
+                .accessibilityLabel(String.ui("settings.connection.list", "PC 목록"))
                 Divider()
                 HostConnectionDetail(host: host, model: model)
             }
@@ -166,9 +166,9 @@ private struct HostConnectionDetail: View {
                     SettingsValue(host.agentVersion ?? String.ui("settings.connection.agent.unknown", "알 수 없음"), monospaced: true)
                 }
             } header: {
-                Text(String.ui("settings.connection.computer", "컴퓨터"))
+                Text(String.ui("settings.connection.computer", "PC"))
             } footer: {
-                SettingsFootnote(String.ui("settings.connection.computer.footer", "이름, 주소와 포트는 컴퓨터를 추가할 때 정해집니다. 바꾸려면 제거한 뒤 다시 추가하세요."))
+                SettingsFootnote(String.ui("settings.connection.computer.footer", "이름, 주소와 포트는 PC를 추가할 때 정해집니다. 바꾸려면 제거한 뒤 다시 추가하세요."))
             }
             Section {
                 connectionRow
@@ -187,7 +187,7 @@ private struct HostConnectionDetail: View {
                           button: String.ui("settings.connection.repair.button", "다시 페어링…")) {
                     model.pendingRepair = host
                 }
-                actionRow(title: String.ui("settings.connection.remove", "컴퓨터 제거"),
+                actionRow(title: String.ui("settings.connection.remove", "PC 제거"),
                           detail: String.ui("settings.connection.remove.detail", "이 Mac에서 페어링 정보를 지웁니다. 원하면 PC의 에이전트도 함께 지웁니다."),
                           button: String.ui("settings.connection.remove.button", "제거…")) {
                     model.pendingRemoval = host

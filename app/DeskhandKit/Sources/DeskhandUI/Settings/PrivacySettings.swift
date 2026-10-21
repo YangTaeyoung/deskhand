@@ -73,7 +73,7 @@ struct PrivacySettings: View {
             }
         } else {
             Section {
-                Text(String.ui("settings.privacy.noHosts", "컴퓨터를 추가하면 컴퓨터마다 AI에 보낼 범위를 정할 수 있습니다."))
+                Text(String.ui("settings.privacy.noHosts", "PC를 추가하면 PC마다 AI에 보낼 범위를 정할 수 있습니다."))
                     .foregroundStyle(DS.Status.neutralText)
             } header: {
                 scopeHeader

@@ -84,7 +84,7 @@ struct GeneralSettings: View {
         } header: {
             Text(String.ui("settings.daemon.header", "데몬"))
         } footer: {
-            SettingsFootnote(String.ui("settings.daemon.footer", "Deskhand는 이 Mac에서 실행되는 데몬을 통해 원격 컴퓨터에 연결합니다. 앱을 닫아도 데몬은 연결과 원격 작업을 이어 갑니다."))
+            SettingsFootnote(String.ui("settings.daemon.footer", "Deskhand는 이 Mac에서 실행되는 데몬을 통해 원격 PC에 연결합니다. 앱을 닫아도 데몬은 연결과 원격 작업을 이어 갑니다."))
         }
     }
 

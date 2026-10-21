@@ -85,7 +85,7 @@ public enum QuickSwitchCatalog {
     private static func appCommands(store: AppStore) -> [QuickSwitchItem] {
         var items: [QuickSwitchItem] = []
         if store.phase == .ready {
-            items.append(command(.addHost, title: .ui("quickSwitch.command.addHost", "컴퓨터 추가…"), subtitle: nil,
+            items.append(command(.addHost, title: .ui("quickSwitch.command.addHost", "PC 추가…"), subtitle: nil,
                                  keywords: ["add computer", "pair", "new host"], symbol: "plus.circle", tone: .neutral,
                                  shortcut: "⌘N"))
         }

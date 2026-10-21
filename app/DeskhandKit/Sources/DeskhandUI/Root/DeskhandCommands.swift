@@ -5,7 +5,7 @@ import SwiftUI
 /// Menu bar commands: add a computer (⌘N) and a new terminal tab (⌘T), closing (⌘W closes the
 /// terminal tab while the terminal tab shows shells, ⇧⌘W the window), the quick switch (⌘K),
 /// the workspace tabs (⌘1–⌘7, which also close the palette) and inspector (⌥⌘0) in the View
-/// menu, the 컴퓨터 menu with the control actions
+/// menu, the PC menu with the control actions
 /// (emergency stop ⇧⌘.) and host actions for the selected computer, the 터미널 menu and the 디버그
 /// menu (F8, F10, F11, ⇧F11 while the debugger tab is shown). In the
 /// files and processes tabs 제거… has no shortcut; ⌘⌫ there moves remote files to the recycle
@@ -19,7 +19,7 @@ public struct DeskhandCommands: Commands {
 
     public var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button(String.ui("menu.addHost", "컴퓨터 추가…")) { store.presentAddHost() }
+            Button(String.ui("menu.addHost", "PC 추가…")) { store.presentAddHost() }
                 .keyboardShortcut("n")
                 .disabled(store.phase != .ready)
         }
@@ -32,7 +32,7 @@ public struct DeskhandCommands: Commands {
         CommandGroup(before: .toolbar) {
             WorkspaceViewCommands(store: store, layout: store.layout)
         }
-        CommandMenu(String.ui("menu.computer", "컴퓨터")) {
+        CommandMenu(String.ui("menu.computer", "PC")) {
             if let host = store.selectedHost {
                 ControlCommands(store: store, host: host)
                 Divider()
@@ -96,7 +96,7 @@ private struct WorkspaceViewCommands: View {
         Button(String.ui("menu.inspectorActivity", "활동 기록")) { layout.toggleInspector(.activity) }
             .keyboardShortcut("1", modifiers: [.command, .option])
             .disabled(!hasWorkspace)
-        Button(String.ui("menu.inspectorInfo", "컴퓨터 정보")) { layout.toggleInspector(.info) }
+        Button(String.ui("menu.inspectorInfo", "PC 정보")) { layout.toggleInspector(.info) }
             .keyboardShortcut("2", modifiers: [.command, .option])
             .disabled(!hasWorkspace)
         Divider()

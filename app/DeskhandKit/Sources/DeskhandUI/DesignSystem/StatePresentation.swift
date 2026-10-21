@@ -9,7 +9,7 @@ extension ConnectionState {
         case .ready: .ui("connection.ready", "연결됨")
         case .degraded: .ui("connection.degraded", "연결 불안정")
         case .reconnecting: .ui("connection.reconnecting", "다시 연결하는 중")
-        case .blocked: .ui("connection.blocked", "차단됨")
+        case .blocked: .ui("connection.blocked", "인증서 불일치")
         }
     }
 

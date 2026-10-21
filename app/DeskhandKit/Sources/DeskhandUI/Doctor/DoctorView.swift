@@ -100,7 +100,7 @@ public struct DoctorView: View {
                     .controlSize(.regular)
                 Text(String.ui("doctor.loading", "진단하는 중…"))
                     .font(DS.Font.headline)
-                Text(String.ui("doctor.loading.detail", "원격 컴퓨터에 따라 몇 초 걸릴 수 있습니다."))
+                Text(String.ui("doctor.loading.detail", "원격 PC에 따라 몇 초 걸릴 수 있습니다."))
                     .font(DS.Font.caption)
                     .foregroundStyle(.secondary)
             }
@@ -117,7 +117,7 @@ public struct DoctorView: View {
         case .loaded(let checks) where checks.isEmpty:
             EmptyStateView(symbol: "stethoscope",
                            title: String.ui("doctor.empty.title", "진단 항목이 없습니다"),
-                           message: String.ui("doctor.empty.message", "데몬이 이 컴퓨터에 대해 확인할 항목을 돌려주지 않았습니다."))
+                           message: String.ui("doctor.empty.message", "데몬이 이 PC에 대해 확인할 항목을 돌려주지 않았습니다."))
                 .frame(maxWidth: .infinity)
                 .frame(height: Self.placeholderHeight)
         case .loaded(let unordered):

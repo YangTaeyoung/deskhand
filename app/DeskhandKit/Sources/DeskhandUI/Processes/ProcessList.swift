@@ -233,7 +233,7 @@ public enum KillBlock: Equatable, Sendable {
         case .agent:
             .ui("processes.block.agent", "Deskhand 에이전트입니다. 끝내면 이 Mac과의 연결이 끊어집니다.")
         case .critical:
-            .ui("processes.block.critical", "Windows 핵심 프로세스라 끝낼 수 없습니다. 끝내면 컴퓨터가 멈추거나 다시 시작됩니다.")
+            .ui("processes.block.critical", "Windows 핵심 프로세스라 끝낼 수 없습니다. 끝내면 PC가 멈추거나 다시 시작됩니다.")
         case .protectedDescendant(let name):
             .ui("processes.block.descendant", "하위에 ‘\(name)’ 프로세스가 있어 트리로 끝낼 수 없습니다. 이 프로세스만 종료하세요.")
         }

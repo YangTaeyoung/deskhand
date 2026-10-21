@@ -145,7 +145,7 @@ public final class PreviewBackend: Backend, LocalOverlayProviding {
 
     private func host(_ hostID: String) throws -> Host {
         guard let host = state.withLock({ $0.hosts.first { $0.hostID == hostID } }) else {
-            throw RPCErrorInfo(message: "컴퓨터를 찾을 수 없습니다", code: "NOT_FOUND")
+            throw RPCErrorInfo(message: "PC를 찾을 수 없습니다", code: "NOT_FOUND")
         }
         return host
     }
@@ -200,7 +200,7 @@ extension PreviewBackend {
     public func hostAdd(name: String, ssh: String) async throws -> JobReceipt {
         let job = try state.withLock { s -> Int in
             if s.hosts.contains(where: { $0.name == name }) {
-                throw RPCErrorInfo(message: "‘\(name)’ 이름의 컴퓨터가 이미 있습니다. 다른 이름을 쓰세요", code: "INVALID_ARGUMENT")
+                throw RPCErrorInfo(message: "‘\(name)’ 이름의 PC가 이미 있습니다. 다른 이름을 쓰세요", code: "INVALID_ARGUMENT")
             }
             s.jobs += 1
             return s.jobs

@@ -43,7 +43,7 @@ public struct QuickSwitchItem: Identifiable, Equatable, Sendable {
             switch self {
             case .tab: .ui("quickSwitch.kind.tab", "탭")
             case .command: .ui("quickSwitch.kind.command", "명령")
-            case .host: .ui("quickSwitch.kind.host", "컴퓨터")
+            case .host: .ui("quickSwitch.kind.host", "PC")
             case .transfer: .ui("quickSwitch.kind.transfer", "전송")
             case .debugSession: .ui("quickSwitch.kind.debugSession", "디버그 세션")
             case .qaRun: .ui("quickSwitch.kind.qaRun", "QA 실행")
@@ -138,7 +138,7 @@ public struct QuickSwitchSection: Identifiable, Equatable, Sendable {
         case .recent: .ui("quickSwitch.section.recent", "최근 사용")
         case .tabs: .ui("quickSwitch.section.tabs", "탭")
         case .commands: .ui("quickSwitch.section.commands", "명령")
-        case .hosts: .ui("quickSwitch.section.hosts", "컴퓨터")
+        case .hosts: .ui("quickSwitch.section.hosts", "PC")
         case .work: .ui("quickSwitch.section.work", "최근 작업")
         case .results: nil
         }

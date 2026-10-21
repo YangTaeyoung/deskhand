@@ -114,7 +114,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터 목록"
+            "value": "PC 목록"
           }
         }
       }
@@ -138,7 +138,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터 추가"
+            "value": "PC 추가"
           }
         }
       }
@@ -496,7 +496,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터를 추가하지 못했습니다"
+            "value": "PC를 추가하지 못했습니다"
           }
         }
       }
@@ -580,7 +580,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터 추가 중"
+            "value": "PC 추가 중"
           }
         }
       }
@@ -640,7 +640,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터 추가"
+            "value": "PC 추가"
           }
         }
       }
@@ -822,7 +822,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "에이전트를 다시 설치했다면 다시 페어링하세요. 아니라면 다른 컴퓨터가 이 주소를 쓰는지 먼저 진단하세요."
+            "value": "에이전트를 다시 설치했다면 다시 페어링하세요. 아니라면 다른 PC가 이 주소를 쓰는지 먼저 진단하세요."
           }
         }
       }
@@ -1293,7 +1293,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "차단됨"
+            "value": "인증서 불일치"
           }
         }
       }
@@ -1617,7 +1617,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Deskhand는 이 Mac에서 실행되는 데몬을 통해 원격 컴퓨터에 연결합니다."
+            "value": "Deskhand는 이 Mac에서 실행되는 데몬을 통해 원격 PC에 연결합니다."
           }
         }
       }
@@ -3950,7 +3950,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이 Mac의 Deskhand 데몬이 답하지 않았습니다. 잠시 뒤 다시 시도하고, 계속되면 컴퓨터 메뉴의 진단 실행으로 데몬 상태를 확인하세요."
+            "value": "이 Mac의 Deskhand 데몬이 답하지 않았습니다. 잠시 뒤 다시 시도하고, 계속되면 설정 › 일반에서 데몬을 다시 시작하세요."
           }
         }
       }
@@ -5766,7 +5766,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "사이드바에서 작업할 컴퓨터를 고르세요."
+            "value": "사이드바에서 작업할 PC를 고르세요."
           }
         }
       }
@@ -5778,7 +5778,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터를 선택하세요"
+            "value": "PC를 선택하세요"
           }
         }
       }
@@ -5898,7 +5898,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "데몬이 이 컴퓨터에 대해 확인할 항목을 돌려주지 않았습니다."
+            "value": "데몬이 이 PC에 대해 확인할 항목을 돌려주지 않았습니다."
           }
         }
       }
@@ -5982,7 +5982,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "원격 컴퓨터에 따라 몇 초 걸릴 수 있습니다."
+            "value": "원격 PC에 따라 몇 초 걸릴 수 있습니다."
           }
         }
       }
@@ -6090,7 +6090,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "아직 연결한 컴퓨터가 없습니다"
+            "value": "아직 연결한 PC가 없습니다"
           }
         }
       }
@@ -6198,7 +6198,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터를 추가했지만 목록에서 찾지 못했습니다"
+            "value": "PC를 추가했지만 목록에서 찾지 못했습니다"
           }
         }
       }
@@ -7745,7 +7745,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "원격 컴퓨터에서 로그인하거나 잠금을 해제하세요."
+            "value": "원격 PC에서 로그인하거나 잠금을 해제하세요."
           }
         }
       }
@@ -7779,7 +7779,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "SSH 별칭으로 새 컴퓨터를 추가합니다 (⌘N)"
+            "value": "SSH 별칭으로 새 PC를 추가합니다 (⌘N)"
           }
         }
       }
@@ -8139,7 +8139,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터 목록을 불러오지 못했습니다"
+            "value": "PC 목록을 불러오지 못했습니다"
           }
         }
       }
@@ -8151,7 +8151,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터 목록을 불러오는 중"
+            "value": "PC 목록을 불러오는 중"
           }
         }
       }
@@ -8335,13 +8335,13 @@
         }
       }
     },
-    "info.computer": {
+    "info.device": {
       "extractionState": "manual",
       "localizations": {
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터"
+            "value": "기기"
           }
         }
       }
@@ -8560,7 +8560,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "원격 컴퓨터 확인"
+            "value": "원격 PC 확인"
           }
         }
       }
@@ -10636,7 +10636,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터 추가…"
+            "value": "PC 추가…"
           }
         }
       }
@@ -10670,7 +10670,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터"
+            "value": "PC"
           }
         }
       }
@@ -10717,7 +10717,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터 정보"
+            "value": "PC 정보"
           }
         }
       }
@@ -10972,7 +10972,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "인증서가 페어링 때와 다릅니다"
+            "value": "인증서 불일치"
           }
         }
       }
@@ -10996,7 +10996,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "마지막 연결 %@. 컴퓨터가 켜져 있으면 연결을 눌러 다시 시도하세요."
+            "value": "마지막 연결 %@. PC가 켜져 있으면 연결을 눌러 다시 시도하세요."
           }
         }
       }
@@ -11008,7 +11008,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터가 켜져 있으면 연결을 눌러 다시 시도하세요."
+            "value": "PC가 켜져 있으면 연결을 눌러 다시 시도하세요."
           }
         }
       }
@@ -11341,7 +11341,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Windows 핵심 프로세스라 끝낼 수 없습니다. 끝내면 컴퓨터가 멈추거나 다시 시작됩니다."
+            "value": "Windows 핵심 프로세스라 끝낼 수 없습니다. 끝내면 PC가 멈추거나 다시 시작됩니다."
           }
         }
       }
@@ -15902,7 +15902,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터 추가…"
+            "value": "PC 추가…"
           }
         }
       }
@@ -16034,7 +16034,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터 이름, 탭, 명령, 최근 전송·디버그 세션·QA 실행을 찾습니다."
+            "value": "PC 이름, 탭, 명령, 최근 전송·디버그 세션·QA 실행을 찾습니다."
           }
         }
       }
@@ -16111,7 +16111,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터"
+            "value": "PC"
           }
         }
       }
@@ -16155,7 +16155,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터, 탭, 명령 검색"
+            "value": "PC, 탭, 명령 검색"
           }
         }
       }
@@ -16188,7 +16188,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터"
+            "value": "PC"
           }
         }
       }
@@ -16267,7 +16267,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이 Mac에서 페어링 정보를 지웁니다. ‘에이전트까지 제거’는 SSH로 원격 컴퓨터의 에이전트와 예약 작업, 방화벽 규칙도 지웁니다."
+            "value": "이 Mac에서 페어링 정보를 지웁니다. ‘에이전트까지 제거’는 SSH로 원격 PC의 에이전트와 예약 작업, 방화벽 규칙도 지웁니다."
           }
         }
       }
@@ -17372,7 +17372,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터"
+            "value": "PC"
           }
         }
       }
@@ -17383,7 +17383,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이름, 주소와 포트는 컴퓨터를 추가할 때 정해집니다. 바꾸려면 제거한 뒤 다시 추가하세요."
+            "value": "이름, 주소와 포트는 PC를 추가할 때 정해집니다. 바꾸려면 제거한 뒤 다시 추가하세요."
           }
         }
       }
@@ -17416,7 +17416,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터 추가…"
+            "value": "PC 추가…"
           }
         }
       }
@@ -17427,7 +17427,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터를 추가하면 주소, 포트, SSH 별칭과 페어링을 여기에서 관리합니다."
+            "value": "PC를 추가하면 주소, 포트, SSH 별칭과 페어링을 여기에서 관리합니다."
           }
         }
       }
@@ -17438,7 +17438,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "페어링한 컴퓨터가 없습니다"
+            "value": "페어링한 PC가 없습니다"
           }
         }
       }
@@ -17482,7 +17482,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터 목록"
+            "value": "PC 목록"
           }
         }
       }
@@ -17504,7 +17504,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "데몬이 실행되면 페어링한 컴퓨터가 여기에 나타납니다."
+            "value": "데몬이 실행되면 페어링한 PC가 여기에 나타납니다."
           }
         }
       }
@@ -17614,7 +17614,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터 제거"
+            "value": "PC 제거"
           }
         }
       }
@@ -17757,7 +17757,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Deskhand는 이 Mac에서 실행되는 데몬을 통해 원격 컴퓨터에 연결합니다. 앱을 닫아도 데몬은 연결과 원격 작업을 이어 갑니다."
+            "value": "Deskhand는 이 Mac에서 실행되는 데몬을 통해 원격 PC에 연결합니다. 앱을 닫아도 데몬은 연결과 원격 작업을 이어 갑니다."
           }
         }
       }
@@ -18340,7 +18340,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터를 추가하면 컴퓨터마다 작업 루트를 정할 수 있습니다."
+            "value": "PC를 추가하면 PC마다 작업 루트를 정할 수 있습니다."
           }
         }
       }
@@ -18384,7 +18384,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터"
+            "value": "PC"
           }
         }
       }
@@ -18813,7 +18813,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터를 추가하면 컴퓨터마다 AI에 보낼 범위를 정할 수 있습니다."
+            "value": "PC를 추가하면 PC마다 AI에 보낼 범위를 정할 수 있습니다."
           }
         }
       }
@@ -19034,7 +19034,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "아직 추가한 컴퓨터가 없습니다"
+            "value": "아직 추가한 PC가 없습니다"
           }
         }
       }
@@ -19046,7 +19046,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터"
+            "value": "PC"
           }
         }
       }

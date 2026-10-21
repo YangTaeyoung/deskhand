@@ -275,9 +275,9 @@ struct ComponentsGallery: View {
                        note: "내용이 없을 때 다음 행동을 바로 제안합니다.") {
             EmptyStateView(
                 symbol: "desktopcomputer",
-                title: "아직 연결한 컴퓨터가 없습니다",
+                title: "아직 연결한 PC가 없습니다",
                 message: "SSH로 접속할 수 있는 Windows PC를 추가하면 화면, 터미널, 파일을 한곳에서 다룰 수 있습니다.",
-                actionTitle: "컴퓨터 추가",
+                actionTitle: "PC 추가",
                 action: {}
             )
             .frame(height: 216)

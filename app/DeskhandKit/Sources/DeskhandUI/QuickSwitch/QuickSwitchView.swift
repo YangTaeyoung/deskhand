@@ -117,7 +117,7 @@ public struct QuickSwitchPalette: View {
                 .foregroundStyle(DS.Status.neutralText)
                 .accessibilityHidden(true)
             QuickSwitchField(text: $model.query,
-                             placeholder: String.ui("quickSwitch.placeholder", "컴퓨터, 탭, 명령 검색"),
+                             placeholder: String.ui("quickSwitch.placeholder", "PC, 탭, 명령 검색"),
                              clearRequests: model.clearRequests) { key in
                 handle(key)
             }
@@ -321,7 +321,7 @@ struct QuickSwitchEmpty: View {
                     .font(DS.Font.headline)
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
-                Text(String.ui("quickSwitch.empty.message", "컴퓨터 이름, 탭, 명령, 최근 전송·디버그 세션·QA 실행을 찾습니다."))
+                Text(String.ui("quickSwitch.empty.message", "PC 이름, 탭, 명령, 최근 전송·디버그 세션·QA 실행을 찾습니다."))
                     .font(DS.Font.caption)
                     .foregroundStyle(DS.Status.neutralText)
                     .multilineTextAlignment(.center)

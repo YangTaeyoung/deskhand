@@ -652,7 +652,7 @@ public struct OperationError: Error, Sendable, Equatable {
         case "ELEVATION_REQUIRED", "PERMISSION_DENIED":
             .ui("fix.elevation", "관리자 계정의 SSH 별칭으로 다시 시도하세요.")
         case "SESSION_LOCKED":
-            .ui("fix.sessionLocked", "원격 컴퓨터에서 로그인하거나 잠금을 해제하세요.")
+            .ui("fix.sessionLocked", "원격 PC에서 로그인하거나 잠금을 해제하세요.")
         case "PORT_CONFLICT":
             .ui("fix.portConflict", "다른 프로그램이 UDP 47600 포트를 쓰고 있습니다. 그 프로그램을 종료한 뒤 다시 시도하세요.")
         case "CAPABILITY_UNSUPPORTED":

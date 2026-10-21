@@ -10,7 +10,7 @@ public enum SidebarSelectionStyle: Sendable {
     case drawn
 }
 
-/// Computer list with selection, per-row actions and the "컴퓨터 추가" button at the bottom.
+/// Computer list with selection, per-row actions and the "PC 추가" button at the bottom.
 public struct SidebarView: View {
     @Bindable var store: AppStore
     let selectionStyle: SidebarSelectionStyle
@@ -36,14 +36,14 @@ public struct SidebarView: View {
                     }
                 }
             } header: {
-                Text(String.ui("sidebar.section", "컴퓨터"))
+                Text(String.ui("sidebar.section", "PC"))
             }
         }
         .listStyle(.sidebar)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             AddHostButton { store.presentAddHost() }
         }
-        .accessibilityLabel(String.ui("a11y.sidebar", "컴퓨터 목록"))
+        .accessibilityLabel(String.ui("a11y.sidebar", "PC 목록"))
     }
 
     @ViewBuilder
@@ -72,13 +72,13 @@ public struct SidebarView: View {
             HStack(spacing: DS.Space.s) {
                 ProgressView()
                     .controlSize(.small)
-                Text(String.ui("hosts.loading", "컴퓨터 목록을 불러오는 중"))
+                Text(String.ui("hosts.loading", "PC 목록을 불러오는 중"))
                     .font(DS.Font.body)
                     .foregroundStyle(.secondary)
             }
             .accessibilityElement(children: .combine)
         } else if store.hostsLoaded {
-            Text(String.ui("sidebar.empty", "아직 추가한 컴퓨터가 없습니다"))
+            Text(String.ui("sidebar.empty", "아직 추가한 PC가 없습니다"))
                 .font(DS.Font.body)
                 .foregroundStyle(.secondary)
                 .padding(.vertical, DS.Space.xs)
@@ -96,7 +96,7 @@ public struct AddHostButton: View {
 
     public var body: some View {
         Button(action: action) {
-            Label(String.ui("action.addHost", "컴퓨터 추가"), systemImage: "plus.circle")
+            Label(String.ui("action.addHost", "PC 추가"), systemImage: "plus.circle")
                 .font(DS.Font.body)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
@@ -105,7 +105,7 @@ public struct AddHostButton: View {
         .foregroundStyle(.secondary)
         .padding(.horizontal, DS.Space.l)
         .padding(.vertical, DS.Space.m)
-        .help(String.ui("help.addHost", "SSH 별칭으로 새 컴퓨터를 추가합니다 (⌘N)"))
+        .help(String.ui("help.addHost", "SSH 별칭으로 새 PC를 추가합니다 (⌘N)"))
     }
 }
 

@@ -70,7 +70,7 @@ struct ComputersSplitView: View {
             }
             Button(String.ui("action.cancel", "취소"), role: .cancel) {}
         } message: { _ in
-            Text(String.ui("remove.message", "이 Mac에서 페어링 정보를 지웁니다. ‘에이전트까지 제거’는 SSH로 원격 컴퓨터의 에이전트와 예약 작업, 방화벽 규칙도 지웁니다."))
+            Text(String.ui("remove.message", "이 Mac에서 페어링 정보를 지웁니다. ‘에이전트까지 제거’는 SSH로 원격 PC의 에이전트와 예약 작업, 방화벽 규칙도 지웁니다."))
         }
         .alert(
             String.ui("actionError.title", "작업을 완료하지 못했습니다"),
@@ -129,7 +129,7 @@ public struct RootDetailView: View {
     private var content: some View {
         if let error = store.hostsError, !store.hostsLoaded {
             VStack {
-                ErrorBanner(message: String.ui("hosts.failed", "컴퓨터 목록을 불러오지 못했습니다"),
+                ErrorBanner(message: String.ui("hosts.failed", "PC 목록을 불러오지 못했습니다"),
                             fix: [error.message, error.fix].compactMap { $0 }.joined(separator: " "),
                             code: error.code,
                             retry: { Task { await store.reloadHosts() } })
@@ -138,15 +138,15 @@ public struct RootDetailView: View {
             .padding(DS.Space.xl)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if !store.hostsLoaded {
-            LoadingView(title: String.ui("hosts.loading", "컴퓨터 목록을 불러오는 중"))
+            LoadingView(title: String.ui("hosts.loading", "PC 목록을 불러오는 중"))
         } else if store.hosts.isEmpty {
             NoHostsView { store.presentAddHost() }
         } else if let host = store.selectedHost {
             WorkspaceView(store: store, host: host, chrome: chrome)
         } else {
             EmptyStateView(symbol: "sidebar.left",
-                           title: String.ui("detail.select.title", "컴퓨터를 선택하세요"),
-                           message: String.ui("detail.select.message", "사이드바에서 작업할 컴퓨터를 고르세요."))
+                           title: String.ui("detail.select.title", "PC를 선택하세요"),
+                           message: String.ui("detail.select.message", "사이드바에서 작업할 PC를 고르세요."))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -165,9 +165,9 @@ public struct NoHostsView: View {
             Spacer(minLength: 0)
             EmptyStateView(
                 symbol: "pc",
-                title: String.ui("empty.hosts.title", "아직 연결한 컴퓨터가 없습니다"),
+                title: String.ui("empty.hosts.title", "아직 연결한 PC가 없습니다"),
                 message: String.ui("empty.hosts.message", "SSH로 접속되는 Windows PC를 추가하면 에이전트를 설치하고 이 Mac과 안전하게 페어링합니다."),
-                actionTitle: String.ui("action.addHost", "컴퓨터 추가"),
+                actionTitle: String.ui("action.addHost", "PC 추가"),
                 action: add)
             prerequisites
                 .frame(maxWidth: 520)
@@ -300,7 +300,7 @@ public struct DaemonUnavailableView: View {
                 Text(String.ui("daemon.unavailable.title", "데몬을 시작할 수 없습니다"))
                     .font(DS.Font.display)
                     .accessibilityAddTraits(.isHeader)
-                Text(String.ui("daemon.unavailable.message", "Deskhand는 이 Mac에서 실행되는 데몬을 통해 원격 컴퓨터에 연결합니다."))
+                Text(String.ui("daemon.unavailable.message", "Deskhand는 이 Mac에서 실행되는 데몬을 통해 원격 PC에 연결합니다."))
                     .font(DS.Font.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

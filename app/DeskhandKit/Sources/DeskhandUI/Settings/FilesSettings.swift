@@ -173,7 +173,7 @@ struct FilesSettings: View {
             }
         } else {
             Section {
-                Text(String.ui("settings.files.roots.noHosts", "컴퓨터를 추가하면 컴퓨터마다 작업 루트를 정할 수 있습니다."))
+                Text(String.ui("settings.files.roots.noHosts", "PC를 추가하면 PC마다 작업 루트를 정할 수 있습니다."))
                     .foregroundStyle(DS.Status.neutralText)
             } header: {
                 Text(String.ui("settings.files.roots.header", "작업 루트"))

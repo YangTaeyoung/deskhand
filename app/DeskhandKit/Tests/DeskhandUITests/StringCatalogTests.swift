@@ -82,6 +82,17 @@ final class StringCatalogTests: XCTestCase {
         XCTAssertTrue(offending.isEmpty, offending.keys.sorted().map { "\($0): \(offending[$0] ?? "")" }.joined(separator: "\n"))
     }
 
+    func testRemoteMachinesAreCalledPCAndTheBlockedStateIsACertificateMismatch() throws {
+        let catalog = try catalog()
+        let computer = catalog.filter { $0.value.contains("컴퓨터") }
+        XCTAssertTrue(computer.isEmpty, computer.keys.sorted().map { "\($0): \(computer[$0] ?? "")" }.joined(separator: "\n"))
+        let blocked = catalog.filter { $0.value.contains("차단됨") }
+        XCTAssertTrue(blocked.isEmpty, blocked.keys.sorted().joined(separator: ", "))
+        XCTAssertEqual(catalog["connection.blocked"], "인증서 불일치")
+        XCTAssertEqual(catalog["sidebar.section"], "PC")
+        XCTAssertEqual(catalog["action.addHost"], "PC 추가")
+    }
+
     func testFormattedStringsResolveFromCatalog() {
         let current = 3
         let total = 5

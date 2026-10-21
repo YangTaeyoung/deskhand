@@ -173,7 +173,7 @@ public final class AddHostFlow: Identifiable {
         await store.reloadHosts()
         let host = hostID.flatMap(store.host) ?? store.hosts.first { $0.name == name }
         guard let host else {
-            return fail(OperationError(message: .ui("error.addedHostMissing", "컴퓨터를 추가했지만 목록에서 찾지 못했습니다")))
+            return fail(OperationError(message: .ui("error.addedHostMissing", "PC를 추가했지만 목록에서 찾지 못했습니다")))
         }
         for i in steps.indices { steps[i].status = .done }
         stopWatchdog()
@@ -231,7 +231,7 @@ public final class AddHostFlow: Identifiable {
 extension InstallStep {
     public var title: String {
         switch self {
-        case .probe: .ui("install.probe", "원격 컴퓨터 확인")
+        case .probe: .ui("install.probe", "원격 PC 확인")
         case .copy: .ui("install.copy", "에이전트 복사")
         case .initialize: .ui("install.init", "에이전트 초기화")
         case .install: .ui("install.install", "에이전트 설치")

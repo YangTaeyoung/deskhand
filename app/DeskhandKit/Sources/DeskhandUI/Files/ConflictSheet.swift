@@ -205,7 +205,7 @@ struct FileInfoSheet: View {
                 }
             }
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: DS.Space.m, verticalSpacing: DS.Space.s) {
-                row(String.ui("info.computer", "컴퓨터"), sideName)
+                row(String.ui("info.device", "기기"), sideName)
                 row(String.ui("info.location", "위치"), FilePath.parent(item.path, style: item.path.contains("\\") ? .windows : .posix) ?? item.path, mono: true)
                 row(String.ui("info.size", "크기"), item.size.map { "\(DS.Format.bytes($0)) (\(DS.Format.exactBytes($0)))" } ?? "—")
                 row(String.ui("info.modified", "수정한 날짜"), item.modified.map { DS.Format.fullDateTime($0) } ?? "—")

@@ -67,9 +67,9 @@ public struct AddHostSheet: View {
 
     private var headerTitle: String {
         switch flow.stage {
-        case .form: .ui("addHost.title", "컴퓨터 추가")
-        case .running: .ui("addHost.running.title", "컴퓨터 추가 중")
-        case .failed: .ui("addHost.failed.title", "컴퓨터를 추가하지 못했습니다")
+        case .form: .ui("addHost.title", "PC 추가")
+        case .running: .ui("addHost.running.title", "PC 추가 중")
+        case .failed: .ui("addHost.failed.title", "PC를 추가하지 못했습니다")
         case .succeeded: .ui("addHost.succeeded.title", "연결됨")
         }
     }

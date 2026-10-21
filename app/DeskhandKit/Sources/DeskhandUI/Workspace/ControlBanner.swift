@@ -53,7 +53,7 @@ public enum ControlBannerKind: Equatable, Sendable {
     /// The band title, also announced to VoiceOver when the kind changes.
     public var title: String {
         switch self {
-        case .blocked: .ui("notice.blocked.title", "인증서가 페어링 때와 다릅니다")
+        case .blocked: .ui("notice.blocked.title", "인증서 불일치")
         case .offline: .ui("notice.offline.title", "오프라인입니다")
         case .connecting: .ui("notice.connecting.title", "연결하는 중…")
         case .reconnecting: .ui("notice.reconnecting.title", "다시 연결하는 중…")
@@ -133,8 +133,8 @@ struct ControlBanner: View {
         case .offline:
             BannerBand(style: .tinted(DS.Color.neutral), symbol: "moon.zzz.fill", title: kind.title,
                        message: host.lastSeenText.map {
-                           String.ui("notice.offline.lastSeen", "마지막 연결 \($0). 컴퓨터가 켜져 있으면 연결을 눌러 다시 시도하세요.")
-                       } ?? String.ui("notice.offline.message", "컴퓨터가 켜져 있으면 연결을 눌러 다시 시도하세요.")) {
+                           String.ui("notice.offline.lastSeen", "마지막 연결 \($0). PC가 켜져 있으면 연결을 눌러 다시 시도하세요.")
+                       } ?? String.ui("notice.offline.message", "PC가 켜져 있으면 연결을 눌러 다시 시도하세요.")) {
                 Button { store.connect(host.hostID) } label: {
                     Label(String.ui("action.connect", "연결"), systemImage: "bolt.horizontal")
                 }
@@ -142,7 +142,7 @@ struct ControlBanner: View {
             }
         case .blocked:
             BannerBand(style: .tinted(DS.Color.danger), symbol: "exclamationmark.octagon.fill", title: kind.title,
-                       message: String.ui("banner.blocked.message", "에이전트를 다시 설치했다면 다시 페어링하세요. 아니라면 다른 컴퓨터가 이 주소를 쓰는지 먼저 진단하세요.")) {
+                       message: String.ui("banner.blocked.message", "에이전트를 다시 설치했다면 다시 페어링하세요. 아니라면 다른 PC가 이 주소를 쓰는지 먼저 진단하세요.")) {
                 Button(String.ui("action.doctor", "진단 실행")) { store.presentDoctor(for: host.hostID) }
                     .buttonStyle(.bordered)
                 Button { store.repair(host.hostID) } label: {
