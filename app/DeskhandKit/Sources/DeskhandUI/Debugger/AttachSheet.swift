@@ -279,7 +279,7 @@ public struct AttachSheet: View {
                 .font(DS.Font.caption.weight(.semibold))
             Text(String.ui("debugger.attach.windowsNote", "Windows PC에서는 실행 중인 프로세스의 Node 검사기를 켤 수 없습니다. --inspect나 --remote-debugging-port로 실행한 프로세스를 고르면 그 포트로 연결합니다. 다른 앱은 ‘앱 실행’으로 디버그하세요."))
                 .font(DS.Font.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DS.Status.neutralText)
                 .fixedSize(horizontal: false, vertical: true)
             if let selectedCandidate, Self.portRequest(for: selectedCandidate, hostID: host.hostID) == nil {
                 Text(String.ui("debugger.attach.noPort", "고른 프로세스는 디버그 포트를 열지 않았습니다."))

@@ -223,7 +223,7 @@ private struct AttachingLine: View {
                 .accessibilityHidden(true)
             Text(text)
                 .font(DS.Font.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DS.Status.neutralText)
                 .lineLimit(1)
                 .truncationMode(.tail)
         }

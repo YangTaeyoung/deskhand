@@ -292,7 +292,7 @@ struct TransferRow: View {
                   : [row.progress.map(DS.Format.percent), row.bytesText, row.rateText, row.etaText, row.filesText])
                 .compactMap { $0 }.joined(separator: " · "))
                 .font(DS.Font.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DS.Status.neutralText)
                 .lineLimit(1)
         }
         .accessibilityElement(children: .combine)
@@ -311,7 +311,7 @@ struct TransferRow: View {
                     .accessibilityHidden(true)
             }
             Text(text)
-                .foregroundStyle(row.tone == .danger || row.tone == .warning ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+                .foregroundStyle(row.tone == .danger || row.tone == .warning ? AnyShapeStyle(.primary) : AnyShapeStyle(DS.Status.neutralText))
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
         }
@@ -363,7 +363,7 @@ struct TransferRow: View {
                         ProgressView().controlSize(.small)
                         Text(String.ui("transfer.files.loading", "파일 목록을 읽는 중…"))
                             .font(DS.Font.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(DS.Status.neutralText)
                     }
                     .padding(DS.Space.s)
                 }
