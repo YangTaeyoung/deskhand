@@ -154,8 +154,8 @@ struct ControlBanner: View {
                            ? String.ui("banner.blocked.repairing", "SSH로 에이전트를 다시 설치하고 이 Mac과 다시 페어링하고 있습니다. 그동안 이 PC의 원격 작업이 끊깁니다.")
                            : String.ui("banner.blocked.message", "에이전트를 다시 설치했다면 다시 페어링하세요. 아니라면 다른 PC가 이 주소를 쓰는지 먼저 진단하세요.")) {
                 Button(String.ui("action.doctor", "진단 실행")) { store.presentDoctor(for: host.hostID) }
-                    .buttonStyle(.bordered)
-                    .allowsHitTesting(!repairing)
+                    .buttonStyle(BandSecondaryButtonStyle())
+                    .disabled(repairing)
                 if repairing {
                     HStack(spacing: DS.Space.s) {
                         ProgressView().controlSize(.small)
@@ -360,6 +360,20 @@ struct BannerBand<Actions: View>: View {
 
 /// The button on a solid band: a white capsule with `text`-colored text. `text` is a fill color
 /// that white reaches 4.5:1 against, such as `DS.Color.aiFill`, so the text reads on white.
+/// Bordered secondary button for tinted bands; the disabled state keeps the label in `secondaryOnTint`.
+struct BandSecondaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(isEnabled ? AnyShapeStyle(.primary) : AnyShapeStyle(DS.Status.secondaryOnTint))
+            .padding(.horizontal, DS.Space.m)
+            .padding(.vertical, DS.Space.xs)
+            .background(.quaternary.opacity(configuration.isPressed ? 1 : 0.6),
+                        in: RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
+    }
+}
+
 struct BandButtonStyle: ButtonStyle {
     let text: Color
     @Environment(\.isEnabled) private var isEnabled
