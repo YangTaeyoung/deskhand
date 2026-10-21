@@ -380,7 +380,7 @@ struct AssertionsTable: View {
                         if open { expanded.remove(index) } else { expanded.insert(index) }
                     }
                     .buttonStyle(.link)
-                    .tint(DS.Color.accent)
+                    .tint(DS.Status.accentText)
                     .font(DS.Font.caption)
                 }
             }

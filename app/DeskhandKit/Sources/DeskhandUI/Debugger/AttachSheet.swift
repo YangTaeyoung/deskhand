@@ -347,7 +347,7 @@ private struct CandidateRow: View {
     private func tag(_ text: String) -> some View {
         Text(text)
             .font(.system(.caption, weight: .semibold))
-            .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(DS.Color.accent))
+            .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(DS.Status.accentText))
             .padding(.horizontal, DS.Space.s)
             .frame(minHeight: 16)
             .background(selected ? DS.Color.onFill.opacity(0.2) : DS.Color.accent.opacity(0.14), in: Capsule())

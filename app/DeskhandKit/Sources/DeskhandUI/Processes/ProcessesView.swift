@@ -428,7 +428,7 @@ private struct ProcessesStatusBar: View {
                     .help(error.sentences)
                 Button(String.ui("action.retry", "다시 시도")) { Task { await model.refresh() } }
                     .buttonStyle(.link)
-                    .tint(DS.Color.accent)
+                    .tint(DS.Status.accentText)
             } else if model.isPaused {
                 Image(systemName: "pause.circle.fill")
                     .foregroundStyle(.secondary)

@@ -196,7 +196,7 @@ public struct RunSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                     Button(String.ui("qa.sheet.busy.show", "진행 중인 실행 보기")) { show(running) }
                         .buttonStyle(.link)
-                        .tint(DS.Color.accent)
+                        .tint(DS.Status.accentText)
                         .font(DS.Font.caption)
                 }
             }

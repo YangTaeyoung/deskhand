@@ -72,7 +72,7 @@ struct RunList: View {
                         .help(error.message)
                     Button(String.ui("action.retry", "다시 시도")) { Task { await model.load(scope) } }
                         .buttonStyle(.link)
-                        .tint(DS.Color.accent)
+                        .tint(DS.Status.accentText)
                         .font(DS.Font.caption)
                     Spacer(minLength: 0)
                 }
@@ -153,7 +153,7 @@ struct RunList: View {
                 model.filter = .all
             }
             .buttonStyle(.link)
-            .tint(DS.Color.accent)
+            .tint(DS.Status.accentText)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -223,12 +223,12 @@ struct RunList: View {
                             .multilineTextAlignment(.center)
                         Button(String.ui("action.retry", "다시 시도")) { Task { await model.loadMore(scope) } }
                             .buttonStyle(.link)
-                            .tint(DS.Color.accent)
+                            .tint(DS.Status.accentText)
                     }
                 } else {
                     Button(String.ui("qa.list.more", "이전 실행 더 보기")) { Task { await model.loadMore(scope) } }
                         .buttonStyle(.link)
-                        .tint(DS.Color.accent)
+                        .tint(DS.Status.accentText)
                 }
             }
             .frame(maxWidth: .infinity)

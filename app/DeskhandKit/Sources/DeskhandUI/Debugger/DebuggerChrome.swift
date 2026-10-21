@@ -315,12 +315,12 @@ struct RoleBadge: View {
 
     private func foreground(main: Bool) -> AnyShapeStyle {
         if inverted { return AnyShapeStyle(DS.Color.onFill) }
-        return main ? AnyShapeStyle(DS.Color.accent) : AnyShapeStyle(.secondary)
+        return main ? AnyShapeStyle(DS.Status.accentText) : AnyShapeStyle(DS.Status.neutralText)
     }
 
     private func background(main: Bool) -> Color {
         if inverted { return DS.Color.onFill.opacity(0.22) }
-        return main ? DS.Color.accent.opacity(0.14) : DS.Color.neutral.opacity(0.16)
+        return main ? DS.Color.accent.opacity(DS.Status.badgeOpacity) : DS.Color.neutral.opacity(DS.Status.badgeOpacity)
     }
 }
 

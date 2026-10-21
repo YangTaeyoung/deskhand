@@ -333,7 +333,7 @@ private struct DiskRow: View {
                 Spacer(minLength: DS.Space.xs)
                 Text(String.ui("logs.system.disk.free", "\(freeText) 남음"))
                     .font(DS.Font.caption.monospacedDigit())
-                    .foregroundStyle(used >= 0.8 ? AnyShapeStyle(tint) : AnyShapeStyle(.secondary))
+                    .foregroundStyle(used >= 0.8 ? AnyShapeStyle(SummaryFormat.textTint(usedFraction: used)) : AnyShapeStyle(.secondary))
                     .lineLimit(1)
             }
             UsageBar(fraction: used, tint: tint)
@@ -368,5 +368,12 @@ enum SummaryFormat {
         if usedFraction >= 0.92 { return DS.Color.danger }
         if usedFraction >= 0.8 { return DS.Color.warning }
         return DS.Color.accent
+    }
+
+    /// Text in the colour of `tint(usedFraction:)`, legible on the summary cards.
+    static func textTint(usedFraction: Double) -> Color {
+        if usedFraction >= 0.92 { return DS.Status.dangerText }
+        if usedFraction >= 0.8 { return DS.Status.warningText }
+        return DS.Status.accentText
     }
 }

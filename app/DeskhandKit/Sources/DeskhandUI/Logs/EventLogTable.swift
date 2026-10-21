@@ -585,14 +585,14 @@ private struct EventStatusBar: View {
                     .help(error.sentences)
                 Button(String.ui("action.retry", "다시 시도")) { Task { await model.loadMoreEvents() } }
                     .buttonStyle(.link)
-                    .tint(DS.Color.accent)
+                    .tint(DS.Status.accentText)
             } else if model.eventsTruncated {
                 Text(String.ui("logs.more.available", "이 기간에 이벤트가 더 있습니다"))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Button(String.ui("logs.more", "더 보기")) { Task { await model.loadMoreEvents() } }
                     .buttonStyle(.link)
-                    .tint(DS.Color.accent)
+                    .tint(DS.Status.accentText)
                     .help(String.ui("logs.more.help", "불러온 것보다 오래된 이벤트를 200개 더 불러옵니다"))
             }
         }

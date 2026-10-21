@@ -208,7 +208,7 @@ struct TabButton: View {
                 if badge, !iconOnly { PausedDot() }
             }
             .font(isSelected ? DS.Font.body.weight(.semibold) : DS.Font.body)
-            .foregroundStyle(isSelected ? AnyShapeStyle(DS.Color.accent) : AnyShapeStyle(.secondary))
+            .foregroundStyle(isSelected ? AnyShapeStyle(DS.Status.accentText) : AnyShapeStyle(.secondary))
             .padding(.horizontal, iconOnly ? DS.Space.s : DS.Space.m)
             .frame(height: 28)
             .background(background, in: Capsule())
@@ -262,7 +262,7 @@ struct DebuggerPausedBanner: View {
                 .accessibilityHidden(true)
             Button(String.ui("debugger.pausedBanner.show", "디버거 보기"), action: show)
                 .buttonStyle(.link)
-                .tint(DS.Color.accent)
+                .tint(DS.Status.accentText)
             Spacer(minLength: DS.Space.s)
             Button(action: dismiss) {
                 Image(systemName: "xmark")
