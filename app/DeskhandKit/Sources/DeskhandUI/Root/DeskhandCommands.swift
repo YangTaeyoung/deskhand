@@ -1,3 +1,4 @@
+import AppKit
 import DeskhandClient
 import struct DeskhandClient.Host
 import SwiftUI
@@ -7,9 +8,9 @@ import SwiftUI
 /// the workspace tabs (⌘1–⌘7, which also close the palette) and inspector (⌥⌘0) in the View
 /// menu, the PC menu with the control actions
 /// (emergency stop ⇧⌘.) and host actions for the selected computer, the 터미널 menu and the 디버그
-/// menu (F8, F10, F11, ⇧F11 while the debugger tab is shown). In the
-/// files and processes tabs 제거… has no shortcut; ⌘⌫ there moves remote files to the recycle
-/// bin or ends the selected process.
+/// menu (F8, F10, F11, ⇧F11 while the debugger tab is shown). 제거… takes ⌘⌫ only while the
+/// sidebar's PC list has focus (`RemoveHostShortcut`); elsewhere ⌘⌫ stays with text fields and
+/// the files and processes tables.
 public struct DeskhandCommands: Commands {
     let store: AppStore
 
@@ -48,7 +49,9 @@ public struct DeskhandCommands: Commands {
                 }
                 Divider()
                 Button(String.ui("action.remove", "제거…")) { store.pendingRemoval = host }
-                    .keyboardShortcut([.files, .processes].contains(store.layout.tab) ? nil : KeyboardShortcut(.delete, modifiers: [.command]))
+                    .keyboardShortcut(RemoveHostShortcut.shortcut(
+                        sidebarFocused: store.layout.sidebarFocused,
+                        editingText: RemoveHostShortcut.isEditingText(NSApp.keyWindow?.firstResponder)))
             } else {
                 Button(ControlActions.Action.stop.title) {}
                     .keyboardShortcut(".", modifiers: [.command, .shift])
@@ -64,6 +67,20 @@ public struct DeskhandCommands: Commands {
         CommandMenu(String.ui("menu.debug", "디버그")) {
             DebuggerMenuCommands(store: store)
         }
+    }
+}
+
+/// When ⌘⌫ removes the selected PC.
+enum RemoveHostShortcut {
+    /// ⌘⌫ while the sidebar's PC list has focus and no text is being edited; otherwise none.
+    static func shortcut(sidebarFocused: Bool, editingText: Bool) -> KeyboardShortcut? {
+        sidebarFocused && !editingText ? KeyboardShortcut(.delete, modifiers: .command) : nil
+    }
+
+    /// True for a text view, including the field editor of a text field being edited, and for a
+    /// text field.
+    static func isEditingText(_ responder: NSResponder?) -> Bool {
+        responder is NSText || responder is NSTextField
     }
 }
 

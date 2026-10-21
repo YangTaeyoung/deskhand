@@ -14,6 +14,7 @@ public enum SidebarSelectionStyle: Sendable {
 public struct SidebarView: View {
     @Bindable var store: AppStore
     let selectionStyle: SidebarSelectionStyle
+    @FocusState private var listFocused: Bool
 
     public init(store: AppStore, selectionStyle: SidebarSelectionStyle = .native) {
         self.store = store
@@ -40,6 +41,8 @@ public struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .focused($listFocused)
+        .onChange(of: listFocused) { _, focused in store.layout.sidebarFocused = focused }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             AddHostButton { store.presentAddHost() }
         }

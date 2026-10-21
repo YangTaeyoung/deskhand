@@ -47,6 +47,9 @@ public final class WorkspaceLayout {
         didSet { defaults.set(showsLogSummary, forKey: Keys.showsLogSummary) }
     }
 
+    /// The sidebar's PC list has keyboard focus. Not kept between launches.
+    public var sidebarFocused = false
+
     @ObservationIgnored private let defaults: UserDefaults
 
     init(defaults: UserDefaults) {
