@@ -128,7 +128,7 @@ func (s *Service) Send(ctx context.Context, hostID string, c model.Caller, evs [
 // accepted.
 func (s *Service) SendWith(ctx context.Context, hostID string, c model.Caller, evs []wire.InputEvent, captureID string) Result {
 	s.mu.Lock()
-	rec := s.captures[captureID]
+	rec := s.captures[captureKey{hostID, captureID}]
 	s.mu.Unlock()
 	if rec == nil {
 		return Result{Status: model.StatusFailed, Action: model.NotStarted(), Total: len(evs),
@@ -137,12 +137,12 @@ func (s *Service) SendWith(ctx context.Context, hostID string, c model.Caller, e
 	return s.Send(ctx, hostID, c, evs, rec, false)
 }
 
-// Baseline returns the fingerprint of capture captureID, nil when it is
+// Baseline returns the fingerprint of capture captureID of hostID, nil when it is
 // not known.
-func (s *Service) Baseline(captureID string) *fingerprint {
+func (s *Service) Baseline(hostID, captureID string) *fingerprint {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if rec := s.captures[captureID]; rec != nil {
+	if rec := s.captures[captureKey{hostID, captureID}]; rec != nil {
 		return rec.fp
 	}
 	return nil
@@ -232,7 +232,7 @@ func (s *Service) Drag(ctx context.Context, hostID string, c model.Caller, captu
 		return Result{}, apierr.Invalid(fmt.Sprintf("steps는 1–%d, duration_ms는 0–%d로 주세요", maxDragSteps, maxDragDuration.Milliseconds()))
 	}
 	s.mu.Lock()
-	rec := s.captures[captureID]
+	rec := s.captures[captureKey{hostID, captureID}]
 	s.mu.Unlock()
 	batches := [][]wire.InputEvent{{move(from), {K: "button", B: b, Down: true}}}
 	for i := 1; i < steps; i++ {

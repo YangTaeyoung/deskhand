@@ -2,6 +2,8 @@ package observe
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -209,5 +211,99 @@ func TestSettleFallsBackToWindowEventsWithoutAScreen(t *testing.T) {
 	}
 	if len(o.Errors) == 0 || o.Errors[0].Part != "screen" || o.Errors[0].Code != wire.CodeSessionLocked {
 		t.Fatalf("errors %+v", o.Errors)
+	}
+}
+
+func saveN(t *testing.T, s *Service, host string, n int, size int, base time.Time) []string {
+	t.Helper()
+	var names []string
+	for i := 0; i < n; i++ {
+		id := newCaptureID()
+		art, err := s.saveImage(host, id, "png", make([]byte, size), base.Add(time.Duration(i)*time.Second))
+		if err != nil {
+			t.Fatal(err)
+		}
+		names = append(names, art.Name)
+	}
+	return names
+}
+
+func exists(dir, name string) bool {
+	_, err := os.Stat(filepath.Join(dir, name))
+	return err == nil
+}
+
+func TestSaveImageKeepsTheNewestWithinTheFileCountCap(t *testing.T) {
+	dir := t.TempDir()
+	s := New(Options{Dir: dir, MaxFiles: 3})
+	names := saveN(t, s, "pc", 5, 10, time.Now().Add(-time.Minute))
+	for i, n := range names {
+		if got := exists(filepath.Join(dir, "pc"), n); got != (i >= 2) {
+			t.Fatalf("file %d (%s) exists=%v", i, n, got)
+		}
+	}
+}
+
+func TestSaveImageKeepsTheNewestWithinTheByteCap(t *testing.T) {
+	dir := t.TempDir()
+	s := New(Options{Dir: dir, MaxBytes: 250})
+	names := saveN(t, s, "pc", 4, 100, time.Now().Add(-time.Minute))
+	for i, n := range names {
+		if got := exists(filepath.Join(dir, "pc"), n); got != (i >= 2) {
+			t.Fatalf("file %d (%s) exists=%v", i, n, got)
+		}
+	}
+}
+
+func TestSaveImageRejectsOneImageOverTheByteCap(t *testing.T) {
+	dir := t.TempDir()
+	s := New(Options{Dir: dir, MaxBytes: 50})
+	if _, err := s.saveImage("pc", newCaptureID(), "png", make([]byte, 51), time.Now()); err == nil {
+		t.Fatal("oversized capture was stored")
+	}
+	entries, err := os.ReadDir(filepath.Join(dir, "pc"))
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("oversized capture left %d files", len(entries))
+	}
+}
+
+func TestSaveImageCapsEachHostSeparately(t *testing.T) {
+	dir := t.TempDir()
+	s := New(Options{Dir: dir, MaxFiles: 2})
+	a := saveN(t, s, "a", 2, 10, time.Now().Add(-time.Minute))
+	saveN(t, s, "b", 3, 10, time.Now().Add(-time.Minute))
+	if !exists(filepath.Join(dir, "a"), a[0]) || !exists(filepath.Join(dir, "a"), a[1]) {
+		t.Fatal("host a lost files to host b's cap")
+	}
+}
+
+func TestCaptureIDFromTheAgentMustMatchTheDaemonForm(t *testing.T) {
+	for _, bad := range []string{"../x", "c-ZZZZZZZZZZZZ", "c-0123456789abc", "x", "c-0123456789a/"} {
+		if id := captureIDFrom(bad); id == bad || !captureIDForm.MatchString(id) {
+			t.Fatalf("agent id %q gave %q", bad, id)
+		}
+	}
+	if id := captureIDFrom("c-0123456789ab"); id != "c-0123456789ab" {
+		t.Fatalf("a well-formed id changed to %q", id)
+	}
+}
+
+func TestCaptureRecordsOfTwoHostsWithOneIDDoNotCollide(t *testing.T) {
+	s := New(Options{Dir: t.TempDir()})
+	s.remember(&captureRec{id: "c-0123456789ab", hostID: "a", width: 1, at: time.Now()})
+	s.remember(&captureRec{id: "c-0123456789ab", hostID: "b", width: 2, at: time.Now()})
+	ra, err := s.lookup("a", "c-0123456789ab")
+	if err != nil || ra.width != 1 {
+		t.Fatalf("host a: %v, %v", ra, err)
+	}
+	rb, err := s.lookup("b", "c-0123456789ab")
+	if err != nil || rb.width != 2 {
+		t.Fatalf("host b: %v, %v", rb, err)
+	}
+	if s.Baseline("c", "c-0123456789ab") != nil {
+		t.Fatal("host c got a baseline")
 	}
 }

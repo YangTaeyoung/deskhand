@@ -56,6 +56,10 @@ const (
 	DefaultCaptureTTL = 10 * time.Minute
 	// defaultFileKeep is how long the capture images stay on disk.
 	defaultFileKeep = 24 * time.Hour
+	// defaultMaxBytes and defaultMaxFiles cap the capture images kept for
+	// one host.
+	defaultMaxBytes = 500 << 20
+	defaultMaxFiles = 500
 	// pruneEvery is the least time between two prunes of the capture
 	// images.
 	pruneEvery = time.Hour
@@ -77,6 +81,10 @@ type Options struct {
 	CaptureTTL time.Duration
 	// FileKeep is how long the capture images stay on disk (24 h when 0).
 	FileKeep time.Duration
+	// MaxBytes and MaxFiles cap the capture images kept for one host (500 MB
+	// and 500 files when 0); a save beyond a cap removes the oldest images.
+	MaxBytes int64
+	MaxFiles int
 	// SettleInterval is the time between two still images of a settle
 	// (100 ms when 0); the screen counts as settled once it has not changed
 	// for two of them.
@@ -94,13 +102,18 @@ type hostState struct {
 	last     *fingerprint
 }
 
+// captureKey is the key of a record in the coordinate table: the host and
+// the capture_id it was taken with.
+type captureKey struct{ hostID, id string }
+
 // Service serves the captures, input and observations of the hosts.
 type Service struct {
 	opt Options
 	lg  *log.Logger
 
+	fileMu   sync.Mutex
 	mu       sync.Mutex
-	captures map[string]*captureRec
+	captures map[captureKey]*captureRec
 	hosts    map[string]*hostState
 	prunedAt time.Time
 }
@@ -120,10 +133,16 @@ func New(opt Options) *Service {
 	if opt.FileKeep <= 0 {
 		opt.FileKeep = defaultFileKeep
 	}
+	if opt.MaxBytes <= 0 {
+		opt.MaxBytes = defaultMaxBytes
+	}
+	if opt.MaxFiles <= 0 {
+		opt.MaxFiles = defaultMaxFiles
+	}
 	if opt.SettleInterval <= 0 {
 		opt.SettleInterval = defaultSettleInterval
 	}
-	return &Service{opt: opt, lg: lg, captures: map[string]*captureRec{}, hosts: map[string]*hostState{}}
+	return &Service{opt: opt, lg: lg, captures: map[captureKey]*captureRec{}, hosts: map[string]*hostState{}}
 }
 
 // hostLocked returns the state of hostID, adding it; s.mu is held.

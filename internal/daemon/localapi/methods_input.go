@@ -195,7 +195,7 @@ func (s *Server) inputEnvelope(ctx context.Context, sess *session, hostID, summa
 			display = t.Display
 		}
 		o, err := s.d.Observe.Observe(ctx, hostID, observe.ObserveParams{Level: obs.Level, Settle: time.Duration(obs.SettleMS) * time.Millisecond,
-			Display: display}, s.d.Observe.Baseline(baseline))
+			Display: display}, s.d.Observe.Baseline(hostID, baseline))
 		if err != nil {
 			fields["observation_error"] = apierr.As(err)
 		} else {

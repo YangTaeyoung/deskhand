@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/daemon/apierr"
@@ -105,10 +106,7 @@ func (s *Service) Capture(ctx context.Context, hostID string, p CaptureParams) (
 	if err != nil || len(data) == 0 || w <= 0 || h <= 0 || !(scale > 0) || math.IsInf(scale, 0) {
 		return Capture{}, apierr.Internal("PC의 에이전트가 보낸 화면 이미지를 읽지 못했습니다. 다시 캡처하고, 계속되면 에이전트를 업데이트하세요")
 	}
-	id := res.String("capture_id")
-	if id == "" {
-		id = newCaptureID()
-	}
+	id := captureIDFrom(res.String("capture_id"))
 	var fp *fingerprint
 	if img, err := decodeStill(data, format); err == nil {
 		fp = fingerprintOf(img)
@@ -175,6 +173,18 @@ func newCaptureID() string {
 	return "c-" + hex.EncodeToString(b)
 }
 
+// captureIDForm is the form of a capture_id.
+var captureIDForm = regexp.MustCompile(`^c-[0-9a-f]{12}$`)
+
+// captureIDFrom returns the capture_id the agent gave when it has the
+// form of one, and a new id otherwise.
+func captureIDFrom(agentID string) string {
+	if captureIDForm.MatchString(agentID) {
+		return agentID
+	}
+	return newCaptureID()
+}
+
 // captureReason is the fixed reason the agent puts in parentheses in the
 // error of a capture it cannot take (docs/protocol.md §3.1).
 var captureReason = regexp.MustCompile(`\((session0|rdp_output_suppressed|secure_desktop|session_locked|session_disconnected|access_lost|no_output)\)`)
@@ -209,9 +219,15 @@ func captureError(err error, display int) error {
 }
 
 // saveImage writes the image data of capture id of hostID and returns its
-// artifact; it prunes the images older than FileKeep at most once every
-// pruneEvery.
+// artifact. It removes the oldest images of hostID beyond MaxBytes and
+// MaxFiles, and prunes the images of all hosts older than FileKeep at
+// most once every pruneEvery.
 func (s *Service) saveImage(hostID, id, format string, data []byte, at time.Time) (model.Artifact, error) {
+	if int64(len(data)) > s.opt.MaxBytes {
+		return model.Artifact{}, fmt.Errorf("capture is %d bytes, above the per-host limit of %d bytes", len(data), s.opt.MaxBytes)
+	}
+	s.fileMu.Lock()
+	defer s.fileMu.Unlock()
 	dir := filepath.Join(s.opt.Dir, hostID)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return model.Artifact{}, err
@@ -225,10 +241,51 @@ func (s *Service) saveImage(hostID, id, format string, data []byte, at time.Time
 	if err := os.WriteFile(p, data, 0o600); err != nil {
 		return model.Artifact{}, err
 	}
+	_ = os.Chtimes(p, at, at)
 	sum := sha256.Sum256(data)
+	if err := s.capHost(dir); err != nil {
+		_ = os.Remove(p)
+		return model.Artifact{}, err
+	}
 	s.prune(at)
 	return model.Artifact{ArtifactID: ids.New(ids.Artifact), Kind: "screenshot", Name: name, Path: p, Size: int64(len(data)), MIME: mime,
 		SHA256: hex.EncodeToString(sum[:]), CreatedAt: model.Time(at)}, nil
+}
+
+// capHost removes the oldest images in dir until it holds at most MaxBytes
+// and MaxFiles.
+func (s *Service) capHost(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	type img struct {
+		name string
+		size int64
+		mod  time.Time
+	}
+	var imgs []img
+	var total int64
+	for _, e := range entries {
+		if fi, err := e.Info(); err == nil && fi.Mode().IsRegular() {
+			imgs = append(imgs, img{e.Name(), fi.Size(), fi.ModTime()})
+			total += fi.Size()
+		}
+	}
+	sort.Slice(imgs, func(i, j int) bool {
+		if !imgs[i].mod.Equal(imgs[j].mod) {
+			return imgs[i].mod.Before(imgs[j].mod)
+		}
+		return imgs[i].name < imgs[j].name
+	})
+	for len(imgs) > 1 && (total > s.opt.MaxBytes || len(imgs) > s.opt.MaxFiles) {
+		if err := os.Remove(filepath.Join(dir, imgs[0].name)); err != nil {
+			return err
+		}
+		total -= imgs[0].size
+		imgs = imgs[1:]
+	}
+	return nil
 }
 
 // prune removes the capture images older than FileKeep, once every
@@ -268,12 +325,12 @@ func (s *Service) prune(now time.Time) {
 func (s *Service) remember(rec *captureRec) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for id, r := range s.captures {
+	for k, r := range s.captures {
 		if rec.at.Sub(r.at) > s.opt.CaptureTTL {
-			delete(s.captures, id)
+			delete(s.captures, k)
 		}
 	}
-	s.captures[rec.id] = rec
+	s.captures[captureKey{rec.hostID, rec.id}] = rec
 }
 
 func staleCapture(format string, a ...any) *apierr.Error {
@@ -282,21 +339,18 @@ func staleCapture(format string, a ...any) *apierr.Error {
 
 // lookup returns the record of captureID for an input on hostID, or why
 // its coordinates cannot be used: STALE_TARGET when it is unknown, older
-// than CaptureTTL, or from before a display change of the host, and
-// INVALID_ARGUMENT when it is another host's.
+// than CaptureTTL, or from before a display change of the host.
 func (s *Service) lookup(hostID, captureID string) (*captureRec, error) {
 	if captureID == "" {
 		return nil, apierr.Invalid("capture_id가 없습니다. screen.capture로 화면을 찍고 그 capture_id와 이미지 좌표를 주세요")
 	}
 	s.mu.Lock()
-	rec := s.captures[captureID]
+	rec := s.captures[captureKey{hostID, captureID}]
 	epoch := s.hostLocked(hostID).epoch
 	s.mu.Unlock()
 	switch {
 	case rec == nil:
 		return nil, staleCapture("capture_id %s를 모릅니다(%s이 지났거나 데몬이 다시 시작됐습니다). screen.capture로 다시 캡처한 뒤 새 capture_id의 좌표로 다시 시도하세요", captureID, s.opt.CaptureTTL)
-	case rec.hostID != hostID:
-		return nil, apierr.Invalid(fmt.Sprintf("capture_id %s는 다른 PC(%s)의 화면입니다. 이 PC를 screen.capture로 찍은 capture_id를 주세요", captureID, rec.hostID))
 	case time.Since(rec.at) > s.opt.CaptureTTL:
 		return nil, staleCapture("capture_id %s는 %s이 지나 쓸 수 없습니다. screen.capture로 다시 캡처한 뒤 새 capture_id의 좌표로 다시 시도하세요", captureID, s.opt.CaptureTTL)
 	case rec.epoch != epoch:
