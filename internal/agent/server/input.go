@@ -14,11 +14,6 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
-// writerOps are the UI ops that run only for the current writer
-// generation.
-var writerOps = map[string]bool{"ui.act": true, "win.action": true, "clipboard.set": true, "app.launch": true,
-	"debug.electron.launch": true}
-
 // errInputUnsupported is the reason of the input capability without an
 // injector for this system.
 const errInputUnsupported = "input injection needs a Windows agent"

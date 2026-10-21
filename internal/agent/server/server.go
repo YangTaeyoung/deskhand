@@ -124,7 +124,7 @@ type Server struct {
 	lastCaps atomic.Pointer[capStates]
 
 	// input injects the input stream's events and holds the writer
-	// generation that the UI ops of writerOps are checked against.
+	// generation that the writer ops (wire.WriterOp) are checked against.
 	input *input.Injector
 }
 

@@ -255,10 +255,10 @@ func (c *conn) write(o outgoing) bool {
 
 func (c *conn) stopWriter() { close(c.stop) }
 
-// register adds an op; gated ops need Options.AllowExec, and the ops of
-// writerOps run only for the current writer generation.
+// register adds an op; gated ops need Options.AllowExec, and the writer
+// ops (wire.WriterOp) run only for the current writer generation.
 func (s *Server) register(op string, gated bool, h Handler) {
-	if writerOps[op] {
+	if wire.WriterOp(op) {
 		h = s.writerGated(op, h)
 	}
 	s.connMu.Lock()
