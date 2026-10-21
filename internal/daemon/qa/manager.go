@@ -116,8 +116,8 @@ func New(opt Options) *Manager {
 // NoOwner is the Control of a daemon whose hosts nobody holds.
 type NoOwner struct{}
 
-// Check always lets the input go.
-func (NoOwner) Check(context.Context, string, model.Caller) error { return nil }
+// Check always lets the input go, at writer generation 0.
+func (NoOwner) Check(context.Context, string, model.Caller) (uint64, error) { return 0, nil }
 
 // Close stops the runs without recording an end for them and waits for
 // them; Load ends them when the daemon starts again.

@@ -121,3 +121,14 @@ CREATE TABLE IF NOT EXISTS qa_runs (
 );
 
 CREATE INDEX IF NOT EXISTS qa_runs_host ON qa_runs (host_id, run_id);
+
+CREATE TABLE IF NOT EXISTS control (
+	host_id      TEXT PRIMARY KEY,
+	owner        TEXT NOT NULL DEFAULT 'none',
+	owner_client TEXT NOT NULL DEFAULT '',
+	owner_name   TEXT NOT NULL DEFAULT '',
+	gen          INTEGER NOT NULL DEFAULT 0,
+	ai_paused    INTEGER NOT NULL DEFAULT 0,
+	lease_until  TEXT NOT NULL DEFAULT '',
+	updated_at   TEXT NOT NULL DEFAULT ''
+);

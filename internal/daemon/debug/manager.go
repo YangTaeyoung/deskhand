@@ -42,6 +42,14 @@ type Hosts interface {
 	SessionID(hostID string) string
 }
 
+// Writer gives the UI operations of a caller their writer generation
+// (control.Manager.WriterGen).
+type Writer interface {
+	// WriterGen returns the writer generation an operation of c on hostID
+	// carries, or the error that refuses it.
+	WriterGen(hostID string, c model.Caller) (uint64, error)
+}
+
 // Timeouts bound the daemon's waits; zero fields take the defaults.
 type Timeouts struct {
 	// Probe bounds the wait for an inspector port to answer.
@@ -77,8 +85,10 @@ func (t Timeouts) withDefaults() Timeouts {
 
 // Deps are what a Manager uses.
 type Deps struct {
-	Tunnels  *tunnel.Manager
-	Hosts    Hosts
+	Tunnels *tunnel.Manager
+	Hosts   Hosts
+	// Writer gives a launch its writer generation; nil launches with none.
+	Writer   Writer
 	Bus      *events.Bus
 	Jobs     *jobs.Registry
 	Version  string

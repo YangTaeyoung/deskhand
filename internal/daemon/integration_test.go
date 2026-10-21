@@ -72,6 +72,7 @@ type testAgent struct {
 	id      transport.Identity
 	home    string
 	dataDir string
+	srv     *server.Server
 	stop    func()
 }
 
@@ -134,14 +135,16 @@ func startAgentWith(t *testing.T, port int, id transport.Identity, dataDir strin
 		srv.Close()
 	}
 	t.Cleanup(stop)
-	return &testAgent{port: port, id: id, home: home, dataDir: dataDir, stop: stop}
+	return &testAgent{port: port, id: id, home: home, dataDir: dataDir, srv: srv, stop: stop}
 }
 
-// env is a daemon with one stored host and a client connected to it.
+// env is a daemon with one stored host and a client connected to it; stop
+// stops the daemon.
 type env struct {
 	home  string
 	agent *testAgent
 	c     *client.Client
+	stop  func()
 }
 
 type setupOpts struct {
@@ -205,7 +208,16 @@ func setup(t *testing.T, o setupOpts) *env {
 		}
 	}
 	st.Close()
-	d, err := daemon.New(daemon.Options{Version: "test", Logger: quiet, DropAfterSend: o.dropAfterSend})
+	stop := startDaemon(t, o.dropAfterSend)
+	t.Cleanup(stop)
+	return &env{home: home, agent: agent, c: dialAs(t, "cli", "itest"), stop: stop}
+}
+
+// startDaemon starts a daemon on the home folder of DESKHAND_HOME and
+// returns the function that stops it and waits for its end.
+func startDaemon(t *testing.T, dropAfterSend string) func() {
+	t.Helper()
+	d, err := daemon.New(daemon.Options{Version: "test", Logger: quiet, DropAfterSend: dropAfterSend})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,18 +227,28 @@ func setup(t *testing.T, o setupOpts) *env {
 		d.Serve(ctx)
 		close(served)
 	}()
-	t.Cleanup(func() {
-		cancel()
-		<-served
-	})
-	c, err := client.DialOptions(context.Background(), "cli", "itest", client.Options{Start: func(context.Context) error {
+	stopped := false
+	return func() {
+		if !stopped {
+			stopped = true
+			cancel()
+			<-served
+		}
+	}
+}
+
+// dialAs connects a local API client of kind ("app", "cli" or "mcp") named
+// name to the running daemon.
+func dialAs(t *testing.T, kind, name string) *client.Client {
+	t.Helper()
+	c, err := client.DialOptions(context.Background(), kind, name, client.Options{Start: func(context.Context) error {
 		return errors.New("the daemon of the test is not running")
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { c.Close() })
-	return &env{home: home, agent: agent, c: c}
+	return c
 }
 
 func (e *env) call(t *testing.T, method string, params any) map[string]any {

@@ -48,11 +48,16 @@
 ### 제어권
 | 메서드 | 파라미터 | 결과 |
 |---|---|---|
-| `control.get` | `host_id` | `owner`(`none`/`human`/`ai`), `owner_client`, `gen`, `ai_paused` |
-| `control.acquire` | `host_id`, `as`(`human`/`ai`), `force`(사람만) | 새 owner |
-| `control.release` | `host_id` | — |
+| `control.get` | `host_id` | ControlState(§5): `owner`(`none`/`human`/`ai`), `owner_client?`, `owner_client_id?`, `gen`, `ai_paused` |
+| `control.acquire` | `host_id`, `as`(`human`/`ai`), `force`(사람만) | 바뀐 뒤의 ControlState |
+| `control.release` | `host_id` | 바뀐 뒤의 ControlState(owner=none) |
 | `control.stop` | `host_id` | 긴급 정지: owner=human, `ai_paused=true`. 연결이 끊긴 호스트에도 적용된다(재연결 후 AI 입력 차단 유지) |
 | `control.resume_ai` | `host_id` | `ai_paused=false`, owner=none |
+
+- `gen`은 owner(AI면 그 클라이언트까지)나 `ai_paused`가 바뀔 때마다 1씩 오르고 데몬을 다시 시작해도 줄지 않는다. 바뀔 때마다 `control.changed`와 타임라인 항목(`kind:"control"`)이 나가고, 연결된 에이전트에 `control.set_writer{gen}`을 보낸다. PC가 연결될 때마다(재연결 포함) 데몬은 그 호스트의 `gen`을 다시 보낸다. 에이전트가 더 큰 세대를 답하면 호스트의 `gen`이 그 값이 된다.
+- AI 제어권은 lease다: AI 입력과 UI 계열 동작(아래 writer 동작)마다 60초로 갱신되고, 60초 동안 없거나 그 클라이언트의 연결이 끊기거나 데몬이 다시 시작하면 owner=none(`gen`+1)이 된다. 사람 제어권은 놓거나(`control.release`·`control.resume_ai`) AI에게 넘길 때까지 남는다.
+- 거절은 JSON-RPC 오류다. AI 클라이언트(`mcp`)의 `as:"ai"`: 사람이 쥐고 있으면 `CONTROL_HELD_BY_HUMAN`(`human_release`), `ai_paused`면 `CONTROL_HELD_BY_HUMAN`(`human_resume_ai`), 다른 AI 클라이언트의 lease가 살아 있으면 `CONTROL_PREEMPTED`(`retryable:true`, `retry`). 사람의 `as:"human"`은 AI lease가 살아 있으면 `force:true`일 때만 가져오고 아니면 `INVALID_ARGUMENT`. AI 클라이언트의 `as:"human"`·`control.resume_ai`는 `PERMISSION_DENIED`, `as:"ai"`의 `force`는 `INVALID_ARGUMENT`. AI 클라이언트는 사람 제어권(`CONTROL_HELD_BY_HUMAN`)이나 다른 AI의 lease(`CONTROL_PREEMPTED`)를 `control.release`로 놓지 못한다. 거절된 `control.acquire`는 `outcome:"denied"` 타임라인 항목을 남긴다.
+- writer 동작: 데몬은 에이전트의 writer op(`app.launch`, `debug.electron.launch`, `ui.act`, `win.action`, `clipboard.set` — protocol.md §3.1)와 입력 스트림에 `gen`을 붙여 보낸다. AI 클라이언트의 요청은 보내기 전에 제어권을 확인하고(위 lease 규칙, 없으면 lease를 얻는다), 거절되면 PC에 아무것도 보내지 않고 봉투 `failed`/`not_started` + 위 오류다. 사람·데몬의 요청은 현재 `gen`을 붙인다.
 
 ### 관찰·입력 (AI·CLI)
 | 메서드 | 파라미터 | 결과 |
@@ -181,7 +186,7 @@ QA 시나리오 실행기. 세부 규칙은 [§10](#10-qa-세부-계약).
 | Capability | `state`(`ready`/`unavailable`/`unsupported`/`needs_user`), `reason?`, `shells?`(`pty` 기능만: 띄울 수 있는 셸, 첫 항목이 기본. Windows는 `powershell`, `pwsh`(PowerShell 7이 설치돼 있을 때), `cmd` 순서, Windows 밖 PC는 `sh`) |
 | SessionInfo | `session_id`(정수), `user`, `sid?`, `connect_state`(`active`/`connected`/`disconnected`/`other`/`unknown`), `protocol`(`console`/`rdp`/`unknown`), `locked?`(에이전트가 잠금 상태를 보고하지 않으면 없음), `input_desktop`(`Default`/`Winlogon`/`unknown`), `integrity?` |
 | DisplayInfo | `index`, `name`, `adapter`, `x`, `y`, `width`, `height`, `dpi`(정수), `scale`(실수), `primary`, `refresh_hz`(정수) |
-| ControlState | `owner`, `owner_client?`, `gen`(호스트별 제어권 상태가 바뀔 때마다 — owner 또는 ai_paused — 1씩 오르는 값. 클라이언트는 더 큰 gen만 반영한다), `ai_paused` |
+| ControlState | `owner`, `owner_client?`(제어권을 쥔 클라이언트의 hello `name`), `owner_client_id?`(그 클라이언트의 `client_id`), `gen`(호스트별 제어권 상태가 바뀔 때마다 — owner(AI면 그 클라이언트까지) 또는 ai_paused — 1씩 오르는 값, 에이전트 writer generation과 같다. 클라이언트는 더 큰 gen만 반영한다), `ai_paused` |
 | SessionInspect (`session.inspect` 결과) | SessionInfo의 모든 필드 + ControlState의 모든 필드 + `displays`([DisplayInfo]) + `caps` + `connection_generation` — 한 단계 평평한 객체 |
 | Job | `job_id`, `host_id`, `kind`(`exec`/`transfer`/`qa`/`install`/`debug`/`pty`/`diag`), `status`(봉투 status 값), `request_id?`, `summary`, `progress?`(0–1), `created_at`, `updated_at`, `finished_at?`, `result?`(객체, 명령 출력 `stdout`·`stderr`는 넣지 않는다), `output_bytes?`(데몬이 기록한 stdout·stderr 바이트 수. 출력은 `jobs.output`과 artifact로만 읽는다). `kind:"transfer"` job은 전송 하나를 따른다: `status`는 전송이 `queued`·`running`·`verifying`·`paused`면 `running`(`paused`면 `result.paused:true`), `done`이면 `succeeded`, `failed`·`cancelled`면 그대로이고, `result`는 `{transfer_id, state, outcome?, paused?, error?}`다. `failed`·`cancelled` 전송을 `transfer.resume`하면 job도 다시 `running`(`finished_at` 없음)이 된다. `kind:"pty"` job은 셸 하나를 따른다: 셸이 도는 동안 `running`, 끝나면 종료 코드 0은 `succeeded`·그 밖은 `failed`(`result.code`), `jobs.cancel`로 끝내면 `cancelled`, 열지 못했으면 `failed`, PC 에이전트가 다시 시작돼 셸이 사라졌으면 `unknown`(`result.state:"lost"`, `error.code` `EXECUTION_OUTCOME_UNKNOWN`)이다. `result`는 `{shell, pid, client_name?}`이고 끝나면 `state`·`code`가 더해진다. `summary`는 `PowerShell 터미널`처럼 셸 이름이다. `kind:"qa"` job은 QA 실행 하나를 따른다(§10): 실행 중 `running`, 끝나면 `passed` → `succeeded`, `failed`·`blocked` → `failed`, `cancelled` → `cancelled`, `error` → `unknown`이고, `result`는 `{run_id, status(QARun status), steps_passed, steps_failed, steps_blocked, steps_not_run, report_dir?, error?}`, `summary`는 `QA: <시나리오 이름>`이다. 그 job의 `jobs.cancel`은 `qa.cancel`과 같다 |
 | FileEntry | `name`, `path`, `dir`, `size`, `mtime`, `link`, `hidden?`, `readonly?` |
@@ -371,7 +376,7 @@ YAML 1.2의 부분집합이다: 블록 매핑·블록 시퀀스, 흐름 시퀀�
   - `not_run`: 앞 단계 때문에 건너뜀(이유는 `message`).
 - 흐름: `optional`도 `continue_on_fail`도 아닌 단계가 `fail`·`blocked`면 그 뒤의 setup·steps 단계는 `not_run`이다. teardown 단계는 앞의 결과와 상관없이 모두 차례로 실행한다. `optional` 단계는 결과를 그대로 남기지만 흐름과 실행 상태 계산에서 빠진다.
 - 실행 `status`: 취소가 단계를 멈추거나 건너뛰게 했으면 `cancelled`, 데몬이 멈춰 끊겼거나 결과 묶음을 쓰지 못했으면 `error`(`error`에 이유, `report` 없음), 그 밖에는 `optional`이 아닌 단계(teardown 포함) 중 `fail`이 있으면 `failed`, 아니면 `blocked`가 있으면 `blocked`, 아니면 `passed`. 실행 제한(`timeout_ms`)은 setup·steps에만 걸리고 그것들이 끝나면 멈춘다: 넘으면 그때 실행 중인 단계가 `fail`(`TIMEOUT`), 남은 setup·steps는 `not_run`, teardown을 실행하고 실행은 `failed` + `error`(`TIMEOUT`)다. 제한이 지났어도 멈추거나 건너뛴 단계가 없으면 결과는 단계로 정한다.
-- **제어권**: `launch`·`click`·`type`·`key`·`ui_act`·`close`는 단계마다 실행 직전에 제어권(§3 제어권, design §5.1)을 확인한다. 사람이 쥐고 있으면 PC에 아무것도 보내지 않고 `blocked` + `CONTROL_HELD_BY_HUMAN`("사람이 조작 중입니다 …")이다. 실행기는 제어권을 가져오거나 기다리지 않는다. 다른 단계(관찰·확인·명령·파일)는 제어권과 상관없이 실행한다.
+- **제어권**: `launch`·`click`·`type`·`key`·`ui_act`·`close`는 단계마다 실행 직전에 제어권(§3 제어권, design §5.1)을 확인한다. 사람이 쥐고 있으면 PC에 아무것도 보내지 않고 `blocked` + `CONTROL_HELD_BY_HUMAN`("사람이 조작 중입니다 …")이다. 실행기는 제어권을 가져오거나 기다리지 않는다. 확인은 실행을 시작한 클라이언트의 AI 입력으로 한다(누가 시작했든, §3 제어권의 lease를 얻고 갱신한다): 다른 AI 클라이언트의 lease가 살아 있으면 `blocked` + `CONTROL_PREEMPTED`이고, 그 단계의 writer op는 확인에서 받은 `gen`을 싣는다. 다른 단계(관찰·확인·명령·파일)는 제어권과 상관없이 실행한다.
 - **기능**: 단계에 필요한 caps(호스트 `caps`, 에이전트가 알린 기능만)가 `ready`가 아니면 PC에 보내지 않고 `blocked` + `CAPABILITY_UNSUPPORTED`(caps의 `reason`)이고 `run.unsupported`에 남는다. 이 데몬은 아직 마우스·키보드 입력을 보내지 못해 `click`·`type`·`key`는 항상 `blocked` + `CAPABILITY_UNSUPPORTED`이고, `screenshot`과 실패 스크린샷은 에이전트의 `screen`이 `ready`일 때만 찍는다.
 - **취소**: `qa.cancel`은 바로 답한다(`run.cancel_requested:true`, 봉투 `running`). 실행 중인 setup·steps 단계의 요청을 멈춰 그 단계는 `blocked`("취소로 멈췄습니다"), 남은 setup·steps는 `not_run`, 그다음 teardown을 실행하고 실행은 `cancelled`, job은 `cancelled`로 끝난다. 첫 `qa.cancel`은 teardown을 멈추지 않는다(teardown 중에 받아도 teardown은 끝까지 가고, 멈춘 단계가 없으면 결과는 단계로 정한다). 첫 취소 뒤 teardown 중에 다시 받은 `qa.cancel`은 teardown도 멈춘다(실행 중인 teardown 단계 `blocked`, 남은 teardown `not_run`, 실행 `cancelled`). 이미 `cancelled`인 실행은 그대로 돌려주고(봉투 `cancelled`), 다른 상태로 끝난 실행은 JSON-RPC `INVALID_ARGUMENT`다. 진행 중 `push`의 전송은 함께 취소한다.
 - **데몬 재시작**: 끝나지 않은 실행은 데몬이 시작할 때 `error` + `error`(`EXECUTION_OUTCOME_UNKNOWN`)로 끝낸다. 실행 중이던 단계는 `blocked`(`EXECUTION_OUTCOME_UNKNOWN`), 남은 단계(teardown 포함)는 `not_run`이고 결과 묶음을 그때 쓴다. 데몬은 단계를 다시 보내지 않는다.

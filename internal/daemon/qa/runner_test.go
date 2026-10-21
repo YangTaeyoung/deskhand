@@ -1183,3 +1183,31 @@ steps:
 		t.Fatalf("ops sent %s", ops)
 	}
 }
+
+func TestWriterOpsCarryTheGenOfTheirStepsControlCheck(t *testing.T) {
+	pc := fixturePC()
+	gens := []uint64{7, 8, 9}
+	e := newEnv(t, pc, testOpts{control: fakeControl{gens: &gens}})
+	run := e.run(t, `name: gens
+steps:
+  - launch: C:\fixture\deskhand-fixture.exe
+  - ui_act: {name: Send, action: invoke}
+  - assert_ui: {name: Send}
+teardown:
+  - close:
+`)
+	if run.Status != RunPassed {
+		t.Fatalf("run %s %s %+v", run.Status, statuses(run), run.Steps)
+	}
+	for op, want := range map[string]float64{"app.launch": 7, "ui.act": 8, "win.action": 9} {
+		calls := pc.callsOf(op)
+		if len(calls) != 1 || calls[0].params["gen"] != want {
+			t.Fatalf("%s calls %+v, want gen %v", op, calls, want)
+		}
+	}
+	for _, c := range pc.callsOf("ui.find") {
+		if _, ok := c.params["gen"]; ok {
+			t.Fatalf("ui.find carries gen: %+v", c)
+		}
+	}
+}

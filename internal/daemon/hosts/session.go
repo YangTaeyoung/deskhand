@@ -92,7 +92,7 @@ func (r *Registry) Inspect(ctx context.Context, ref string) (model.SessionInspec
 	}
 	return model.SessionInspect{
 		SessionInfo:          *s,
-		ControlState:         model.ControlState{Owner: model.OwnerNone},
+		ControlState:         r.opt.Control(row.HostID),
 		HostID:               row.HostID,
 		Displays:             m.Displays,
 		Caps:                 m.Caps,

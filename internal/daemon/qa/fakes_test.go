@@ -472,9 +472,25 @@ func (h fakeHosts) Resolve(ref string) (Host, error) {
 
 func (h fakeHosts) Agent(string) Agent { return h.pc }
 
-type fakeControl struct{ err error }
+// fakeControl answers Check with gen, or with err; gens is the next gen of
+// each check when set.
+type fakeControl struct {
+	err  error
+	gen  uint64
+	gens *[]uint64
+}
 
-func (c fakeControl) Check(context.Context, string, model.Caller) error { return c.err }
+func (c fakeControl) Check(context.Context, string, model.Caller) (uint64, error) {
+	if c.err != nil {
+		return 0, c.err
+	}
+	if c.gens != nil && len(*c.gens) > 0 {
+		g := (*c.gens)[0]
+		*c.gens = (*c.gens)[1:]
+		return g, nil
+	}
+	return c.gen, nil
+}
 
 type fakeInput struct {
 	mu     sync.Mutex

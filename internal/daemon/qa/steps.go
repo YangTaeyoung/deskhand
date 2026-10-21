@@ -43,15 +43,6 @@ func (r *runner) do(ctx context.Context, st Step, i int, timeout int64) stepOut 
 	if r.agent == nil && st.Action != ActSleep {
 		return blockedOut(wire.CodeOffline, fmt.Sprintf("%s PC의 연결을 찾지 못했습니다. host.list로 PC를 확인하세요", r.host.Name))
 	}
-	if gated[st.Action] {
-		if err := r.m.opt.Control.Check(ctx, r.host.HostID, r.caller); err != nil {
-			e := apierr.As(err)
-			if e.Code == wire.CodeControlHeldByHuman || e.Code == wire.CodeControlPreempted {
-				return blockedOut(e.Code, "사람이 조작 중입니다. 제어권을 가져오지 않았습니다. 사람이 제어권을 AI에게 넘긴 뒤 다시 실행하세요")
-			}
-			return fromError(err)
-		}
-	}
 	if st.Action == ActClick || st.Action == ActType || st.Action == ActKey {
 		if r.m.opt.Input == nil {
 			return blockedOut(wire.CodeCapabilityUnsupported, noInput)
@@ -75,6 +66,21 @@ func (r *runner) do(ctx context.Context, st Step, i int, timeout int64) stepOut 
 			}
 			return blockedOut(wire.CodeCapabilityUnsupported, fmt.Sprintf("이 PC는 %s 단계를 할 수 없습니다(%s: %s). 그 기능이 있는 PC나 에이전트에서 실행하세요", st.Action, need, reason))
 		}
+	}
+	r.writerGen = 0
+	if gated[st.Action] {
+		gen, err := r.m.opt.Control.Check(ctx, r.host.HostID, r.caller)
+		if err != nil {
+			e := apierr.As(err)
+			switch e.Code {
+			case wire.CodeControlHeldByHuman:
+				return blockedOut(e.Code, "사람이 조작 중입니다. 제어권을 가져오지 않았습니다. 사람이 제어권을 AI에게 넘긴 뒤 다시 실행하세요")
+			case wire.CodeControlPreempted:
+				return blockedOut(e.Code, e.Message)
+			}
+			return fromError(err)
+		}
+		r.writerGen = gen
 	}
 	switch s := st.Spec.(type) {
 	case *PushSpec:
@@ -128,8 +134,15 @@ func (r *runner) do(ctx context.Context, st Step, i int, timeout int64) stepOut 
 	return failOut(wire.CodeInternal, fmt.Sprintf("%s 단계를 실행하지 못했습니다. deskhand를 업데이트하세요", st.Action))
 }
 
-// call sends op and returns its answer and the request's rid.
+// call sends op and returns its answer and the request's rid; a writer op
+// carries the step's writer generation.
 func (r *runner) call(ctx context.Context, op string, params proto.Message) (proto.Message, string, error) {
+	if wire.WriterOp(op) {
+		if params == nil {
+			params = proto.Message{}
+		}
+		params["gen"] = r.writerGen
+	}
 	info := conn.CallInfo{}
 	res, err := r.agent.Call(ctx, op, params, conn.CallOpts{Info: &info})
 	return res, info.RID, err

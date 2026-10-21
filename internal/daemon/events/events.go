@@ -27,6 +27,7 @@ const (
 	JobUpdated       = "job.updated"
 	TransferUpdated  = "transfer.updated"
 	QAUpdated        = "qa.updated"
+	ControlChanged   = "control.changed"
 	EventsDropped    = "events.dropped"
 )
 

@@ -13,6 +13,7 @@ import (
 	"github.com/YangTaeyoung/deskhand/internal/daemon/events"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/tunnel"
+	"github.com/YangTaeyoung/deskhand/internal/proto"
 	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
@@ -622,4 +623,32 @@ func keysOf(m map[string]any) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func TestLaunchCarriesTheWriterGenAndIsRefusedWhileAPersonHolds(t *testing.T) {
+	browser := newCDPServer(t, "Chrome/120").withPage(page{sessionID: "pg", targetID: "page-1", typ: "page", url: "file:///index.html"})
+	w := &fakeWriter{gen: 12}
+	e := newDebugEnvWith(t, closedPort(t), browser.port(), w)
+	if _, err := e.m.Launch(bctx(t), LaunchParams{HostRef: "h", Path: "App"}, testCaller); err != nil {
+		t.Fatalf("launch: %v", err)
+	}
+	e.a.mu.Lock()
+	launches := append([]proto.Message(nil), e.a.launches...)
+	e.a.mu.Unlock()
+	if len(launches) != 1 || launches[0]["gen"] != uint64(12) {
+		t.Fatalf("launch params %+v", launches)
+	}
+
+	w.err = apierr.New(wire.CodeControlHeldByHuman, "사람이 조작 중입니다", false, apierr.NextHumanRelease)
+	s, err := e.m.Launch(bctx(t), LaunchParams{HostRef: "h", Path: "App"}, testCaller)
+	oe, ok := AsOpError(err)
+	if !ok || oe.Err.Code != wire.CodeControlHeldByHuman || s.State != StateClosed {
+		t.Fatalf("launch while a person holds: %+v, %v", s, err)
+	}
+	e.a.mu.Lock()
+	n := len(e.a.launches)
+	e.a.mu.Unlock()
+	if n != 1 {
+		t.Fatalf("the refused launch reached the agent: %d launches", n)
+	}
 }

@@ -19,6 +19,11 @@ const (
 	NextRetry        = "retry"
 	NextFixParams    = "fix_params"
 	NextHostDoctor   = "host_doctor"
+	// NextHumanRelease: a person holds control; wait until they release it.
+	NextHumanRelease = "human_release"
+	// NextHumanResumeAI: the emergency stop paused AI input; wait until a
+	// person gives control back to the AI.
+	NextHumanResumeAI = "human_resume_ai"
 )
 
 // ShellWord quotes s with single quotes when it holds a space or a tab.

@@ -54,6 +54,14 @@ func (m *Manager) Launch(ctx context.Context, p LaunchParams, c model.Caller) (S
 	if p.Cwd != "" {
 		params["cwd"] = p.Cwd
 	}
+	if m.d.Writer != nil {
+		gen, err := m.d.Writer.WriterGen(host.HostID, c)
+		if err != nil {
+			cancel()
+			return m.launchFailed(s, c, &OpError{Err: apierr.As(err)})
+		}
+		params["gen"] = gen
+	}
 	info := conn.CallInfo{}
 	res, cerr := agent.Call(callCtx, "debug.electron.launch", params, conn.CallOpts{Info: &info})
 	cancel()

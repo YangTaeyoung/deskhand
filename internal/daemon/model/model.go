@@ -13,8 +13,12 @@ import (
 // SchemaVersion is the schema_version of result envelopes.
 const SchemaVersion = 1
 
-// OwnerNone is the owner every host reports: nobody holds control.
-const OwnerNone = "none"
+// Owners of a host's input (ControlState.Owner).
+const (
+	OwnerNone  = "none"
+	OwnerHuman = "human"
+	OwnerAI    = "ai"
+)
 
 // Envelope statuses.
 const (
@@ -83,12 +87,15 @@ type Host struct {
 	Reason               string                `json:"reason,omitempty"`
 }
 
-// ControlState is the control ownership of a host.
+// ControlState is the control ownership of a host: OwnerClient and
+// OwnerClientID are the hello name and the client id of the client that
+// holds it, Gen the writer generation.
 type ControlState struct {
-	Owner       string `json:"owner"`
-	OwnerClient string `json:"owner_client,omitempty"`
-	Gen         uint64 `json:"gen"`
-	AIPaused    bool   `json:"ai_paused"`
+	Owner         string `json:"owner"`
+	OwnerClient   string `json:"owner_client,omitempty"`
+	OwnerClientID string `json:"owner_client_id,omitempty"`
+	Gen           uint64 `json:"gen"`
+	AIPaused      bool   `json:"ai_paused"`
 }
 
 // SessionInspect is the flat result of session.inspect.
@@ -250,6 +257,7 @@ const (
 	TimelineConnection = "connection"
 	TimelineInstall    = "install"
 	TimelineQA         = "qa"
+	TimelineControl    = "control"
 
 	TimelineOK      = "ok"
 	TimelineFailed  = "failed"

@@ -74,9 +74,10 @@ type Hosts interface {
 
 // Control tells whether automated UI input may go to a host.
 type Control interface {
-	// Check returns nil when it may, and an error coded
-	// CONTROL_HELD_BY_HUMAN when a person holds control.
-	Check(ctx context.Context, hostID string, c model.Caller) error
+	// Check returns the writer generation the step's UI ops carry when it
+	// may, and an error coded CONTROL_HELD_BY_HUMAN when a person holds
+	// control or CONTROL_PREEMPTED when another AI client does.
+	Check(ctx context.Context, hostID string, c model.Caller) (uint64, error)
 }
 
 // Input sends mouse and keyboard input to a host; x and y are pixels of

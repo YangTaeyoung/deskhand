@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/daemon/apierr"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/control"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/debug"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/events"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/hosts"
@@ -96,7 +97,11 @@ type Deps struct {
 	// Debug serves the debug methods; nil leaves them out.
 	Debug *debug.Manager
 	// QA serves the qa methods; nil leaves them out.
-	QA      *qa.Manager
+	QA *qa.Manager
+	// Control serves the control methods and gives the UI operations their
+	// writer generation; nil leaves the methods out and sends writer
+	// generation 0.
+	Control *control.Manager
 	Version string
 	Logger  *log.Logger
 }
@@ -149,6 +154,7 @@ func New(d Deps) *Server {
 	s.registerDebug()
 	s.registerDiag()
 	s.registerQA()
+	s.registerControl()
 	return s
 }
 
@@ -298,7 +304,8 @@ func readLine(r *bufio.Reader, max int) ([]byte, error) {
 // serve reads requests until the connection ends. hello, events.subscribe
 // and stream.attach run in order; other methods run concurrently. A
 // stream.attach that succeeds hands the connection over to its stream,
-// which runs until it ends.
+// which runs until it ends. The AI control the client holds ends with the
+// connection.
 func (s *session) serve() {
 	defer func() {
 		s.close()
@@ -308,6 +315,9 @@ func (s *session) serve() {
 		s.mu.Unlock()
 		if sub != nil {
 			sub.Close()
+		}
+		if c := s.srv.d.Control; c != nil {
+			c.ClientClosed(s.Caller().ClientID)
 		}
 	}()
 	br := bufio.NewReaderSize(s.c, 64<<10)

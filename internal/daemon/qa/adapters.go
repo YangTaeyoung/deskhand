@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/daemon/conn"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/control"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/hosts"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/xfer"
@@ -52,6 +53,17 @@ func (a hostAgent) Caps() map[string]Capability {
 		out[k] = Capability{State: c.State, Reason: c.Reason}
 	}
 	return out
+}
+
+// ControlFrom returns the Control of the daemon's control manager: a step
+// that drives the UI is AI input of the run's caller (control.CheckAI),
+// whoever started the run.
+func ControlFrom(m *control.Manager) Control { return managerControl{m: m} }
+
+type managerControl struct{ m *control.Manager }
+
+func (c managerControl) Check(_ context.Context, hostID string, caller model.Caller) (uint64, error) {
+	return c.m.CheckAI(hostID, caller)
 }
 
 // XferPusher returns the Pusher of the daemon's transfer manager.

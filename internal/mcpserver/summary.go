@@ -17,16 +17,17 @@ const textLimit = 1500
 
 // nextActionHints explain the daemon's next_action values to an agent.
 var nextActionHints = map[string]string{
-	"check_state":    "check the current state (job_get, session_inspect, files_stat, proc_list) before retrying",
-	"host_repair":    "the agent on the PC needs repair; ask the user to run `deskhand host repair <name>`",
-	"host_add_force": "the PC's agent is paired with another controller; ask the user to run `deskhand host add <name> --ssh <alias> --force`",
-	"host_connect":   "the PC is unreachable; run host_doctor and ask the user to check it is on",
-	"host_doctor":    "run host_doctor to find the cause",
-	"transfer_get":   "the transfer runs in the background; call transfer_get with its transfer_id until state is done, failed or cancelled",
-	"retry":          "retry the same call shortly",
-	"fix_params":     "fix the arguments and call again",
-	"human_release":  "a person controls the PC; wait for them to release control and do not retry in a loop",
-	"qa_get":         "the QA run goes on in the background; call qa_get with its run_id until finished_at is set, then read the steps and the report",
+	"check_state":     "check the current state (job_get, session_inspect, files_stat, proc_list) before retrying",
+	"host_repair":     "the agent on the PC needs repair; ask the user to run `deskhand host repair <name>`",
+	"host_add_force":  "the PC's agent is paired with another controller; ask the user to run `deskhand host add <name> --ssh <alias> --force`",
+	"host_connect":    "the PC is unreachable; run host_doctor and ask the user to check it is on",
+	"host_doctor":     "run host_doctor to find the cause",
+	"transfer_get":    "the transfer runs in the background; call transfer_get with its transfer_id until state is done, failed or cancelled",
+	"retry":           "retry the same call shortly",
+	"fix_params":      "fix the arguments and call again",
+	"human_release":   "a person controls the PC; wait for them to release control and do not retry in a loop",
+	"human_resume_ai": "a person stopped AI input with the emergency stop; wait for them to give control back to the AI and do not retry in a loop",
+	"qa_get":          "the QA run goes on in the background; call qa_get with its run_id until finished_at is set, then read the steps and the report",
 }
 
 // hint explains a next_action; for job tools "check_state" must not send

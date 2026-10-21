@@ -15,6 +15,7 @@ import (
 	agenttunnel "github.com/YangTaeyoung/deskhand/internal/agent/tunnel"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/conn"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/events"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/store"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/tunnel"
 	"github.com/YangTaeyoung/deskhand/internal/proto"
@@ -246,6 +247,8 @@ type fakeAgent struct {
 	treeDer func() (bool, *int)
 	kills   []int
 	calls   []string
+	// launches are the params of the debug.electron.launch calls.
+	launches []proto.Message
 }
 
 func newFakeAgent(t *testing.T, p1, p2 int) *fakeAgent {
@@ -307,6 +310,9 @@ func (a *fakeAgent) Call(ctx context.Context, op string, params proto.Message, o
 	a.mu.Unlock()
 	switch op {
 	case "debug.electron.launch":
+		a.mu.Lock()
+		a.launches = append(a.launches, params)
+		a.mu.Unlock()
 		return proto.Message{"pid": 4321, "ports": map[string]any{"inspect": a.ports.Inspect, "remote_debugging": a.ports.RemoteDebugging}}, nil
 	case "debug.attach.pid":
 		return proto.Message{"inspect_port": a.ports.Inspect, "remote_debugging_port": a.ports.RemoteDebugging, "inspector_opened": true}, nil
@@ -357,6 +363,21 @@ type debugEnv struct {
 
 func newDebugEnv(t *testing.T, p1, p2 int) *debugEnv {
 	t.Helper()
+	return newDebugEnvWith(t, p1, p2, nil)
+}
+
+// fakeWriter answers WriterGen with gen, or with err.
+type fakeWriter struct {
+	gen uint64
+	err error
+}
+
+func (w *fakeWriter) WriterGen(string, model.Caller) (uint64, error) { return w.gen, w.err }
+
+// newDebugEnvWith is newDebugEnv whose launches take their writer
+// generation from w.
+func newDebugEnvWith(t *testing.T, p1, p2 int, w Writer) *debugEnv {
+	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "d.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -366,7 +387,7 @@ func newDebugEnv(t *testing.T, p1, p2 int) *debugEnv {
 	tuns := tunnel.New(nil)
 	t.Cleanup(tuns.Shutdown)
 	a := newFakeAgent(t, p1, p2)
-	m := New(Deps{Tunnels: tuns, Hosts: fakeHosts{a: a}, Bus: bus,
+	m := New(Deps{Tunnels: tuns, Hosts: fakeHosts{a: a}, Bus: bus, Writer: w,
 		Timeouts: Timeouts{Probe: 2 * time.Second, Poll: 20 * time.Millisecond, Call: 2 * time.Second, Evaluate: 2 * time.Second, Retain: time.Minute}})
 	t.Cleanup(m.Shutdown)
 	sub := bus.Subscribe()

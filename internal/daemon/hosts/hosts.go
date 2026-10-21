@@ -48,7 +48,10 @@ type Options struct {
 	// ConnectWait bounds the wait for a connection after add, repair and
 	// connect (10 s when 0).
 	ConnectWait time.Duration
-	Logger      *log.Logger
+	// Control returns the control state of a host; nil reports nobody
+	// holding control.
+	Control func(hostID string) model.ControlState
+	Logger  *log.Logger
 }
 
 // Registry keeps the paired hosts.
@@ -72,6 +75,9 @@ func New(opt Options) *Registry {
 	}
 	if opt.Logger == nil {
 		opt.Logger = log.New(io.Discard, "", 0)
+	}
+	if opt.Control == nil {
+		opt.Control = func(string) model.ControlState { return model.ControlState{Owner: model.OwnerNone} }
 	}
 	return &Registry{opt: opt, prev: map[string]conn.ConnState{}}
 }
@@ -128,11 +134,13 @@ func (r *Registry) Conn(ref string) (*conn.Host, store.Host, error) {
 	return h, row, nil
 }
 
-// Model returns the Host model of a stored host with its connection state.
+// Model returns the Host model of a stored host with its connection and
+// control state.
 func (r *Registry) Model(row store.Host) model.Host {
+	cs := r.opt.Control(row.HostID)
 	m := model.Host{HostID: row.HostID, Name: row.Name, OS: row.OS, Arch: row.Arch, Address: row.Address, Port: row.Port,
 		SSHAlias: row.SSHAlias, State: string(conn.StateOffline), Caps: map[string]model.Capability{}, Displays: []any{},
-		Owner: model.OwnerNone, LastSeen: model.Time(row.LastSeen)}
+		Owner: cs.Owner, OwnerClient: cs.OwnerClient, LastSeen: model.Time(row.LastSeen)}
 	h := r.opt.Manager.Get(row.HostID)
 	if h == nil {
 		return m

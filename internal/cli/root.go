@@ -208,15 +208,16 @@ func (r *run) simple(ctx context.Context, method string, params any) (obj, error
 
 // nextSteps are the sentences for the daemon's next_action values.
 var nextSteps = map[string]string{
-	"check_state":    "deskhand jobs list 로 상태를 확인하세요",
-	"host_repair":    "deskhand host repair <이름> 을 실행하세요",
-	"host_add_force": "deskhand host add <이름> --ssh <별칭> --force 를 실행하세요",
-	"host_connect":   "PC가 켜져 있는지 확인하고 deskhand host doctor <이름> 으로 점검하세요",
-	"host_doctor":    "deskhand host doctor <이름> 으로 점검하세요",
-	"retry":          "잠시 뒤 같은 명령을 다시 실행하세요",
-	"fix_params":     "입력을 고쳐 다시 실행하세요",
-	"human_release":  "사람이 제어권을 놓은 뒤 다시 실행하세요",
-	"qa_get":         "deskhand qa get <실행-id> 로 결과를 확인하세요",
+	"check_state":     "deskhand jobs list 로 상태를 확인하세요",
+	"host_repair":     "deskhand host repair <이름> 을 실행하세요",
+	"host_add_force":  "deskhand host add <이름> --ssh <별칭> --force 를 실행하세요",
+	"host_connect":    "PC가 켜져 있는지 확인하고 deskhand host doctor <이름> 으로 점검하세요",
+	"host_doctor":     "deskhand host doctor <이름> 으로 점검하세요",
+	"retry":           "잠시 뒤 같은 명령을 다시 실행하세요",
+	"fix_params":      "입력을 고쳐 다시 실행하세요",
+	"human_release":   "사람이 제어권을 놓은 뒤 다시 실행하세요",
+	"human_resume_ai": "사람이 Deskhand 앱에서 AI에게 넘기기를 누른 뒤 다시 실행하세요",
+	"qa_get":          "deskhand qa get <실행-id> 로 결과를 확인하세요",
 }
 
 // nextStep returns the sentence of the next action: the one of r.steps, or

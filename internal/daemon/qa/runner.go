@@ -73,7 +73,10 @@ type runner struct {
 	inTeardown bool
 
 	// The fields below belong to the goroutine of the run.
-	window          map[string]any
+	window map[string]any
+	// writerGen is the writer generation the writer ops of the running step
+	// carry: the one its control check returned, 0 for a step without one.
+	writerGen       uint64
 	screenOff       bool
 	seenUnsupported map[string]bool
 	// cancelHit and timeoutHit record that a cancel or the run timeout

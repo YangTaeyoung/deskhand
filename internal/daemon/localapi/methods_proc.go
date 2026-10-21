@@ -178,6 +178,13 @@ func (s *Server) appLaunch(ctx context.Context, sess *session, raw json.RawMessa
 	if err != nil {
 		return nil, err
 	}
+	summary := "앱 실행: " + p.Path
+	gen, err := s.writerGen(row.HostID, sess.Caller())
+	if err != nil {
+		_, _ = s.d.Bus.Record(sess.Caller().Entry(row.HostID, model.TimelineExec, summary, model.TimelineDenied, ""))
+		return s.envelope(row.HostID, "", conn.CallInfo{}, outcome{status: model.StatusFailed, action: model.NotStarted(), err: apierr.As(err)}, nil).Map(nil), nil
+	}
+	params["gen"] = gen
 	cctx, cancel := s.detached(remoteTimeout)
 	defer cancel()
 	info := conn.CallInfo{}
@@ -192,6 +199,15 @@ func (s *Server) appLaunch(ctx context.Context, sess *session, raw json.RawMessa
 			fields[k] = v
 		}
 	}
-	_, _ = s.d.Bus.Record(sess.Caller().Entry(row.HostID, model.TimelineExec, "앱 실행: "+p.Path, timelineOutcome(o.status), ""))
+	_, _ = s.d.Bus.Record(sess.Caller().Entry(row.HostID, model.TimelineExec, summary, timelineOutcome(o.status), ""))
 	return s.envelope(row.HostID, "", info, o, nil).Map(fields), nil
+}
+
+// writerGen returns the writer generation a UI operation of c on hostID
+// carries (control.Manager.WriterGen), 0 without a control manager.
+func (s *Server) writerGen(hostID string, c model.Caller) (uint64, error) {
+	if s.d.Control == nil {
+		return 0, nil
+	}
+	return s.d.Control.WriterGen(hostID, c)
 }
