@@ -51,13 +51,13 @@
 | `control.get` | `host_id` | ControlState(§5): `owner`(`none`/`human`/`ai`), `owner_client?`, `owner_client_id?`, `gen`, `ai_paused` |
 | `control.acquire` | `host_id`, `as`(`human`/`ai`), `force`(사람만) | 바뀐 뒤의 ControlState |
 | `control.release` | `host_id` | 바뀐 뒤의 ControlState(owner=none) |
-| `control.stop` | `host_id` | 긴급 정지: owner=human, `ai_paused=true`. 연결이 끊긴 호스트에도 적용된다(재연결 후 AI 입력 차단 유지) |
+| `control.stop` | `host_id` | 긴급 정지: owner=human, `ai_paused=true`. 연결이 끊긴 호스트에도 적용된다(재연결 후 AI 입력 차단 유지). AI 클라이언트가 부르면 `ai_paused=true`만 켜고 owner는 사람이면 그대로, 아니면 none(타임라인 행위자는 그 AI) |
 | `control.resume_ai` | `host_id` | `ai_paused=false`, owner=none |
 
-- `gen`은 owner(AI면 그 클라이언트까지)나 `ai_paused`가 바뀔 때마다 1씩 오르고 데몬을 다시 시작해도 줄지 않는다. 바뀔 때마다 `control.changed`와 타임라인 항목(`kind:"control"`)이 나가고, 연결된 에이전트에 `control.set_writer{gen}`을 보낸다. PC가 연결될 때마다(재연결 포함) 데몬은 그 호스트의 `gen`을 다시 보낸다. 에이전트가 더 큰 세대를 답하면 호스트의 `gen`이 그 값이 된다.
+- `gen`은 owner(AI면 그 클라이언트까지)나 `ai_paused`가 바뀔 때마다 1씩 오르고 데몬을 다시 시작해도 줄지 않는다. 바뀔 때마다 `control.changed`와 타임라인 항목(`kind:"control"`)이 나가고, 연결된 에이전트에 `control.set_writer{gen}`을 보낸다(실패하면 0.1초에서 두 배씩 최대 5초 간격으로 에이전트가 받을 때까지 다시 보낸다). 사람이 부른 변경은 에이전트가 새 `gen`을 받을 때까지(최대 3초) 기다렸다가 답한다. PC와 새로 연결될 때마다(재연결 포함) 데몬은 그 연결을 ready로 표시하기 전에 그 연결로 현재 `gen`의 `control.set_writer`를 보내고(실패하면 그 연결을 끊고 다시 연결한다), 그 사이 도착한 에이전트 이벤트는 ready 뒤에 전한다. 에이전트가 더 큰 세대를 답하거나 AI 입력 스트림·`app.launch`를 `CONTROL_PREEMPTED`로 거절하면 데몬이 에이전트의 세대를 물어 더 큰 값을 호스트의 `gen`으로 삼는다(입력 스트림은 그 세대로 한 번 다시 연다).
 - AI 제어권은 lease다: AI 입력과 UI 계열 동작(아래 writer 동작)마다 60초로 갱신되고, 60초 동안 없거나 그 클라이언트의 연결이 끊기거나 데몬이 다시 시작하면 owner=none(`gen`+1)이 된다. 사람 제어권은 놓거나(`control.release`·`control.resume_ai`) AI에게 넘길 때까지 남는다.
 - 거절은 JSON-RPC 오류다. AI 클라이언트(`mcp`)의 `as:"ai"`: 사람이 쥐고 있으면 `CONTROL_HELD_BY_HUMAN`(`human_release`), `ai_paused`면 `CONTROL_HELD_BY_HUMAN`(`human_resume_ai`), 다른 AI 클라이언트의 lease가 살아 있으면 `CONTROL_PREEMPTED`(`retryable:true`, `retry`). 사람의 `as:"human"`은 AI lease가 살아 있으면 `force:true`일 때만 가져오고 아니면 `INVALID_ARGUMENT`. AI 클라이언트의 `as:"human"`·`control.resume_ai`는 `PERMISSION_DENIED`, `as:"ai"`의 `force`는 `INVALID_ARGUMENT`. AI 클라이언트는 사람 제어권(`CONTROL_HELD_BY_HUMAN`)이나 다른 AI의 lease(`CONTROL_PREEMPTED`)를 `control.release`로 놓지 못한다. 거절된 `control.acquire`는 `outcome:"denied"` 타임라인 항목을 남긴다.
-- writer 동작: 데몬은 에이전트의 writer op(`app.launch`, `debug.electron.launch`, `ui.act`, `win.action`, `clipboard.set` — protocol.md §3.1)와 입력 스트림에 `gen`을 붙여 보낸다. AI 클라이언트의 요청은 보내기 전에 제어권을 확인하고(위 lease 규칙, 없으면 lease를 얻는다), 거절되면 PC에 아무것도 보내지 않고 봉투 `failed`/`not_started` + 위 오류다. 사람·데몬의 요청은 현재 `gen`을 붙인다.
+- writer 동작: 데몬은 에이전트의 writer op(`app.launch`, `debug.electron.launch`, `ui.act`, `win.action`, `clipboard.set` — protocol.md §3.1)와 입력 스트림에 `gen`을 붙여 보낸다. AI 클라이언트의 요청은 보내기 전에 제어권을 확인하고(위 lease 규칙, 없으면 lease를 얻는다), 거절되면 PC에 아무것도 보내지 않고 봉투 `failed`/`not_started` + 위 오류다(`debug.electron.launch`는 세션·job을 만들지 않고 `session:null`). 사람·데몬의 요청은 현재 `gen`을 붙인다. 연결을 기다린 요청을 포함해 writer op는 연결로 내보내기 직전에 다시 확인한다: AI 요청은 같은 클라이언트가 같은 `gen`으로 쥐고 있을 때만, 사람·데몬의 요청은 `gen`이 그대로일 때만 나가고, 아니면 보내지 않고 같은 봉투(AI는 위 오류, 사람은 `CONTROL_PREEMPTED`·`retryable:true`)다.
 
 ### 관찰·입력 (AI·CLI)
 | 메서드 | 파라미터 | 결과 |

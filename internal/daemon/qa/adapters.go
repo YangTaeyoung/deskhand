@@ -66,6 +66,10 @@ func (c managerControl) Check(_ context.Context, hostID string, caller model.Cal
 	return c.m.CheckAI(hostID, caller)
 }
 
+func (c managerControl) Recheck(hostID string, caller model.Caller, gen uint64) error {
+	return c.m.StillAI(hostID, caller, gen)
+}
+
 // XferPusher returns the Pusher of the daemon's transfer manager.
 func XferPusher(m *xfer.Manager) Pusher { return xferPusher{m: m} }
 

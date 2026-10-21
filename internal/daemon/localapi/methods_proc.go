@@ -188,9 +188,12 @@ func (s *Server) appLaunch(ctx context.Context, sess *session, raw json.RawMessa
 	cctx, cancel := s.detached(remoteTimeout)
 	defer cancel()
 	info := conn.CallInfo{}
-	res, err := h.Call(cctx, "app.launch", params, conn.CallOpts{Info: &info})
+	res, err := h.Call(cctx, "app.launch", params, conn.CallOpts{Info: &info, Ready: s.writerCheck(row.HostID, sess.Caller(), gen)})
 	if pe := requestProblem(err); pe != nil {
 		return nil, pe
+	}
+	if apierr.CodeOf(err) == wire.CodeControlPreempted && info.Answered && s.d.Control != nil {
+		s.d.Control.Resync(row.HostID, gen)
 	}
 	o := outcomeOf(info, err)
 	fields := map[string]any{}
@@ -201,6 +204,16 @@ func (s *Server) appLaunch(ctx context.Context, sess *session, raw json.RawMessa
 	}
 	_, _ = s.d.Bus.Record(sess.Caller().Entry(row.HostID, model.TimelineExec, summary, timelineOutcome(o.status), ""))
 	return s.envelope(row.HostID, "", info, o, nil).Map(fields), nil
+}
+
+// writerCheck returns the conn.CallOpts.Ready of a UI operation of c on
+// hostID that carries gen (control.Manager.WriterCheck), nil without a
+// control manager.
+func (s *Server) writerCheck(hostID string, c model.Caller, gen uint64) func() error {
+	if s.d.Control == nil {
+		return nil
+	}
+	return func() error { return s.d.Control.WriterCheck(hostID, c, gen) }
 }
 
 // writerGen returns the writer generation a UI operation of c on hostID

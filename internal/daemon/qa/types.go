@@ -78,6 +78,10 @@ type Control interface {
 	// may, and an error coded CONTROL_HELD_BY_HUMAN when a person holds
 	// control or CONTROL_PREEMPTED when another AI client does.
 	Check(ctx context.Context, hostID string, c model.Caller) (uint64, error)
+	// Recheck returns nil while a UI op of the step, carrying gen, may still
+	// go out, and the error that refuses it otherwise; it runs right before
+	// the op is written (conn.CallOpts.Ready).
+	Recheck(hostID string, c model.Caller, gen uint64) error
 }
 
 // Input sends mouse and keyboard input to a host; x and y are pixels of

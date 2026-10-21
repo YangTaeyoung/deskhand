@@ -18,7 +18,9 @@ import (
 // Launch starts an Electron app on the host with its inspector ports and
 // connects to it. On success it returns the session; a launch that fails on
 // the PC or its debugger returns an *OpError, and a bad request a plain
-// error.
+// error. A launch the writer generation refuses (Deps.Writer) is an
+// *OpError before any session or job exists; the returned Session then has
+// only HostID.
 func (m *Manager) Launch(ctx context.Context, p LaunchParams, c model.Caller) (Session, error) {
 	if strings.TrimSpace(p.Path) == "" {
 		return Session{}, apierr.Invalid("path가 없습니다. 실행할 Electron 앱의 경로를 주세요")
@@ -33,6 +35,14 @@ func (m *Manager) Launch(ctx context.Context, p LaunchParams, c model.Caller) (S
 	agent, host, err := m.d.Hosts.Conn(p.HostRef)
 	if err != nil {
 		return Session{}, err
+	}
+	var gen uint64
+	var ready func() error
+	if w := m.d.Writer; w != nil {
+		if gen, err = w.WriterGen(host.HostID, c); err != nil {
+			return Session{HostID: host.HostID}, &OpError{Err: apierr.As(err)}
+		}
+		ready = func() error { return w.WriterCheck(host.HostID, c, gen) }
 	}
 	s, err := m.newSession(KindLaunch, host, agent, c)
 	if err != nil {
@@ -55,15 +65,10 @@ func (m *Manager) Launch(ctx context.Context, p LaunchParams, c model.Caller) (S
 		params["cwd"] = p.Cwd
 	}
 	if m.d.Writer != nil {
-		gen, err := m.d.Writer.WriterGen(host.HostID, c)
-		if err != nil {
-			cancel()
-			return m.launchFailed(s, c, &OpError{Err: apierr.As(err)})
-		}
 		params["gen"] = gen
 	}
 	info := conn.CallInfo{}
-	res, cerr := agent.Call(callCtx, "debug.electron.launch", params, conn.CallOpts{Info: &info})
+	res, cerr := agent.Call(callCtx, "debug.electron.launch", params, conn.CallOpts{Info: &info, Ready: ready})
 	cancel()
 	if cerr != nil {
 		return m.launchFailed(s, c, outcomeError(info, cerr))

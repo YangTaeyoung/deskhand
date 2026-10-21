@@ -1211,3 +1211,21 @@ teardown:
 		}
 	}
 }
+
+func TestWriterOpIsBlockedWhenTheWriterChangesBeforeItGoesOut(t *testing.T) {
+	pc := fixturePC()
+	held := apierr.New(wire.CodeControlHeldByHuman, "긴급 정지로 AI 입력이 멈춰 있습니다", false, "human_resume_ai")
+	e := newEnv(t, pc, testOpts{control: fakeControl{gen: 4, recheckErr: held}})
+	run := e.run(t, "name: changed\nsteps:\n  - launch: C:\\fixture\\app.exe\n  - assert_ui: {name: Send}\n")
+	if run.Status != RunBlocked || run.Steps[0].Status != StepBlocked || run.Steps[0].Error.Code != wire.CodeControlHeldByHuman {
+		t.Fatalf("run %s %+v", run.Status, run.Steps[0])
+	}
+	if len(pc.callsOf("app.launch")) != 0 {
+		t.Fatal("the launch reached the PC")
+	}
+	for _, c := range pc.callsOf("ui.find") {
+		if c.params["gen"] != nil {
+			t.Fatalf("ui.find %+v", c)
+		}
+	}
+}

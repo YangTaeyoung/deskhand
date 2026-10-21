@@ -58,9 +58,8 @@ func (m *Manager) link(hostID string) *aiLink {
 }
 
 // cut ends the AI input stream of hostID whose writer generation is older
-// than gen: it sends release_all with gen on that stream and ends the
-// daemon's direction. The agent takes gen when it reads that event, stops
-// the text it is typing and releases every held key and button.
+// than gen: it takes the stream off the link, writes a release_all event of
+// gen on it and ends the daemon's direction (cutTo).
 func (m *Manager) cut(hostID string, gen uint64) {
 	m.mu.Lock()
 	var lk *aiLink
@@ -219,9 +218,9 @@ func (s *aiStream) send(ev wire.InputEvent) (chan wire.InputAck, error) {
 	return ch, nil
 }
 
-// cutTo stops the stream taking AI events, sends release_all with gen and
-// ends the daemon's direction; the agent then injects what it has read and
-// closes the stream.
+// cutTo marks the stream as taking no more AI events, writes a release_all
+// event of gen and ends the daemon's direction; the reader goes on until
+// the agent ends its direction. A failed write resets the stream.
 func (s *aiStream) cutTo(gen uint64) {
 	s.mu.Lock()
 	if s.cut || s.ended {
@@ -246,8 +245,8 @@ func (s *aiStream) cutTo(gen uint64) {
 	}
 }
 
-// abort resets both directions; the agent stops the text it is typing and
-// releases the keys and buttons the stream holds.
+// abort marks the stream as taking no more AI events and resets both of its
+// directions.
 func (s *aiStream) abort() {
 	s.mu.Lock()
 	s.cut = true
@@ -287,9 +286,11 @@ func (m *Manager) stream(ctx context.Context, hostID string, lk *aiLink, gen uin
 
 // SendAI sends evs as AI input of client c to hostID's agent and returns
 // the acks that came back, in order. It checks control first (CheckAI) and
-// sends nothing once the writer has changed; the agent then refuses what
-// it had not injected yet. A failed ack is the error of its code; a stream
-// that ends before every ack is EXECUTION_OUTCOME_UNKNOWN.
+// checks again before each event, stopping at the first event the writer
+// has changed for. A stream the agent refuses with CONTROL_PREEMPTED is
+// opened once more after Resync took a higher generation from the agent.
+// A failed ack is the error of its code; a stream that ends before every
+// ack is EXECUTION_OUTCOME_UNKNOWN.
 func (m *Manager) SendAI(ctx context.Context, hostID string, c ClientInfo, evs []wire.InputEvent) ([]wire.InputAck, error) {
 	if len(evs) == 0 {
 		return nil, apierr.Invalid("보낼 입력이 없습니다. 입력 이벤트를 하나 이상 주세요")
@@ -301,23 +302,29 @@ func (m *Manager) SendAI(ctx context.Context, hostID string, c ClientInfo, evs [
 	lk := m.link(hostID)
 	lk.sendMu.Lock()
 	defer lk.sendMu.Unlock()
-	if err := m.stillAI(hostID, c, gen); err != nil {
+	if err := m.StillAI(hostID, c, gen); err != nil {
 		return nil, err
 	}
 	s, err := m.stream(ctx, hostID, lk, gen)
+	if apierr.CodeOf(err) == wire.CodeControlPreempted && m.Resync(hostID, gen) {
+		if gen, err = m.CheckAI(hostID, c); err != nil {
+			return nil, err
+		}
+		s, err = m.stream(ctx, hostID, lk, gen)
+	}
 	if err != nil {
 		return nil, err
 	}
 	var waits []chan wire.InputAck
 	var stopped error
 	for _, ev := range evs {
-		if err := m.stillAI(hostID, c, gen); err != nil {
+		if err := m.StillAI(hostID, c, gen); err != nil {
 			stopped = err
 			break
 		}
 		ch, err := s.send(ev)
 		if err != nil {
-			if stopped = m.stillAI(hostID, c, gen); stopped == nil {
+			if stopped = m.StillAI(hostID, c, gen); stopped == nil {
 				stopped = outcomeUnknown()
 			}
 			break

@@ -50,6 +50,7 @@ Alcove 에이전트 프로토콜 2층과 같은 NDJSON(`t`로 구분). 한 줄 �
 ```
 
 - 데몬은 헤더 `{"s":"rpc"}` 말고는 아무것도 쓰지 않고 기다린다. 헤더를 받으면 에이전트가 `{"t":"hello","v":1,"agent":"<버전>","os":"windows","arch":"amd64","host":"<컴퓨터 이름>","caps":{…},"session":{…},"displays":[…],"boot_id":"…"}`를 보낸다. 데몬은 `{"t":"welcome","v":1,"controller":"<이름>"}`으로 답하고 그 뒤에 요청을 보낸다.
+- welcome 뒤 데몬은 그 연결의 첫 요청으로 `control.set_writer{gen}`(그 호스트의 현재 writer 세대)을 보내고, 답을 받은 뒤에야 그 연결로 다른 요청·데이터 스트림을 보낸다. 실패하면 연결을 닫고 다시 연결한다. 에이전트가 그 op를 모르면(`CAPABILITY_UNSUPPORTED`) 넘어간다.
 - 에이전트는 welcome 전에는 요청을 처리하지 않고 이벤트도 보내지 않는다. 첫 메시지가 welcome이 아니거나 10초 안에 오지 않으면 스트림을 닫는다.
 - hello·welcome 뒤에는 `req`(데몬→에이전트)와 `res`·`ev`(에이전트→데몬)만 흐른다. 에이전트는 그 밖의 `t`를 받으면 실행하지 않고 `{"t":"res","id":<그 메시지의 id 또는 null>,"ok":false,"code":"INVALID_ARGUMENT","error":"…","retryable":false}` 한 줄로 답한다. 두 번째 welcome은 무시한다.
 - `session`: Windows는 `session.info` 결과와 같은 필드(§3.1), 그 밖의 OS는 데스크톱 세션의 `session_id`·`user` 중 읽은 것. `displays`는 `display.list`의 `displays`이고, 읽을 수 없으면(Session 0 등) `[]`. `boot_id`는 에이전트 프로세스가 시작할 때마다 바뀐다.

@@ -119,6 +119,12 @@ type rpcClient struct {
 
 	wmu sync.Mutex
 
+	// evMu guards the events held while evHeld: they are delivered in
+	// order by openEvents.
+	evMu   sync.Mutex
+	evHeld bool
+	evQ    []proto.Message
+
 	mu      sync.Mutex
 	nextID  int64
 	pending map[int64]*pendingCall
@@ -129,6 +135,40 @@ type rpcClient struct {
 
 func newRPCClient(st Stream, r *lineReader, onEvent func(proto.Message), closeFn func()) *rpcClient {
 	return &rpcClient{st: st, r: r, onEvent: onEvent, closeFn: closeFn, pending: map[int64]*pendingCall{}, done: make(chan struct{})}
+}
+
+// holdEvents keeps the events that arrive from now on until openEvents.
+func (c *rpcClient) holdEvents() {
+	c.evMu.Lock()
+	c.evHeld = true
+	c.evMu.Unlock()
+}
+
+// openEvents delivers the held events in order, and every later event as
+// it arrives.
+func (c *rpcClient) openEvents() {
+	c.evMu.Lock()
+	defer c.evMu.Unlock()
+	for _, m := range c.evQ {
+		if c.onEvent != nil {
+			c.onEvent(m)
+		}
+	}
+	c.evQ, c.evHeld = nil, false
+}
+
+// event delivers m, or holds it while events are held.
+func (c *rpcClient) event(m proto.Message) {
+	c.evMu.Lock()
+	if c.evHeld {
+		c.evQ = append(c.evQ, m)
+		c.evMu.Unlock()
+		return
+	}
+	c.evMu.Unlock()
+	if c.onEvent != nil {
+		c.onEvent(m)
+	}
 }
 
 // run reads the stream until it ends, then shuts the client down.
@@ -158,9 +198,7 @@ func (c *rpcClient) run() {
 			}
 			pc.ch <- m
 		case "ev":
-			if c.onEvent != nil {
-				c.onEvent(m)
-			}
+			c.event(m)
 		}
 	}
 }

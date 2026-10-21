@@ -272,6 +272,11 @@ func elemNode(e *fakeElem) map[string]any {
 var errBlockedCall = fmt.Errorf("blocked call ended")
 
 func (pc *fakePC) Call(ctx context.Context, op string, params proto.Message, opts conn.CallOpts) (proto.Message, error) {
+	if opts.Ready != nil {
+		if err := opts.Ready(); err != nil {
+			return nil, err
+		}
+	}
 	rid := opts.RID
 	if rid == "" && wire.Journaled(op) {
 		rid = conn.NewRID()
@@ -472,13 +477,16 @@ func (h fakeHosts) Resolve(ref string) (Host, error) {
 
 func (h fakeHosts) Agent(string) Agent { return h.pc }
 
-// fakeControl answers Check with gen, or with err; gens is the next gen of
-// each check when set.
+// fakeControl answers Check with gen, or with err, and Recheck with
+// recheckErr; gens is the next gen of each check when set.
 type fakeControl struct {
-	err  error
-	gen  uint64
-	gens *[]uint64
+	err        error
+	gen        uint64
+	gens       *[]uint64
+	recheckErr error
 }
+
+func (c fakeControl) Recheck(string, model.Caller, uint64) error { return c.recheckErr }
 
 func (c fakeControl) Check(context.Context, string, model.Caller) (uint64, error) {
 	if c.err != nil {

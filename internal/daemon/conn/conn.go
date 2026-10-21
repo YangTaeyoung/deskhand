@@ -148,6 +148,11 @@ type Options struct {
 	OnEvent func(Event)
 	// OnReady runs when a host connected, with its new generation.
 	OnReady func(hostID string, gen uint64)
+	// Prepare runs on each new connection before it becomes ready, with
+	// call sending requests on that connection; the agent's events wait
+	// until the connection is ready. An error ends the connection, which is
+	// then retried like one that failed. nil skips it.
+	Prepare func(ctx context.Context, hostID string, call PrepareCall) error
 	Backoff BackoffConfig
 	// Sleep waits between reconnect attempts; nil waits on a timer.
 	Sleep func(ctx context.Context, d time.Duration) error
@@ -169,6 +174,14 @@ type Options struct {
 }
 
 const dialTimeout = 10 * time.Second
+
+// prepareTimeout bounds Options.Prepare.
+const prepareTimeout = 10 * time.Second
+
+// PrepareCall sends op with params on the connection that Options.Prepare
+// prepares and returns the fields of its answer; an answer with ok false is
+// an *apierr.Error.
+type PrepareCall func(ctx context.Context, op string, params proto.Message) (proto.Message, error)
 
 // Manager owns the hosts' connections.
 type Manager struct {
@@ -503,6 +516,19 @@ func (h *Host) loop(ctx context.Context, done chan struct{}) {
 			}
 			continue
 		}
+		go rpc.run()
+		if err := h.prepare(ctx, rpc); err != nil {
+			rpc.shutdown(err)
+			if ctx.Err() != nil {
+				return
+			}
+			h.m.opt.Logger.Printf("host %s: prepare the connection: %v", h.id, err)
+			h.setState(StateReconnecting, lost(h.Target().Name))
+			if h.m.opt.Sleep(ctx, b.Next()) != nil {
+				return
+			}
+			continue
+		}
 		b.Reset()
 		wasReady = true
 		h.becomeReady(rpc, hello)
@@ -595,12 +621,30 @@ func (h *Host) establish(ctx context.Context) (*rpcClient, Hello, error) {
 	}
 	rpc := newRPCClient(st, r, h.onAgentEvent, func() { _ = sess.Close("rpc stream closed") })
 	rpc.sess = sess
+	rpc.holdEvents()
 	return rpc, parseHello(msg), nil
 }
 
-// becomeReady makes rpc the host's connection with a new generation and
-// then starts reading it: the agent's events of the connection come after
-// its ready event and apply to its hello.
+// prepare runs Options.Prepare on rpc, whose events are held.
+func (h *Host) prepare(ctx context.Context, rpc *rpcClient) error {
+	if h.m.opt.Prepare == nil {
+		return nil
+	}
+	pctx, cancel := context.WithTimeout(ctx, prepareTimeout)
+	defer cancel()
+	return h.m.opt.Prepare(pctx, h.id, func(ctx context.Context, op string, params proto.Message) (proto.Message, error) {
+		res, err := rpc.call(ctx, buildRequest(op, params, ""), false)
+		if err != nil {
+			return nil, err
+		}
+		return answer(res)
+	})
+}
+
+// becomeReady makes rpc, which is being read with its events held, the
+// host's connection with a new generation and then lets its events go: the
+// agent's events of the connection come after its ready event and apply to
+// its hello.
 func (h *Host) becomeReady(rpc *rpcClient, hello Hello) {
 	var gen uint64
 	h.change(func() *Event {
@@ -609,7 +653,7 @@ func (h *Host) becomeReady(rpc *rpcClient, hello Hello) {
 		h.rpc, h.hello, h.session, h.lastSeen = rpc, hello, nil, time.Now()
 		return h.setStateLocked(StateReady, nil)
 	})
-	go rpc.run()
+	rpc.openEvents()
 	if h.m.opt.OnReady != nil {
 		h.m.opt.OnReady(h.id, gen)
 	}
@@ -759,10 +803,13 @@ func (h *Host) waitReady(ctx context.Context) (*rpcClient, uint64, error) {
 
 // CallOpts tune a Call. RID is the request id to send; empty means a new
 // one for a journaled op and none for other ops. Info, when set, receives
-// what happened to the request.
+// what happened to the request. Ready, when set, runs once the connection is
+// ready, right before the request is written; its error refuses the request
+// unsent.
 type CallOpts struct {
-	RID  string
-	Info *CallInfo
+	RID   string
+	Info  *CallInfo
+	Ready func() error
 }
 
 // CallInfo describes a request: its rid, the generation of the connection
@@ -811,6 +858,14 @@ func (h *Host) Call(ctx context.Context, op string, params proto.Message, opts C
 			return nil, err
 		}
 		info.Generation = gen
+		if opts.Ready != nil {
+			if err := opts.Ready(); err != nil {
+				if recorded && log != nil {
+					_ = log.SetRequestState(rid, RequestNotSent, nil)
+				}
+				return nil, err
+			}
+		}
 		if rid != "" && !recorded && log != nil {
 			if err := log.RequestSent(rid, h.id, op); err != nil {
 				return nil, apierr.Internal(fmt.Sprintf("요청 기록을 저장하지 못했습니다(%v). 데몬 로그를 확인하세요", err))

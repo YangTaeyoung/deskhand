@@ -43,11 +43,14 @@ type Hosts interface {
 }
 
 // Writer gives the UI operations of a caller their writer generation
-// (control.Manager.WriterGen).
+// (control.Manager.WriterGen and WriterCheck).
 type Writer interface {
 	// WriterGen returns the writer generation an operation of c on hostID
 	// carries, or the error that refuses it.
 	WriterGen(hostID string, c model.Caller) (uint64, error)
+	// WriterCheck returns nil while that operation, carrying gen, may still
+	// go out, and the error that refuses it otherwise.
+	WriterCheck(hostID string, c model.Caller, gen uint64) error
 }
 
 // Timeouts bound the daemon's waits; zero fields take the defaults.

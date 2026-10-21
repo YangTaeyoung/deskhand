@@ -238,6 +238,8 @@ func (f *fakeAgent) handle(m proto.Message) (proto.Message, bool) {
 		return res, false
 	case "fs.list":
 		return proto.Message{"ok": true, "entries": []any{}, "truncated": false}, false
+	case "control.set_writer":
+		return proto.Message{"ok": true, "gen": m["gen"]}, false
 	case "fail.coded":
 		return proto.Message{"ok": false, "code": "STALE_TARGET", "error": "element e1 no longer exists; call ui.tree again", "retryable": false}, false
 	case "fail.unsupported":

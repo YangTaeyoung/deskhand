@@ -24,14 +24,21 @@ import (
 // errReset is the error of a pipe direction the other side reset.
 var errReset = errors.New("stream reset")
 
-// pipeEnd is one end of an in-memory stream whose directions end apart.
+// pipeEnd is one end of an in-memory stream whose directions end apart;
+// beforeWrite, when set, runs before each write.
 type pipeEnd struct {
-	r *io.PipeReader
-	w *io.PipeWriter
+	r           *io.PipeReader
+	w           *io.PipeWriter
+	beforeWrite func()
 }
 
-func (p pipeEnd) Read(b []byte) (int, error)       { return p.r.Read(b) }
-func (p pipeEnd) Write(b []byte) (int, error)      { return p.w.Write(b) }
+func (p pipeEnd) Read(b []byte) (int, error) { return p.r.Read(b) }
+func (p pipeEnd) Write(b []byte) (int, error) {
+	if p.beforeWrite != nil {
+		p.beforeWrite()
+	}
+	return p.w.Write(b)
+}
 func (p pipeEnd) CloseWrite() error                { return p.w.Close() }
 func (p pipeEnd) CancelWrite()                     { p.w.CloseWithError(errReset) }
 func (p pipeEnd) CancelRead()                      { p.r.CloseWithError(errReset) }
@@ -74,6 +81,11 @@ type fakeAgent struct {
 	charDelay time.Duration
 	// ops are the rpc ops the agent received.
 	ops []string
+	// failSetWriter is how many more control.set_writer calls fail.
+	failSetWriter int
+	// stall, while set, holds every write of the daemon on an input stream
+	// until it is closed.
+	stall chan struct{}
 }
 
 func newFakeAgent() *fakeAgent {
@@ -112,13 +124,26 @@ func offlineErr() error {
 	return apierr.New(wire.CodeOffline, "pc is offline", true, apierr.NextHostConnect)
 }
 
-func (a *fakeAgent) Call(_ context.Context, op string, params proto.Message, _ conn.CallOpts) (proto.Message, error) {
+func (a *fakeAgent) Call(ctx context.Context, op string, params proto.Message, _ conn.CallOpts) (proto.Message, error) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.state != conn.StateReady && a.state != conn.StateDegraded {
+	st := a.state
+	a.mu.Unlock()
+	if st != conn.StateReady && st != conn.StateDegraded {
 		return nil, offlineErr()
 	}
+	return a.call(ctx, op, params)
+}
+
+// call answers a request whatever the connection state: the PrepareCall of
+// a connection that is being prepared.
+func (a *fakeAgent) call(_ context.Context, op string, params proto.Message) (proto.Message, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.ops = append(a.ops, op)
+	if op == "control.set_writer" && a.failSetWriter > 0 {
+		a.failSetWriter--
+		return nil, apierr.New(wire.CodeTimeout, "set_writer timed out", true, apierr.NextRetry)
+	}
 	if op != "control.set_writer" {
 		return nil, apierr.New(wire.CodeCapabilityUnsupported, "unknown op '"+op+"'", false, "")
 	}
@@ -152,6 +177,7 @@ func (a *fakeAgent) OpenStream(_ context.Context, hdr wire.StreamHeader) (conn.D
 		return nil, 0, fmt.Errorf("the fake agent has no %s stream", hdr.S)
 	}
 	d, ag := duplex()
+	d.beforeWrite = a.waitStall
 	go a.serveInput(ag, hdr)
 	return d, cg, nil
 }
@@ -290,6 +316,29 @@ func (a *fakeAgent) streamCount() int {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return len(a.streams)
+}
+
+// waitStall waits while a stall is set.
+func (a *fakeAgent) waitStall() {
+	a.mu.Lock()
+	st := a.stall
+	a.mu.Unlock()
+	if st != nil {
+		<-st
+	}
+}
+
+// setWriterCalls counts the control.set_writer calls, failed ones too.
+func (a *fakeAgent) setWriterCalls() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	n := 0
+	for _, op := range a.ops {
+		if op == "control.set_writer" {
+			n++
+		}
+	}
+	return n
 }
 
 // fakeAgents serves one host, "pc".

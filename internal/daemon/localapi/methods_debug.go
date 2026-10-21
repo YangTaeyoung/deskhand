@@ -171,7 +171,11 @@ func (s *Server) debugSessionResult(out debug.Session, err error) (any, error) {
 	if oe.Unknown {
 		o = outcome{status: model.StatusUnknown, action: model.UnknownAction(), err: oe.Err}
 	}
-	return s.envelope(out.HostID, out.JobID, conn.CallInfo{}, o, nil).Map(map[string]any{"session": out}), nil
+	var sess any = out
+	if out.DebugID == "" {
+		sess = nil
+	}
+	return s.envelope(out.HostID, out.JobID, conn.CallInfo{}, o, nil).Map(map[string]any{"session": sess}), nil
 }
 
 func (s *Server) debugTargetAttach(ctx context.Context, sess *session, raw json.RawMessage) (any, error) {

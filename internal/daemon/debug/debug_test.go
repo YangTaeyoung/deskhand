@@ -639,16 +639,26 @@ func TestLaunchCarriesTheWriterGenAndIsRefusedWhileAPersonHolds(t *testing.T) {
 		t.Fatalf("launch params %+v", launches)
 	}
 
-	w.err = apierr.New(wire.CodeControlHeldByHuman, "사람이 조작 중입니다", false, apierr.NextHumanRelease)
+	held := apierr.New(wire.CodeControlHeldByHuman, "사람이 조작 중입니다", false, apierr.NextHumanRelease)
+	w.err = held
 	s, err := e.m.Launch(bctx(t), LaunchParams{HostRef: "h", Path: "App"}, testCaller)
 	oe, ok := AsOpError(err)
-	if !ok || oe.Err.Code != wire.CodeControlHeldByHuman || s.State != StateClosed {
+	if !ok || oe.Err.Code != wire.CodeControlHeldByHuman || s.DebugID != "" || s.HostID != "h-fake" {
 		t.Fatalf("launch while a person holds: %+v, %v", s, err)
+	}
+	if n := len(e.m.List("")); n != 1 {
+		t.Fatalf("%d sessions after the refused launch, want 1", n)
+	}
+
+	w.err, w.checkErr = nil, held
+	s, err = e.m.Launch(bctx(t), LaunchParams{HostRef: "h", Path: "App"}, testCaller)
+	if oe, ok := AsOpError(err); !ok || oe.Err.Code != wire.CodeControlHeldByHuman || s.State != StateClosed {
+		t.Fatalf("launch whose writer changed before it went out: %+v, %v", s, err)
 	}
 	e.a.mu.Lock()
 	n := len(e.a.launches)
 	e.a.mu.Unlock()
 	if n != 1 {
-		t.Fatalf("the refused launch reached the agent: %d launches", n)
+		t.Fatalf("the refused launches reached the agent: %d launches", n)
 	}
 }

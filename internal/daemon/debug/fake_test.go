@@ -305,6 +305,11 @@ func (a *fakeAgent) OpenStream(ctx context.Context, hdr wire.StreamHeader) (conn
 }
 
 func (a *fakeAgent) Call(ctx context.Context, op string, params proto.Message, opts conn.CallOpts) (proto.Message, error) {
+	if opts.Ready != nil {
+		if err := opts.Ready(); err != nil {
+			return nil, err
+		}
+	}
 	a.mu.Lock()
 	a.calls = append(a.calls, op)
 	a.mu.Unlock()
@@ -366,13 +371,16 @@ func newDebugEnv(t *testing.T, p1, p2 int) *debugEnv {
 	return newDebugEnvWith(t, p1, p2, nil)
 }
 
-// fakeWriter answers WriterGen with gen, or with err.
+// fakeWriter answers WriterGen with gen, or with err, and WriterCheck with
+// checkErr.
 type fakeWriter struct {
-	gen uint64
-	err error
+	gen      uint64
+	err      error
+	checkErr error
 }
 
 func (w *fakeWriter) WriterGen(string, model.Caller) (uint64, error) { return w.gen, w.err }
+func (w *fakeWriter) WriterCheck(string, model.Caller, uint64) error { return w.checkErr }
 
 // newDebugEnvWith is newDebugEnv whose launches take their writer
 // generation from w.

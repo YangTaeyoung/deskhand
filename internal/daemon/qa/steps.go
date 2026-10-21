@@ -135,16 +135,21 @@ func (r *runner) do(ctx context.Context, st Step, i int, timeout int64) stepOut 
 }
 
 // call sends op and returns its answer and the request's rid; a writer op
-// carries the step's writer generation.
+// carries the step's writer generation and goes out only while
+// Control.Recheck passes.
 func (r *runner) call(ctx context.Context, op string, params proto.Message) (proto.Message, string, error) {
+	opts := conn.CallOpts{}
 	if wire.WriterOp(op) {
 		if params == nil {
 			params = proto.Message{}
 		}
-		params["gen"] = r.writerGen
+		gen := r.writerGen
+		params["gen"] = gen
+		opts.Ready = func() error { return r.m.opt.Control.Recheck(r.host.HostID, r.caller, gen) }
 	}
 	info := conn.CallInfo{}
-	res, err := r.agent.Call(ctx, op, params, conn.CallOpts{Info: &info})
+	opts.Info = &info
+	res, err := r.agent.Call(ctx, op, params, opts)
 	return res, info.RID, err
 }
 

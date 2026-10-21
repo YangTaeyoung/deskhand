@@ -201,6 +201,9 @@ func New(opt Options) (*Daemon, error) {
 				}
 			}
 		},
+		Prepare: func(ctx context.Context, hostID string, call conn.PrepareCall) error {
+			return ctl.PrepareConn(ctx, hostID, call)
+		},
 		OnReady: func(hostID string, _ uint64) {
 			go ctl.HostReady(hostID)
 			go jreg.Reconcile(hostID)

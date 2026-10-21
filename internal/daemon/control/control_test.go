@@ -415,7 +415,7 @@ func TestRestartKeepsTheStateAndReleasesAnAILease(t *testing.T) {
 	}
 }
 
-func TestReadyAgentGetsTheWriterGenAndAHigherOneIsTaken(t *testing.T) {
+func TestPreparedConnectionGetsTheWriterGenAndAHigherOneIsTaken(t *testing.T) {
 	r := newRig(t, time.Minute)
 	r.agent.setState(conn.StateReconnecting)
 	st, err := r.m.Stop(bg, "pc", human)
@@ -425,11 +425,15 @@ func TestReadyAgentGetsTheWriterGenAndAHigherOneIsTaken(t *testing.T) {
 	if p := r.agent.pushes(); len(p) != 0 {
 		t.Fatalf("set_writer went to an offline agent: %v", p)
 	}
+	r.agent.restart()
+	if err := r.m.PrepareConn(bg, "pc", r.agent.call); err != nil {
+		t.Fatal(err)
+	}
+	if r.agent.writerGen() != 1 || !slices.Equal(r.agent.pushes(), []uint64{1}) {
+		t.Fatalf("after prepare: writer %d, set_writer %v", r.agent.writerGen(), r.agent.pushes())
+	}
 	r.agent.setState(conn.StateReady)
 	r.m.HostReady("pc")
-	if r.agent.writerGen() != 1 || !slices.Equal(r.agent.pushes(), []uint64{1}) {
-		t.Fatalf("after ready: writer %d, set_writer %v", r.agent.writerGen(), r.agent.pushes())
-	}
 	if _, err := r.m.CheckAI("pc", aiA); err == nil {
 		t.Fatal("AI input passed the stop after the reconnect")
 	}
@@ -438,7 +442,9 @@ func TestReadyAgentGetsTheWriterGenAndAHigherOneIsTaken(t *testing.T) {
 	r.agent.writer = 40
 	r.agent.mu.Unlock()
 	r.changes()
-	r.m.HostReady("pc")
+	if err := r.m.PrepareConn(bg, "pc", r.agent.call); err != nil {
+		t.Fatal(err)
+	}
 	if s := r.m.Get("pc"); s.Gen != 40 || !s.AIPaused {
 		t.Fatalf("state after a higher agent gen %+v", s)
 	}
@@ -448,8 +454,136 @@ func TestReadyAgentGetsTheWriterGenAndAHigherOneIsTaken(t *testing.T) {
 	if row, _ := r.st.GetControl("pc"); row.Gen != 40 {
 		t.Fatalf("stored gen %d", row.Gen)
 	}
-	if s, err := r.m.ResumeAI(bg, "pc", human); err != nil || s.Gen != 41 {
-		t.Fatalf("resume after taking the agent gen: %+v, %v", s, err)
+	if s, err := r.m.ResumeAI(bg, "pc", human); err != nil || s.Gen != 41 || r.agent.writerGen() != 41 {
+		t.Fatalf("resume after taking the agent gen: %+v, %v, agent %d", s, err, r.agent.writerGen())
+	}
+
+	r.agent.mu.Lock()
+	r.agent.failSetWriter = 100
+	r.agent.mu.Unlock()
+	if err := r.m.PrepareConn(bg, "pc", r.agent.call); err == nil {
+		t.Fatal("a prepare whose set_writer failed passed")
+	}
+}
+
+func TestPushRetriesUntilTheAgentTakesTheGen(t *testing.T) {
+	r := newRig(t, time.Minute)
+	r.agent.mu.Lock()
+	r.agent.failSetWriter = 3
+	r.agent.mu.Unlock()
+	st, err := r.m.Stop(bg, "pc", human)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.agent.writerGen() != st.Gen {
+		t.Fatalf("stop answered before the agent took gen %d (agent %d)", st.Gen, r.agent.writerGen())
+	}
+	if n := r.agent.setWriterCalls(); n != 4 {
+		t.Fatalf("%d set_writer calls, want 4", n)
+	}
+}
+
+func TestAIInputTakesTheGenOfAnAgentAhead(t *testing.T) {
+	r := newRig(t, time.Minute)
+	r.agent.mu.Lock()
+	r.agent.writer = 30
+	r.agent.mu.Unlock()
+	acks, err := r.m.SendAI(bg, "pc", aiA, []wire.InputEvent{{K: "move", X: 3, Y: 4}})
+	if err != nil || len(acks) != 1 || !acks[0].OK {
+		t.Fatalf("AI input below the agent's generation: %+v, %v", acks, err)
+	}
+	if s := r.m.Get("pc"); s.Gen != 30 || s.Owner != "ai" || s.OwnerClientID != aiA.ClientID {
+		t.Fatalf("state %+v", s)
+	}
+	if hdr, evs, _, _ := r.agent.stream(0); hdr != 30 || len(evs) != 1 || evs[0].Gen != 30 {
+		t.Fatalf("stream header %d events %+v", hdr, evs)
+	}
+}
+
+func TestAIStopPausesWithoutTakingHumanControl(t *testing.T) {
+	r := newRig(t, time.Minute)
+	if _, err := r.m.CheckAI("pc", aiA); err != nil {
+		t.Fatal(err)
+	}
+	st, err := r.m.Stop(bg, "pc", aiA)
+	if err != nil || st.Owner != "none" || !st.AIPaused || st.OwnerClient != "" || st.OwnerClientID != "" || st.Gen != 2 {
+		t.Fatalf("AI stop while the AI holds: %+v, %v", st, err)
+	}
+	tl, _ := r.st.ListTimeline(store.TimelineFilter{HostID: "pc", Limit: 1})
+	if len(tl) != 1 || tl[0].Actor != model.ActorAI || tl[0].ClientID != aiA.ClientID {
+		t.Fatalf("timeline %+v", tl)
+	}
+	if _, err := r.m.ResumeAI(bg, "pc", human); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.m.Acquire(bg, "pc", OwnerHuman, human, false); err != nil {
+		t.Fatal(err)
+	}
+	st, err = r.m.Stop(bg, "pc", aiB)
+	if err != nil || st.Owner != "human" || st.OwnerClientID != human.ClientID || !st.AIPaused {
+		t.Fatalf("AI stop while a person holds: %+v, %v", st, err)
+	}
+}
+
+func TestStopReachesTheAgentWhileTheCutWaits(t *testing.T) {
+	r := newRig(t, time.Minute)
+	done := make(chan error, 1)
+	go func() {
+		_, err := r.m.SendAI(bg, "pc", aiA, []wire.InputEvent{{K: "text", Text: strings.Repeat("a", 3000)}})
+		done <- err
+	}()
+	eventually(t, "the text to start", func() bool {
+		_, _, typed, _ := r.agent.stream(0)
+		return len(typed) >= 5
+	})
+	stall := make(chan struct{})
+	r.agent.mu.Lock()
+	r.agent.stall = stall
+	r.agent.mu.Unlock()
+	stopped := make(chan model.ControlState, 1)
+	go func() {
+		st, _ := r.m.Stop(bg, "pc", human)
+		stopped <- st
+	}()
+	eventually(t, "the stop's writer generation at the agent while the cut waits", func() bool { return r.agent.writerGen() == 2 })
+	select {
+	case <-stopped:
+		t.Fatal("the stop answered before its cut was written")
+	default:
+	}
+	r.agent.mu.Lock()
+	r.agent.stall = nil
+	r.agent.mu.Unlock()
+	close(stall)
+	if st := <-stopped; st.Gen != 2 {
+		t.Fatalf("stop %+v", st)
+	}
+	if err := <-done; err == nil {
+		t.Fatal("the cut text succeeded")
+	}
+}
+
+func TestWriterCheckRefusesAChangedWriter(t *testing.T) {
+	r := newRig(t, time.Minute)
+	gen, err := r.m.WriterGen("pc", aiA)
+	if err != nil || r.m.WriterCheck("pc", aiA, gen) != nil || r.m.StillAI("pc", aiA, gen) != nil {
+		t.Fatalf("check of the AI owner's gen %d: %v", gen, err)
+	}
+	if err := r.m.WriterCheck("pc", aiB, gen); err == nil {
+		t.Fatal("another AI client passed the check")
+	}
+	hgen, _ := r.m.WriterGen("pc", human)
+	if err := r.m.WriterCheck("pc", human, hgen); err != nil {
+		t.Fatalf("a person's current gen: %v", err)
+	}
+	if _, err := r.m.Stop(bg, "pc", human); err != nil {
+		t.Fatal(err)
+	}
+	if code, next := codeOf(r.m.WriterCheck("pc", aiA, gen)); code != wire.CodeControlHeldByHuman || next != apierr.NextHumanResumeAI {
+		t.Fatalf("AI check after the stop: %s %s", code, next)
+	}
+	if code, _ := codeOf(r.m.WriterCheck("pc", human, hgen)); code != wire.CodeControlPreempted {
+		t.Fatalf("a person's check of an old gen: %s", code)
 	}
 }
 

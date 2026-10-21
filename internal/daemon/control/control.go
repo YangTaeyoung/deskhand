@@ -128,10 +128,16 @@ func (s state) owned(owner Owner, c ClientInfo) state {
 }
 
 // host is what the manager keeps of one host.
+// acked is the highest writer generation the agent has taken on its
+// current connection; pushing is set while the pusher runs, and ackCh is
+// closed whenever acked or pushing changes.
 type host struct {
-	st    state
-	timer *time.Timer
-	link  *aiLink
+	st      state
+	timer   *time.Timer
+	link    *aiLink
+	acked   uint64
+	pushing bool
+	ackCh   chan struct{}
 }
 
 // Manager owns the control state of every host.
@@ -315,22 +321,20 @@ func row(hostID string, s state, now time.Time) store.Control {
 		AIPaused: s.aiPaused, LeaseUntil: s.leaseUntil, UpdatedAt: now}
 }
 
-// change applies fn and, when the writer changed, cuts the AI input stream
-// of an older generation and sends the new writer generation to the agent;
-// wait makes it wait for that until ctx ends.
+// change applies fn and, when the writer changed, starts sending the new
+// writer generation to the agent and cuts the AI input stream of an older
+// generation; wait makes it wait until the agent holds the new generation
+// (waitAck).
 func (m *Manager) change(ctx context.Context, hostID string, c ClientInfo, summary string, wait bool, fn changeFn) (model.ControlState, error) {
 	next, changed, err := m.apply(hostID, c, summary, fn)
 	if err != nil {
 		return next.model(), err
 	}
 	if changed {
+		m.goPush(hostID)
 		m.cut(hostID, next.gen)
-		done := m.goPush(hostID)
-		if wait && done != nil {
-			select {
-			case <-done:
-			case <-ctx.Done():
-			}
+		if wait {
+			m.waitAck(ctx, hostID, next.gen)
 		}
 	}
 	return next.model(), nil
@@ -376,50 +380,202 @@ func (m *Manager) expire(hostID string) {
 	})
 }
 
-// goPush sends the current writer generation of hostID to its agent in the
-// background and returns a channel closed when that has ended, or nil when
-// the manager is closed.
-func (m *Manager) goPush(hostID string) <-chan struct{} {
+// goPush runs the pusher of hostID unless it runs: it sends the current
+// writer generation to the agent until the agent has taken it, while the
+// agent is connected.
+func (m *Manager) goPush(hostID string) {
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.closed {
-		m.mu.Unlock()
-		return nil
+		return
 	}
+	h := m.hostLocked(hostID)
+	if h.pushing {
+		return
+	}
+	h.pushing = true
 	m.wg.Add(1)
-	m.mu.Unlock()
-	done := make(chan struct{})
-	go func() {
-		defer m.wg.Done()
-		defer close(done)
-		m.push(hostID)
-	}()
-	return done
+	go m.pushLoop(hostID)
 }
 
-// push sends the current writer generation of hostID to its agent when it
-// is connected. A higher generation the agent answers with becomes the
-// host's.
-func (m *Manager) push(hostID string) {
-	a := m.agent(hostID)
-	if a == nil {
-		return
+// pushLoop is the pusher of hostID. A failed control.set_writer is sent
+// again after a wait that doubles from pushRetryMin up to pushRetryMax.
+func (m *Manager) pushLoop(hostID string) {
+	defer m.wg.Done()
+	wait := pushRetryMin
+	for {
+		m.mu.Lock()
+		h := m.hostLocked(hostID)
+		gen := h.st.gen
+		if m.closed || gen <= h.acked {
+			h.pushing = false
+			h.broadcastLocked()
+			m.mu.Unlock()
+			return
+		}
+		m.mu.Unlock()
+		a := m.agent(hostID)
+		if a == nil || !connected(a.State()) {
+			m.stopPushing(hostID)
+			return
+		}
+		err := m.setWriter(a, hostID, gen)
+		if err == nil {
+			wait = pushRetryMin
+			continue
+		}
+		if m.base.Err() != nil {
+			m.stopPushing(hostID)
+			return
+		}
+		m.lg.Printf("control: send writer generation %d to %s: %v; trying again in %s", gen, hostID, err, wait)
+		select {
+		case <-m.base.Done():
+			m.stopPushing(hostID)
+			return
+		case <-time.After(wait):
+		}
+		wait = min(wait*2, pushRetryMax)
 	}
-	if st := a.State(); st != conn.StateReady && st != conn.StateDegraded {
-		return
-	}
-	gen := m.HumanGen(hostID)
+}
+
+const (
+	// pushRetryMin and pushRetryMax bound the wait before a failed
+	// control.set_writer is sent again.
+	pushRetryMin = 100 * time.Millisecond
+	pushRetryMax = 5 * time.Second
+)
+
+func connected(st conn.ConnState) bool { return st == conn.StateReady || st == conn.StateDegraded }
+
+// stopPushing marks the pusher of hostID ended.
+func (m *Manager) stopPushing(hostID string) {
+	m.mu.Lock()
+	h := m.hostLocked(hostID)
+	h.pushing = false
+	h.broadcastLocked()
+	m.mu.Unlock()
+}
+
+// setWriter sends control.set_writer{gen} to a once. A higher generation
+// the agent answers becomes the host's; the generation the agent then holds
+// is recorded as taken. An agent without writer generations takes any.
+func (m *Manager) setWriter(a Agent, hostID string, gen uint64) error {
 	ctx, cancel := context.WithTimeout(m.base, m.pushTimeout)
 	defer cancel()
 	res, err := a.Call(ctx, "control.set_writer", proto.Message{"gen": gen}, conn.CallOpts{})
+	return m.took(hostID, gen, res, err)
+}
+
+// took records the answer res, err of control.set_writer{gen} on hostID.
+func (m *Manager) took(hostID string, gen uint64, res proto.Message, err error) error {
 	if err != nil {
-		if m.base.Err() == nil {
-			m.lg.Printf("control: send writer generation %d to %s: %v", gen, hostID, err)
+		if apierr.CodeOf(err) == wire.CodeCapabilityUnsupported {
+			m.ack(hostID, gen)
+			return nil
 		}
-		return
+		return err
 	}
-	if got, ok := genOf(res["gen"]); ok && got > gen {
+	got, ok := genOf(res["gen"])
+	if !ok || got < gen {
+		got = gen
+	}
+	if got > gen {
 		m.adopt(hostID, got)
 	}
+	m.ack(hostID, got)
+	return nil
+}
+
+// ack records that the agent of hostID holds writer generation gen.
+func (m *Manager) ack(hostID string, gen uint64) {
+	m.mu.Lock()
+	h := m.hostLocked(hostID)
+	if gen > h.acked {
+		h.acked = gen
+	}
+	h.broadcastLocked()
+	m.mu.Unlock()
+}
+
+// broadcastLocked wakes the waiters of the host's pushes; m.mu is held.
+func (h *host) broadcastLocked() {
+	if h.ackCh != nil {
+		close(h.ackCh)
+	}
+	h.ackCh = make(chan struct{})
+}
+
+// waitAck waits until the agent of hostID holds gen, the pusher ends, ctx
+// ends or PushTimeout passes.
+func (m *Manager) waitAck(ctx context.Context, hostID string, gen uint64) {
+	timer := time.NewTimer(m.pushTimeout)
+	defer timer.Stop()
+	for {
+		m.mu.Lock()
+		h := m.hosts[hostID]
+		if m.closed || h == nil || h.acked >= gen || !h.pushing {
+			m.mu.Unlock()
+			return
+		}
+		if h.ackCh == nil {
+			h.ackCh = make(chan struct{})
+		}
+		ch := h.ackCh
+		m.mu.Unlock()
+		select {
+		case <-ch:
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			return
+		}
+	}
+}
+
+// PrepareConn sends the writer generation of hostID on a new connection of
+// its agent before the connection is ready (conn.Options.Prepare), again
+// until the agent holds the current one. A higher generation the agent
+// answers becomes the host's; an agent without writer generations passes.
+// An error is the failed call.
+func (m *Manager) PrepareConn(ctx context.Context, hostID string, call conn.PrepareCall) error {
+	m.mu.Lock()
+	m.hostLocked(hostID).acked = 0
+	m.mu.Unlock()
+	for {
+		gen := m.HumanGen(hostID)
+		res, err := call(ctx, "control.set_writer", proto.Message{"gen": gen})
+		if err := m.took(hostID, gen, res, err); err != nil {
+			return err
+		}
+		m.mu.Lock()
+		h := m.hostLocked(hostID)
+		done := h.st.gen <= h.acked
+		m.mu.Unlock()
+		if done {
+			return nil
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
+}
+
+// Resync sends the current writer generation of hostID to its connected
+// agent once, taking a higher one the agent answers, and reports whether
+// the host's generation is now above tried, the generation an operation
+// the agent refused carried.
+func (m *Manager) Resync(hostID string, tried uint64) bool {
+	a := m.agent(hostID)
+	if a == nil || !connected(a.State()) {
+		return false
+	}
+	gen := m.HumanGen(hostID)
+	if err := m.setWriter(a, hostID, gen); err != nil {
+		m.lg.Printf("control: send writer generation %d to %s: %v", gen, hostID, err)
+		return false
+	}
+	return m.HumanGen(hostID) > tried
 }
 
 // adopt raises the writer generation of hostID to the agent's higher gen.
@@ -477,11 +633,10 @@ func (m *Manager) agent(hostID string) Agent {
 }
 
 // HostReady sends the writer generation of hostID to its agent, which has
-// just connected.
+// just connected, when the agent does not hold it yet, and waits for that.
 func (m *Manager) HostReady(hostID string) {
-	if done := m.goPush(hostID); done != nil {
-		<-done
-	}
+	m.goPush(hostID)
+	m.waitAck(m.base, hostID, m.HumanGen(hostID))
 }
 
 // ClientClosed releases the AI control the client clientID holds: its
@@ -564,13 +719,18 @@ func (m *Manager) Release(ctx context.Context, hostID string, c ClientInfo) (mod
 	})
 }
 
-// Stop is the emergency stop: a person holds control of hostID and AI input
-// stays paused until ResumeAI. It applies whether or not the host is
-// connected.
+// Stop is the emergency stop: AI input of hostID stays paused until
+// ResumeAI. A person who stops it holds control; an AI client that stops it
+// leaves a person's control as it is and any other owner none. It applies
+// whether or not the host is connected.
 func (m *Manager) Stop(ctx context.Context, hostID string, c ClientInfo) (model.ControlState, error) {
 	return m.change(ctx, hostID, c, "긴급 정지 · AI 입력을 멈췄습니다", true, func(cur state, _ time.Time) (state, error) {
 		next := cur
-		if cur.owner != OwnerHuman {
+		switch {
+		case cur.owner == OwnerHuman:
+		case c.Actor == model.ActorAI:
+			next = cur.owned(OwnerNone, model.System)
+		default:
 			next = cur.owned(OwnerHuman, c)
 		}
 		next.aiPaused = true
@@ -658,9 +818,22 @@ func (m *Manager) WriterGen(hostID string, c ClientInfo) (uint64, error) {
 	return m.HumanGen(hostID), nil
 }
 
-// stillAI returns nil while client c holds AI control of hostID at
+// WriterCheck returns nil while a UI operation of client c on hostID that
+// carries writer generation gen may go out: an AI client's while StillAI,
+// a person's and the daemon's while gen is the current one.
+func (m *Manager) WriterCheck(hostID string, c ClientInfo, gen uint64) error {
+	if c.Actor == model.ActorAI {
+		return m.StillAI(hostID, c, gen)
+	}
+	if m.HumanGen(hostID) != gen {
+		return apierr.New(wire.CodeControlPreempted, "보내기 전에 제어권이 바뀌어 보내지 않았습니다. 제어권 상태를 확인한 뒤 다시 시도하세요", true, apierr.NextRetry)
+	}
+	return nil
+}
+
+// StillAI returns nil while client c holds AI control of hostID at
 // generation gen, and why it no longer does otherwise.
-func (m *Manager) stillAI(hostID string, c ClientInfo, gen uint64) error {
+func (m *Manager) StillAI(hostID string, c ClientInfo, gen uint64) error {
 	cur := m.current(hostID)
 	now := time.Now()
 	if cur.gen == gen && cur.owner == OwnerAI && cur.clientID == c.ClientID {

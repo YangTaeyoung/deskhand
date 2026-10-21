@@ -3,6 +3,7 @@ package daemon_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -267,4 +268,136 @@ func TestStopSurvivesDaemonRestart(t *testing.T) {
 		t.Fatalf("resume after the restart %v", s)
 	}
 	waitFor(t, "writer generation 4 at the agent", func() bool { return e.agent.srv.Input().Gen() == 4 })
+}
+
+// raceOutcome is what a writer operation that waited for the reconnect
+// answered, and the agent that came back.
+type raceOutcome struct {
+	res   map[string]any
+	agent *testAgent
+}
+
+// reconnectRace stops the agent, starts op from an AI client while the host
+// reconnects, runs change once op holds AI control and waits for the
+// connection, then starts a new agent process and returns what op answered.
+func reconnectRace(t *testing.T, e *env, op func(ai *client.Client) map[string]any, change func()) raceOutcome {
+	t.Helper()
+	controller, err := daemon.ControllerIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.agent.stop()
+	e.waitState(t, "reconnecting")
+	ai := dialAs(t, "mcp", "claude")
+	done := make(chan map[string]any, 1)
+	go func() { done <- op(ai) }()
+	waitFor(t, "the AI operation to take control", func() bool { return mustCall(t, e.c, "control.get", pc)["owner"] == "ai" })
+	time.Sleep(200 * time.Millisecond)
+	change()
+	agent := startAgent(t, e.agent.port, e.agent.id, e.agent.dataDir, controller.Fingerprint)
+	select {
+	case res := <-done:
+		return raceOutcome{res: res, agent: agent}
+	case <-time.After(40 * time.Second):
+		t.Fatal("the AI operation did not return")
+	}
+	return raceOutcome{}
+}
+
+// refusedByControl fails the test unless res is a failed envelope of a
+// control code.
+func refusedByControl(t *testing.T, what string, res map[string]any) {
+	t.Helper()
+	errv, _ := res["error"].(map[string]any)
+	code, _ := errv["code"].(string)
+	if res["status"] != "failed" || code != wire.CodeControlHeldByHuman && code != wire.CodeControlPreempted {
+		t.Fatalf("%s after the reconnect: %v", what, res)
+	}
+}
+
+// neverRan fails the test when file appears within a short wait.
+func neverRan(t *testing.T, file string) {
+	t.Helper()
+	time.Sleep(300 * time.Millisecond)
+	if _, err := os.Stat(file); err == nil {
+		t.Fatalf("%s was written: the refused operation ran on the PC", file)
+	}
+}
+
+func TestAILaunchWaitingForTheReconnectIsRefusedAfterAStop(t *testing.T) {
+	e := setup(t, setupOpts{trustDaemon: true})
+	e.waitState(t, "ready")
+	file := filepath.Join(e.agent.home, "stopped.txt")
+	out := reconnectRace(t, e, func(ai *client.Client) map[string]any { return mustCall(t, ai, "app.launch", launchFile(file)) },
+		func() { mustCall(t, e.c, "control.stop", pc) })
+	refusedByControl(t, "AI app.launch", out.res)
+	neverRan(t, file)
+	waitFor(t, "the stop's writer generation at the new agent", func() bool { return out.agent.srv.Input().Gen() == 2 })
+}
+
+func TestAILaunchWaitingForTheReconnectIsRefusedAfterATakeover(t *testing.T) {
+	e := setup(t, setupOpts{trustDaemon: true})
+	e.waitState(t, "ready")
+	file := filepath.Join(e.agent.home, "taken.txt")
+	out := reconnectRace(t, e, func(ai *client.Client) map[string]any { return mustCall(t, ai, "app.launch", launchFile(file)) },
+		func() { mustCall(t, dialAs(t, "app", "Deskhand"), "control.acquire", acquireAs("human", true)) })
+	refusedByControl(t, "AI app.launch", out.res)
+	neverRan(t, file)
+	if s := mustCall(t, e.c, "control.get", pc); s["owner"] != "human" || s["gen"] != float64(2) {
+		t.Fatalf("state %v", s)
+	}
+}
+
+func TestAIDebugLaunchWaitingForTheReconnectIsRefusedAfterAStop(t *testing.T) {
+	e := setup(t, setupOpts{trustDaemon: true})
+	e.waitState(t, "ready")
+	file := filepath.Join(e.agent.home, "debug.txt")
+	out := reconnectRace(t, e, func(ai *client.Client) map[string]any {
+		return mustCall(t, ai, "debug.electron.launch", map[string]any{"host_id": "pc", "path": "/bin/sh",
+			"args": []string{"-c", "echo ran > \"$0\"", file}})
+	}, func() { mustCall(t, e.c, "control.stop", pc) })
+	refusedByControl(t, "AI debug.electron.launch", out.res)
+	neverRan(t, file)
+}
+
+func TestAIQAStepWaitingForTheReconnectIsBlockedAfterAStop(t *testing.T) {
+	e := setup(t, setupOpts{trustDaemon: true})
+	e.waitState(t, "ready")
+	file := filepath.Join(e.agent.home, "qa.txt")
+	scenario := fmt.Sprintf("name: race\nsteps:\n  - launch: {path: /bin/sh, args: [-c, 'echo ran > \"$0\"', '%s'], wait_window_ms: 0}\n", file)
+	out := reconnectRace(t, e, func(ai *client.Client) map[string]any {
+		start := mustCall(t, ai, "qa.run", map[string]any{"host_id": "pc", "scenario": scenario})
+		runID, _ := start["run_id"].(string)
+		var run map[string]any
+		waitFor(t, "the QA run to finish", func() bool {
+			run = mustCall(t, ai, "qa.get", map[string]any{"run_id": runID})
+			return run["finished_at"] != nil
+		})
+		return run
+	}, func() { mustCall(t, e.c, "control.stop", pc) })
+	steps, _ := out.res["steps"].([]any)
+	if out.res["status"] != "blocked" || len(steps) != 1 {
+		t.Fatalf("QA run after the reconnect: %v", out.res)
+	}
+	step := steps[0].(map[string]any)
+	errv, _ := step["error"].(map[string]any)
+	if code := errv["code"]; step["status"] != "blocked" || code != wire.CodeControlHeldByHuman && code != wire.CodeControlPreempted {
+		t.Fatalf("launch step %v", step)
+	}
+	neverRan(t, file)
+}
+
+func TestLaunchRefusedByAnAgentAheadTakesItsGen(t *testing.T) {
+	e := setup(t, setupOpts{trustDaemon: true})
+	e.waitState(t, "ready")
+	e.agent.srv.Input().SetWriter(50)
+	res := mustCall(t, e.c, "app.launch", launchFile(filepath.Join(e.agent.home, "first.txt")))
+	if errv, _ := res["error"].(map[string]any); res["status"] != "failed" || errv["code"] != wire.CodeControlPreempted {
+		t.Fatalf("launch below the agent's writer generation: %v", res)
+	}
+	waitFor(t, "the host to take the agent's writer generation", func() bool { return mustCall(t, e.c, "control.get", pc)["gen"] == float64(50) })
+	second := filepath.Join(e.agent.home, "second.txt")
+	if res := mustCall(t, e.c, "app.launch", launchFile(second)); res["status"] != "succeeded" {
+		t.Fatalf("launch after taking the agent's gen: %v", res)
+	}
 }
