@@ -449,7 +449,7 @@ private struct PickerRow: View {
             }
             .padding(.horizontal, DS.Space.m)
             .frame(height: 28)
-            .background(chosen ? AnyShapeStyle(DS.Color.accent) : (hovering && usable ? AnyShapeStyle(DS.Color.neutral.opacity(0.1)) : AnyShapeStyle(.clear)))
+            .background(chosen ? AnyShapeStyle(DS.Status.selectionFill) : (hovering && usable ? AnyShapeStyle(DS.Color.neutral.opacity(0.1)) : AnyShapeStyle(.clear)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

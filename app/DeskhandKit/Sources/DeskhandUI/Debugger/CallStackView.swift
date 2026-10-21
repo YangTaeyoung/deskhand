@@ -139,7 +139,7 @@ private struct FrameRow: View {
     }
 
     private var background: AnyShapeStyle {
-        if selected { return AnyShapeStyle(DS.Color.accent) }
+        if selected { return AnyShapeStyle(DS.Status.selectionFill) }
         return hovering ? AnyShapeStyle(DS.Color.neutral.opacity(0.12)) : AnyShapeStyle(.clear)
     }
 

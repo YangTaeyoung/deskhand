@@ -324,7 +324,7 @@ private struct CandidateRow: View {
             .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(.primary))
             .padding(.horizontal, DS.Space.m)
             .padding(.vertical, DS.Space.xs)
-            .background(selected ? AnyShapeStyle(DS.Color.accent) : (hovering ? AnyShapeStyle(DS.Color.neutral.opacity(0.1)) : AnyShapeStyle(.clear)))
+            .background(selected ? AnyShapeStyle(DS.Status.selectionFill) : (hovering ? AnyShapeStyle(DS.Color.neutral.opacity(0.1)) : AnyShapeStyle(.clear)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

@@ -190,7 +190,7 @@ private struct ScriptRow: View {
     }
 
     private var background: AnyShapeStyle {
-        if highlighted { return AnyShapeStyle(DS.Color.accent) }
+        if highlighted { return AnyShapeStyle(DS.Status.selectionFill) }
         return hovering ? AnyShapeStyle(DS.Color.neutral.opacity(0.1)) : AnyShapeStyle(.clear)
     }
 }

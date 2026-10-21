@@ -6,7 +6,7 @@ import struct DeskhandClient.Host
 public enum SidebarSelectionStyle: Sendable {
     /// The system list selection.
     case native
-    /// An accent-filled row background, used by offscreen snapshots.
+    /// A row background in `DS.Status.selectionFill`, used by offscreen snapshots.
     case drawn
 }
 
@@ -60,7 +60,7 @@ public struct SidebarView: View {
                 .foregroundStyle(.white)
                 .listRowBackground(
                     RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous)
-                        .fill(DS.Color.accent)
+                        .fill(DS.Status.selectionFill)
                         .padding(.horizontal, DS.Space.s)
                 )
         } else {
