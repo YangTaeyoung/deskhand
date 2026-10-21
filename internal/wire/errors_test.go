@@ -29,7 +29,7 @@ func TestKindValues(t *testing.T) {
 	if KindAU != 0x01 || KindVideoInfo != 0x02 || KindVideoStats != 0x03 || KindVideoPaused != 0x04 ||
 		KindCursorShape != 0x10 || KindCursorPos != 0x11 || KindPTYData != 0x20 || KindPTYResize != 0x21 ||
 		KindPTYExit != 0x22 || KindPTYAttached != 0x23 || KindNotice != 0x30 ||
-		KindClientControl != 0x40 || KindClientInput != 0x41 {
+		KindClientControl != 0x40 || KindClientInput != 0x41 || KindInputAck != 0x42 {
 		t.Fatal("kind constant mismatch")
 	}
 	if ALPN != "deskhand/1" || MaxFrame != 32<<20 || MaxHeader != 64<<10 {

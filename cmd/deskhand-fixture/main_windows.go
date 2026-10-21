@@ -2,7 +2,7 @@
 
 // deskhand-fixture is a small Win32 application for UI tests of deskhand-agent on Windows.
 //
-//	deskhand-fixture [--log FILE] [--url URL]
+//	deskhand-fixture [--log FILE] [--url URL] [--animate]
 //
 // Its window, titled "Deskhand Fixture", holds:
 //
@@ -24,7 +24,10 @@
 //   - two buttons that are both named "Same": each appends "Same 1" or
 //     "Same 2" to the transcript;
 //   - "Vanish", right of Secret: when pressed the button hides, and the main
-//     window destroys it when the message the press posts arrives.
+//     window destroys it when the message the press posts arrives;
+//   - with --animate, a 640×360 (at 96 DPI) panel right of the controls that
+//     another thread repaints with a moving pattern of colored bars and gray
+//     cells once per desktop composition.
 //
 // With --log every action appends one line "<RFC 3339 time> <action> [detail]"
 // to the file; a change of Secret is logged as "secret <length>", without the
@@ -59,6 +62,10 @@ const (
 	windowHeight  = 520
 	minimumWidth  = 520
 	minimumHeight = 400
+	motionWidth   = 640
+	motionHeight  = 360
+	motionCell    = 16
+	motionCellRow = 4
 )
 
 // control identifiers; idSend equals IDOK, the command Enter sends.
@@ -76,6 +83,7 @@ const (
 	idSame1
 	idSame2
 	idVanish
+	idMotion
 )
 
 const (
@@ -130,6 +138,7 @@ var (
 	user32   = syscall.NewLazyDLL("user32.dll")
 	gdi32    = syscall.NewLazyDLL("gdi32.dll")
 	kernel32 = syscall.NewLazyDLL("kernel32.dll")
+	dwmapi   = syscall.NewLazyDLL("dwmapi.dll")
 
 	procRegisterClassEx    = user32.NewProc("RegisterClassExW")
 	procCreateWindowEx     = user32.NewProc("CreateWindowExW")
@@ -166,6 +175,11 @@ var (
 	procRaiseFailFast      = kernel32.NewProc("RaiseFailFastException")
 	procGetErrorMode       = kernel32.NewProc("GetErrorMode")
 	procSetErrorMode       = kernel32.NewProc("SetErrorMode")
+	procGetDC              = user32.NewProc("GetDC")
+	procReleaseDC          = user32.NewProc("ReleaseDC")
+	procFillRect           = user32.NewProc("FillRect")
+	procCreateSolidBrush   = gdi32.NewProc("CreateSolidBrush")
+	procDwmFlush           = dwmapi.NewProc("DwmFlush")
 )
 
 type wndClassEx struct {
@@ -210,6 +224,7 @@ type app struct {
 	buttons                                 [5]uintptr
 	same                                    [2]uintptr
 	vanish                                  uintptr
+	motion                                  uintptr
 	dpi                                     int
 	font                                    uintptr
 
@@ -297,6 +312,11 @@ func (a *app) createControls() {
 	sendMessage(a.transcript, emSetLimitText, 0, 0)
 }
 
+// createMotion creates the motion panel.
+func (a *app) createMotion() {
+	a.motion = a.child("STATIC", "", 0, 0, idMotion)
+}
+
 // children returns the controls that exist.
 func (a *app) children() []uintptr {
 	all := []uintptr{a.message, a.send, a.secret, a.transcript}
@@ -329,12 +349,19 @@ func move(hwnd uintptr, x, y, w, h int32) {
 
 // layout places the controls in the client area: the two input rows on top,
 // Vanish below Send, the buttons at the bottom, above them the Korean label
-// with the two Same buttons to its right, the transcript between.
+// with the two Same buttons to its right, the transcript between; the motion
+// panel, when there is one, takes the top right corner and the controls the
+// width left of it.
 func (a *app) layout() {
 	var client rect
 	procGetClientRect.Call(a.main, uintptr(unsafe.Pointer(&client)))
 	width, height := client.right, client.bottom
 	margin, labelW, rowH, gap := a.scale(16), a.scale(84), a.scale(26), a.scale(8)
+	if a.motion != 0 {
+		panelW := a.scale(motionWidth)
+		move(a.motion, width-margin-panelW, margin, panelW, a.scale(motionHeight))
+		width -= panelW + margin
+	}
 	buttonW, buttonH := a.scale(96), a.scale(30)
 	editW := width - 2*margin - labelW - gap - buttonW
 	if editW < a.scale(80) {
@@ -502,6 +529,62 @@ func setWindowText(hwnd uintptr, text string) {
 	procSetWindowText.Call(hwnd, uintptr(unsafe.Pointer(utf16(text))))
 }
 
+// animate repaints the motion panel with drawMotion once per desktop
+// composition on a thread of its own, for as long as the process runs.
+func (a *app) animate() {
+	runtime.LockOSThread()
+	for frame := 0; ; frame++ {
+		drawMotion(a.motion, frame)
+		if r, _, _ := procDwmFlush.Call(); r != 0 {
+			time.Sleep(16 * time.Millisecond)
+		}
+	}
+}
+
+// drawMotion fills the client area of hwnd with eight bars whose colors
+// shift with frame and gray cells whose places move with frame.
+func drawMotion(hwnd uintptr, frame int) {
+	var rc rect
+	procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&rc)))
+	w, h := int(rc.right), int(rc.bottom)
+	if w <= 0 || h <= 0 {
+		return
+	}
+	hdc, _, _ := procGetDC.Call(hwnd)
+	if hdc == 0 {
+		return
+	}
+	defer procReleaseDC.Call(hwnd, hdc)
+	brushes := map[uint32]uintptr{}
+	defer func() {
+		for _, b := range brushes {
+			procDeleteObject.Call(b)
+		}
+	}()
+	fill := func(l, t, r, b int, color uint32) {
+		br, ok := brushes[color]
+		if !ok {
+			br, _, _ = procCreateSolidBrush.Call(uintptr(color))
+			brushes[color] = br
+		}
+		box := rect{int32(l), int32(t), int32(r), int32(b)}
+		procFillRect.Call(hdc, uintptr(unsafe.Pointer(&box)), br)
+	}
+	const bars = 8
+	for i := 0; i < bars; i++ {
+		v := uint32((i*32 + frame*4) % 256)
+		fill(i*w/bars, 0, (i+1)*w/bars, h, v|(255-v)<<8|uint32((i*70)%256)<<16)
+	}
+	for row := 0; row*motionCell < h; row++ {
+		for col := 0; col*motionCell < w; col += 1 + (row+frame)%motionCellRow {
+			if n := uint32((row*131 + col*17 + frame*7) % 97); n%3 == 0 {
+				g := n * 2
+				fill(col*motionCell, row*motionCell, col*motionCell+motionCell-4, row*motionCell+motionCell-4, g|g<<8|g<<16)
+			}
+		}
+	}
+}
+
 // failFast clears SEM_NOGPFAULTERRORBOX from the error mode of the process,
 // which lets Windows Error Reporting record the fault, and ends the process
 // through RaiseFailFastException.
@@ -572,6 +655,7 @@ func main() {
 	runtime.LockOSThread()
 	logPath := flag.String("log", "", "append one line per action to this file")
 	url := flag.String("url", "https://example.com/", "the address the Fetch button requests")
+	animated := flag.Bool("animate", false, "show a panel that moves once per desktop composition")
 	flag.Parse()
 
 	a := &fixture
@@ -607,9 +691,13 @@ func main() {
 		a.log("error", "RegisterClassEx:", err.Error())
 		os.Exit(1)
 	}
+	width := windowWidth
+	if *animated {
+		width += motionWidth + 16
+	}
 	var err error
 	a.main, _, err = procCreateWindowEx.Call(0, uintptr(unsafe.Pointer(utf16(className))), uintptr(unsafe.Pointer(utf16(windowTitle))),
-		wsOverlappedWindow, cwUseDefault, cwUseDefault, uintptr(a.scale(windowWidth)), uintptr(a.scale(windowHeight)), 0, 0, instance, 0)
+		wsOverlappedWindow, cwUseDefault, cwUseDefault, uintptr(a.scale(width)), uintptr(a.scale(windowHeight)), 0, 0, instance, 0)
 	if a.main == 0 {
 		a.log("error", "CreateWindowEx:", err.Error())
 		os.Exit(1)
@@ -617,16 +705,22 @@ func main() {
 	if procGetDpiForWindow.Find() == nil {
 		if dpi, _, _ := procGetDpiForWindow.Call(a.main); dpi != 0 && int(dpi) != a.dpi {
 			a.dpi = int(dpi)
-			procSetWindowPos.Call(a.main, 0, 0, 0, uintptr(a.scale(windowWidth)), uintptr(a.scale(windowHeight)), swpNoZOrder|swpNoActivate|0x0002)
+			procSetWindowPos.Call(a.main, 0, 0, 0, uintptr(a.scale(width)), uintptr(a.scale(windowHeight)), swpNoZOrder|swpNoActivate|0x0002)
 		}
 	}
 	a.createControls()
+	if *animated {
+		a.createMotion()
+	}
 	a.applyFont()
 	a.layout()
 	a.log("start", "pid", fmt.Sprint(os.Getpid()), "dpi", fmt.Sprint(a.dpi))
 	procShowWindow.Call(a.main, swShowNormal)
 	procUpdateWindow.Call(a.main)
 	procSetFocus.Call(a.message)
+	if a.motion != 0 {
+		go a.animate()
+	}
 
 	var m msg
 	for {

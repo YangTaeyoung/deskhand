@@ -2,9 +2,9 @@
 
 package server
 
-// helloSession describes the desktop session the agent serves, or nothing
-// without one.
-func (s *Server) helloSession() map[string]any {
+// desktopSession describes the desktop session the agent serves, or
+// nothing without one.
+func (s *Server) desktopSession() map[string]any {
 	sess, ok := s.session()
 	if !ok {
 		return map[string]any{}

@@ -180,7 +180,7 @@ func TestServeOverQUIC(t *testing.T) {
 	if exec["state"] != "ready" || screen["state"] != "unsupported" || screen["reason"] == "" {
 		t.Fatalf("caps %v", hello["caps"])
 	}
-	if displays, ok := hello["displays"].([]any); !ok || len(displays) != 0 {
+	if _, ok := hello["displays"].([]any); !ok {
 		t.Fatalf("displays %v", hello["displays"])
 	}
 	if _, ok := hello["session"].(map[string]any); !ok {

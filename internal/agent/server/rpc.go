@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/YangTaeyoung/deskhand/internal/agent/monoclock"
 	"github.com/YangTaeyoung/deskhand/internal/proto"
 	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
@@ -58,10 +60,45 @@ type conn struct {
 	stop chan struct{} // closed to ask the writer to stop
 
 	// caps holds the capabilities sent last on the stream; capsFollowed is
-	// set once the host's welcome has arrived.
-	capsMu       sync.Mutex
-	caps         capStates
-	capsFollowed bool
+	// set once the host's welcome has arrived. session and displays are the
+	// JSON of the session and the displays sent last.
+	capsMu            sync.Mutex
+	caps              capStates
+	capsFollowed      bool
+	session, displays []byte
+}
+
+// setDesktop records the JSON of the session and the displays the hello
+// sent.
+func (c *conn) setDesktop(session, displays []byte) {
+	c.capsMu.Lock()
+	c.session, c.displays = session, displays
+	c.capsMu.Unlock()
+}
+
+// replaceSession records session, JSON, and reports whether it differs
+// from the session sent last.
+func (c *conn) replaceSession(session []byte) bool {
+	c.capsMu.Lock()
+	defer c.capsMu.Unlock()
+	return replaceJSON(&c.session, session)
+}
+
+// replaceDisplays records displays, JSON, and reports whether they differ
+// from the displays sent last.
+func (c *conn) replaceDisplays(displays []byte) bool {
+	c.capsMu.Lock()
+	defer c.capsMu.Unlock()
+	return replaceJSON(&c.displays, displays)
+}
+
+// replaceJSON sets *last to b and reports whether they differed.
+func replaceJSON(last *[]byte, b []byte) bool {
+	if bytes.Equal(*last, b) {
+		return false
+	}
+	*last = b
+	return true
 }
 
 // setCaps records caps as the capabilities sent on the stream.
@@ -218,8 +255,12 @@ func (c *conn) write(o outgoing) bool {
 
 func (c *conn) stopWriter() { close(c.stop) }
 
-// register adds an op; gated ops need Options.AllowExec.
+// register adds an op; gated ops need Options.AllowExec, and the ops of
+// writerOps run only for the current writer generation.
 func (s *Server) register(op string, gated bool, h Handler) {
+	if writerOps[op] {
+		h = s.writerGated(op, h)
+	}
 	s.connMu.Lock()
 	defer s.connMu.Unlock()
 	s.ops[op] = opEntry{gated: gated, h: h}
@@ -344,6 +385,9 @@ func (s *Server) registerBuiltins() {
 	s.register("ping", false, func(context.Context, proto.Message) (proto.Message, error) {
 		return proto.Message{"pong": true}, nil
 	})
+	s.register("time.sync", false, func(context.Context, proto.Message) (proto.Message, error) {
+		return proto.Message{"mono_us": monoclock.NowUS()}, nil
+	})
 	s.registerShell()
 	s.registerPTY()
 	s.registerTunnel()
@@ -353,14 +397,17 @@ func (s *Server) registerBuiltins() {
 	s.registerDebug()
 	s.registerClipboard()
 	s.registerDiag()
-	if s.opt.Session != nil {
-		s.register("session.info", true, s.sessionInfo)
-	}
+	s.registerDesktop()
+	s.registerScreen()
+	s.registerInput()
 }
 
-// sessionInfo describes the desktop session; without one the reply has no
-// fields.
-func (s *Server) sessionInfo(context.Context, proto.Message) (proto.Message, error) {
+// desktopSessionInfo describes the desktop session that Options.Session
+// returns; without one the reply has no fields.
+func (s *Server) desktopSessionInfo() (proto.Message, error) {
+	if !s.opt.AllowExec {
+		return nil, fmt.Errorf("%s", errExecDisabled)
+	}
 	sess, ok := s.session()
 	if !ok {
 		return proto.Message{}, nil

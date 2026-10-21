@@ -28,10 +28,17 @@ import (
 	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/agent/config"
+	"github.com/YangTaeyoung/deskhand/internal/agent/cursor"
+	"github.com/YangTaeyoung/deskhand/internal/agent/display"
+	"github.com/YangTaeyoung/deskhand/internal/agent/encode"
+	"github.com/YangTaeyoung/deskhand/internal/agent/input"
 	"github.com/YangTaeyoung/deskhand/internal/agent/logfile"
 	"github.com/YangTaeyoung/deskhand/internal/agent/quicserve"
+	"github.com/YangTaeyoung/deskhand/internal/agent/screen"
 	"github.com/YangTaeyoung/deskhand/internal/agent/server"
 	"github.com/YangTaeyoung/deskhand/internal/transport"
+	"github.com/YangTaeyoung/deskhand/internal/wire"
+	"github.com/quic-go/quic-go"
 )
 
 // exitKeyExists is the exit code of init when a key already exists and --force
@@ -215,6 +222,7 @@ func cmdRun(args []string, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, "설정을 읽지 못했습니다", err)
 	}
+	display.EnsureDPIAware()
 	certPath, keyPath := config.KeyPaths(*cfgPath)
 	id, err := transport.LoadIdentity(certPath, keyPath)
 	if err != nil {
@@ -233,9 +241,12 @@ func cmdRun(args []string, stderr io.Writer) int {
 	defer stop()
 	logger.Printf("deskhand-agent %s listening on udp %s for %d controller(s), name %q, key %s", version, cfg.Listen,
 		len(cfg.ControllerFingerprints), cfg.Name, id.Fingerprint)
-	streams := quicserve.TransferStreams(s)
-	maps.Copy(streams, quicserve.PTYStreams(s))
-	maps.Copy(streams, quicserve.TunnelStreams(s))
+	go func() {
+		if err := encode.Probe(); err != nil && !errors.Is(err, encode.ErrUnsupported) {
+			logger.Printf("screen: %v", err)
+		}
+	}()
+	streams := agentStreams(logger, s)
 	pause := serveFirstPause
 	for {
 		err := quicserve.Run(ctx, cfg, id, s, streams)
@@ -263,4 +274,40 @@ func writeInstallLog(dataDir, msg string) {
 	}
 	defer f.Close()
 	fmt.Fprintf(f, "%s %s\n", time.Now().Format(time.RFC3339), msg)
+}
+
+// agentStreams are the handlers of every stream after the rpc stream
+// (docs/protocol.md §2): video, input and cursor of streamHandlers, put and
+// get, pty and tunnel of s.
+func agentStreams(logger *log.Logger, s *server.Server) quicserve.StreamHandlers {
+	streams := streamHandlers(logger, s.Input())
+	maps.Copy(streams, quicserve.TransferStreams(s))
+	maps.Copy(streams, quicserve.PTYStreams(s))
+	maps.Copy(streams, quicserve.TunnelStreams(s))
+	return streams
+}
+
+// streamHandlers are the handlers of the video, input and cursor streams;
+// input streams go to inj, and video streams read the times of its
+// inputs.
+func streamHandlers(logger *log.Logger, inj *input.Injector) quicserve.StreamHandlers {
+	return quicserve.StreamHandlers{
+		"video": func(ctx context.Context, st *quic.Stream, h wire.StreamHeader) {
+			screen.ServeVideo(ctx, quicStream{st}, h, screen.Options{Logger: logger, LastInput: inj.LastInjected})
+		},
+		"input": func(ctx context.Context, st *quic.Stream, h wire.StreamHeader) {
+			inj.ServeStream(ctx, quicStream{st}, h)
+		},
+		"cursor": func(ctx context.Context, st *quic.Stream, h wire.StreamHeader) {
+			cursor.Serve(ctx, quicStream{st}, h, cursor.Options{Logger: logger})
+		},
+	}
+}
+
+// quicStream is a stream of a handler; Close ends both of its directions.
+type quicStream struct{ *quic.Stream }
+
+func (s quicStream) Close() error {
+	s.CancelRead(0)
+	return s.Stream.Close()
 }

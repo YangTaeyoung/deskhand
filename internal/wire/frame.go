@@ -29,6 +29,7 @@ const (
 	KindNotice        byte = 0x30
 	KindClientControl byte = 0x40
 	KindClientInput   byte = 0x41
+	KindInputAck      byte = 0x42
 )
 
 var (

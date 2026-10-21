@@ -3,12 +3,16 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/YangTaeyoung/deskhand/internal/agent/config"
+	"github.com/YangTaeyoung/deskhand/internal/agent/input"
+	"github.com/YangTaeyoung/deskhand/internal/agent/server"
 	"github.com/YangTaeyoung/deskhand/internal/transport"
 )
 
@@ -105,5 +109,30 @@ func TestVersionPrintsJSON(t *testing.T) {
 func TestAnUnknownCommandShowsTheUsage(t *testing.T) {
 	if code, _, stderr := runCLI(t, "frobnicate"); code != 2 || !strings.Contains(stderr, "deskhand-agent init") {
 		t.Fatalf("exited %d: %q", code, stderr)
+	}
+}
+
+func TestTheAgentServesVideoInputAndCursorStreams(t *testing.T) {
+	handlers := streamHandlers(log.New(io.Discard, "", 0), input.New(input.Options{Logger: log.New(io.Discard, "", 0)}))
+	for _, s := range []string{"video", "input", "cursor"} {
+		if handlers[s] == nil {
+			t.Fatalf("stream handlers %v have no %s", handlers, s)
+		}
+	}
+}
+
+func TestTheAgentServesEveryStreamAfterRPC(t *testing.T) {
+	lg := log.New(io.Discard, "", 0)
+	s := server.New(server.Options{Logger: lg, HomeDir: t.TempDir()})
+	defer s.Close()
+	handlers := agentStreams(lg, s)
+	want := []string{"video", "cursor", "input", "pty", "tunnel", "put", "get"}
+	for _, k := range want {
+		if handlers[k] == nil {
+			t.Fatalf("agent streams %v have no %s", handlers, k)
+		}
+	}
+	if len(handlers) != len(want) {
+		t.Fatalf("agent streams %v, want exactly %v", handlers, want)
 	}
 }

@@ -1,5 +1,6 @@
-// Package session finds the desktop session of a Linux desktop through
-// loginctl and describes the user and environment of that session.
+// Package session describes desktop sessions: on Windows the session the
+// agent runs in (Current), on Linux the desktop session that loginctl
+// reports, with the user and environment of that session.
 package session
 
 import (
@@ -8,8 +9,8 @@ import (
 	"strings"
 )
 
-// Info is one logind session as `loginctl show-session` prints it.
-type Info struct {
+// Logind is one logind session as `loginctl show-session` prints it.
+type Logind struct {
 	ID      string
 	User    string
 	UID     uint32
@@ -106,8 +107,8 @@ func ParseList(out string) []string {
 // ParseShow returns the sessions of `loginctl show-session <id>...`, whose
 // blocks of key=value lines are separated by empty lines. A block without Id
 // is left out.
-func ParseShow(out string) []Info {
-	var sessions []Info
+func ParseShow(out string) []Logind {
+	var sessions []Logind
 	cur := map[string]string{}
 	flush := func() {
 		if cur["Id"] != "" {
@@ -134,10 +135,10 @@ func ParseShow(out string) []Info {
 	return sessions
 }
 
-func infoFrom(m map[string]string) Info {
+func infoFrom(m map[string]string) Logind {
 	uid, _ := strconv.ParseUint(m["User"], 10, 32)
 	started, _ := strconv.ParseUint(m["TimestampMonotonic"], 10, 64)
-	return Info{
+	return Logind{
 		ID: m["Id"], User: m["Name"], UID: uint32(uid), Seat: m["Seat"], Active: m["Active"] == "yes",
 		Type: m["Type"], Class: m["Class"], State: m["State"], Display: m["Display"],
 		Locked: m["LockedHint"] == "yes", Started: started,
@@ -151,8 +152,8 @@ func graphical(t string) bool { return t == "wayland" || t == "x11" || t == "mir
 // session of seat0, else the only graphical session, else the active session
 // of seat0, else the user session that began first. Only sessions of class
 // user that are not closing are chosen.
-func Pick(sessions []Info) (Info, bool) {
-	var users []Info
+func Pick(sessions []Logind) (Logind, bool) {
+	var users []Logind
 	for _, s := range sessions {
 		if strings.HasPrefix(s.Class, "user") && s.State != "closing" {
 			users = append(users, s)
@@ -163,7 +164,7 @@ func Pick(sessions []Info) (Info, bool) {
 			return s, true
 		}
 	}
-	var desktops []Info
+	var desktops []Logind
 	for _, s := range users {
 		if graphical(s.Type) {
 			desktops = append(desktops, s)
@@ -178,7 +179,7 @@ func Pick(sessions []Info) (Info, bool) {
 		}
 	}
 	if len(users) == 0 {
-		return Info{}, false
+		return Logind{}, false
 	}
 	sort.SliceStable(users, func(i, j int) bool { return users[i].Started < users[j].Started })
 	return users[0], true
@@ -194,7 +195,7 @@ const DefaultPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bi
 // environment. WAYLAND_DISPLAY names the wayland-0 socket, or the first
 // other wayland-<n> socket, of a wayland session; DISPLAY is the session's
 // display.
-func Environment(s Info, a Account, runtimeEntries []string, path string, locale []string) []string {
+func Environment(s Logind, a Account, runtimeEntries []string, path string, locale []string) []string {
 	if path == "" {
 		path = DefaultPath
 	}
@@ -286,7 +287,7 @@ func waylandSocket(entries []string) string {
 }
 
 // New combines a session and its account into a Session.
-func New(s Info, a Account, env []string) Session {
+func New(s Logind, a Account, env []string) Session {
 	return Session{ID: s.ID, User: a.Name, UID: a.UID, GID: a.GID, Groups: a.Groups, Home: a.Home,
 		Type: s.Type, Locked: s.Locked, Env: env}
 }

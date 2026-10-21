@@ -86,6 +86,29 @@ func TestInputEventRoundTrip(t *testing.T) {
 	}
 }
 
+func TestInputEventDecodesTheProtocolKeys(t *testing.T) {
+	for in, want := range map[string]InputEvent{
+		`{"seq":1,"gen":2,"k":"key","sc":30,"ext":true,"down":true}`: {Seq: 1, Gen: 2, K: "key", SC: 30, Ext: true, Down: true},
+		`{"seq":2,"gen":2,"k":"key","vk":21,"down":false}`:           {Seq: 2, Gen: 2, K: "key", VK: 21},
+		`{"seq":3,"gen":0,"k":"move","x":-5,"y":6,"display":1}`:      {Seq: 3, K: "move", X: -5, Y: 6, Display: 1},
+		`{"seq":4,"k":"wheel","dx":30,"dy":-120}`:                    {Seq: 4, K: "wheel", DX: 30, DY: -120},
+		`{"seq":5,"k":"text","text":"가\n","method":"paste"}`:         {Seq: 5, K: "text", Text: "가\n", Method: "paste"},
+		`{"seq":6,"k":"button","b":"x2","down":true,"extra":1}`:      {Seq: 6, K: "button", B: "x2", Down: true},
+	} {
+		var got InputEvent
+		if err := json.Unmarshal([]byte(in), &got); err != nil {
+			t.Fatalf("%s: %v", in, err)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: got %+v want %+v", in, got, want)
+		}
+	}
+	var ev InputEvent
+	if err := json.Unmarshal([]byte(`{"seq":"one","k":"key"}`), &ev); err == nil {
+		t.Fatal("a seq that is a string decoded")
+	}
+}
+
 func TestInputAckJSON(t *testing.T) {
 	b, _ := json.Marshal(InputAck{Seq: 5, OK: true, DoneMonoUS: 99})
 	if want := `{"seq":5,"ok":true,"done_mono_us":99}`; string(b) != want {

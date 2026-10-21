@@ -171,6 +171,7 @@ func (s *processScratch) details(pid int) (path, cmd string) {
 }
 
 var (
+	wtsapi32                     = windows.NewLazySystemDLL("wtsapi32.dll")
 	procWTSEnumerateProcessesExW = wtsapi32.NewProc("WTSEnumerateProcessesExW")
 	procWTSFreeMemoryExW         = wtsapi32.NewProc("WTSFreeMemoryExW")
 )

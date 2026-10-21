@@ -33,9 +33,6 @@ const (
 	capUnsupported = "unsupported"
 )
 
-// notImplemented is the reason of the capabilities this agent does not have.
-const notImplemented = "not implemented in this agent version"
-
 // errNoClipboard is the reason of an unavailable clipboard.
 const errNoClipboard = "the clipboard of the desktop session cannot be reached; sign in to the PC's desktop"
 
@@ -54,17 +51,17 @@ func newBootID() string {
 // errNoShell is the reason of a pty capability without a shell to start.
 const errNoShell = "no shell this agent can start is installed on this PC"
 
-// checkCaps returns the state of every capability key. exec, files and
-// processes follow Options.AllowExec, pty also the installed shells
-// (ptyShells), tunnel follows AllowExec, diag also its source (diagCap),
-// uia the UI helper and clipboard the clipboard's availability; the other
-// keys are unsupported.
+// checkCaps returns the state of every capability key. screen follows
+// Options.ScreenState (screenCap), input the agent's session (inputCap),
+// exec, files, processes and tunnel Options.AllowExec, pty also the
+// installed shells (ptyShells), diag also its source (diagCap), uia the UI
+// helper and clipboard the clipboard's availability.
 func (s *Server) checkCaps() capStates {
 	ready := capState{State: capReady}
 	caps := capStates{"diag": s.diagCap()}
-	for _, k := range []string{"screen", "input"} {
-		caps[k] = capState{State: capUnsupported, Reason: notImplemented}
-	}
+	info, err := s.opt.SessionInfo()
+	caps["screen"] = screenCap(s.opt.ScreenState())
+	caps["input"] = inputCap(s.input.Supported(), info, err)
 	for _, k := range []string{"exec", "files", "processes", "tunnel"} {
 		if s.opt.AllowExec {
 			caps[k] = ready
@@ -109,5 +106,5 @@ func (s *Server) version() string {
 func (s *Server) helloMessage(caps capStates) proto.Message {
 	host, _ := os.Hostname()
 	return proto.Message{"t": "hello", "v": proto.Version, "agent": s.version(), "os": runtime.GOOS, "arch": runtime.GOARCH,
-		"host": host, "caps": caps, "session": s.helloSession(), "displays": []any{}, "boot_id": bootID}
+		"host": host, "caps": caps, "session": s.helloSession(), "displays": s.helloDisplays(), "boot_id": bootID}
 }

@@ -23,9 +23,9 @@
 | `s` | 연 쪽 | 헤더 필드 | 본문 |
 |---|---|---|---|
 | `rpc` | 데몬 | — | NDJSON(§3) |
-| `video` | 데몬 | `display`(인덱스, 기본 0), `max_fps`(기본 60), `bitrate`(bps), `max_width`(0=원본), `codec`(`h264`) | 프레임(§4) |
-| `cursor` | 데몬 | `display` | 프레임(§5) |
-| `input` | 데몬 | `gen`(writer generation) | 프레임(§6) |
+| `video` | 데몬 | `display`(인덱스, 기본 0), `max_fps`(1–240, 0·생략은 60), `bitrate`(bps, 100000–200000000, 0·생략은 출력 폭 1920 이하 6 Mbps·2560 이하 12 Mbps·그 위 20 Mbps), `max_width`(64–16384, 0·생략은 원본), `codec`(`h264`, 생략 가능) | 프레임(§4) |
+| `cursor` | 데몬 | `display`(인덱스, 기본 0) | 프레임(§5) |
+| `input` | 데몬 | `gen`(writer generation, 기본 0) | 프레임(§6) |
 | `pty` | 데몬 | `job`(재부착) 또는 `new`: {`shell`, `cwd`, `cols`, `rows`, `env`, `rid`} | 수락 줄 `{"ok":true,"job":…,"pid":…}` 뒤 프레임(§7) |
 | `tunnel` | 데몬 | `port`(1–65535), `host`(선택: `127.0.0.1` 또는 `::1` 리터럴만, 없으면 `127.0.0.1` 다음 `::1`) | 수락 줄 `{"ok":true}` 뒤 양방향 원시 바이트 |
 | `put` | 데몬 | `transfer_id`, `path`(최종 경로), `offset`(임시 파일 크기), `size`(전체), `mtime`(RFC 3339), `roots` | 수락 줄 `{"ok":true,"part_size":…}` 뒤 데몬이 원시 바이트를 쓰고 FIN, 에이전트가 결과 줄 `{"ok":true,"received":n,"part_size":…}`(실패면 `ok:false`·`code`·`error`·`retryable`에 같은 두 필드)을 쓰고 FIN |
@@ -35,6 +35,9 @@
 
 에이전트가 헤더를 거절하면 `{"ok":false,"code":"…","error":"…"}` 한 줄(`put`·`get`은 `retryable`도)을 쓰고 스트림을 닫는다. 처리기가 없는 `s`는 `CAPABILITY_UNSUPPORTED`다. 수락하면 `{"ok":true, …}` 한 줄을 먼저 쓴다(`video`는 `info` 프레임으로 대신한다). `rpc` 스트림은 수락 줄 없이 바로 `hello`로 시작한다.
 
+- `input`: 수락 줄은 `{"ok":true,"gen":<현재 writer 세대>}`. 헤더 `gen`이 현재 세대보다 작으면 `CONTROL_PREEMPTED`, 크면 그 값으로 세대를 올린다(§3.1 writer 세대). Windows가 아닌 에이전트는 `CAPABILITY_UNSUPPORTED`.
+- `cursor`: 수락 줄은 `{"ok":true}`. 없는 `display`는 `NOT_FOUND`, 디스플레이 목록을 읽지 못하면(Session 0 등) `DISPLAY_UNAVAILABLE`, Windows가 아닌 에이전트는 `CAPABILITY_UNSUPPORTED`.
+
 ## 3. `rpc` 스트림
 
 Alcove 에이전트 프로토콜 2층과 같은 NDJSON(`t`로 구분). 한 줄 최대 길이는 데몬→에이전트 1 MiB, 에이전트→데몬 8 MiB.
@@ -43,13 +46,13 @@ Alcove 에이전트 프로토콜 2층과 같은 NDJSON(`t`로 구분). 한 줄 �
 데몬 → 에이전트  {"t":"req","id":7,"op":"exec.run","rid":"r-01J…","argv":["hostname"]}
 에이전트 → 데몬  {"t":"res","id":7,"ok":true,"code":0,"stdout":"…"}
 에이전트 → 데몬  {"t":"res","id":8,"ok":false,"code":"STALE_TARGET","error":"element e12 no longer exists; call ui.tree again","retryable":false}
-에이전트 → 데몬  {"t":"ev","name":"session.changed","locked":true}
+에이전트 → 데몬  {"t":"ev","name":"session.changed","session_id":1,"user":"PC\\me","connect_state":"active","protocol":"console","locked":true,"input_desktop":"Winlogon",…}
 ```
 
 - 데몬은 헤더 `{"s":"rpc"}` 말고는 아무것도 쓰지 않고 기다린다. 헤더를 받으면 에이전트가 `{"t":"hello","v":1,"agent":"<버전>","os":"windows","arch":"amd64","host":"<컴퓨터 이름>","caps":{…},"session":{…},"displays":[…],"boot_id":"…"}`를 보낸다. 데몬은 `{"t":"welcome","v":1,"controller":"<이름>"}`으로 답하고 그 뒤에 요청을 보낸다.
 - 에이전트는 welcome 전에는 요청을 처리하지 않고 이벤트도 보내지 않는다. 첫 메시지가 welcome이 아니거나 10초 안에 오지 않으면 스트림을 닫는다.
 - hello·welcome 뒤에는 `req`(데몬→에이전트)와 `res`·`ev`(에이전트→데몬)만 흐른다. 에이전트는 그 밖의 `t`를 받으면 실행하지 않고 `{"t":"res","id":<그 메시지의 id 또는 null>,"ok":false,"code":"INVALID_ARGUMENT","error":"…","retryable":false}` 한 줄로 답한다. 두 번째 welcome은 무시한다.
-- `session`: Windows는 `session_id`, `user`(에이전트 계정), `connect_state`(`active`/`connected`/`disconnected`/`other`) 중 읽은 것. `displays`는 화면 기능 전까지 `[]`. `boot_id`는 에이전트 프로세스가 시작할 때마다 바뀐다.
+- `session`: Windows는 `session.info` 결과와 같은 필드(§3.1), 그 밖의 OS는 데스크톱 세션의 `session_id`·`user` 중 읽은 것. `displays`는 `display.list`의 `displays`이고, 읽을 수 없으면(Session 0 등) `[]`. `boot_id`는 에이전트 프로세스가 시작할 때마다 바뀐다.
 - `rid`(요청 ID): 데몬은 비멱등 op에 항상 붙인다. 기록 대상 op는 `exec.run`, `exec.start`, `exec.write`, `exec.kill`, `proc.kill`, `fs.write`, `fs.rename`, `fs.mkdir`, `fs.delete`, `fs.copy`, `fs.trash`, `xfer.commit`, `xfer.abort`, `app.launch`, `debug.electron.launch`, `clipboard.set`, `win.action`, `ui.act`이고(데몬과 에이전트가 함께 쓰는 목록 `internal/wire.JournaledOps`), `rid`가 없는 요청은 기록 없이 실행한다. 형식은 영문자·숫자·`-`·`_` 1–128자의 문자열(Windows 장치 이름 제외)이다. 요청에 `rid`가 있으면 op와 상관없이 형식을 검사하고, 어기면(문자열이 아님, 빈 문자열, 허용하지 않는 문자) 실행하지 않고 `INVALID_ARGUMENT`로 답한다.
 - 에이전트는 실행 전에 `DataDir/journal/<rid>.json`에 실행 중 기록을 쓰고, 끝나면 응답(`t`, `id` 제외)으로 바꾼다. 끝난 기록은 24시간 보존한다. 같은 `rid`가 다시 오면 실행하지 않고 저장한 응답을 `"replayed":true`와 함께 돌려준다(저장한 응답이 실패면 그 실패 그대로). 실행 중이면 `{"ok":false,"code":"IN_PROGRESS","retryable":true}`. 다른 op에 쓴 `rid`면 `INVALID_ARGUMENT`.
 - 에이전트는 한 연결에서 요청을 256개까지 함께 실행한다. 그보다 많이 오면 넘친 요청은 실행하지도 기록하지도 않고 `{"t":"res","id":<그 요청의 id>,"ok":false,"code":"IN_PROGRESS","error":"…","retryable":true}`로 답하므로, 같은 요청을 잠시 뒤 다시 보내면 된다.
@@ -80,12 +83,12 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 |---|---|---|
 | `req.status` | `rid` | `state`(`done`/`running`/`unknown`), 완료 시 원래 결과 |
 | `time.sync` | — | `mono_us`(에이전트 단조 시계 µs) |
-| `session.info` | — | `session_id`, `user`, `sid`, `connect_state`(`active`/`connected`/`disconnected`), `protocol`(`console`/`rdp`), `locked`, `input_desktop`(`Default`/`Winlogon`/`unknown`), `integrity` |
+| `session.info` | — | `session_id`, `user`, `sid`, `connect_state`(`active`/`connected`/`disconnected`), `protocol`(`console`/`rdp`), `locked`(잠금 상태를 읽지 못하면 생략), `input_desktop`(`Default`/`Winlogon`/`unknown`), `integrity` |
 | `display.list` | — | `displays`: [{`index`, `name`, `adapter`, `x`, `y`, `width`, `height`, `dpi`, `scale`, `primary`, `refresh_hz`}] |
 | `screen.capture` | `display`, `format`(`png`/`jpeg`), `max_width`, `quality`, `window`(선택: 창 영역만) | `capture_id`, `data`(base64), `width`, `height`, `scale`(원본 대비), `origin`({x,y} 가상 데스크톱 좌표), `dpi`, `mono_us`, `method`(`dd`/`gdi`) |
-| `input.state` | — | `gen`, `pressed`(눌린 키·버튼) |
-| `input.release_all` | — | `released` |
-| `control.set_writer` | `gen` | `gen` — 이 값보다 작은 세대의 UI 계열 요청은 `CONTROL_PREEMPTED` |
+| `input.state` | — | `gen`, `pressed`(에이전트가 누른 채인 키·버튼: `{"k":"button","b":…}`, `{"k":"key","sc":…,"ext":true}`(E0 키만 `ext`), `{"k":"key","vk":…}` — 버튼, 스캔코드, 가상 키 순) |
+| `input.release_all` | — | `released`(해제한 키·버튼, `pressed`와 같은 형식) |
+| `control.set_writer` | `gen`(0 이상 정수) | `gen`(처리 뒤 현재 세대) — 이 값보다 작은 세대의 UI 계열 요청은 `CONTROL_PREEMPTED` |
 | `fs.copy` | `from`, `to`(복사본의 전체 경로, 그 폴더는 있어야 한다), `on_conflict`(`fail` 기본/`replace`/`skip`/`rename`), `recursive`(폴더일 때), `roots` | `path`(복사본의 실제 경로), `copied`(복사한 파일 수), `outcome`(`written`/`skipped`/`renamed`) |
 | `fs.trash` | `path`, `roots` | `trashed`(없는 경로면 false) |
 | `fs.hash` | `path`, `offset`, `length`(0=끝까지), `roots` | `sha256`, `offset`, `length`(읽은 바이트 수), `size`(파일 크기) |
@@ -102,6 +105,15 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 | `diag.events` | `log`(`Application`/`System`, 기본 `System`), `since?`(RFC 3339, 기본 24시간 전), `until?`, `levels?`([`critical`/`error`/`warning`/`information`/`verbose`], 기본 전부), `provider?`(정확히 일치), `max?`(기본 200, 최대 1000) | `events`: [{`record_id`, `time`, `level`, `provider`, `event_id`, `message`}](최신 먼저), `truncated`(`max`에서 잘렸으면 true) |
 | `diag.crashes` | `since?`(기본 30일 전) | `dumps`: [{`path`, `app`, `time`, `size_bytes`, `kind`(`minidump`/`full`/`report`)}](최신 먼저). 파일은 `get` 스트림으로 받는다 |
 | `agent.update` | `path`(이미 put한 새 실행 파일), `sha256` | 자기 교체 후 재시작 예약 |
+
+- `session.info`: `user`(`DOMAIN\이름`)·`sid`·`integrity`(`untrusted`/`low`/`medium`/`high`/`system`/`protected`)는 에이전트 프로세스 토큰 기준이다. `connect_state`는 WTS 상태를 접는다(Active·Shadow → `active`, Connected·ConnectQuery·Init → `connected`, 나머지 → `disconnected`). `protocol`은 세션의 클라이언트 프로토콜이 콘솔이 아니면 `rdp`. `locked`는 WTS 세션 플래그가 잠금이면 `true`, 잠금 해제면 `false`이고, 플래그를 읽지 못하거나 알 수 없음이면 필드를 넣지 않는다(hello의 `session`, `session.changed`도 같다). `input_desktop`은 에이전트가 입력 데스크톱을 열 권한이 없으면 `Winlogon`, 입력 데스크톱이 없는 세션(Session 0)이면 `unknown`. Linux 에이전트는 Alcove의 데스크톱 세션 필드(`session`, `user`, `uid`, `home`, `type`, `locked`, exec 허용 시)를 돌려주고, 그 밖의 OS는 `CAPABILITY_UNSUPPORTED`.
+- `display.list`: 크기·위치는 물리 픽셀(에이전트는 Per-Monitor DPI aware v2), `scale`은 `dpi`/96, `index`는 주 디스플레이가 0이고 나머지는 왼쪽→오른쪽, 위→아래 순. Session 0에서는 `DISPLAY_UNAVAILABLE`, Windows가 아닌 에이전트는 `CAPABILITY_UNSUPPORTED`.
+- `screen.capture`: 기본값은 `display` 0, `format` `png`, `max_width` 1568(0이면 디스플레이 폭 그대로, 더 좁을 때만 면적 평균으로 축소, 높이는 종횡비 유지·반올림), `quality` 80(`jpeg`에만 적용, 1–100). `capture_id`는 `c-` + 16진수 12자리, `scale`은 결과 폭 ÷ 디스플레이 폭, `origin`은 디스플레이의 가상 데스크톱 좌표, `mono_us`는 이미지를 얻은 시각(`time.sync`와 같은 시계). Desktop Duplication이 500 ms 안에 이미지를 주지 못하거나 거부되면 GDI로 찍고 `method`가 `gdi`. `window`는 아직 지원하지 않는다(`CAPABILITY_UNSUPPORTED`, 디스플레이를 찍고 `win.list`의 창 영역으로 자른다). 오류: 캡처할 수 없으면 `DISPLAY_UNAVAILABLE`(PC가 잠겼으면 `SESSION_LOCKED`)이고 `error`에 고정 사유(`session0`, `rdp_output_suppressed`, `secure_desktop`, `session_locked`, `session_disconnected`, `access_lost`, `no_output`)를 괄호로 넣는다(`access_lost`만 `retryable`). 없는 디스플레이는 `NOT_FOUND`, 이미지가 응답 한 줄(8 MiB)에 넘치면 `INVALID_ARGUMENT`(더 작은 `max_width`나 `jpeg`로 다시 요청).
+- caps `screen`: 주 디스플레이의 1픽셀을 GDI로 복사할 수 있고 H.264 인코더를 만들 수 있으면 `ready`(캡처 소스가 열려 있으면 그 소스의 상태), 사유가 `secure_desktop`·`session_locked`·`rdp_output_suppressed`면 `needs_user`, 그 밖의 사유면 `unavailable`. `reason`은 위 고정 사유이고, 인코더를 만들 수 없으면(하드웨어·소프트웨어 H.264 인코더 MFT 모두 실패) `unavailable`·`no_encoder`. 캡처 판정은 5초 동안 재사용하고, 인코더 판정은 에이전트가 시작할 때 첫 디스플레이의 장치에 640×360 인코더를 한 번 만들어 보고(디스플레이가 없는 세션에서는 H.264 인코더 MFT가 등록돼 있는지만 본다) 결과를 재사용한다(성공은 프로세스 끝까지, 실패는 1분).
+
+- writer 세대: 에이전트 프로세스마다 0에서 시작하고 올라가기만 한다. `control.set_writer{gen}`이 현재보다 크면 그 값이 되고, 에이전트가 누른 채인 키·버튼을 모두 해제한 뒤 `input.preempted`{`gen`, `previous`, `released`}를 보낸다. 같거나 작으면 아무것도 바뀌지 않고 결과 `gen`은 현재 값이다. UI 계열 op(`ui.act`, `win.action`, `clipboard.set`, `app.launch`)는 요청의 `gen`(없으면 0, 0 이상 정수가 아니면 `INVALID_ARGUMENT`)이 현재보다 작으면 실행하지 않고 `CONTROL_PREEMPTED`(retryable false)로 답하고, 크면 같은 방식으로 세대를 올린 뒤 실행한다. 입력 이벤트(§6)와 `input` 헤더의 `gen`도 같다. 그래서 `gen` 0은 처음 세대가 올라가기 전까지만 통과한다. `rid`가 있는 UI 계열 op의 `CONTROL_PREEMPTED`도 저널에 남아 같은 `rid`에는 그 거절이 되풀이된다.
+- `input.release_all`이 해제하지 못하면(잠긴 PC 등) §6 확인의 코드로 실패하고, 남은 키·버튼은 다음 입력을 주입하기 전에 다시 해제한다.
+- caps `input`: 에이전트 세션의 입력 데스크톱이 입력을 받으면 `ready`, PC가 잠겼으면 `needs_user`·`session_locked`, 보안 데스크톱(UAC 등)이면 `needs_user`·`secure_desktop`, Session 0이면 `unavailable`·`session0`, 연결이 끊긴 세션이면 `unavailable`·`session_disconnected`, 세션을 읽지 못하면 `unavailable`(사유는 읽기 오류), Windows가 아니면 `unsupported`.
 
 진단 op(`diag.*`)의 규칙:
 
@@ -135,6 +147,10 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 
 이벤트(`ev`): Alcove의 `job.exited`, `process.exited`, 창 이벤트, `events.dropped`에 더해 `clipboard.changed`(`text`: 에이전트가 쓰지 않은 PC 클립보드 변경, 700000바이트까지), `session.changed`, `display.changed`, `caps.changed`, `input.preempted`, `pty.exited`(`job`, `code`: pty의 셸이 끝남).
 
+- `session.changed`: hello의 `session`과 같은 필드(Windows는 `session.info` 결과의 필드)를 이벤트에 바로 담는다 — `{"t":"ev","name":"session.changed","session_id":…,"user":…,"sid":…,"connect_state":…,"protocol":…,"locked":…,"input_desktop":…,"integrity":…}`(빈 `sid`·`integrity`와 알 수 없는 `locked`는 빠진다).
+- `display.changed`: `{"t":"ev","name":"display.changed","displays":[…]}`, `displays`는 `display.list`의 `displays`.
+- 둘 다 에이전트가 `caps`와 같이 5초마다 읽어, welcome이 온 연결마다 그 연결에 마지막으로 보낸 값(처음은 그 연결의 hello가 담은 값)과 다를 때만 보낸다. 그래서 hello 뒤 첫 확인은 hello 이후 바뀐 것만 보낸다. 세션이나 디스플레이 목록을 읽지 못한 확인(Session 0의 디스플레이 등)에서는 그 이벤트를 보내지 않는다.
+
 ## 4. `video` 프레임
 
 모든 바이너리 스트림(`video`, `cursor`, `input`, `pty`)의 모든 프레임은 양방향 모두 `u32 BE 길이 L` + `L바이트`이고, 본문 첫 바이트가 종류다(`internal/wire.WriteFrame`).
@@ -145,10 +161,20 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 |---|---|
 | `0x01` AU | `u8 flags`(bit0 키프레임, bit1 SPS/PPS 포함), `u32 width`, `u32 height`, `u64 seq`, `u64 capture_mono_us`, `u64 encode_done_mono_us`, 이후 Annex-B 바이트 |
 | `0x02` info | JSON: `codec`, `width`, `height`, `src_width`, `src_height`, `fps`, `bitrate`, `encoder`(MFT 이름), `hardware`(bool), `capture`(`dd`/`gdi`), `display` |
-| `0x03` stats | JSON: `fps`, `bitrate`, `dropped`, `encode_ms_p50`, `encode_ms_p95`, `capture_ms_p50` (1초마다) |
+| `0x03` stats | JSON: `fps`, `bitrate`, `dropped`, `encoder_busy`, `encode_ms_p50`, `encode_ms_p95`, `capture_ms_p50` (1초마다) |
 | `0x04` paused | JSON: `reason` — `no_viewer` 또는 캡처 사유 고정 문자열 `session0`/`rdp_output_suppressed`/`secure_desktop`/`session_locked`/`session_disconnected`/`access_lost`/`no_output`/`no_encoder` |
 
 데몬 → 에이전트(같은 스트림 반대 방향): 종류 `0x40` 프레임 + JSON — `{"op":"keyframe"}`, `{"op":"bitrate","bps":…}`, `{"op":"config","max_fps":…,"max_width":…}`, `{"op":"pause"}`, `{"op":"resume"}`.
+
+- 수락: 헤더를 받아들이면 첫 프레임이 `info`다. 디스플레이가 지금 캡처되지 않으면 첫 프레임이 `paused`이고, 캡처가 되면 `info`가 이어진다. 거절(줄 하나, §2): `codec`이 `h264`가 아니거나 이 OS가 캡처·인코딩을 못 하면 `CAPABILITY_UNSUPPORTED`, 없는 `display`는 `NOT_FOUND`, 범위 밖 값은 `INVALID_ARGUMENT`.
+- `info`: 이후 AU의 인코딩. 인코더를 새로 만들 때(출력 크기·`max_fps` 변경, 원본 크기 변경, 인코더 장애), 캡처 방식(`capture`)이 바뀔 때, 그리고 `paused` 뒤에 영상이 다시 흐를 때 보내고, 그 다음 AU는 SPS/PPS를 가진 IDR이다. `width`·`height`는 짝수이고 원본의 종횡비를 따른다(`max_width`보다 좁으면 원본 크기). 커서는 영상에 그리지 않는다(§5).
+- 캡처 방식: Desktop Duplication(`dd`)으로 찍고, 복제가 거부되거나 지원되지 않거나 디스플레이가 회전돼 있으면 GDI(`gdi`)로 찍는다. 같은 디스플레이를 이 에이전트의 다른 `video` 스트림이 아직 복제하고 있으면(`DuplicateOutput`의 `E_INVALIDARG`) 0.1초 간격으로 2초 동안 다시 시도한 뒤 GDI로 연다. `E_INVALIDARG`·`E_ACCESSDENIED`·`DXGI_ERROR_NOT_CURRENTLY_AVAILABLE`로 GDI로 연 스트림은 2초마다 다시 복제해 보고, 되면 Desktop Duplication으로 바꿔 `capture`가 `dd`인 `info`와 IDR을 보낸다.
+- 인코더: 하드웨어 MFT를 먼저 만들고, 만들 수 없으면 소프트웨어 MFT를 만든다. 하드웨어 인코더가 AU를 하나도 내지 못한 채 장애(인코딩 오류, 아래 `stats`의 3초 정체)로 닫히기를 연달아 두 번 하면, 그 스트림은 끝날 때까지 소프트웨어 MFT로만 인코더를 만든다. AU를 낸 하드웨어 인코더가 닫히면 그 횟수는 0으로 돌아가고, 장애가 아닌 이유(`config`, 원본 크기 변경 등)로 닫힌 인코더는 세지 않는다.
+- AU: `seq`는 스트림 안에서 1부터 1씩 는다. flags는 Annex-B의 NAL 종류로 정한다(5가 있으면 키프레임, 7과 8이 모두 있으면 SPS/PPS). 모든 IDR에 SPS/PPS가 들어 있다. 주기 IDR은 없다(하드웨어 MFT는 GOP 0, 소프트웨어 MFT는 GOP 2^32−1; 키프레임은 첫 프레임·`keyframe` 요청·`info` 뒤에만). `capture_mono_us`는 이미지를 얻은 시각(`time.sync`와 같은 시계), 같은 이미지를 다시 인코딩한 AU는 그 인코딩을 시작한 시각이다.
+- 속도: `max_fps`가 상한이다(어느 1초에도 `max_fps`+1개 이하). 화면이 바뀌지 않으면 AU를 보내지 않고, 10초 동안 AU가 없으면 마지막 이미지를 키프레임이 아닌 AU로 한 번 다시 보낸다. 데몬의 주기 키프레임 요청은 데몬 몫이다. 예외로 에이전트가 입력을 주입한 뒤(어느 `input` 스트림의 이벤트든 `input.release_all`이든, 포인터 이동 포함) 750 ms 동안은 화면이 바뀌지 않아도, 인코더에 남은 프레임이 없고 앞 프레임을 넣은 지 1/min(60, `max_fps`)초가 지났으면 마지막 이미지를 다시 인코딩해 키프레임이 아닌 AU로 보낸다(GPU가 쉬는 클록으로 내려가지 않게 한다). 이 예열은 하드웨어 인코더에서만 하고, 소프트웨어 MFT로 인코딩하는 동안(하드웨어 인코더를 다시 만들지 못해 소프트웨어로 바뀐 뒤, 그리고 위 인코더 규칙으로 스트림이 소프트웨어 MFT로 바뀐 뒤 포함)은 하지 않는다. 다만 포인터 이동이 아닌 입력 뒤 50 ms 동안과 새 이미지를 얻은 뒤 그 간격의 1.25배 동안은 다시 인코딩하지 않아, 그 입력이나 움직이는 화면의 다음 이미지가 인코더를 기다리지 않게 한다. 화면이 바뀌면 그 새 이미지를 평소대로 인코딩하고, 750 ms가 지나면 위 정지 화면 규칙으로 돌아간다(10초는 마지막 AU부터 센다).
+- `stats`: 영상이 흐르는 동안(`paused` 아님) 1초마다. `fps`는 그 1초에 쓴 AU 수, `bitrate`는 AU Annex-B 바이트의 bps, `dropped`는 아직 쓰지 못한 AU가 있어(네트워크 혼잡) 프레임을 보내지 못하고 넘긴 속도 조절 칸 수(인코더에 넣고 아직 쓰지 못한 프레임이 2개 이상이면 지연을 쌓지 않고 건너뛴다), `encoder_busy`는 네트워크가 아니라 인코더가 프레임을 받을 자리가 없어 넘긴 칸 수(인코더가 그렇게 AU를 하나도 내지 않은 채 3초가 지나면 에이전트가 인코더를 새로 만들어 `info`와 IDR을 보낸다; 네트워크 혼잡으로는 다시 만들지 않는다), `encode_ms`는 인코더에 넘기기 시작한 때부터 AU가 나온 때까지(NV12 변환 포함), `capture_ms`는 이미지를 얻은 때부터 인코더에 넘기기 시작한 때까지(속도 조절 대기 포함). 값이 없으면 0.
+- `paused`: `reason`은 캡처 장애의 고정 사유(§3.1) 그대로이고(없는 디스플레이는 `no_output`, 사유 없는 캡처 실패는 `access_lost`), 인코더를 만들지 못하면 `no_encoder`, `pause` 요청이면 `no_viewer`. 사유가 바뀔 때만 보낸다. 보내기 전에 인코더를 닫고 아직 쓰지 않은 AU를 버리므로 `paused` 뒤 다음 `info` 전에는 AU가 없다. 에이전트는 회복을 스스로 재시도한다(디스플레이 다시 열기는 0.5초부터 두 배씩 최대 5초 간격).
+- 역방향 제어: `keyframe`은 다음 AU를 IDR로 만든다(화면이 그대로여도 곧바로 마지막 이미지를 IDR로 보낸다). `bitrate`(`bps` 100000–200000000)는 인코더에 바로 적용하고, 적용하지 못하면 인코더를 새로 만들어 `info`와 IDR을 보낸다. `config`는 `max_fps`·`max_width`를 헤더와 같은 뜻(0은 기본값)으로 둘 다 바꾸고 `info`와 IDR을 보낸다. `pause`는 캡처·인코더를 닫고 `paused`(`no_viewer`)를 보내며, `resume`은 다시 열어 `info`와 IDR부터 보낸다. 범위 밖 값, 알 수 없는 `op`, `0x40`이 아닌 종류의 프레임은 무시한다. 데몬이 자기 쪽 방향을 닫으면(FIN) 에이전트는 파이프라인을 멈추고 스트림을 닫는다.
 
 ## 5. `cursor` 프레임
 
@@ -156,6 +182,11 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 |---|---|
 | `0x10` shape | `u32 shape_id`, `u16 w`, `u16 h`, `u16 hot_x`, `u16 hot_y`, 이후 BGRA(비곱셈 알파) w·h·4바이트 |
 | `0x11` pos | `i32 x`, `i32 y`(캡처 디스플레이 원본 픽셀 좌표), `u8 visible`, `u32 shape_id` |
+
+- 에이전트는 수락 줄 뒤 1/120초마다 커서를 읽고(`video` 스트림과 무관), 바뀐 것만 보낸다. 모양은 커서 핸들이 바뀔 때와 250 ms마다 다시 읽어 픽셀이 바뀌었을 때만 shape를 보내고, 위치·`visible`·`shape_id` 중 하나가 바뀌면 pos를 보낸다(초당 최대 120개). 첫 프레임은 커서가 보이면 shape, 그다음 pos다. pos는 보낸 shape 뒤에만 그 `shape_id`를 쓴다.
+- `x`·`y`는 핫스팟 위치를 디스플레이 원점 기준 원본 픽셀로 나타낸 값이라 다른 디스플레이에 있으면 범위 밖일 수 있다. `visible`은 커서가 표시 중이고 그 디스플레이 안에 있을 때 1이다. 커서를 읽지 못하면(보안 데스크톱 등) 마지막 위치를 `visible` 0으로 보낸다. 마우스가 연결되지 않은 PC는 커서가 숨겨져 있을 수 있다(`visible` 0, `shape_id` 0).
+- shape: `GetCursorInfo`의 커서를 `GetIconInfo`·`GetDIBits`로 읽는다. 흑백(AND·XOR 마스크), 알파가 있는 컬러, 알파가 없는 컬러(AND 마스크)를 모두 BGRA(비곱셈 알파)로 바꾸고, 화면을 반전하는 픽셀은 불투명 검정에 흰 테두리로 그린다. `shape_id`는 크기·핫스팟·픽셀의 FNV-1a 해시(0 아님)다. 애니메이션 커서는 `GetIconInfo`가 돌려주는 프레임이다. 크기는 커서가 그려지는 크기(DPI 배율 반영, 150%에서 48×48)다.
+- 데몬이 이 스트림에 쓰는 프레임은 무시하고, 데몬이 자기 방향을 닫으면 에이전트도 스트림을 닫는다.
 
 ## 6. `input` 프레임
 
@@ -170,7 +201,16 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 | `text` | `text`(유니코드), `method`(`unicode`/`paste`) |
 | `release_all` | — |
 
-에이전트 → 데몬: 종류 `0x42` 프레임 + JSON `{"seq":n,"ok":true,"done_mono_us":…}` 또는 `{"seq":n,"ok":false,"code":"CONTROL_PREEMPTED"|"ELEVATION_REQUIRED"|"SESSION_LOCKED"|"DISPLAY_UNAVAILABLE","error":"…"}`. 입력 스트림이 닫히면 에이전트는 눌린 키·버튼을 모두 해제한다.
+에이전트 → 데몬: 종류 `0x42` 프레임 + JSON `{"seq":n,"ok":true,"done_mono_us":…}` 또는 `{"seq":n,"ok":false,"code":"CONTROL_PREEMPTED"|"ELEVATION_REQUIRED"|"SESSION_LOCKED"|"DISPLAY_UNAVAILABLE"|…,"error":"…"}`. 입력 스트림이 닫히면 에이전트는 그 스트림이 누른 채인 키·버튼을 모두 해제한다.
+
+- 순서: 에이전트는 이벤트를 받은 순서대로 주입하고 하나마다 확인을 쓴다. `done_mono_us`는 주입을 마친 시각(`time.sync`와 같은 시계)이다. 현재보다 큰 `gen`의 이벤트는 읽는 즉시 세대를 올린다(§3.1) — 앞에 줄 선 이전 세대 이벤트와 진행 중인 긴 텍스트는 그 자리에서 `CONTROL_PREEMPTED`가 된다. 데몬이 자기 방향을 닫으면(FIN) 이미 받은 이벤트는 주입하고 확인한 뒤 스트림을 닫고, 연결이 끊기면 남은 이벤트는 버린다.
+- 확인 코드: 이전 세대 `CONTROL_PREEMPTED`; PC가 잠김 `SESSION_LOCKED`; 보안 데스크톱이거나 앞 창이 에이전트보다 높은 무결성 수준이라 Windows가 입력을 막음(UIPI) `ELEVATION_REQUIRED`; Session 0·끊긴 세션·없는 디스플레이 `DISPLAY_UNAVAILABLE`(`error`에 `session0`·`session_disconnected`·`no_output`); 형식이 틀린 이벤트 `INVALID_ARGUMENT`; 앞 창이 텍스트를 읽지 않음 `TIMEOUT`; Windows가 일부만 주입함 `INTERNAL`; Windows가 아닌 에이전트 `CAPABILITY_UNSUPPORTED`. 잠김·보안 데스크톱·Session 0은 주입하기 전에 판정한다. 일부만 주입된 묶음은 그 안에서 누른 키·버튼을 다시 뗀다.
+- `move`: `x`·`y`는 그 디스플레이 안으로 맞추고(clamp), 가상 데스크톱 기준 0–65535로 바꿔 `MOUSEEVENTF_ABSOLUTE|MOUSEEVENTF_VIRTUALDESK`로 보낸다. `button`·`wheel`은 지금 커서 위치에 적용한다. `wheel`의 `dy` 양수는 위로, `dx` 양수는 오른쪽으로.
+- `key`: `sc`(1–0xFF)가 있으면 스캔코드(`KEYEVENTF_SCANCODE`, `ext`면 E0), 없으면 `vk`(1–0xFE, `MapVirtualKey`의 스캔코드와 확장 여부를 함께 보낸다).
+- `text`: 한 이벤트의 `text`는 100000자(유니코드 코드 포인트, `\r\n`은 2자)까지다. 넘으면 아무것도 주입하지 않고(`paste`는 클립보드도 건드리지 않고) `INVALID_ARGUMENT`로 답하며 `error`에 한도를 적는다 — 그보다 긴 텍스트는 나눠 보낸다.
+- `text`, `method` `unicode`(기본): UTF-16 단위마다 `KEYEVENTF_UNICODE` down·up(서로게이트 쌍은 두 단위), `\r\n`·`\r`·`\n`은 Enter, `\t`는 Tab. 100자씩 나눠 보내고, 다음 묶음 전에(1초 안에 이어지는 다음 텍스트의 첫 묶음 전에도) 앞 창의 스레드가 입력을 다 읽을 때까지(메시지를 기다리는 상태를 연달아 두 번 볼 때까지, 최대 5초) 기다린다 — 앞 창의 메시지 큐가 넘쳐 글자를 잃지 않게 한다. 묶음 사이마다 세대를 확인해 선점되면 멈추고 `error`에 친 글자 수를 적는다.
+- `text`, `method` `paste`: 클립보드를 저장(전역 메모리 형식 전부와 확장 메타파일; GDI 비트맵·팔레트·메타파일 그림·개인 형식은 빼며 `CF_BITMAP`은 Windows가 `CF_DIB`에서 다시 만든다)하고, 텍스트를 클립보드 기록·클라우드·감시 프로그램 제외 표시와 함께 넣은 뒤 Ctrl+V를 누르고, 120 ms 기다린 뒤 앞 창의 스레드가 입력을 다 읽을 때까지(위 `unicode`의 판정, 최대 1초 더) 기다렸다가 저장한 내용을 같은 제외 표시와 함께 되돌린다(비어 있었으면 비운다). 그 사이에 입력 스트림이 닫히면 더 기다리지 않고 곧바로 되돌린다. 확인은 되돌린 뒤에 쓴다. 에이전트가 쓴 클립보드 변경은 `clipboard.changed`로 보내지 않는다. 요청 시 렌더링하는 클립보드 소유자는 저장할 때 모든 형식을 렌더링한다.
+- `release_all`: 에이전트가 누른 채인 키·버튼을 모두(어느 스트림이 눌렀든) 해제한다.
 
 ## 7. `pty` 프레임
 

@@ -12,8 +12,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/YangTaeyoung/deskhand/internal/agent/capture"
 	"github.com/YangTaeyoung/deskhand/internal/agent/clipboard"
 	"github.com/YangTaeyoung/deskhand/internal/agent/diag"
+	"github.com/YangTaeyoung/deskhand/internal/agent/display"
+	"github.com/YangTaeyoung/deskhand/internal/agent/input"
 	"github.com/YangTaeyoung/deskhand/internal/agent/session"
 	"github.com/YangTaeyoung/deskhand/internal/proto"
 	"github.com/YangTaeyoung/deskhand/internal/wire"
@@ -43,6 +46,19 @@ type Options struct {
 	Version string
 	// Diag reads the diagnostics of the diag ops; nil means diag.Local.
 	Diag diag.Source
+	// SessionInfo describes the Windows session the agent runs in, for
+	// session.info, the hello's session and the screen and input
+	// capabilities; nil means session.Current.
+	SessionInfo func() (session.Info, error)
+	// Displays lists the displays for display.list and the hello; nil means
+	// display.List.
+	Displays func() ([]display.Info, error)
+	// Capture takes the still image of screen.capture; nil means
+	// capture.CaptureStill.
+	Capture func(display int, format string, maxWidth, quality int) (capture.StillResult, error)
+	// ScreenState reports whether the screen can be captured and encoded,
+	// for the screen capability; nil means screenState.
+	ScreenState func() error
 }
 
 // DeployRoot names a folder that the fs operations create through Lock when
@@ -106,6 +122,10 @@ type Server struct {
 
 	// lastCaps holds the capabilities caps returned last.
 	lastCaps atomic.Pointer[capStates]
+
+	// input injects the input stream's events and holds the writer
+	// generation that the UI ops of writerOps are checked against.
+	input *input.Injector
 }
 
 func New(opt Options) *Server {
@@ -118,6 +138,18 @@ func New(opt Options) *Server {
 	if opt.Clipboard == nil {
 		opt.Clipboard = newClipboard(opt.Session)
 	}
+	if opt.SessionInfo == nil {
+		opt.SessionInfo = session.Current
+	}
+	if opt.Displays == nil {
+		opt.Displays = display.List
+	}
+	if opt.Capture == nil {
+		opt.Capture = capture.CaptureStill
+	}
+	if opt.ScreenState == nil {
+		opt.ScreenState = screenState
+	}
 	s := &Server{opt: opt, ops: map[string]opEntry{}, conns: map[*conn]struct{}{}, jobs: newJobTable(), ptys: newPTYTable(), ownHome: agentHome(),
 		clipKick: make(chan struct{}, 1)}
 	s.timing.caps, s.timing.pollMin, s.timing.pollMax = capsCheckInterval, clipboardPollMin, clipboardPollMax
@@ -128,13 +160,20 @@ func New(opt Options) *Server {
 		s.jobs.restore(s.jobs.store.load())
 	}
 	s.journal = openJournal(journalDir, opt.Logger)
+	s.input = s.newInjector()
 	s.registerBuiltins()
 	return s
 }
 
-// Close shuts the UI helper down when the server has one and ends the
-// process trees of the running ptys.
+// Close releases every key and button the agent holds pressed, shuts the UI
+// helper down when the server has one and ends the process trees of the
+// running ptys.
 func (s *Server) Close() {
+	if released, err := s.input.ReleaseAll(); err != nil {
+		s.opt.Logger.Printf("input: releasing the held keys and buttons at shutdown: %v", err)
+	} else if len(released) > 0 {
+		s.opt.Logger.Printf("input: released %d keys and buttons at shutdown", len(released))
+	}
 	if c, ok := s.opt.UI.(interface{ Close() }); ok {
 		c.Close()
 	}
@@ -199,13 +238,13 @@ func (s *Server) helloCaps() capStates {
 	return s.caps()
 }
 
-// greet writes the hello with caps and reads the host's first message, which
-// has to be its welcome within welcomeTimeout. It reports whether the welcome
-// arrived and returns the controller name it carries.
-func (s *Server) greet(rw io.ReadWriteCloser, r *proto.Reader, caps capStates, peer string) (string, bool) {
+// greet writes hello and reads the host's first message, which has to be
+// its welcome within welcomeTimeout. It reports whether the welcome arrived
+// and returns the controller name it carries.
+func (s *Server) greet(rw io.ReadWriteCloser, r *proto.Reader, hello proto.Message, peer string) (string, bool) {
 	lg := s.opt.Logger
 	setWriteDeadline(rw, connWriteTimeout)
-	if err := proto.NewWriter(rw).Send(s.helloMessage(caps)); err != nil {
+	if err := proto.NewWriter(rw).Send(hello); err != nil {
 		lg.Printf("hello to %s: %v", peer, err)
 		return "", false
 	}
@@ -242,7 +281,8 @@ func (s *Server) ServeConn(ctx context.Context, rw io.ReadWriteCloser, peer stri
 	r := proto.NewReader(rw)
 	s.startWatchers()
 	sentCaps := s.helloCaps()
-	controller, ok := s.greet(rw, r, sentCaps, peer)
+	hello := s.helloMessage(sentCaps)
+	controller, ok := s.greet(rw, r, hello, peer)
 	if !ok {
 		return
 	}
@@ -253,6 +293,7 @@ func (s *Server) ServeConn(ctx context.Context, rw io.ReadWriteCloser, peer stri
 	send := cn.send
 
 	cn.setCaps(sentCaps)
+	cn.setDesktop(jsonOf(hello["session"]), jsonOf(hello["displays"]))
 	s.sendCapsUpdate(cn)
 	s.addConn(cn)
 	defer s.removeConn(cn)
@@ -339,15 +380,30 @@ func (s *Server) sendCapsUpdate(c *conn) {
 // watchCaps checks the capabilities every capsCheckInterval, also while no
 // stream is open, so that a hello carries a check at most one interval old,
 // and sends caps.changed to each open stream that sendCapsUpdate has
-// followed and whose last capabilities differ.
+// followed and whose last capabilities differ. To those streams it also
+// sends display.changed and session.changed when the displays or the
+// session differ from the ones sent on the stream last, starting with the
+// hello's.
 func (s *Server) watchCaps() {
 	for {
 		time.Sleep(s.timing.caps)
 		caps := s.caps()
+		var followed []*conn
 		for _, c := range s.openConns() {
-			if c.capsFollowedYet() && c.replaceCaps(caps) {
+			if c.capsFollowedYet() {
+				followed = append(followed, c)
+			}
+		}
+		if len(followed) == 0 {
+			continue
+		}
+		displays, displaysOK := s.displaysNow()
+		sess, sessOK := s.sessionNow()
+		for _, c := range followed {
+			if c.replaceCaps(caps) {
 				c.send(capsChanged(caps))
 			}
+			sendDesktopChanges(c, displays, displaysOK, sess, sessOK)
 		}
 	}
 }
