@@ -398,7 +398,8 @@ func (f *feed) open() (*agentVideo, error) {
 		st.CancelRead()
 		st.CancelWrite()
 		if err == nil {
-			return nil, f.refusal(line.Code, line.Error)
+			f.h.lg.Printf("screen: %s display %d: the agent refused the video stream: %s %s", f.key.hostID, f.key.display, line.Code, line.Error)
+			return nil, f.refusal(line.Code)
 		}
 	}
 	var first []byte
@@ -408,28 +409,30 @@ func (f *feed) open() (*agentVideo, error) {
 	if err != nil {
 		st.CancelRead()
 		st.CancelWrite()
-		return nil, apierr.New(wire.CodeOffline, fmt.Sprintf("PC가 화면 스트림에 답하지 않았습니다(%v). 잠시 뒤 다시 붙으세요", err), true, apierr.NextRetry)
+		f.h.lg.Printf("screen: %s display %d: no first frame on the video stream: %v", f.key.hostID, f.key.display, err)
+		return nil, apierr.New(wire.CodeOffline, "PC가 화면 스트림에 답하지 않았습니다. 잠시 뒤 다시 붙으세요", true, apierr.NextRetry)
 	}
 	_ = st.SetReadDeadline(time.Time{})
 	return newAgentVideo(f, a, st, br, connGen, q, first), nil
 }
 
-// refusal is the error of the agent's refusal of the video stream.
-func (f *feed) refusal(code, msg string) error {
+// refusal is the error of the agent's refusal of the video stream with
+// code: the code (NOT_FOUND as DISPLAY_UNAVAILABLE) with a sentence that
+// names the next step.
+func (f *feed) refusal(code string) error {
 	switch code {
 	case wire.CodeNotFound:
 		return apierr.New(wire.CodeDisplayUnavailable, fmt.Sprintf("PC에 디스플레이 %d가 없습니다. 다른 디스플레이를 고르세요", f.key.display), false, apierr.NextFixParams)
+	case wire.CodeCapabilityUnsupported:
+		return apierr.New(code, "이 PC의 에이전트가 화면 스트림을 지원하지 않습니다. 에이전트를 업데이트하세요.", false, "")
+	case wire.CodeInvalidArgument:
+		return apierr.New(code, "PC의 에이전트가 화면 스트림 설정을 받아들이지 않았습니다. 다른 화질로 다시 붙거나 에이전트를 업데이트하세요.", false, apierr.NextFixParams)
+	case wire.CodePermissionDenied:
+		return apierr.New(code, "PC의 에이전트가 화면 스트림을 허용하지 않습니다. PC에서 에이전트 설정을 확인하세요.", false, "")
 	case "":
 		code = wire.CodeInternal
 	}
-	if msg == "" {
-		msg = "PC의 에이전트가 화면 스트림을 거절했습니다. PC의 에이전트 로그를 확인하세요"
-	}
-	switch code {
-	case wire.CodeCapabilityUnsupported, wire.CodeInvalidArgument, wire.CodePermissionDenied:
-		return apierr.New(code, msg, false, "")
-	}
-	return apierr.New(code, msg, true, apierr.NextRetry)
+	return apierr.New(code, fmt.Sprintf("PC의 에이전트가 화면 스트림을 열지 못했습니다(%s). 잠시 뒤 다시 붙고, 계속되면 PC의 에이전트 로그를 확인하세요.", code), true, apierr.NextRetry)
 }
 
 // serve relays st until it ends: it makes st the feed's open stream,

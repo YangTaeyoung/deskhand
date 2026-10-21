@@ -211,10 +211,52 @@ type fakeAgent struct {
 	// timeSync answers time.sync; nil answers CAPABILITY_UNSUPPORTED.
 	timeSync func() uint64
 	syncs    int
+	// inputHook runs once on the next input stream: with stage "open"
+	// before its header is checked and with "accepted" after the header was
+	// accepted, before the acceptance line is written.
+	inputHook func(stage string)
+	// changed is closed and replaced whenever the state changes.
+	changed chan struct{}
 }
 
 func newFakeAgent() *fakeAgent {
-	return &fakeAgent{state: conn.StateReady, connGen: 1, held: map[string]bool{}, refuseVideo: map[int]string{}}
+	return &fakeAgent{state: conn.StateReady, connGen: 1, held: map[string]bool{}, refuseVideo: map[int]string{}, changed: make(chan struct{})}
+}
+
+// setState changes the connection state; open streams stay open.
+func (a *fakeAgent) setState(st conn.ConnState) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.state = st
+	close(a.changed)
+	a.changed = make(chan struct{})
+}
+
+// waitReady waits, as a connection does, until the state is ready or
+// degraded or ctx ends; a.mu is held and held again on return.
+func (a *fakeAgent) waitReadyLocked(ctx context.Context) bool {
+	for a.state != conn.StateReady && a.state != conn.StateDegraded {
+		ch := a.changed
+		a.mu.Unlock()
+		select {
+		case <-ch:
+		case <-ctx.Done():
+			a.mu.Lock()
+			return false
+		}
+		a.mu.Lock()
+	}
+	return true
+}
+
+// hook runs the input hook of stage.
+func (a *fakeAgent) hook(stage string) {
+	a.mu.Lock()
+	f := a.inputHook
+	a.mu.Unlock()
+	if f != nil {
+		f(stage)
+	}
 }
 
 func (a *fakeAgent) State() conn.ConnState {
@@ -259,8 +301,12 @@ func (a *fakeAgent) raiseLocked(gen uint64) {
 	}
 }
 
-func (a *fakeAgent) OpenStream(_ context.Context, hdr wire.StreamHeader) (conn.DataStream, uint64, error) {
+func (a *fakeAgent) OpenStream(ctx context.Context, hdr wire.StreamHeader) (conn.DataStream, uint64, error) {
 	a.mu.Lock()
+	if hdr.S == "input" && !a.waitReadyLocked(ctx) {
+		a.mu.Unlock()
+		return nil, 0, ctx.Err()
+	}
 	if a.state != conn.StateReady && a.state != conn.StateDegraded {
 		a.mu.Unlock()
 		return nil, 0, apierr.New(wire.CodeOffline, "pc is offline", true, apierr.NextHostConnect)
@@ -314,6 +360,12 @@ func (a *fakeAgent) OpenStream(_ context.Context, hdr wire.StreamHeader) (conn.D
 
 func (a *fakeAgent) serveInput(st pipeEnd, hdr wire.StreamHeader) {
 	defer st.Close()
+	defer func() {
+		a.mu.Lock()
+		a.inputHook = nil
+		a.mu.Unlock()
+	}()
+	a.hook("open")
 	a.mu.Lock()
 	if hdr.Gen < a.writer {
 		cur := a.writer
@@ -325,6 +377,10 @@ func (a *fakeAgent) serveInput(st pipeEnd, hdr wire.StreamHeader) {
 	a.raiseLocked(hdr.Gen)
 	fs := &fakeInput{hdrGen: hdr.Gen}
 	a.inputs = append(a.inputs, fs)
+	a.mu.Unlock()
+	a.hook("accepted")
+	a.mu.Lock()
+	a.inputHook = nil
 	cur := a.writer
 	a.mu.Unlock()
 	if wire.WriteHeader(st, map[string]any{"ok": true, "gen": cur}) != nil {

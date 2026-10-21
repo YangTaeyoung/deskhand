@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/daemon/apierr"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/conn"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/control"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/events"
 	"github.com/YangTaeyoung/deskhand/internal/wire"
@@ -456,5 +459,122 @@ func TestAttachRefusals(t *testing.T) {
 	}
 	if _, err := r.hub.Attach(ctx, "other", 0, PresetSharp, human); apierr.CodeOf(err) == "" {
 		t.Fatalf("attach to a host without an agent connection: %v", err)
+	}
+}
+
+// skewedControl answers HumanGen one generation ahead of Get, as a control
+// change between the two reads does.
+type skewedControl struct{ *control.Manager }
+
+func (c skewedControl) HumanGen(hostID string) uint64 { return c.Manager.HumanGen(hostID) + 1 }
+
+func TestReleaseAllCarriesTheGenOfTheOwnerItChecked(t *testing.T) {
+	r := newRig(t, func(o *Options) { o.Control = skewedControl{o.Control.(*control.Manager)} })
+	a := r.attach(0, PresetSharp, human)
+	a.input(map[string]any{"seq": 1, "gen": 0, "k": "key", "sc": 0x2A, "ext": false, "down": true})
+	eventually(t, "the held key", func() bool { return r.agent.heldKeys()["sc:0x2a"] })
+	gen := r.ctl.Get("pc").Gen
+	a.input(map[string]any{"seq": 2, "gen": 0, "k": "release_all"})
+	eventually(t, "the release", func() bool { return len(r.agent.inputEvents()) == 2 })
+	if ev := r.agent.inputEvents()[1]; ev.K != "release_all" || ev.Gen != gen {
+		t.Fatalf("release_all at the agent %+v, want gen %d of the human owner", ev, gen)
+	}
+	a.input(map[string]any{"seq": 3, "gen": 0, "k": "button", "b": "left", "down": true})
+	eventually(t, "the held button", func() bool { return r.agent.heldKeys()["b:left"] })
+	a.close()
+	eventually(t, "the release of the detached viewer", func() bool { return len(r.agent.inputEvents()) == 4 })
+	if ev := r.agent.inputEvents()[3]; ev.K != "release_all" || ev.Gen != gen {
+		t.Fatalf("release_all of the detached viewer %+v, want gen %d of the human owner", ev, gen)
+	}
+}
+
+func TestHumanInputWhileTheHostIsNotReadyIsDroppedWithoutWaiting(t *testing.T) {
+	r := newRig(t)
+	a := r.attach(0, PresetSharp, human)
+	v := r.agent.video(0)
+	v.drainControls()
+	r.agent.setState(conn.StateReconnecting)
+	start := time.Now()
+	a.input(map[string]any{"seq": 1, "gen": 0, "k": "button", "b": "left", "down": true})
+	a.send(wire.KindClientControl, map[string]any{"op": "keyframe"})
+	v.control(t, wire.ControlKeyframe)
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("the viewer's keyframe request waited %s behind input sent while the host was not ready", d)
+	}
+	r.agent.setState(conn.StateReady)
+	time.Sleep(100 * time.Millisecond)
+	if evs := r.agent.inputEvents(); len(evs) != 0 {
+		t.Fatalf("the agent got %d input events sent while the host was not ready: %+v", len(evs), evs)
+	}
+	if s := r.ctl.Get("pc"); s.Owner != "none" {
+		t.Fatalf("control after input while the host was not ready %+v, want none", s)
+	}
+}
+
+func TestHumanInputIsDroppedWhenControlChangesWhileItsStreamOpens(t *testing.T) {
+	r := newRig(t)
+	ctx := context.Background()
+	a := r.attach(0, PresetSharp, human)
+	r.agent.mu.Lock()
+	r.agent.inputHook = func(stage string) {
+		if stage != "accepted" {
+			return
+		}
+		if _, err := r.ctl.Release(ctx, "pc", human); err != nil {
+			t.Error(err)
+		}
+		if _, err := r.ctl.Acquire(ctx, "pc", control.OwnerAI, aiA, false); err != nil {
+			t.Error(err)
+		}
+	}
+	r.agent.mu.Unlock()
+	a.input(map[string]any{"seq": 1, "gen": 0, "k": "button", "b": "left", "down": true})
+	if n := a.notice("control_denied"); n["owner"] != "ai" || n["owner_client"] != aiA.ClientName {
+		t.Fatalf("control_denied %v", n)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if evs := r.agent.inputEvents(); len(evs) != 0 {
+		t.Fatalf("the agent got %+v after control passed to the AI while the stream opened", evs)
+	}
+}
+
+func TestHumanInputRefusedAfterResyncGetsControlDenied(t *testing.T) {
+	r := newRig(t)
+	ctx := context.Background()
+	a := r.attach(0, PresetSharp, human)
+	r.agent.mu.Lock()
+	r.agent.inputHook = func(stage string) {
+		if stage != "open" {
+			return
+		}
+		if _, err := r.ctl.Release(ctx, "pc", human); err != nil {
+			t.Error(err)
+		}
+		if _, err := r.ctl.Acquire(ctx, "pc", control.OwnerAI, aiA, false); err != nil {
+			t.Error(err)
+		}
+	}
+	r.agent.mu.Unlock()
+	a.input(map[string]any{"seq": 1, "gen": 0, "k": "button", "b": "left", "down": true})
+	if n := a.notice("control_denied"); n["owner"] != "ai" {
+		t.Fatalf("control_denied %v", n)
+	}
+	if evs := r.agent.inputEvents(); len(evs) != 0 {
+		t.Fatalf("the agent got %+v", evs)
+	}
+}
+
+func TestAgentRefusalsAreKoreanSentencesThatKeepTheCode(t *testing.T) {
+	r := newRig(t)
+	r.agent.refuseVideo[4] = wire.CodeCapabilityUnsupported
+	r.agent.refuseVideo[5] = wire.CodeInternal
+	_, err := r.hub.Attach(context.Background(), "pc", 4, PresetSharp, human)
+	var e *apierr.Error
+	if !errors.As(err, &e) || e.Code != wire.CodeCapabilityUnsupported || e.Message != "이 PC의 에이전트가 화면 스트림을 지원하지 않습니다. 에이전트를 업데이트하세요." {
+		t.Fatalf("refusal of an agent without screen streams: %#v", err)
+	}
+	_, err = r.hub.Attach(context.Background(), "pc", 5, PresetSharp, human)
+	if !errors.As(err, &e) || e.Code != wire.CodeInternal || strings.Contains(e.Message, "refused by the fake agent") || !strings.Contains(e.Message, "다시 붙") {
+		t.Fatalf("refusal with another code: %#v", err)
 	}
 }

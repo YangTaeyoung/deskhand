@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/daemon/apierr"
+	"github.com/YangTaeyoung/deskhand/internal/daemon/conn"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
 	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
@@ -189,9 +190,11 @@ func (v *Viewer) control(payload []byte) {
 // input handles a 0x41 frame: a human input event goes to the host's
 // agent with the daemon's seq and writer generation once control lets the
 // viewer's client drive the host, taking control when nobody holds it.
-// Input of an AI client's viewer and input while an AI client holds
-// control (CONTROL_PREEMPTED) is dropped with a control_denied notice.
-// release_all goes out only while a person holds control.
+// Input while the host is not ready is dropped at once, before control is
+// checked. Input of an AI client's viewer and input refused because an AI
+// client holds control or control changed before the write
+// (CONTROL_PREEMPTED) is dropped with a control_denied notice. release_all
+// goes out only while a person holds control, with that owner's gen.
 func (v *Viewer) input(payload []byte) {
 	var ev wire.InputEvent
 	if json.Unmarshal(payload, &ev) != nil || !inputKinds[ev.K] {
@@ -209,23 +212,27 @@ func (v *Viewer) input(payload []byte) {
 		v.imu.Lock()
 		v.held = map[heldKey]bool{}
 		v.imu.Unlock()
-		if ctl.Get(v.hostID).Owner != model.OwnerHuman {
+		st := ctl.Get(v.hostID)
+		if st.Owner != model.OwnerHuman {
 			return
 		}
-		ev.Gen = ctl.HumanGen(v.hostID)
-		v.h.link(v.hostID).send(v.caller, ev, false)
+		ev.Gen = st.Gen
+		_ = v.h.link(v.hostID).send(v.caller, ev, false)
+		return
+	}
+	if a := v.h.agent(v.hostID); a == nil || a.State() != conn.StateReady {
 		return
 	}
 	gen, err := ctl.CheckHuman(v.hostID, v.caller)
+	if err == nil {
+		ev.Gen = gen
+		err = v.h.link(v.hostID).send(v.caller, ev, true)
+	}
 	if apierr.CodeOf(err) == wire.CodeControlPreempted {
 		v.denied(ctl.Get(v.hostID))
 		return
 	}
 	if err != nil {
-		return
-	}
-	ev.Gen = gen
-	if !v.h.link(v.hostID).send(v.caller, ev, true) {
 		return
 	}
 	v.track(ev)
@@ -267,10 +274,14 @@ func (v *Viewer) release() {
 	v.held = map[heldKey]bool{}
 	v.imu.Unlock()
 	ctl := v.h.opt.Control
-	if !held || ctl == nil || ctl.Get(v.hostID).Owner != model.OwnerHuman {
+	if !held || ctl == nil {
 		return
 	}
-	v.h.link(v.hostID).send(v.caller, wire.InputEvent{K: "release_all", Gen: ctl.HumanGen(v.hostID)}, false)
+	st := ctl.Get(v.hostID)
+	if st.Owner != model.OwnerHuman {
+		return
+	}
+	_ = v.h.link(v.hostID).send(v.caller, wire.InputEvent{K: "release_all", Gen: st.Gen}, false)
 }
 
 // denied sends the viewer a control_denied notice with the owner of st, at

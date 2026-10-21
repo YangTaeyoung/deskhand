@@ -16,6 +16,9 @@ import (
 )
 
 const (
+	// inputOpenTimeout bounds the open of an input stream up to its
+	// acceptance line.
+	inputOpenTimeout = 3 * time.Second
 	// inputWriteTimeout bounds the write of one input frame.
 	inputWriteTimeout = 10 * time.Second
 	// inputEndWait bounds the wait for the agent to inject the events left
@@ -85,13 +88,23 @@ func (h *Hub) anyHeld(hostID string) bool {
 	return false
 }
 
+// errControlChanged is the send of an event whose writer generation is no
+// longer a person's.
+var errControlChanged = apierr.New(wire.CodeControlPreempted, "보내기 전에 제어권이 바뀌어 입력을 보내지 않았습니다. 제어권을 확인한 뒤 다시 조작하세요", false, apierr.NextCheckState)
+
+// errNotReady is the send of an event while the host is not ready.
+var errNotReady = apierr.New(wire.CodeOffline, "PC와의 연결이 준비되지 않아 입력을 보내지 않았습니다. 연결된 뒤 다시 조작하세요", true, apierr.NextRetry)
+
 // send writes ev, whose gen is set, with the stream's next seq, opening
-// the stream when there is none on the agent's current connection. A
-// stream the agent refuses as older than its writer generation is opened
-// once more after Resync took the agent's higher generation, with the gen
-// CheckHuman then gives c when acquire is set. It reports whether ev went
-// out.
-func (l *inputLink) send(c model.Caller, ev wire.InputEvent, acquire bool) bool {
+// the stream when there is none on the agent's current connection. Input
+// that may take control (acquire) goes out only while the host is ready;
+// a release only while it is ready or degraded. A stream the agent
+// refuses as older than its writer generation is opened once more after
+// Resync took the agent's higher generation, with the gen CheckHuman then
+// gives c when acquire is set. Right before the write, a person must still
+// hold control at ev's gen, or ev is dropped with CONTROL_PREEMPTED. It
+// returns why ev did not go out.
+func (l *inputLink) send(c model.Caller, ev wire.InputEvent, acquire bool) error {
 	err := l.sendErr(c, ev, acquire)
 	if err != nil {
 		l.mu.Lock()
@@ -101,7 +114,7 @@ func (l *inputLink) send(c model.Caller, ev wire.InputEvent, acquire bool) bool 
 		}
 		l.mu.Unlock()
 	}
-	return err == nil
+	return err
 }
 
 func (l *inputLink) sendErr(c model.Caller, ev wire.InputEvent, acquire bool) error {
@@ -114,10 +127,13 @@ func (l *inputLink) sendErr(c model.Caller, ev wire.InputEvent, acquire bool) er
 	if a == nil {
 		return apierr.New(wire.CodeOffline, "이 PC와 연결돼 있지 않습니다", true, apierr.NextHostConnect)
 	}
+	if st := a.State(); st != conn.StateReady && (acquire || st != conn.StateDegraded) {
+		return errNotReady
+	}
+	ctl := l.h.opt.Control
 	if !l.usableLocked(a) {
 		l.endLocked()
 		err := l.openLocked(a, ev.Gen)
-		ctl := l.h.opt.Control
 		if apierr.CodeOf(err) == wire.CodeControlPreempted && acquire && ctl.Resync(l.hostID, ev.Gen) {
 			gen, cerr := ctl.CheckHuman(l.hostID, c)
 			if cerr != nil {
@@ -129,6 +145,9 @@ func (l *inputLink) sendErr(c model.Caller, ev wire.InputEvent, acquire bool) er
 		if err != nil {
 			return err
 		}
+	}
+	if st := ctl.Get(l.hostID); st.Owner != model.OwnerHuman || st.Gen != ev.Gen {
+		return errControlChanged
 	}
 	l.seq++
 	ev.Seq = l.seq
@@ -167,14 +186,14 @@ func (l *inputLink) usableLocked(a Agent) bool {
 // openLocked opens an input stream of writer generation gen to a and
 // reads its acceptance; l.mu is held.
 func (l *inputLink) openLocked(a Agent, gen uint64) error {
-	ctx, cancel := context.WithTimeout(l.h.base, openTimeout)
+	ctx, cancel := context.WithTimeout(l.h.base, inputOpenTimeout)
 	defer cancel()
 	st, connGen, err := a.OpenStream(ctx, wire.StreamHeader{S: "input", Gen: gen})
 	if err != nil {
 		return err
 	}
 	br := bufio.NewReader(st)
-	_ = st.SetReadDeadline(time.Now().Add(acceptTimeout))
+	_ = st.SetReadDeadline(time.Now().Add(inputOpenTimeout))
 	var line struct {
 		OK    bool   `json:"ok"`
 		Gen   uint64 `json:"gen"`
