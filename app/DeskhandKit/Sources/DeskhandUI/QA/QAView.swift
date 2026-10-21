@@ -106,7 +106,7 @@ private struct QAContent: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .failed(let error):
                 VStack {
-                    ErrorBanner(message: String.ui("qa.listFailed", "QA 실행 기록을 불러오지 못했습니다"), fix: DebuggerModel.listFix(error), code: error.code) {
+                    ErrorBanner(message: String.ui("qa.listFailed", "QA 실행 기록을 불러오지 못했습니다"), fix: error.sentences, code: error.code) {
                         Task { await model.load(scope) }
                     }
                     .frame(maxWidth: 520)

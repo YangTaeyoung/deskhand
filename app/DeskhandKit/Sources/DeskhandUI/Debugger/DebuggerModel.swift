@@ -337,15 +337,6 @@ public final class DebuggerModel {
         if selectedSessionID == debugID { selectedSessionID = nil }
     }
 
-    /// What to do after the session list failed to load.
-    public static func listFix(_ error: OperationError) -> String {
-        switch error.code {
-        case "OFFLINE", "AUTH_REQUIRED", "SESSION_LOCKED": return error.fix ?? ""
-        default:
-            return .ui("debugger.listFix", "이 Mac의 Deskhand 데몬이 답하지 않았습니다. 잠시 뒤 다시 시도하고, 계속되면 설정 › 일반에서 데몬을 다시 시작하세요.")
-        }
-    }
-
     // MARK: Events
 
     func handle(_ event: DaemonEvent) {

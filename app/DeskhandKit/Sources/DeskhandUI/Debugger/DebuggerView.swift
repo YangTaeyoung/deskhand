@@ -163,7 +163,7 @@ private struct DebuggerContent: View {
             case .failed(let error):
                 VStack {
                     ErrorBanner(message: String.ui("debugger.listFailed", "디버그 세션 목록을 불러오지 못했습니다"),
-                                fix: DebuggerModel.listFix(error), code: error.code) {
+                                fix: error.sentences, code: error.code) {
                         Task { await model.reload() }
                     }
                     .frame(maxWidth: 520)

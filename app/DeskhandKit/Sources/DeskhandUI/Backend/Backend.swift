@@ -596,7 +596,7 @@ public struct OperationError: Error, Sendable, Equatable {
         case let error as ClientError:
             switch error {
             case .daemonUnavailable:
-                self.init(message: .ui("error.daemonUnavailable", "데몬이 응답하지 않습니다"))
+                self.init(message: .ui("error.daemonUnavailable", "이 Mac의 Deskhand 데몬이 답하지 않습니다"))
             case .notConnected, .disconnected, .closed:
                 self.init(message: .ui("error.disconnected", "데몬과 연결이 끊겼습니다"))
             case .socketPathTooLong(let path):
@@ -606,7 +606,7 @@ public struct OperationError: Error, Sendable, Equatable {
             case .protocolViolation:
                 self.init(message: .ui("error.protocol", "데몬 응답을 이해할 수 없습니다"))
             case .timeout:
-                self.init(code: "TIMEOUT", message: .ui("error.daemonTimeout", "데몬이 제때 답하지 않았습니다"),
+                self.init(code: "TIMEOUT", message: .ui("error.daemonTimeout", "이 Mac의 Deskhand 데몬이 제때 답하지 않았습니다"),
                           nextAction: Self.restartDaemon)
             }
         case is DecodingError:

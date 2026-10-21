@@ -117,7 +117,7 @@ enum RootScenes {
                 }
             },
             SnapshotScene(name: "daemon-unavailable", size: size) {
-                DaemonUnavailableView(failure: AppStore.DaemonFailure(message: "5초 안에 데몬이 응답하지 않았습니다",
+                DaemonUnavailableView(failure: AppStore.DaemonFailure(message: "이 Mac의 Deskhand 데몬이 5초 안에 답하지 않았습니다",
                                                                       logPath: Paths.daemonLog)) {}
             },
         ]

@@ -215,9 +215,8 @@ enum QAScenes {
                 attempted: true)),
             scene("qa-run-1000-steps", none, Tab(runs: thousandSteps, selected: "q-01JBF9K1000")),
             scene("qa-reload-failed", none, Tab(selected: Samples.failedRunID,
-                                               reloadError: OperationError(code: "TIMEOUT", message: "이 Mac의 데몬이 5초 안에 qa.list에 답하지 않았습니다"),
-                                               refreshErrors: [Samples.failedRunID: OperationError(code: "TIMEOUT",
-                                                                                                   message: "이 Mac의 데몬이 5초 안에 qa.get에 답하지 않았습니다")])),
+                                               reloadError: OperationError(ClientError.timeout(method: "qa.list")),
+                                               refreshErrors: [Samples.failedRunID: OperationError(ClientError.timeout(method: "qa.get"))])),
             scene("qa-export-failed", none, Tab(selected: Samples.blockedRunID, exports: [Samples.blockedRunID: .failed(OperationError(
                 code: "HASH_MISMATCH",
                 message: "report.html의 sha256이 기록과 다릅니다. 산출물이 바뀌었을 수 있으니 원본 폴더 ~/Library/Application Support/Deskhand/artifacts/j-01JBDQ5R7M를 확인하세요"),

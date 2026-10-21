@@ -305,7 +305,7 @@ public final class AppStore {
 
     static func failure(_ error: any Error) -> DaemonFailure {
         if case ClientError.daemonUnavailable(let logPath) = error {
-            return DaemonFailure(message: .ui("daemon.timeout", "5초 안에 데몬이 응답하지 않았습니다"), logPath: logPath)
+            return DaemonFailure(message: .ui("daemon.timeout", "이 Mac의 Deskhand 데몬이 5초 안에 답하지 않았습니다"), logPath: logPath)
         }
         return DaemonFailure(message: OperationError(error).message, logPath: Paths.daemonLog)
     }

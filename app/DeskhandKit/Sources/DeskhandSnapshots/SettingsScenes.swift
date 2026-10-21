@@ -39,7 +39,7 @@ enum SettingsScenes {
         [
             scene("settings-general", .general),
             scene("settings-general-unavailable", .general, store: {
-                store(phase: .daemonUnavailable(AppStore.DaemonFailure(message: "5초 안에 데몬이 응답하지 않았습니다", logPath: Paths.daemonLog)))
+                store(phase: .daemonUnavailable(AppStore.DaemonFailure(message: "이 Mac의 Deskhand 데몬이 5초 안에 답하지 않았습니다", logPath: Paths.daemonLog)))
             }),
             scene("settings-connection", .connection) { store in
                 store.settings.connectionHostID = dev
