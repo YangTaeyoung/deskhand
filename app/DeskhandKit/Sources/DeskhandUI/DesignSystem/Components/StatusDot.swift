@@ -3,12 +3,14 @@ import SwiftUI
 /// Colored dot for a `ConnectionState`, optionally followed by its label.
 ///
 /// Offline draws a hollow ring, connecting and reconnecting add a pulsing halo (steady when
-/// Reduce Motion is on), and every other state is a solid dot.
+/// Reduce Motion is on), and every other state is a solid dot. On a selected row's highlight the
+/// dot is white and keeps its shape.
 public struct StatusDot: View {
     public let state: ConnectionState
     public let showsLabel: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.backgroundProminence) private var prominence
 
     private static let dotSize = DS.Space.s
     private static let frameSize = DS.Space.m
@@ -31,11 +33,16 @@ public struct StatusDot: View {
         .accessibilityLabel(String.ui("a11y.connectionState", "연결 상태: \(state.title)"))
     }
 
+    /// The state's tint, or white on a selected row's highlight.
+    private var tint: Color {
+        prominence == .increased ? DS.Color.onFill : state.tint
+    }
+
     private var dot: some View {
         ZStack {
             if state.isTransitional {
                 Circle()
-                    .fill(state.tint)
+                    .fill(tint)
                     .phaseAnimator(reduceMotion ? [0.3] : [0.38, 0.1]) { halo, opacity in
                         halo.opacity(opacity)
                     } animation: { _ in
@@ -44,11 +51,11 @@ public struct StatusDot: View {
             }
             if state == .offline {
                 Circle()
-                    .strokeBorder(state.tint, lineWidth: 1.5)
+                    .strokeBorder(tint, lineWidth: 1.5)
                     .frame(width: Self.dotSize, height: Self.dotSize)
             } else {
                 Circle()
-                    .fill(state.tint)
+                    .fill(tint)
                     .frame(width: Self.dotSize, height: Self.dotSize)
             }
         }

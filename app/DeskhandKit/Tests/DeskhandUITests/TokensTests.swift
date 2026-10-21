@@ -280,6 +280,31 @@ final class TokensTests: XCTestCase {
         XCTAssertEqual(DS.SelectedRow.fill(in: nil), DS.Status.selectionFillNS)
     }
 
+    /// Each connection state's status dot on a selected sidebar row — increased background
+    /// prominence over the accent selection — reaches 3:1 against the selection, in both appearances.
+    @MainActor
+    func testStatusDotOnASelectedSidebarRowReachesThreeToOne() throws {
+        let size = CGSize(width: 24, height: 24)
+        for name in [NSAppearance.Name.aqua, .darkAqua] {
+            for state in [ConnectionState.offline, .connecting, .ready, .degraded, .reconnecting, .blocked] {
+                let dot = StatusDot(state: state)
+                    .environment(\.backgroundProminence, .increased)
+                    .frame(width: size.width, height: size.height)
+                    .background(DS.Color.accent)
+                let drawn = try Self.draw(dot, size: size, appearance: name)
+                let scale = CGFloat(drawn.pixelsWide) / size.width
+                let ground = Self.pixel(drawn, x: 1, y: 1)
+                var best = 0.0
+                for y in Int(8 * scale)..<Int(16 * scale) {
+                    for x in Int(8 * scale)..<Int(16 * scale) {
+                        best = max(best, DS.Terminal.contrast(Self.pixel(drawn, x: x, y: y), ground))
+                    }
+                }
+                XCTAssertGreaterThanOrEqual(best, 3, "\(state) dot on the selected row in \(name.rawValue): \(best)")
+            }
+        }
+    }
+
     /// The pixel at `x`, `y` of an sRGB bitmap as an sRGB color, read from its stored components.
     static func pixel(_ bitmap: NSBitmapImageRep, x: Int, y: Int) -> NSColor {
         var components = [Int](repeating: 0, count: max(4, bitmap.samplesPerPixel))
