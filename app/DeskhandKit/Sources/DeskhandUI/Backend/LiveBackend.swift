@@ -294,6 +294,11 @@ private struct TransferStartResult: Decodable {
     }
 }
 
+/// `trashed` of `files.trash` alongside the envelope.
+private struct TrashResult: Decodable {
+    let trashed: Bool?
+}
+
 private struct TransferListResult: Decodable {
     let transfers: [Transfer]
 }
@@ -319,8 +324,15 @@ extension LiveBackend {
         try await envelopeCall("files.rename", FileRenameParams(hostID: hostID, from: from, to: to))
     }
 
+    /// `files.trash`; `trashed: false` (the path no longer exists) throws `NOT_FOUND` because nothing was moved.
     public func filesTrash(hostID: String, path: String) async throws {
-        try await envelopeCall("files.trash", FilePathParams(hostID: hostID, path: path), timeout: CallLimit.bulkFiles)
+        let envelope: Envelope<TrashResult> = try await client.call(
+            "files.trash", FilePathParams(hostID: hostID, path: path), timeout: CallLimit.bulkFiles)
+        try Self.check(envelope)
+        if envelope.payload.trashed == false {
+            throw OperationError(code: "NOT_FOUND", message: .ui("files.trash.missing", "원격 PC에 그 항목이 없어 휴지통으로 옮긴 것이 없습니다"),
+                                 nextAction: "check_state")
+        }
     }
 
     public func filesDelete(hostID: String, path: String) async throws {

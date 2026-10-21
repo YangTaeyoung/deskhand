@@ -98,7 +98,8 @@ public protocol FilesBackend: Sendable {
     func filesStat(hostID: String, path: String) async throws -> FileStat
     func filesMkdir(hostID: String, path: String) async throws
     func filesRename(hostID: String, from: String, to: String) async throws
-    /// Moves `path` to the remote computer's recycle bin.
+    /// Moves `path` to the remote computer's recycle bin. Throws when nothing was moved, also
+    /// for a path that no longer exists (`trashed: false`).
     func filesTrash(hostID: String, path: String) async throws
     /// Deletes `path` permanently (`permanent: true`).
     func filesDelete(hostID: String, path: String) async throws

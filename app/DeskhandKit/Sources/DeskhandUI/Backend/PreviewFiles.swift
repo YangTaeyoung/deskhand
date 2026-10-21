@@ -337,7 +337,13 @@ extension PreviewBackend {
         }
     }
 
+    /// A missing path moves nothing (`trashed: false`), which the app reports as `NOT_FOUND`.
     public func filesTrash(hostID: String, path: String) async throws {
+        _ = try readyHost(hostID)
+        if files.tree(hostID, { $0.entry(at: path) }) == nil {
+            throw OperationError(code: "NOT_FOUND", message: .ui("files.trash.missing", "원격 PC에 그 항목이 없어 휴지통으로 옮긴 것이 없습니다"),
+                                 nextAction: "check_state")
+        }
         try await removeRemote(hostID: hostID, path: path)
     }
 

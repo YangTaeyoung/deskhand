@@ -453,13 +453,22 @@ public final class FilesModel {
             do {
                 try await backend.filesTrash(hostID: hostID, path: item.path)
             } catch {
-                failures.append((item, OperationError(error)))
+                failures.append((item, Self.trashFailure(OperationError(error))))
             }
         }
         await remote.reload()
         report(items: items, failures: failures,
                success: { count in .ui("files.trashed", "\(count)개 항목을 휴지통으로 옮겼습니다") },
                failure: { name in .ui("files.error.trash", "‘\(name)’ 항목을 휴지통으로 옮기지 못했습니다") })
+    }
+
+    /// A recycle-bin refusal (`CAPABILITY_UNSUPPORTED`: network or removable drive, a policy that
+    /// deletes at once, a path or item too long or large for the bin) in the app's words; other
+    /// failures as they are.
+    static func trashFailure(_ error: OperationError) -> OperationError {
+        guard error.code == "CAPABILITY_UNSUPPORTED" else { return error }
+        return OperationError(code: error.code, message: .ui("files.trash.unsupported", "원격 PC의 휴지통이 이 항목을 받지 않습니다"),
+                              nextAction: error.nextAction)
     }
 
     /// Asks to confirm a permanent delete of remote items.
