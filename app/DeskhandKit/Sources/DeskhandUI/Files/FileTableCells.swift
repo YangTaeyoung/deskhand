@@ -51,8 +51,9 @@ final class FileNSTableView: NSTableView, TextScaledTable {
     }
 }
 
-/// A row whose selection uses the accent color while its pane is active and a gray otherwise.
-final class FileRowView: NSTableRowView {
+/// A files row: striped like `DataTable` rows, its selection the selection fill while its pane is
+/// active and the system gray otherwise.
+final class FileRowView: StripedRowView {
     static let identifier = NSUserInterfaceItemIdentifier("file.row")
 
     var paneActive = true {
@@ -67,11 +68,8 @@ final class FileRowView: NSTableRowView {
         isSelected && paneActive && DS.SelectedRow.isActive(window) ? .emphasized : .normal
     }
 
-    override func drawSelection(in dirtyRect: NSRect) {
-        guard selectionHighlightStyle != .none else { return }
-        let color = paneActive ? DS.SelectedRow.fill(in: window) : NSColor.unemphasizedSelectedContentBackgroundColor
-        color.setFill()
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 0), xRadius: 5, yRadius: 5).fill()
+    override var selectionFill: NSColor {
+        paneActive ? super.selectionFill : .unemphasizedSelectedContentBackgroundColor
     }
 }
 

@@ -467,17 +467,15 @@ final class DataNSTableView: NSTableView, TextScaledTable {
     }
 }
 
-/// A row of `DataTable`: a stripe behind odd rows only, and the selection in the accent color.
-final class DataRowView: NSTableRowView {
-    static let identifier = NSUserInterfaceItemIdentifier("data.row")
-
+/// A table row with a rounded stripe behind odd rows only, so the space below the last row
+/// stays plain, and the selection as a rounded `selectionFill`.
+class StripedRowView: NSTableRowView {
     var striped = false {
         didSet { if striped != oldValue { needsDisplay = true } }
     }
 
-    override var interiorBackgroundStyle: NSView.BackgroundStyle {
-        isSelected && DS.SelectedRow.isActive(window) ? .emphasized : .normal
-    }
+    /// The selection's fill: `DS.SelectedRow.fill(in:)`.
+    var selectionFill: NSColor { DS.SelectedRow.fill(in: window) }
 
     override func drawBackground(in dirtyRect: NSRect) {
         guard striped else { return }
@@ -487,8 +485,17 @@ final class DataRowView: NSTableRowView {
 
     override func drawSelection(in dirtyRect: NSRect) {
         guard selectionHighlightStyle != .none else { return }
-        DS.SelectedRow.fill(in: window).setFill()
+        selectionFill.setFill()
         NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 0), xRadius: 5, yRadius: 5).fill()
+    }
+}
+
+/// A row of `DataTable`.
+final class DataRowView: StripedRowView {
+    static let identifier = NSUserInterfaceItemIdentifier("data.row")
+
+    override var interiorBackgroundStyle: NSView.BackgroundStyle {
+        isSelected && DS.SelectedRow.isActive(window) ? .emphasized : .normal
     }
 }
 

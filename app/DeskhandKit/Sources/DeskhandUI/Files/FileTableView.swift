@@ -106,7 +106,7 @@ struct FileTableView: NSViewRepresentable {
         let table = FileNSTableView()
         table.coordinator = coordinator
         table.style = .inset
-        table.usesAlternatingRowBackgroundColors = true
+        table.usesAlternatingRowBackgroundColors = false
         let metrics = DS.TableMetrics(context.environment.dynamicTypeSize)
         table.metrics = metrics
         table.rowHeight = metrics.rowHeight
@@ -222,7 +222,6 @@ struct FileTableView: NSViewRepresentable {
             guard let table else { return }
             if force || rows != new.rows {
                 rows = new.rows
-                table.usesAlternatingRowBackgroundColors = !rows.isEmpty
                 if editing == nil { table.reloadData() }
             }
             if force || old.isActive != new.isActive {
@@ -342,7 +341,12 @@ struct FileTableView: NSViewRepresentable {
             let view = tableView.makeView(withIdentifier: FileRowView.identifier, owner: nil) as? FileRowView ?? FileRowView()
             view.identifier = FileRowView.identifier
             view.paneActive = parent.isActive
+            view.striped = row % 2 == 1
             return view
+        }
+
+        func tableView(_ tableView: NSTableView, didAdd rowView: NSTableRowView, forRow row: Int) {
+            (rowView as? FileRowView)?.striped = row % 2 == 1
         }
 
         func tableView(_ tableView: NSTableView, typeSelectStringFor tableColumn: NSTableColumn?, row: Int) -> String? {
