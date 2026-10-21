@@ -50,6 +50,24 @@ public final class WorkspaceLayout {
     /// The sidebar's PC list has keyboard focus. Not kept between launches.
     public var sidebarFocused = false
 
+    /// The last 찾기 (⌘F) request; the visible tab focuses its search field on each.
+    public private(set) var findRequest = FindRequest()
+    /// Counts 새로 고침 (⌘R) requests; the visible tab reads its content again on each.
+    public private(set) var refreshRequests = 0
+
+    public func requestFind() { findRequest = FindRequest(count: findRequest.count + 1, at: .now) }
+    public func requestRefresh() { refreshRequests += 1 }
+
+    /// The tab has a search field for 찾기.
+    public static func canFind(_ tab: WorkspaceTab) -> Bool {
+        [.files, .processes, .logs, .debugger, .qa].contains(tab)
+    }
+
+    /// The tab reads its content again on 새로 고침.
+    public static func canRefresh(_ tab: WorkspaceTab) -> Bool {
+        [.files, .processes, .logs, .debugger].contains(tab)
+    }
+
     /// The inspector is folded away because the workspace is too narrow for it beside the content.
     public private(set) var inspectorAutoHidden = false
 
@@ -109,5 +127,16 @@ public final class WorkspaceLayout {
             inspectorPane = pane
             setInspectorVisible(true)
         }
+    }
+}
+
+/// One 찾기 request: how many came before it and when it was made.
+public struct FindRequest: Equatable, Sendable {
+    public var count = 0
+    public var at: Date?
+
+    /// Made within the last half second, so a search field that appears because of it takes focus.
+    public func isRecent(now: Date = .now) -> Bool {
+        at.map { now.timeIntervalSince($0) < 0.5 } ?? false
     }
 }

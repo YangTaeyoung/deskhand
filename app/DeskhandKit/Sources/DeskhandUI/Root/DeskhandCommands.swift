@@ -30,6 +30,11 @@ public struct DeskhandCommands: Commands {
         CommandGroup(replacing: .saveItem) {
             CloseCommands(store: store)
         }
+        CommandGroup(replacing: .textEditing) {
+            Button(String.ui("menu.find", "찾기")) { store.layout.requestFind() }
+                .keyboardShortcut("f")
+                .disabled(store.selectedHost == nil || !WorkspaceLayout.canFind(store.layout.tab))
+        }
         CommandGroup(before: .toolbar) {
             WorkspaceViewCommands(store: store, layout: store.layout)
         }
@@ -66,6 +71,9 @@ public struct DeskhandCommands: Commands {
         }
         CommandMenu(String.ui("menu.debug", "디버그")) {
             DebuggerMenuCommands(store: store)
+        }
+        CommandMenu(String.ui("menu.qa", "QA")) {
+            QAMenuCommands(store: store, layout: store.layout)
         }
     }
 }
@@ -117,6 +125,42 @@ private struct WorkspaceViewCommands: View {
             .keyboardShortcut("2", modifiers: [.command, .option])
             .disabled(!hasWorkspace)
         Divider()
+        if layout.tab != .qa {
+            Button(String.ui("menu.refresh", "새로 고침")) { layout.requestRefresh() }
+                .keyboardShortcut("r")
+                .disabled(!hasWorkspace || !WorkspaceLayout.canRefresh(layout.tab))
+            Divider()
+        }
+    }
+}
+
+/// The QA menu: 시나리오 실행… (⌘R while the QA tab shows), 다시 실행… (⇧⌘R) and QA 취소 (⌘.)
+/// for the run selected in the QA tab. QA 취소 sends only the first cancel; stopping the teardown
+/// asks in the tab.
+private struct QAMenuCommands: View {
+    let store: AppStore
+    @Bindable var layout: WorkspaceLayout
+
+    var body: some View {
+        let host = store.selectedHost
+        let inTab = host != nil && layout.tab == .qa
+        let run = host.flatMap { store.qa.selectedRun(in: store.qa.scope(for: $0.hostID)) }
+        Button(String.ui("qa.run", "시나리오 실행…")) {
+            if let host { store.qa.presentRunSheet(hostID: host.hostID) }
+        }
+        .keyboardShortcut(inTab ? KeyboardShortcut("r") : nil)
+        .disabled(host == nil)
+        Button(String.ui("qa.action.rerun", "다시 실행…")) {
+            if let run { store.qa.presentRunSheet(hostID: run.hostID, rerun: run) }
+        }
+        .keyboardShortcut(inTab ? KeyboardShortcut("r", modifiers: [.command, .shift]) : nil)
+        .disabled(!inTab || run?.scenarioPath == nil)
+        Divider()
+        Button(String.ui("menu.qa.cancel", "QA 취소")) {
+            if let run { Task { await store.qa.cancel(run.runID) } }
+        }
+        .keyboardShortcut(inTab ? KeyboardShortcut(".") : nil)
+        .disabled(!inTab || run.map { store.qa.cancelState(of: $0.runID) != .available } ?? true)
     }
 }
 

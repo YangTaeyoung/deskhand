@@ -81,6 +81,7 @@ struct DebugConsoleView: View {
                 SearchField(text: Binding(get: { session.consoleFilter.query }, set: { session.consoleFilter.query = $0 }),
                             prompt: String.ui("debugger.console.search", "콘솔 검색"), focused: $searchFocused)
                     .frame(width: search)
+                    .focusesOnFind($searchFocused)
             }
             Button {
                 session.clearConsole()

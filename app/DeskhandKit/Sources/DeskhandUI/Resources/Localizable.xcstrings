@@ -6610,6 +6610,17 @@
         }
       }
     },
+    "files.crumbs.folded": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "상위 폴더 %@개"
+          }
+        }
+      }
+    },
     "files.delete.confirm": {
       "extractionState": "manual",
       "localizations": {
@@ -10620,6 +10631,17 @@
         }
       }
     },
+    "menu.find": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "찾기"
+          }
+        }
+      }
+    },
     "menu.hideInspector": {
       "comment": "View menu item: hide the inspector",
       "extractionState": "manual",
@@ -10656,6 +10678,28 @@
         }
       }
     },
+    "menu.qa": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QA"
+          }
+        }
+      }
+    },
+    "menu.qa.cancel": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QA 취소"
+          }
+        }
+      }
+    },
     "menu.quickSwitch": {
       "extractionState": "manual",
       "localizations": {
@@ -10663,6 +10707,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "빠른 전환…"
+          }
+        }
+      }
+    },
+    "menu.refresh": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새로 고침"
           }
         }
       }

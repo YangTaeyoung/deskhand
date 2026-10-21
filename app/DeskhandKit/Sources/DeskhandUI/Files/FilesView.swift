@@ -22,6 +22,8 @@ public struct FilesView: View {
                 guard availability == .ready else { return }
                 Task { await model.start(host: host) }
             }
+            .onChange(of: store.layout.refreshRequests) { _, _ in Task { await model.reload(model.activeSide) } }
+            .onChange(of: store.layout.findRequest) { _, _ in model.focusSearch(model.activeSide) }
     }
 }
 

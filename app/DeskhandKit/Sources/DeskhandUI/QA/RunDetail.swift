@@ -248,7 +248,6 @@ private struct RunActions: View {
                    disabled: run.scenarioPath == nil) {
                 model.presentRunSheet(hostID: run.hostID, rerun: run)
             }
-            .keyboardShortcut("r", modifiers: [.command, .shift])
             if !run.isRunning {
                 let report = QAModel.reportPath(run)
                 action(String.ui("qa.action.report", "보고서 열기"), symbol: "doc.richtext",
@@ -315,7 +314,6 @@ private struct RunActions: View {
             } label: {
                 if compact { Image(systemName: "xmark.circle") } else { Label(String.ui("qa.cancel", "취소"), systemImage: "xmark.circle") }
             }
-            .keyboardShortcut(".", modifiers: .command)
             .help(String.ui("qa.cancel.help", "진행 중인 단계를 멈추고 남은 단계를 건너뛴 뒤 정리 단계를 실행합니다 (⌘.)"))
             .accessibilityLabel(String.ui("qa.cancel", "취소"))
         case .teardownStoppable:

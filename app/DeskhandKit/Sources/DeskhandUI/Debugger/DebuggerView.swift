@@ -34,6 +34,7 @@ public struct DebuggerView: View {
             }
         }
         .onAppear { model.start() }
+        .onChange(of: store.layout.refreshRequests) { _, _ in Task { await model.reload() } }
     }
 }
 

@@ -54,6 +54,13 @@ public struct LogsView: View {
                     }
                 }
             }
+            .onChange(of: store.layout.refreshRequests) { _, _ in
+                guard availability == .ready else { return }
+                Task { await model.reloadAll() }
+            }
+            .onChange(of: store.layout.findRequest) { _, _ in
+                if model.section != .events { model.section = .events }
+            }
     }
 
     private func update(_ model: LogsModel) {
@@ -147,7 +154,6 @@ private struct LogsSectionBar: View {
                 Image(systemName: "arrow.clockwise")
                     .frame(width: 16)
             }
-            .keyboardShortcut("r", modifiers: .command)
             .help(String.ui("logs.refresh.help", "시스템 요약, 이벤트, 크래시 덤프를 다시 불러옵니다 (⌘R)"))
             .accessibilityLabel(String.ui("logs.refresh", "새로 고침"))
         }

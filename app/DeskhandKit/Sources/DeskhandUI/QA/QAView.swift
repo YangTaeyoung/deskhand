@@ -41,6 +41,7 @@ private struct QAContent: View {
     @State private var width: CGFloat?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.findRequest) private var findRequest
 
     private var narrow: Bool { (width ?? QAView.narrowWidth) < QAView.narrowWidth }
     private var showsList: Bool { model.listShown ?? !narrow }
@@ -66,6 +67,7 @@ private struct QAContent: View {
         }
         .background(DS.Color.surface)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        .onChange(of: findRequest) { _, _ in if !showsList { setList(true) } }
         .overlay {
             if let viewer = model.viewer {
                 EvidenceViewer(model: model, selection: viewer)
@@ -200,7 +202,6 @@ private struct QAToolbar: View {
                 Label(String.ui("qa.run", "시나리오 실행…"), systemImage: "play.fill")
             }
             .buttonStyle(.borderedProminent)
-            .keyboardShortcut("r", modifiers: .command)
             .help(String.ui("qa.run.help", "시나리오 YAML 파일을 골라 이 PC에서 실행합니다 (⌘R)"))
             QAScopeSwitch(hostName: host.name, showsAllHosts: $model.showsAllHosts)
             Spacer(minLength: DS.Space.s)

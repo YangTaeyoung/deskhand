@@ -251,11 +251,7 @@ private struct EventFilterBar: View {
             Spacer(minLength: DS.Space.xs)
             SearchField(text: $model.search, prompt: String.ui("logs.search.prompt", "메시지 검색"), focused: $searchFocused)
                 .frame(minWidth: 120, idealWidth: 200, maxWidth: 220)
-            Button("") { searchFocused = true }
-                .keyboardShortcut("f", modifiers: .command)
-                .opacity(0)
-                .frame(width: 0, height: 0)
-                .accessibilityHidden(true)
+                .focusesOnFind($searchFocused)
         }
     }
 

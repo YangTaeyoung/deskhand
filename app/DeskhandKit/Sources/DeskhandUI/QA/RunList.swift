@@ -12,6 +12,7 @@ struct RunList: View {
     /// Called after a row is chosen.
     var chosen: () -> Void = {}
     @FocusState private var focused: Bool
+    @FocusState private var searchFocused: Bool
 
     private func hostName(_ hostID: String) -> String? { store.host(hostID)?.name }
 
@@ -41,6 +42,8 @@ struct RunList: View {
                     TextField(String.ui("qa.search.placeholder", "이름·시나리오·실행 ID"), text: $model.search)
                         .textFieldStyle(.plain)
                         .font(DS.Font.body)
+                        .focused($searchFocused)
+                        .focusesOnFind($searchFocused)
                         .accessibilityLabel(String.ui("qa.search", "실행 검색"))
                     if !model.search.isEmpty {
                         Button {

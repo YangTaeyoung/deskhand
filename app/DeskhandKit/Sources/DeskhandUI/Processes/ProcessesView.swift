@@ -42,6 +42,10 @@ public struct ProcessesView: View {
                 update(model)
             }
             .onChange(of: availability) { _, _ in update(model) }
+            .onChange(of: store.layout.refreshRequests) { _, _ in
+                guard availability == .ready else { return }
+                Task { await model.refresh() }
+            }
     }
 
     private func update(_ model: ProcessesModel) {
@@ -220,18 +224,13 @@ private struct ProcessesToolbar: View {
                 Image(systemName: "arrow.clockwise")
                     .frame(width: 16)
             }
-            .keyboardShortcut("r", modifiers: .command)
             .help(String.ui("processes.refresh.help", "지금 새로 고침 (⌘R)"))
             .accessibilityLabel(String.ui("processes.refresh", "새로 고침"))
             .disabled(!enabled)
             SearchField(text: $model.query, prompt: String.ui("processes.search.prompt", "이름, 경로, PID 검색"), focused: $searchFocused)
                 .frame(minWidth: 140, idealWidth: 220, maxWidth: 240)
                 .disabled(!enabled)
-            Button("") { searchFocused = true }
-                .keyboardShortcut("f", modifiers: .command)
-                .opacity(0)
-                .frame(width: 0, height: 0)
-                .accessibilityHidden(true)
+                .focusesOnFind($searchFocused)
         }
         .controlSize(.regular)
         .padding(.horizontal, DS.Space.m)
