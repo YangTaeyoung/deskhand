@@ -29,14 +29,8 @@ struct CrashDumpList: View {
     var body: some View {
         switch model.crashesPhase {
         case .idle, .loading:
-            VStack(spacing: DS.Space.m) {
-                ProgressView()
-                Text(String.ui("logs.dumps.loading", "크래시 덤프를 찾는 중…"))
-                    .font(DS.Font.body)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .accessibilityElement(children: .combine)
+            LoadingLine(text: String.ui("logs.dumps.loading", "크래시 덤프를 찾는 중…"))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .failed(let error):
             ErrorBanner(message: String.ui("logs.dumps.failed", "크래시 덤프 목록을 불러오지 못했습니다"),
                         fix: LogsModel.explanation(error), code: error.code) {

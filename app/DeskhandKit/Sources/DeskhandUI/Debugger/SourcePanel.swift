@@ -85,7 +85,8 @@ struct SourcePanel: View {
                 RetryPanel(symbol: "doc.questionmark", title: String.ui("debugger.source.failed", "소스를 불러오지 못했습니다"),
                            error: error) { session.retrySource() }
             case .loading, nil:
-                SourceSkeleton()
+                LoadingLine(text: String.ui("debugger.source.loading", "소스를 불러오는 중…"))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         } else if let session, session.isClosed {
             DebugPanePlaceholder(symbol: "stop.circle", title: String.ui("debugger.source.closed", "닫힌 세션입니다"),
@@ -95,7 +96,7 @@ struct SourcePanel: View {
                 RetryPanel(symbol: "pause.circle", title: String.ui("debugger.source.stateFailed", "멈춘 위치를 불러오지 못했습니다"),
                            error: failure) { session.retryState() }
             } else {
-                DebugLoadingLine(text: String.ui("debugger.source.stateLoading", "멈춘 위치를 불러오는 중…"))
+                LoadingLine(text: String.ui("debugger.source.stateLoading", "멈춘 위치를 불러오는 중…"))
             }
         } else if let session, session.pausePending {
             DebugPanePlaceholder(symbol: "pause.circle",
@@ -490,30 +491,5 @@ private struct SourceGutterCell: View {
         if marked, enabled, session.info.breakpointsActive, !session.isClosed { return AnyShapeStyle(DS.Color.onFill) }
         if isLocation { return AnyShapeStyle(.primary) }
         return AnyShapeStyle(.secondary)
-    }
-}
-
-/// Gray lines in the shape of source while it loads.
-private struct SourceSkeleton: View {
-    private static let widths: [CGFloat] = [0.42, 0.66, 0.58, 0.3, 0.72, 0.5, 0.62, 0.36, 0.55, 0.68, 0.46, 0.6]
-
-    var body: some View {
-        GeometryReader { proxy in
-            let rows = max(1, Int((proxy.size.height - DS.Space.l) / SourceLines.lineHeight))
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(0..<rows, id: \.self) { index in
-                    HStack(spacing: DS.Space.m) {
-                        RoundedRectangle(cornerRadius: 3).fill(DS.Color.neutral.opacity(0.14)).frame(width: 24, height: 8)
-                        RoundedRectangle(cornerRadius: 3).fill(DS.Color.neutral.opacity(0.14))
-                            .frame(width: max(40, proxy.size.width * 0.7 * Self.widths[index % Self.widths.count]), height: 8)
-                    }
-                    .frame(height: SourceLines.lineHeight)
-                    .padding(.leading, DS.Space.m)
-                }
-            }
-            .padding(.vertical, DS.Space.s)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(String.ui("debugger.source.loading", "소스를 불러오는 중…"))
     }
 }

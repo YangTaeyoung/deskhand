@@ -117,14 +117,8 @@ struct EventLogPane: View {
     private var eventList: some View {
         switch model.eventsPhase {
         case .idle, .loading:
-            VStack(spacing: DS.Space.m) {
-                ProgressView()
-                Text(String.ui("logs.events.loading", "이벤트를 불러오는 중…"))
-                    .font(DS.Font.body)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .accessibilityElement(children: .combine)
+            TableSkeleton(label: String.ui("logs.events.loading", "이벤트를 불러오는 중…"),
+                          columns: [.fixed(92), .fixed(148), .fixed(190), .fixed(66), .flexible])
         case .failed(let error):
             ErrorBanner(message: String.ui("logs.events.failed", "이벤트 로그를 불러오지 못했습니다"),
                         fix: LogsModel.explanation(error), code: error.code) {

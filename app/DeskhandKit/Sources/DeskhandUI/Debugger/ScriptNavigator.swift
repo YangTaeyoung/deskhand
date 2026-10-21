@@ -94,7 +94,7 @@ public struct ScriptNavigator: View {
                 RetryPanel(symbol: "doc.questionmark", title: String.ui("debugger.scripts.failed", "스크립트 목록을 불러오지 못했습니다"),
                            error: error) { Task { await session.loadScripts() } }
             } else if session.scripts.isEmpty {
-                DebugLoadingLine(text: String.ui("debugger.scripts.loading", "로드된 스크립트를 불러오는 중…"))
+                LoadingLine(text: String.ui("debugger.scripts.loading", "로드된 스크립트를 불러오는 중…"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 DebugPaneHint(text: String.ui("debugger.scripts.none", "이름이 일치하는 스크립트가 없습니다."))

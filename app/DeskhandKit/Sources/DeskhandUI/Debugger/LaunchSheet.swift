@@ -376,7 +376,7 @@ struct RemoteFilePicker: View {
     private var list: some View {
         switch browser.phase {
         case .idle, .loading:
-            DebugLoadingLine(text: String.ui("debugger.picker.loading", "폴더를 읽는 중…"))
+            LoadingLine(text: String.ui("debugger.picker.loading", "폴더를 읽는 중…"))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .failed(let error):
             DebugPanePlaceholder(symbol: "folder.badge.questionmark", title: String.ui("debugger.picker.failed", "폴더를 읽지 못했습니다"),

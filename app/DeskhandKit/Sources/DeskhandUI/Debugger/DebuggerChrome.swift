@@ -430,21 +430,6 @@ struct NameValueLayout: Layout {
     }
 }
 
-/// A small spinner with a caption, for panes that are reading.
-struct DebugLoadingLine: View {
-    let text: String
-
-    var body: some View {
-        HStack(spacing: DS.Space.s) {
-            ProgressView().controlSize(.small)
-            Text(text)
-                .font(DS.Font.caption)
-                .foregroundStyle(.secondary)
-        }
-        .accessibilityElement(children: .combine)
-    }
-}
-
 /// A short centered message inside a pane: a symbol, a title and an explanation.
 struct DebugPanePlaceholder: View {
     let symbol: String

@@ -314,7 +314,7 @@ public struct AttachSheet: View {
             DebugPanePlaceholder(symbol: "exclamationmark.triangle", title: String.ui("processes.failed", "프로세스 목록을 불러오지 못했습니다"),
                                  message: listError.message)
         } else {
-            DebugLoadingLine(text: String.ui("processes.loading", "프로세스 목록을 불러오는 중…"))
+            LoadingLine(text: String.ui("processes.loading", "프로세스 목록을 불러오는 중…"))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }

@@ -102,7 +102,7 @@ private struct QAContent: View {
         if runs.isEmpty {
             switch listing.phase {
             case .idle, .loading:
-                DebugLoadingLine(text: String.ui("qa.loading", "QA 실행 기록을 불러오는 중…"))
+                LoadingLine(text: String.ui("qa.loading", "QA 실행 기록을 불러오는 중…"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .failed(let error):
                 VStack {

@@ -181,7 +181,7 @@ struct EvidenceViewer: View {
             DebugPanePlaceholder(symbol: "exclamationmark.triangle", title: String.ui("qa.viewer.failed", "증거 파일을 읽지 못했습니다"),
                                  message: error.message)
         case .loading, nil:
-            DebugLoadingLine(text: String.ui("qa.viewer.loading", "증거 파일을 읽는 중…"))
+            LoadingLine(text: String.ui("qa.viewer.loading", "증거 파일을 읽는 중…"))
         }
     }
 }

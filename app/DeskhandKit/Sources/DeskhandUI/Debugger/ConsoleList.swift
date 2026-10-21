@@ -37,7 +37,7 @@ struct ConsoleList: View {
             if items.isEmpty {
                 switch session.consolePhase {
                 case .loading, .idle:
-                    DebugLoadingLine(text: String.ui("debugger.console.loading", "콘솔 기록을 불러오는 중…"))
+                    LoadingLine(text: String.ui("debugger.console.loading", "콘솔 기록을 불러오는 중…"))
                 case .failed(let error):
                     DebugPanePlaceholder(symbol: "exclamationmark.triangle", title: String.ui("debugger.console.failed", "콘솔 기록을 불러오지 못했습니다"),
                                          message: error.message)

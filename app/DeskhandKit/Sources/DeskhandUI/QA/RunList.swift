@@ -212,7 +212,7 @@ struct RunList: View {
         if listing.nextCursor != nil {
             Group {
                 if listing.loadingMore {
-                    DebugLoadingLine(text: String.ui("qa.list.loadingMore", "이전 실행을 불러오는 중…"))
+                    LoadingLine(text: String.ui("qa.list.loadingMore", "이전 실행을 불러오는 중…"))
                 } else if let error = listing.moreError {
                     VStack(spacing: DS.Space.xs) {
                         Text(String.ui("qa.list.moreFailed", "이전 실행을 불러오지 못했습니다"))

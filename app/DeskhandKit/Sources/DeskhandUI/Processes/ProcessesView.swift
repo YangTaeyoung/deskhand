@@ -85,7 +85,8 @@ private struct ProcessesContent: View {
     private var content: some View {
         switch model.phase {
         case .idle, .loading:
-            ProcessesSkeleton()
+            TableSkeleton(label: String.ui("processes.loading", "프로세스 목록을 불러오는 중…"),
+                          columns: [.flexible, .fixed(56), .fixed(68), .fixed(78), .fixed(124), .fixed(138), .fixed(200)], leadingSymbol: true)
         case .failed(let error) where error.code == "CAPABILITY_UNSUPPORTED":
             HostFeatureUnavailableView(host: host, availability: .unavailable(.unsupported, reason: error.message.asSentence),
                                        feature: .processes)
@@ -139,51 +140,6 @@ private struct ProcessesContent: View {
         }
         .padding(DS.Space.l)
         .accessibilityElement(children: .combine)
-    }
-}
-
-/// Gray placeholder rows in the shape of the process table while the first list loads.
-private struct ProcessesSkeleton: View {
-    private static let widths: [CGFloat] = [0.62, 0.48, 0.71, 0.55, 0.4, 0.66, 0.5, 0.58, 0.44, 0.69, 0.52, 0.6]
-
-    var body: some View {
-        GeometryReader { proxy in
-            let rows = max(1, Int((proxy.size.height - 28) / 28))
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: DS.Space.l) {
-                    bar(width: 40, height: 9)
-                    Spacer()
-                    bar(width: 30, height: 9)
-                    bar(width: 44, height: 9)
-                    bar(width: 52, height: 9)
-                }
-                .padding(.horizontal, DS.Space.l)
-                .frame(height: 28)
-                Rectangle().fill(DS.Color.separator).frame(height: 1)
-                ForEach(0..<rows, id: \.self) { index in
-                    HStack(spacing: DS.Space.l) {
-                        bar(width: 14, height: 14)
-                        bar(width: 220 * Self.widths[index % Self.widths.count], height: 10)
-                        Spacer()
-                        bar(width: 34, height: 10)
-                        bar(width: 28, height: 10)
-                        bar(width: 56, height: 10)
-                        bar(width: max(80, proxy.size.width * 0.28 * Self.widths[(index + 5) % Self.widths.count]), height: 10)
-                    }
-                    .padding(.horizontal, DS.Space.l)
-                    .frame(height: 28)
-                    .background(index % 2 == 1 ? DS.Color.neutral.opacity(0.05) : .clear)
-                }
-            }
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(String.ui("processes.loading", "프로세스 목록을 불러오는 중…"))
-    }
-
-    private func bar(width: CGFloat, height: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: height / 2.5, style: .continuous)
-            .fill(DS.Color.neutral.opacity(0.16))
-            .frame(width: width, height: height)
     }
 }
 

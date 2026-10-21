@@ -75,7 +75,7 @@ struct RunDetail: View {
             .padding(DS.Space.xl)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         default:
-            DebugLoadingLine(text: String.ui("qa.steps.loading", "단계를 불러오는 중…"))
+            LoadingLine(text: String.ui("qa.steps.loading", "단계를 불러오는 중…"))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }

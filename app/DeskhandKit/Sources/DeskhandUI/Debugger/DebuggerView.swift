@@ -158,7 +158,7 @@ private struct DebuggerContent: View {
         if model.sessions.isEmpty {
             switch model.listPhase {
             case .idle, .loading:
-                DebugLoadingLine(text: String.ui("debugger.loading", "디버그 세션을 불러오는 중…"))
+                LoadingLine(text: String.ui("debugger.loading", "디버그 세션을 불러오는 중…"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .failed(let error):
                 VStack {
