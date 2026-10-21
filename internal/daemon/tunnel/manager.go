@@ -318,13 +318,15 @@ func (m *Manager) List(hostID string) []Info {
 	return out
 }
 
+// info describes t; its failed connection count and last error are read
+// together, as fail writes them.
 func (t *tunnel) info() Info {
 	t.mu.Lock()
-	last := t.lastErr
+	last, failed := t.lastErr, t.failed.Load()
 	t.mu.Unlock()
 	return Info{TunnelID: t.id, HostID: t.hostID, RemotePort: t.remote, LocalPort: t.local,
 		LocalAddress: net.JoinHostPort("127.0.0.1", strconv.Itoa(t.local)), Owner: t.owner, CreatedAt: t.created,
-		Connections: int(t.active.Load()), TotalConnections: t.total.Load(), FailedConnections: t.failed.Load(),
+		Connections: int(t.active.Load()), TotalConnections: t.total.Load(), FailedConnections: failed,
 		BytesToRemote: t.toRemote.Load(), BytesFromRemote: t.fromRem.Load(), LastError: last}
 }
 
@@ -360,11 +362,12 @@ func (t *tunnel) accept() {
 	}
 }
 
-// fail records why a connection could not be carried.
+// fail records why a connection could not be carried: the error and the
+// failed connection count change together.
 func (t *tunnel) fail(text string) {
-	t.failed.Add(1)
 	t.mu.Lock()
 	t.lastErr = text
+	t.failed.Add(1)
 	t.mu.Unlock()
 	t.m.lg.Printf("tunnel %s (127.0.0.1:%d -> %s port %d): %s", t.id, t.local, t.host.Target().Name, t.remote, text)
 }
