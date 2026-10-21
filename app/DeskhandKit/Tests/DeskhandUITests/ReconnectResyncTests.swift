@@ -201,6 +201,40 @@ final class DroppedEventsResyncTests: XCTestCase {
         await client.close()
     }
 
+    func testTheTransferQueueReadsOpenedFilesAgainOnEventsDropped() async throws {
+        let daemon = MockDaemon()
+        defer { daemon.stop() }
+        let (backend, client) = try await connected(daemon)
+        var transfer = try XCTUnwrap(JSONSerialization.jsonObject(with: DaemonFixture.data("transfer-get-failed-partial")) as? [String: Any])
+        transfer["host_id"] = dev
+        let detail = String(decoding: try JSONSerialization.data(withJSONObject: transfer), as: UTF8.self)
+        transfer["files"] = nil
+        let list = String(decoding: try JSONSerialization.data(withJSONObject: ["transfers": [transfer]]), as: UTF8.self)
+        let host = Self.host
+        daemon.setHandler { request in
+            switch request.method {
+            case "host.list": .result(#"{"hosts":[\#(host)]}"#)
+            case "transfer.list": .result(list)
+            case "transfer.get": .result(detail)
+            default: nil
+            }
+        }
+        let queue = TransferQueue(hostID: dev, backend: backend)
+        queue.start()
+        try await waitUntil { queue.loaded && !queue.transfers.isEmpty }
+        let id = try XCTUnwrap(queue.transfers.first?.transferID)
+        queue.expand(id)
+        try await waitUntil { queue.files[id]?.count == 3 }
+        XCTAssertTrue(daemon.waitForRequests(method: "events.subscribe", count: 1))
+        let gets = daemon.requests(method: "transfer.get").count
+        daemon.emit(Self.dropped)
+        try await waitUntil(timeout: .seconds(5)) {
+            daemon.requests(method: "transfer.list").count >= 2 && daemon.requests(method: "transfer.get").count > gets
+        }
+        queue.stop()
+        await client.close()
+    }
+
     func testTheDebuggerReloadsItsSessionsOnEventsDropped() async throws {
         let daemon = MockDaemon()
         defer { daemon.stop() }
