@@ -82,8 +82,13 @@ struct ControlBanner: View {
     var body: some View {
         VStack(spacing: 0) {
             band
+            if let error = store.controlError(for: host.hostID) {
+                ControlFailureBar(title: String.ui("control.failed.read", "제어권 상태를 읽지 못했습니다"), error: error,
+                                  retry: { Task { await store.loadControl(for: host.hostID) } },
+                                  dismiss: { store.dismissControlError(for: host.hostID) })
+            }
             ForEach(actions.failures(for: host.hostID)) { failure in
-                ControlFailureBar(failure: failure,
+                ControlFailureBar(title: failure.action.failureTitle, error: failure.error,
                                   retry: { actions.retry(failure.action, on: host.hostID) },
                                   dismiss: { actions.dismissFailure(failure.action, for: host.hostID) })
             }
@@ -351,7 +356,8 @@ struct BandButtonStyle: ButtonStyle {
 /// Inline failure of one control action: what failed, the daemon's message and fix, the error
 /// code, an accent retry button and a dismiss button.
 struct ControlFailureBar: View {
-    let failure: ControlActions.Failure
+    let title: String
+    let error: OperationError
     let retry: () -> Void
     let dismiss: () -> Void
 
@@ -363,14 +369,14 @@ struct ControlFailureBar: View {
                 .frame(width: 28)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 0) {
-                Text(failure.action.failureTitle)
+                Text(title)
                     .font(DS.Font.headline)
-                Text(failure.error.sentences)
+                Text(error.sentences)
                     .font(DS.Font.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
-                    .help(failure.error.sentences)
-                if let code = failure.error.code {
+                    .help(error.sentences)
+                if let code = error.code {
                     ErrorCodeLine(code: code)
                 }
             }

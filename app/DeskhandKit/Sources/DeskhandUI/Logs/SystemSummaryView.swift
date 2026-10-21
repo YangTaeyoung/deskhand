@@ -35,7 +35,7 @@ struct SystemSummaryView: View {
         bootTime: Timestamp(date: .now), uptimeS: 3_600)
 }
 
-/// `시스템 요약` and the time of the summary, or a warning when its last refresh failed.
+/// `시스템 요약`, and the time of the summary with a warning when its last refresh failed.
 private struct SummaryHeader: View {
     let model: LogsModel
 
@@ -45,19 +45,14 @@ private struct SummaryHeader: View {
                 .font(DS.Font.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
             Spacer(minLength: DS.Space.s)
-            if let updated = model.systemUpdatedAt {
+            if let updated = model.systemUpdatedAt, let error = model.systemRefreshError {
                 let time = DS.Format.clock(updated, seconds: true)
-                if let error = model.systemRefreshError {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(DS.Color.warning)
-                        .accessibilityHidden(true)
-                    Text(String.ui("logs.summary.stale", "새로 고치지 못했습니다 · \(time) 기준"))
-                        .foregroundStyle(.secondary)
-                        .help(error.sentences)
-                } else {
-                    Text(String.ui("logs.updated", "\(time) 기준"))
-                        .foregroundStyle(.secondary)
-                }
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(DS.Color.warning)
+                    .accessibilityHidden(true)
+                Text(String.ui("logs.summary.stale", "새로 고치지 못했습니다 · \(time) 기준"))
+                    .foregroundStyle(.secondary)
+                    .help(error.sentences)
             }
         }
         .font(DS.Font.caption)

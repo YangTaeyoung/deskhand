@@ -102,6 +102,8 @@ public final class AppStore {
     public let qa: QAModel
 
     private var controls: [String: ControlState] = [:]
+    /// Why the last `control.get` of a host failed, until a read succeeds or it is dismissed.
+    private var controlErrors: [String: OperationError] = [:]
     /// Hosts whose next control state is applied whatever its `gen`, after the event stream
     /// was subscribed again.
     private var controlsToRevalidate: Set<String> = []
@@ -384,6 +386,7 @@ public final class AppStore {
         hosts = list
         for i in hosts.indices { syncOwner(at: i) }
         controls = controls.filter { ids.contains($0.key) }
+        controlErrors = controlErrors.filter { ids.contains($0.key) }
         controlsToRevalidate = controlsToRevalidate.intersection(ids)
         timelines = timelines.filter { ids.contains($0.key) }
         timelineErrors = timelineErrors.filter { ids.contains($0.key) }
@@ -433,6 +436,7 @@ public final class AppStore {
             controlActions.forget(id)
             forgetTabState(id)
             controls[id] = nil
+            controlErrors[id] = nil
             controlsToRevalidate.remove(id)
             timelines[id] = nil
             timelineErrors[id] = nil
@@ -492,9 +496,26 @@ public final class AppStore {
 
     // MARK: Control and timeline
 
+    /// Reads the control state of a host; a failure is kept for `controlError(for:)`.
     public func loadControl(for hostID: String) async {
-        guard let control = try? await backend.controlGet(hostID: hostID) else { return }
-        applyControl(control, for: hostID)
+        do {
+            let control = try await backend.controlGet(hostID: hostID)
+            controlErrors[hostID] = nil
+            applyControl(control, for: hostID)
+        } catch is CancellationError {
+        } catch {
+            guard host(hostID) != nil else { return }
+            controlErrors[hostID] = OperationError(error)
+        }
+    }
+
+    /// Why the last control read of a host failed.
+    public func controlError(for hostID: String) -> OperationError? {
+        controlErrors[hostID]
+    }
+
+    public func dismissControlError(for hostID: String) {
+        controlErrors[hostID] = nil
     }
 
     /// The one writer of control state, for `control.changed` events, `control.get` and the

@@ -180,6 +180,7 @@ final class GatedBackend: Backend, LocalOverlayProviding {
     func sshAliases() async -> [String] { await base.sshAliases() }
     /// Reads the preview daemon's state, then waits while `control.get` is held with `afterApplying`.
     func controlGet(hostID: String) async throws -> ControlState {
+        if let failure = state.withLock({ $0.controlFailures["control.get"] }) { throw failure }
         let control = try await base.controlGet(hostID: hostID)
         await gate("control.get", afterApplying: true)
         return control

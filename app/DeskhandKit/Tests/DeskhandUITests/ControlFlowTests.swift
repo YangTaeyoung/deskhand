@@ -119,6 +119,18 @@ final class ControlFlowTests: XCTestCase {
         XCTAssertEqual(backend.controlCalls.count, 1)
     }
 
+    func testAFailedControlReadIsKeptUntilAReadSucceeds() async throws {
+        let (store, backend) = await startedStore()
+        let dev = PreviewFixtures.devPCID
+        backend.failControl("control.get", with: OperationError(code: "TIMEOUT", message: "데몬이 제때 답하지 않았습니다"))
+        await store.loadControl(for: dev)
+        XCTAssertEqual(store.controlError(for: dev)?.code, "TIMEOUT")
+
+        backend.failControl("control.get", with: nil)
+        await store.loadControl(for: dev)
+        XCTAssertNil(store.controlError(for: dev))
+    }
+
     func testEmergencyStopSendsAgainWhileAStopIsInFlight() async throws {
         let (store, backend) = await startedStore()
         let dev = PreviewFixtures.devPCID
