@@ -1072,3 +1072,41 @@ func TestFilesListPagesWithCursor(t *testing.T) {
 		t.Fatalf("limit 5001: %v", err)
 	}
 }
+
+func TestFilesListAndStatAnswerWithTheContractFields(t *testing.T) {
+	e := setup(t, setupOpts{trustDaemon: true})
+	e.waitState(t, "ready")
+	dir := filepath.Join(e.agent.home, "fields")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	list := e.call(t, "files.list", map[string]any{"host_id": "pc", "path": dir})
+	for _, k := range []string{"host_id", "path", "entries", "total", "truncated"} {
+		if _, ok := list[k]; !ok {
+			t.Fatalf("files.list has no %s: %v", k, list)
+		}
+	}
+	for _, k := range []string{"next_cursor", "skipped"} {
+		if _, ok := list[k]; ok {
+			t.Fatalf("files.list of one full page has %s: %v", k, list)
+		}
+	}
+	missing := filepath.Join(dir, "없는 파일.txt")
+	st := e.call(t, "files.stat", map[string]any{"host_id": "pc", "path": missing})
+	if st["exists"] != false || st["host_id"] != "pc" || st["path"] != missing || st["name"] != "없는 파일.txt" {
+		t.Fatalf("files.stat of a missing path %v, want exists false", st)
+	}
+	for _, k := range []string{"dir", "size", "link"} {
+		if _, ok := st[k]; !ok {
+			t.Fatalf("files.stat of a missing path has no %s: %v", k, st)
+		}
+	}
+	for _, k := range []string{"mtime", "sha256"} {
+		if _, ok := st[k]; ok {
+			t.Fatalf("files.stat of a missing path has %s: %v", k, st)
+		}
+	}
+}
