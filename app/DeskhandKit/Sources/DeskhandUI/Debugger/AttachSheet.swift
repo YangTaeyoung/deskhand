@@ -414,12 +414,12 @@ private struct CandidateRow: View {
                             .lineLimit(1)
                         Text(String.ui("processes.pidLabel", "PID \(String(candidate.process.pid))"))
                             .font(.system(.subheadline, design: .monospaced))
-                            .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill.opacity(0.85)) : AnyShapeStyle(.secondary))
+                            .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(DS.Status.neutralText))
                         badge
                     }
                     Text(candidate.process.cmd ?? candidate.process.path ?? "")
                         .font(.system(.subheadline, design: .monospaced))
-                        .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill.opacity(0.85)) : AnyShapeStyle(.secondary))
+                        .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(DS.Status.neutralText))
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -454,6 +454,6 @@ private struct CandidateRow: View {
             .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(DS.Status.accentText))
             .padding(.horizontal, DS.Space.s)
             .frame(minHeight: 16)
-            .background(selected ? DS.Color.onFill.opacity(0.2) : DS.Color.accent.opacity(0.14), in: Capsule())
+            .chipBackground(DS.Color.accent, selected: selected)
     }
 }

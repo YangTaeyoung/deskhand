@@ -64,12 +64,12 @@ final class FileRowView: NSTableRowView {
     }
 
     override var interiorBackgroundStyle: NSView.BackgroundStyle {
-        isSelected && paneActive ? .emphasized : .normal
+        isSelected && paneActive && DS.SelectedRow.isActive(window) ? .emphasized : .normal
     }
 
     override func drawSelection(in dirtyRect: NSRect) {
         guard selectionHighlightStyle != .none else { return }
-        let color = paneActive ? NSColor(DS.Color.accent) : NSColor.unemphasizedSelectedContentBackgroundColor
+        let color = paneActive ? DS.SelectedRow.fill(in: window) : NSColor.unemphasizedSelectedContentBackgroundColor
         color.setFill()
         NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 0), xRadius: 5, yRadius: 5).fill()
     }

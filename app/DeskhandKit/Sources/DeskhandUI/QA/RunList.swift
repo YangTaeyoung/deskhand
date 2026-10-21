@@ -384,10 +384,7 @@ struct QAStatusBadge: View {
         .padding(.horizontal, DS.Space.s)
         .frame(minWidth: large ? nil : Self.width)
         .frame(height: large ? 22 : 18)
-        .background(inverted ? AnyShapeStyle(.clear) : AnyShapeStyle(tint.opacity(DS.Status.badgeOpacity)), in: Capsule())
-        .overlay {
-            if inverted { Capsule().strokeBorder(DS.Color.onFill.opacity(0.7), lineWidth: 1) }
-        }
+        .chipBackground(tint, selected: inverted)
         .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)

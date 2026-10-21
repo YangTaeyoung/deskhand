@@ -312,7 +312,7 @@ struct RoleBadge: View {
             .padding(.horizontal, DS.Space.s)
             .frame(minWidth: fixedWidth ? Self.width : nil)
             .frame(height: 16)
-            .background(background(main: main), in: Capsule())
+            .chipBackground(main ? DS.Color.accent : DS.Color.neutral, selected: inverted)
             .fixedSize()
     }
 
@@ -321,10 +321,6 @@ struct RoleBadge: View {
         return main ? AnyShapeStyle(DS.Status.accentText) : AnyShapeStyle(DS.Status.neutralText)
     }
 
-    private func background(main: Bool) -> Color {
-        if inverted { return DS.Color.onFill.opacity(0.22) }
-        return main ? DS.Color.accent.opacity(DS.Status.badgeOpacity) : DS.Color.neutral.opacity(DS.Status.badgeOpacity)
-    }
 }
 
 /// The breakpoint marker of the gutter and the breakpoints list: a tag pointing right.

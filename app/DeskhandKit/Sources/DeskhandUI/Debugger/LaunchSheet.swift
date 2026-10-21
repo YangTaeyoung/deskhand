@@ -440,7 +440,7 @@ private struct PickerRow: View {
                     Text(item.sizeText)
                         .font(DS.Font.caption)
                         .monospacedDigit()
-                        .foregroundStyle(chosen ? AnyShapeStyle(DS.Color.onFill.opacity(0.85)) : AnyShapeStyle(.secondary))
+                        .foregroundStyle(chosen ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(.secondary))
                 } else {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 9, weight: .semibold))

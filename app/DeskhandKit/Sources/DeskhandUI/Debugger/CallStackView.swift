@@ -125,7 +125,7 @@ private struct FrameRow: View {
     }
 
     private var locationText: some View {
-        let style: AnyShapeStyle = selected ? AnyShapeStyle(DS.Color.onFill.opacity(0.85)) : AnyShapeStyle(.secondary)
+        let style: AnyShapeStyle = selected ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(.secondary)
         return Text(DebugFormat.location(url: frame.url, line: frame.line))
             .font(.system(size: 11, design: .monospaced))
             .foregroundStyle(style)
@@ -152,7 +152,7 @@ private struct FrameRow: View {
         } else {
             Text(String(index))
                 .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill.opacity(0.85)) : AnyShapeStyle(.secondary))
+                .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(.secondary))
         }
     }
 }

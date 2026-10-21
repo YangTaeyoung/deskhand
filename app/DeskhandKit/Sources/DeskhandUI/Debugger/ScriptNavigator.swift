@@ -170,7 +170,7 @@ private struct ScriptRow: View {
                         .lineLimit(1)
                     Text(ScriptURL.display(script.url))
                         .font(DS.Font.caption)
-                        .foregroundStyle(highlighted ? AnyShapeStyle(DS.Color.onFill.opacity(0.85)) : AnyShapeStyle(.secondary))
+                        .foregroundStyle(highlighted ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(.secondary))
                         .lineLimit(1)
                         .truncationMode(.head)
                 }

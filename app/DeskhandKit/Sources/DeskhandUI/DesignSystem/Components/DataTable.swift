@@ -476,7 +476,7 @@ final class DataRowView: NSTableRowView {
     }
 
     override var interiorBackgroundStyle: NSView.BackgroundStyle {
-        isSelected ? .emphasized : .normal
+        isSelected && DS.SelectedRow.isActive(window) ? .emphasized : .normal
     }
 
     override func drawBackground(in dirtyRect: NSRect) {
@@ -487,7 +487,7 @@ final class DataRowView: NSTableRowView {
 
     override func drawSelection(in dirtyRect: NSRect) {
         guard selectionHighlightStyle != .none else { return }
-        NSColor(DS.Color.accent).setFill()
+        DS.SelectedRow.fill(in: window).setFill()
         NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 0), xRadius: 5, yRadius: 5).fill()
     }
 }
@@ -577,8 +577,8 @@ final class DataTextCell: NSTableCellView {
 }
 
 /// A small rounded tag drawn in a table cell, such as `Deskhand가 시작함`. Narrower than its text,
-/// it draws as a dot at its leading edge. Its colors resolve for the cell's appearance and turn
-/// white on a selected row.
+/// it draws as a dot at its leading edge. Its colors resolve for the cell's appearance; on a
+/// selected row its text turns white inside a white outline without a fill.
 final class TagView: NSView {
     static let dotWidth: CGFloat = 10
 
@@ -626,9 +626,15 @@ final class TagView: NSView {
             return
         }
         let rect = bounds.insetBy(dx: 0.5, dy: 0.5)
-        let fill = emphasized ? NSColor.alternateSelectedControlTextColor.withAlphaComponent(0.22) : tint.withAlphaComponent(DS.Status.badgeOpacity)
-        fill.setFill()
-        NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2).fill()
+        let capsule = NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2)
+        if emphasized {
+            NSColor.white.withAlphaComponent(DS.SelectedRow.chipOutlineOpacity).setStroke()
+            capsule.lineWidth = 1
+            capsule.stroke()
+        } else {
+            tint.withAlphaComponent(DS.Status.badgeOpacity).setFill()
+            capsule.fill()
+        }
         let size = (text as NSString).size(withAttributes: attributes)
         (text as NSString).draw(at: NSPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2),
                                 withAttributes: attributes)

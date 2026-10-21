@@ -1,3 +1,4 @@
+import DeskhandClient
 import AppKit
 import SwiftUI
 import XCTest
@@ -226,6 +227,57 @@ final class TokensTests: XCTestCase {
                 }
             }
         }
+    }
+
+    /// White text on the selection fill and the chips of a selected row — the debugger's role
+    /// badge, a SwiftUI chip and the AppKit tag of the tables — reach 4.5:1 against what is drawn
+    /// behind them inside the chip: the brightest against the darkest pixel inside each chip,
+    /// read from an offscreen sRGB window, in both appearances.
+    @MainActor
+    func testTextAndChipsOnSelectedRowsReachFourAndAHalfToOne() throws {
+        struct Tag: NSViewRepresentable {
+            func makeNSView(context: Context) -> TagView {
+                let tag = TagView()
+                tag.text = "Deskhand가 시작함"
+                tag.tint = DS.Status.accentTextNS
+                tag.emphasized = true
+                return tag
+            }
+            func updateNSView(_ view: TagView, context: Context) {}
+        }
+        let renderer = DebugTarget(id: "p", role: DebugTargetRole.renderer.rawValue, type: "page", url: "app://a", title: "a")
+        let samples: [(String, AnyView, CGSize)] = [
+            ("role badge", AnyView(RoleBadge(target: renderer, inverted: true, fixedWidth: true)), CGSize(width: 48, height: 16)),
+            ("chip", AnyView(Text("검사기 열림").font(.system(.caption, weight: .semibold)).foregroundStyle(DS.Color.onFill)
+                .frame(width: 80, height: 16).chipBackground(DS.Color.accent, selected: true)), CGSize(width: 80, height: 16)),
+            ("table tag", AnyView(Tag().frame(width: 104, height: 16)), CGSize(width: 104, height: 16)),
+            ("secondary text", AnyView(Text("C:\\Program Files\\node.exe").font(.system(.subheadline, design: .monospaced))
+                .foregroundStyle(DS.Color.onFill)), CGSize(width: 200, height: 16)),
+        ]
+        for name in [NSAppearance.Name.aqua, .darkAqua] {
+            for sample in samples {
+                let size = CGSize(width: sample.2.width + 16, height: sample.2.height + 16)
+                let drawn = try Self.draw(sample.1.frame(width: size.width, height: size.height).background(DS.Status.selectionFill),
+                                          size: size, appearance: name)
+                let scale = CGFloat(drawn.pixelsWide) / size.width
+                let inset = (x: (8 + sample.2.width * 0.15) * scale, y: (8 + 4) * scale)
+                var pixels: [NSColor] = []
+                for y in stride(from: Int(inset.y), to: drawn.pixelsHigh - Int(inset.y), by: 1) {
+                    for x in stride(from: Int(inset.x), to: drawn.pixelsWide - Int(inset.x), by: 1) {
+                        pixels.append(Self.pixel(drawn, x: x, y: y))
+                    }
+                }
+                let luminance = DS.Terminal.luminance
+                let text = try XCTUnwrap(pixels.max { luminance($0) < luminance($1) })
+                let ground = try XCTUnwrap(pixels.min { luminance($0) < luminance($1) })
+                let ratio = DS.Terminal.contrast(text, ground)
+                XCTAssertGreaterThanOrEqual(ratio, 4.5, "\(sample.0) on the selection in \(name.rawValue): \(ratio)")
+            }
+        }
+        XCTAssertTrue(DS.SelectedRow.isActive(nil))
+        let offscreen = NSWindow(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: true)
+        XCTAssertTrue(DS.SelectedRow.isActive(offscreen), "a window that is not shown draws the active selection")
+        XCTAssertEqual(DS.SelectedRow.fill(in: nil), DS.Status.selectionFillNS)
     }
 
     /// The pixel at `x`, `y` of an sRGB bitmap as an sRGB color, read from its stored components.
