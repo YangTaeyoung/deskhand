@@ -1,8 +1,8 @@
 import Foundation
 import Observation
 
-/// Workspace layout the person chose: the selected tab and the inspector. Kept in UserDefaults
-/// and shared by every computer.
+/// Workspace layout the person chose: the selected tab, the inspector and the logs tab's system
+/// summary. Kept in UserDefaults and shared by every computer.
 @MainActor
 @Observable
 public final class WorkspaceLayout {
@@ -27,6 +27,7 @@ public final class WorkspaceLayout {
         static let tab = SettingsKey.Workspace.tab
         static let showsInspector = SettingsKey.Workspace.inspectorVisible
         static let inspectorPane = SettingsKey.Workspace.inspectorPane
+        static let showsLogSummary = SettingsKey.Logs.showsSummary
     }
 
     public var tab: WorkspaceTab {
@@ -41,6 +42,11 @@ public final class WorkspaceLayout {
         didSet { defaults.set(inspectorPane.rawValue, forKey: Keys.inspectorPane) }
     }
 
+    /// The logs tab shows the system summary above the logs.
+    public var showsLogSummary: Bool {
+        didSet { defaults.set(showsLogSummary, forKey: Keys.showsLogSummary) }
+    }
+
     @ObservationIgnored private let defaults: UserDefaults
 
     init(defaults: UserDefaults) {
@@ -48,6 +54,7 @@ public final class WorkspaceLayout {
         tab = defaults.string(forKey: Keys.tab).flatMap(WorkspaceTab.init(rawValue:)) ?? .screen
         showsInspector = defaults.object(forKey: Keys.showsInspector) as? Bool ?? true
         inspectorPane = defaults.string(forKey: Keys.inspectorPane).flatMap(InspectorPane.init(rawValue:)) ?? .activity
+        showsLogSummary = defaults.object(forKey: Keys.showsLogSummary) as? Bool ?? true
     }
 
     /// Shows the inspector on `pane`, or hides it when it already shows `pane`.

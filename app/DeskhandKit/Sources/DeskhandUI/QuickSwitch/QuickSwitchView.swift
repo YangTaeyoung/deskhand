@@ -1,104 +1,133 @@
 import SwiftUI
 
-/// The quick switch palette (⌘K) over the window: a search field, the matching computers,
-/// tabs, commands and recent work in sections or best first, and the keys it takes. Clicking
-/// outside the palette closes it.
+/// The quick switch palette (⌘K) over the window: the window dimmed behind it, the panel
+/// centered under the workspace tab bar. Clicking outside the panel closes it.
 public struct QuickSwitchOverlay: View {
     let store: AppStore
-    @Environment(\.colorScheme) private var colorScheme
+    let chrome: WorkspaceChrome
 
-    public init(store: AppStore) {
+    public init(store: AppStore, chrome: WorkspaceChrome = .native) {
         self.store = store
+        self.chrome = chrome
+    }
+
+    /// Distance from the top of the content to the panel: below the tab bar, and below the
+    /// toolbar strip when the toolbar is drawn as part of the content.
+    private var topInset: CGFloat {
+        let toolbar = chrome == .standIn ? WorkspaceToolbarStrip.height : 0
+        return toolbar + WorkspaceTabBar.height + DS.Space.s
     }
 
     public var body: some View {
         if store.quickSwitch.isPresented {
             ZStack(alignment: .top) {
-                Color.black.opacity(colorScheme == .dark ? 0.24 : 0.1)
+                DS.Color.scrim.opacity(0.5)
+                    .ignoresSafeArea()
                     .contentShape(Rectangle())
                     .onTapGesture { store.quickSwitch.dismiss() }
                     .accessibilityHidden(true)
-                QuickSwitchPalette(store: store, model: store.quickSwitch)
-                    .padding(.top, 72)
+                QuickSwitchPalette(store: store, model: store.quickSwitch, chrome: chrome)
+                    .padding(.top, topInset)
             }
             .transition(.opacity)
         }
     }
 }
 
-/// The palette panel itself.
+/// The palette panel: the search field, the ranked rows, and the keys it takes.
 public struct QuickSwitchPalette: View {
     let store: AppStore
     @Bindable var model: QuickSwitchModel
+    let chrome: WorkspaceChrome
     @Environment(\.openSettings) private var openSettings
     @Environment(\.colorScheme) private var colorScheme
 
     static let width: CGFloat = 640
-    /// Height of the result list at most; shorter lists take their rows' height.
-    static let listHeight: CGFloat = 400
-    static let emptyHeight: CGFloat = 300
+    /// Height the result list takes at most.
+    static let listLimit: CGFloat = 400
+    static let emptyHeight: CGFloat = 280
     static let rowHeight: CGFloat = 44
     static let headerHeight: CGFloat = 32
+    static let listPadding: CGFloat = DS.Space.s
 
-    /// The list's height for `sections`: its rows, headers and padding, up to `listHeight`.
-    static func height(of sections: [QuickSwitchSection]) -> CGFloat {
-        let rows = sections.reduce(0) { $0 + $1.rows.count }
-        let headers = sections.filter { $0.title != nil }.count
-        return min(CGFloat(rows) * rowHeight + CGFloat(headers) * headerHeight + DS.Space.s * 2, listHeight)
-    }
-
-    public init(store: AppStore, model: QuickSwitchModel) {
+    public init(store: AppStore, model: QuickSwitchModel, chrome: WorkspaceChrome = .native) {
         self.store = store
         self.model = model
+        self.chrome = chrome
+    }
+
+    /// The list's height for `sections`: its headers and rows up to `listLimit`, ending after a
+    /// whole row.
+    static func height(of sections: [QuickSwitchSection]) -> CGFloat {
+        var height = listPadding * 2
+        for section in sections {
+            if section.title != nil {
+                guard height + headerHeight + rowHeight <= listLimit else { return height }
+                height += headerHeight
+            }
+            for _ in section.rows {
+                guard height + rowHeight <= listLimit else { return height }
+                height += rowHeight
+            }
+        }
+        return height
     }
 
     public var body: some View {
-        let sections = QuickSwitchRanking.sections(query: model.query, items: QuickSwitchCatalog.items(store: store),
-                                                   recents: model.recents)
-        let rows = sections.flatMap(\.rows)
+        let items = QuickSwitchCatalog.items(store: store)
         VStack(spacing: 0) {
-            searchBar(rows: rows)
+            searchBar
             Divider()
-            if rows.isEmpty {
+            if model.rows.isEmpty {
                 QuickSwitchEmpty(query: model.query)
                     .frame(height: Self.emptyHeight)
             } else {
-                list(sections: sections, rows: rows)
+                list
             }
             Divider()
-            QuickSwitchFooter()
+            QuickSwitchFooter(hasRows: !model.rows.isEmpty)
         }
         .frame(width: Self.width)
-        .background(DS.Color.floatingSurface)
+        .background { panelBackground }
         .clipShape(RoundedRectangle(cornerRadius: DS.Radius.l, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.l, style: .continuous).strokeBorder(DS.Color.separator, lineWidth: 1))
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.5 : 0.22), radius: 28, y: 14)
-        .onChange(of: model.pendingKey) {
-            guard let key = model.takePendingKey() else { return }
-            handle(key, rows: rows)
+        .shadow(color: DS.Color.overlayShadow, radius: 28, y: 12)
+        .onChange(of: items, initial: true) { _, items in model.update(items: items) }
+        .onChange(of: model.selectedRow?.id) { _, _ in
+            guard let row = model.selectedRow else { return }
+            AccessibilityNotification.Announcement(QuickSwitchRowView.accessibilityText(row)).post()
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(String.ui("quickSwitch.a11y", "빠른 전환"))
         .accessibilityAddTraits(.isModal)
     }
 
-    private func searchBar(rows: [QuickSwitchRow]) -> some View {
+    @ViewBuilder
+    private var panelBackground: some View {
+        switch chrome {
+        case .native: Rectangle().fill(.regularMaterial)
+        case .standIn: DS.Color.floatingSurface
+        }
+    }
+
+    private var searchBar: some View {
         HStack(spacing: DS.Space.m) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DS.Status.neutralText)
                 .accessibilityHidden(true)
             QuickSwitchField(text: $model.query,
-                             placeholder: String.ui("quickSwitch.placeholder", "컴퓨터, 탭, 명령 검색")) { key in
-                handle(key, rows: rows)
+                             placeholder: String.ui("quickSwitch.placeholder", "컴퓨터, 탭, 명령 검색"),
+                             clearRequests: model.clearRequests) { key in
+                handle(key)
             }
             .frame(height: 28)
             if !model.query.isEmpty {
                 Button {
-                    model.query = ""
+                    model.clearQuery()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DS.Status.neutralText)
                 }
                 .buttonStyle(.plain)
                 .help(String.ui("quickSwitch.clear", "검색어 지우기"))
@@ -109,9 +138,10 @@ public struct QuickSwitchPalette: View {
         .frame(height: 56)
     }
 
-    private func list(sections: [QuickSwitchSection], rows: [QuickSwitchRow]) -> some View {
-        let selectedID = rows.indices.contains(model.selection) ? rows[model.selection].id : nil
-        let indexByID = Dictionary(rows.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+    private var list: some View {
+        let sections = model.sections
+        let selectedID = model.selectedRow?.id
+        let indexByID = Dictionary(model.rows.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
         return ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -119,24 +149,26 @@ public struct QuickSwitchPalette: View {
                         if let title = section.title {
                             Text(title)
                                 .font(DS.Font.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(DS.Status.neutralText)
                                 .padding(.horizontal, DS.Space.m)
                                 .padding(.bottom, DS.Space.xs)
                                 .frame(maxWidth: .infinity, alignment: .bottomLeading)
-                                .frame(height: QuickSwitchPalette.headerHeight, alignment: .bottomLeading)
+                                .frame(height: Self.headerHeight, alignment: .bottomLeading)
                                 .accessibilityAddTraits(.isHeader)
                         }
                         ForEach(section.rows) { row in
                             let index = indexByID[row.id] ?? 0
-                            QuickSwitchRowView(row: row, index: index, selected: row.id == selectedID,
-                                               showsKind: section.kind == .results) {
+                            QuickSwitchRowView(row: row, selected: row.id == selectedID, showsKind: section.kind == .results) {
                                 open(row.item)
+                            }
+                            .onHover { inside in
+                                if inside { model.selection = index }
                             }
                             .id(row.id)
                         }
                     }
                 }
-                .padding(DS.Space.s)
+                .padding(Self.listPadding)
             }
             .frame(height: Self.height(of: sections))
             .onChange(of: selectedID) { _, id in
@@ -146,8 +178,8 @@ public struct QuickSwitchPalette: View {
         }
     }
 
-    private func handle(_ key: QuickSwitchKey, rows: [QuickSwitchRow]) {
-        if let item = model.handle(key, rows: rows) { open(item) }
+    private func handle(_ key: QuickSwitchKey) {
+        if let item = model.handle(key) { open(item) }
     }
 
     private func open(_ item: QuickSwitchItem) {
@@ -156,55 +188,57 @@ public struct QuickSwitchPalette: View {
 }
 
 /// One result: the item's symbol tile, its title with the matched characters in bold, its
-/// subtitle, its own shortcut and, for the first nine rows, the ⌘ digit that opens it.
+/// subtitle, the keyword that matched when the title did not, and the item's own shortcut.
 struct QuickSwitchRowView: View {
     let row: QuickSwitchRow
-    let index: Int
     let selected: Bool
     let showsKind: Bool
     let open: () -> Void
-    @State private var hovered = false
 
     private var item: QuickSwitchItem { row.item }
+    private var secondary: AnyShapeStyle { selected ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(DS.Status.neutralText) }
 
     var body: some View {
         Button(action: open) {
             HStack(spacing: DS.Space.m) {
                 tile
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 0) {
                     Text(title)
                         .lineLimit(1)
                     if let subtitle = subtitleText {
                         Text(subtitle)
                             .font(DS.Font.caption)
-                            .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(.secondary))
+                            .foregroundStyle(secondary)
                             .lineLimit(1)
                     }
                 }
                 Spacer(minLength: DS.Space.s)
+                if let keyword = row.keyword {
+                    Text(keyword)
+                        .font(DS.Font.caption)
+                        .foregroundStyle(secondary)
+                        .padding(.horizontal, DS.Space.s)
+                        .frame(height: 20)
+                        .background(selected ? .clear : DS.Color.neutral.opacity(0.12), in: Capsule())
+                        .overlay(Capsule().strokeBorder(selected ? DS.Color.onFill.opacity(0.6) : .clear, lineWidth: 1))
+                        .accessibilityHidden(true)
+                }
                 if let shortcut = item.shortcut {
                     Text(shortcut)
-                        .font(DS.Font.caption)
-                        .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(.secondary))
-                }
-                if index < 9 {
-                    QuickSwitchKeycap(text: "⌘\(index + 1)", inverted: selected)
+                        .font(DS.Font.caption.monospacedDigit())
+                        .foregroundStyle(secondary)
+                        .frame(minWidth: DS.Space.xxl, alignment: .trailing)
+                        .accessibilityHidden(true)
                 }
             }
             .padding(.horizontal, DS.Space.m)
             .frame(height: QuickSwitchPalette.rowHeight)
-            .background(background, in: RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
+            .background(selected ? DS.Status.selectionFill : .clear, in: RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { hovered = $0 }
-        .accessibilityLabel(accessibilityText)
+        .accessibilityLabel(Self.accessibilityText(row))
         .accessibilityAddTraits(selected ? [.isSelected] : [])
-    }
-
-    private var background: Color {
-        if selected { return DS.Status.selectionFill }
-        return hovered ? DS.Color.neutral.opacity(0.1) : .clear
     }
 
     private var subtitleText: String? {
@@ -212,15 +246,14 @@ struct QuickSwitchRowView: View {
         return [item.kind.title, item.subtitle].compactMap { $0 }.joined(separator: " · ")
     }
 
-    /// The title with the matched characters in semibold, in the accent text color unless selected.
+    /// The title with the matched characters in bold, in the accent text color unless selected.
     private var title: AttributedString {
         var text = AttributedString(item.title)
         text.font = DS.Font.body
         text.foregroundColor = selected ? DS.Color.onFill : .primary
-        let characters = Array(item.title)
         let matched = Set(row.highlights)
         var cursor = text.startIndex
-        for offset in characters.indices {
+        for offset in 0..<item.title.count {
             let next = text.characters.index(after: cursor)
             if matched.contains(offset) {
                 text[cursor..<next].font = DS.Font.body.weight(.bold)
@@ -243,8 +276,8 @@ struct QuickSwitchRowView: View {
             .overlay(alignment: .bottomTrailing) {
                 if let connection = item.connection {
                     StatusDot(state: connection)
-                        .background(Circle().fill(DS.Color.surface).frame(width: 10, height: 10))
-                        .offset(x: 4, y: 4)
+                        .background(Circle().fill(DS.Color.surface).frame(width: 12, height: 12))
+                        .offset(x: DS.Space.xs, y: DS.Space.xs)
                 }
             }
             .accessibilityHidden(true)
@@ -262,28 +295,14 @@ struct QuickSwitchRowView: View {
         }
     }
 
-    private var accessibilityText: String {
+    /// `터미널, 탭, 개발 PC, ⌘T`, with the matched keyword when the title did not match.
+    static func accessibilityText(_ row: QuickSwitchRow) -> String {
+        let item = row.item
         var parts = [item.title, item.kind.title]
         if let subtitle = item.subtitle { parts.append(subtitle) }
+        if let keyword = row.keyword { parts.append(keyword) }
         if let shortcut = item.shortcut { parts.append(shortcut) }
         return parts.joined(separator: ", ")
-    }
-}
-
-/// A key in a rounded box, as the palette shows shortcuts.
-struct QuickSwitchKeycap: View {
-    let text: String
-    var inverted = false
-
-    var body: some View {
-        Text(text)
-            .font(DS.Font.caption.monospacedDigit())
-            .foregroundStyle(inverted ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(.secondary))
-            .padding(.horizontal, 5)
-            .frame(minWidth: 22, minHeight: 18)
-            .background(inverted ? DS.Color.onFill.opacity(0.18) : DS.Color.neutral.opacity(0.12),
-                        in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-            .accessibilityHidden(true)
     }
 }
 
@@ -294,8 +313,8 @@ struct QuickSwitchEmpty: View {
     var body: some View {
         VStack(spacing: DS.Space.l) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 32, weight: .regular))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 28, weight: .regular))
+                .foregroundStyle(DS.Status.neutralText)
                 .accessibilityHidden(true)
             VStack(spacing: DS.Space.xs) {
                 Text(String.ui("quickSwitch.empty.title", "‘\(query)’ 검색 결과가 없습니다"))
@@ -304,7 +323,7 @@ struct QuickSwitchEmpty: View {
                     .multilineTextAlignment(.center)
                 Text(String.ui("quickSwitch.empty.message", "컴퓨터 이름, 탭, 명령, 최근 전송·디버그 세션·QA 실행을 찾습니다."))
                     .font(DS.Font.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DS.Status.neutralText)
                     .multilineTextAlignment(.center)
             }
             VStack(alignment: .leading, spacing: DS.Space.s) {
@@ -324,7 +343,7 @@ struct QuickSwitchEmpty: View {
         HStack(spacing: DS.Space.m) {
             Text(title)
                 .font(DS.Font.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DS.Status.neutralText)
                 .frame(width: 120, alignment: .leading)
             Text(verbatim: example)
                 .font(DS.Font.caption.weight(.medium))
@@ -332,28 +351,35 @@ struct QuickSwitchEmpty: View {
     }
 }
 
-/// The keys the palette takes.
+/// The keys the palette takes; with no rows, only esc.
 struct QuickSwitchFooter: View {
+    let hasRows: Bool
+
     var body: some View {
         HStack(spacing: DS.Space.l) {
-            hint("↑↓", String.ui("quickSwitch.key.move", "이동"))
-            hint("↩", String.ui("quickSwitch.key.open", "열기"))
-            hint("⌘1–9", String.ui("quickSwitch.key.direct", "바로 열기"))
+            if hasRows {
+                hint("↑↓", String.ui("quickSwitch.key.move", "이동"))
+                hint("↩", String.ui("quickSwitch.key.open", "열기"))
+            }
             hint("esc", String.ui("quickSwitch.key.close", "닫기"))
             Spacer(minLength: 0)
         }
         .padding(.horizontal, DS.Space.l)
         .frame(height: 36)
-        .background(DS.Color.surfaceRaised.opacity(0.5))
         .accessibilityElement(children: .combine)
     }
 
     private func hint(_ key: String, _ title: String) -> some View {
         HStack(spacing: DS.Space.xs) {
-            QuickSwitchKeycap(text: key)
+            Text(verbatim: key)
+                .font(DS.Font.caption.monospacedDigit())
+                .foregroundStyle(DS.Status.neutralText)
+                .padding(.horizontal, DS.Space.xs)
+                .frame(minHeight: 20)
+                .background(DS.Color.neutral.opacity(0.12), in: RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
             Text(title)
                 .font(DS.Font.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DS.Status.neutralText)
         }
     }
 }

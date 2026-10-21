@@ -107,6 +107,9 @@ public final class SettingsModel {
     public private(set) var hostErrors: [String: OperationError] = [:]
     public var pendingRepair: Host?
     public var pendingRemoval: Host?
+    public var pendingDisconnect: Host?
+    /// `CFBundleShortVersionString` of the app.
+    public var appVersion = LiveBackend.bundleVersion
 
     @ObservationIgnored weak var store: AppStore?
     @ObservationIgnored private let defaults: UserDefaults
@@ -196,8 +199,11 @@ public final class SettingsModel {
         run(.connect, hostID) { try await $0.hostConnect(hostID: hostID) }
     }
 
-    public func disconnect(_ hostID: String) {
-        run(.disconnect, hostID) { try await $0.hostDisconnect(hostID: hostID) }
+    /// Disconnects the computer the person confirmed in `pendingDisconnect`.
+    public func confirmDisconnect() {
+        guard let host = pendingDisconnect else { return }
+        pendingDisconnect = nil
+        run(.disconnect, host.hostID) { try await $0.hostDisconnect(hostID: host.hostID) }
     }
 
     /// Re-pairs the computer the person confirmed in `pendingRepair`.

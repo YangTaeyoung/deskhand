@@ -50,6 +50,35 @@ final class SettingsModelTests: XCTestCase {
         XCTAssertEqual(store.settings.daemonStatus, .running)
     }
 
+    func testRestartFailureShowsTheCommandsOutput() async throws {
+        let backend = GatedBackend(PreviewBackend(scenario: .standard, stepDelay: .zero))
+        let store = await started(backend)
+        backend.failRestart(with: DaemonCommandError.failed(command: "deskhand daemon start", status: 1, stderr: "address already in use"))
+
+        await store.settings.restartDaemon()
+
+        XCTAssertEqual(store.settings.restart,
+                       .failed(OperationError(message: "deskhand daemon start 명령이 실패했습니다 (종료 코드 1): address already in use")))
+    }
+
+    func testDisconnectWaitsForConfirmation() async throws {
+        let store = await started(PreviewBackend(scenario: .standard, stepDelay: .zero))
+        let settings = store.settings
+        settings.confirmDisconnect()
+        XCTAssertTrue(settings.hostActions.isEmpty)
+
+        settings.pendingDisconnect = store.host(PreviewFixtures.meetingPCID)
+        settings.confirmDisconnect()
+        XCTAssertNil(settings.pendingDisconnect)
+        XCTAssertEqual(settings.hostActions[PreviewFixtures.meetingPCID], .disconnect)
+        try await waitUntil { settings.hostActions.isEmpty }
+    }
+
+    func testAppVersionComesFromTheBundleUnlessSet() {
+        let store = AppStore(backend: PreviewBackend(scenario: .standard, stepDelay: .zero), defaults: defaults)
+        XCTAssertEqual(store.settings.appVersion, LiveBackend.bundleVersion)
+    }
+
     func testDaemonStatusFollowsTheStore() async throws {
         let store = await started(PreviewBackend(scenario: .daemonUnavailable, stepDelay: .zero))
         guard case .unavailable = store.settings.daemonStatus else {

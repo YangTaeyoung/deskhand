@@ -50,7 +50,7 @@ final class GatedBackend: Backend, LocalOverlayProviding {
         var eventQueries: [EventLogQuery] = []
         var heldEventQueries: [CheckedContinuation<Void, Never>] = []
         var holdEvents = false
-        var restartFailure: OperationError?
+        var restartFailure: (any Error & Sendable)?
         var restartCalls = 0
         var hostRemoveFailure: OperationError?
     }
@@ -136,7 +136,7 @@ final class GatedBackend: Backend, LocalOverlayProviding {
     func start() async throws { try await base.start() }
     func daemonInfo() async -> DaemonInfo { await base.daemonInfo() }
     func restartDaemon() async throws {
-        let failure = state.withLock { s -> OperationError? in
+        let failure = state.withLock { s -> (any Error & Sendable)? in
             s.restartCalls += 1
             return s.restartFailure
         }
@@ -147,7 +147,7 @@ final class GatedBackend: Backend, LocalOverlayProviding {
     var restartCalls: Int { state.withLock { $0.restartCalls } }
 
     /// Makes `restartDaemon` throw `error`, or restart the preview daemon again when nil.
-    func failRestart(with error: OperationError?) {
+    func failRestart(with error: (any Error & Sendable)?) {
         state.withLock { $0.restartFailure = error }
     }
 
@@ -328,7 +328,7 @@ final class GatedBackend: Backend, LocalOverlayProviding {
     }
 
     func procList(hostID: String) async throws -> [RemoteProcess] {
-        let failure = state.withLock { s -> OperationError? in
+        let failure = state.withLock { s -> (any Error & Sendable)? in
             s.procListCalls += 1
             return s.procListFailure
         }

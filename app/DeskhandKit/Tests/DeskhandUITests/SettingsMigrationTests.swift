@@ -29,6 +29,22 @@ final class SettingsMigrationTests: XCTestCase {
         }
     }
 
+    func testLogSummaryMovesIntoTheNamespace() {
+        defaults.set(false, forKey: "logs.showsSummary")
+        let store = AppStore(backend: PreviewBackend(scenario: .standard, stepDelay: .zero), defaults: defaults)
+        XCTAssertFalse(store.layout.showsLogSummary)
+        XCTAssertNil(defaults.object(forKey: "logs.showsSummary"))
+        XCTAssertEqual(defaults.object(forKey: SettingsKey.Logs.showsSummary) as? Bool, false)
+    }
+
+    func testTableWidthsAreKeptInTheGivenDefaults() {
+        let saved = FirstColumnWidthStore(defaults: defaults, autosaveName: "processes")
+        XCTAssertNil(saved.width)
+        saved.save(244)
+        XCTAssertEqual(FirstColumnWidthStore(defaults: defaults, autosaveName: "processes").width, 244)
+        XCTAssertEqual(defaults.double(forKey: SettingsKey.Table.firstColumnWidth("processes")), 244)
+    }
+
     func testValueAlreadyInTheNamespaceWins() {
         defaults.set("sharp", forKey: "screenPreset")
         defaults.set("saver", forKey: SettingsKey.Screen.preset)
@@ -106,6 +122,7 @@ final class SettingsMigrationTests: XCTestCase {
         store.terminalPreferences.allowsClipboardWrite = true
         store.filesPreferences.finishedTransferRetention = .day
         store.layout.tab = .qa
+        store.layout.showsLogSummary = false
 
         let written = defaults.persistentDomain(forName: suiteName) ?? [:]
         let outside = written.keys.filter { !$0.hasPrefix(SettingsKey.prefix) }

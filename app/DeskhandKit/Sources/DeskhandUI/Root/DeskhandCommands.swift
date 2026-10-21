@@ -4,8 +4,8 @@ import SwiftUI
 
 /// Menu bar commands: add a computer (⌘N) and a new terminal tab (⌘T), closing (⌘W closes the
 /// terminal tab while the terminal tab shows shells, ⇧⌘W the window), the quick switch (⌘K),
-/// the workspace tabs (⌘1–⌘7, which open palette rows while the palette shows) and inspector
-/// (⌥⌘0) in the View menu, the 컴퓨터 menu with the control actions
+/// the workspace tabs (⌘1–⌘7, which also close the palette) and inspector (⌥⌘0) in the View
+/// menu, the 컴퓨터 menu with the control actions
 /// (emergency stop ⇧⌘.) and host actions for the selected computer, the 터미널 menu and the 디버그
 /// menu (F8, F10, F11, ⇧F11 while the debugger tab is shown). In the
 /// files and processes tabs 제거… has no shortcut; ⌘⌫ there moves remote files to the recycle
@@ -68,7 +68,7 @@ public struct DeskhandCommands: Commands {
 }
 
 /// View menu items: the quick switch, one checkable item per workspace tab and the inspector
-/// panes. While the palette shows, ⌘1–⌘7 open its rows.
+/// panes. Choosing a tab closes the quick switch.
 private struct WorkspaceViewCommands: View {
     let store: AppStore
     @Bindable var layout: WorkspaceLayout
@@ -81,15 +81,9 @@ private struct WorkspaceViewCommands: View {
             .disabled(store.phase != .ready && store.phase != .reconnecting)
         Divider()
         ForEach(WorkspaceTab.allCases) { tab in
-            Toggle(tab.title, isOn: Binding(get: { layout.tab == tab }, set: { _ in
-                if palette.isPresented {
-                    palette.send(.commandDigit(tab.number))
-                } else {
-                    layout.tab = tab
-                }
-            }))
+            Toggle(tab.title, isOn: Binding(get: { layout.tab == tab }, set: { _ in store.showTab(tab) }))
                 .keyboardShortcut(tab.keyEquivalent, modifiers: .command)
-                .disabled(!hasWorkspace && !palette.isPresented)
+                .disabled(!hasWorkspace)
         }
         Divider()
         Button(layout.showsInspector

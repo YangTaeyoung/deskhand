@@ -16,6 +16,21 @@ final class FuzzyMatcherTests: XCTestCase {
         XCTAssertNotNil(FuzzyMatcher.match("ㅂㅄ", in: "보내기 버튼 상태"))
     }
 
+    func testDecomposedHangulMatchesLikeComposedHangul() throws {
+        let name = "주문 확인 화면 오류 재현 절차.docx".decomposedStringWithCanonicalMapping
+        XCTAssertNotEqual(name.unicodeScalars.count, "주문 확인 화면 오류 재현 절차.docx".unicodeScalars.count)
+        XCTAssertEqual(try XCTUnwrap(FuzzyMatcher.match("주문", in: name)).indices, [0, 1])
+        XCTAssertEqual(try XCTUnwrap(FuzzyMatcher.match("ㅈㅁ", in: name)).indices, [0, 1])
+        XCTAssertEqual(try XCTUnwrap(FuzzyMatcher.match("ㅎㅁ", in: name)).indices, [6, 7])
+        XCTAssertEqual(try XCTUnwrap(FuzzyMatcher.match("화면".decomposedStringWithCanonicalMapping, in: "주문 확인 화면")).indices, [6, 7])
+        XCTAssertEqual(FuzzyMatcher.match("주문", in: name)?.score, FuzzyMatcher.match("주문", in: "주문 확인 화면 오류 재현 절차.docx")?.score)
+    }
+
+    func testPreparedCandidateMatchesLikeItsText() {
+        let candidate = FuzzyCandidate("새 터미널")
+        XCTAssertEqual(FuzzyMatcher.match("ㅌㅁㄴ", in: candidate), FuzzyMatcher.match("ㅌㅁㄴ", in: "새 터미널"))
+    }
+
     func testInitialConsonantsDoNotMatchFinalConsonants() {
         XCTAssertNil(FuzzyMatcher.match("ㄴ", in: "산"))
         XCTAssertNotNil(FuzzyMatcher.match("ㅅ", in: "산"))

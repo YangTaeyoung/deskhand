@@ -68,9 +68,9 @@ private struct LogsContent: View {
     let availability: HostFeatureAvailability
     let chrome: WorkspaceChrome
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @AppStorage("logs.showsSummary") private var showsSummary = true
-
     var body: some View {
+        @Bindable var layout = store.layout
+        let showsSummary = layout.showsLogSummary
         VStack(spacing: 0) {
             if availability == .ready {
                 if let selection = store.logSelection, selection.hostID == host.hostID {
@@ -81,7 +81,7 @@ private struct LogsContent: View {
                         .padding(.horizontal, DS.Space.l)
                         .padding(.vertical, DS.Space.m)
                 }
-                LogsSectionBar(model: model, showsSummary: $showsSummary)
+                LogsSectionBar(model: model, showsSummary: $layout.showsLogSummary)
                 switch model.section {
                 case .events:
                     EventLogPane(model: model, autosave: chrome == .native)

@@ -6,7 +6,8 @@ import Foundation
 /// initial consonant of a syllable, a syllable matches a syllable with the same initial and a
 /// vowel that starts the same way (`고` finds `과`), and a final consonant still being typed may
 /// be the next syllable's initial (`텀` and `터민` find `터미널`). Latin letters match without case.
-/// Spaces in the query are ignored.
+/// Spaces in the query are ignored. Query and candidate are compared in composed form (NFC),
+/// so decomposed Hangul such as macOS file names matches too.
 ///
 /// The score rewards matches at the start, at word starts and in runs, and costs gaps, letters
 /// before the first match and unmatched letters: `파일` ranks `파일` over `파일 전송 큐 보기`
@@ -36,9 +37,14 @@ public enum FuzzyMatcher {
     }
 
     public static func match(_ query: String, in candidate: String) -> Match? {
+        match(query, in: FuzzyCandidate(candidate))
+    }
+
+    /// `match(_:in:)` against a candidate whose letters were prepared once.
+    public static func match(_ query: String, in candidate: FuzzyCandidate) -> Match? {
         let atoms = queryAtoms(query)
         guard !atoms.isEmpty else { return Match(score: 0, indices: []) }
-        let letters = candidate.map(Letter.init)
+        let letters = candidate.letters
         guard !letters.isEmpty else { return nil }
         var best: Match?
         for start in letters.indices {
@@ -56,7 +62,7 @@ public enum FuzzyMatcher {
             }
             guard matched else { break }
             let indices = spans.flatMap(\.indices)
-            let match = Match(score: score(indices, letters: letters, exact: isExact(query, candidate)), indices: indices)
+            let match = Match(score: score(indices, letters: letters, exact: isExact(query, candidate.folded)), indices: indices)
             if best.map({ match.score > $0.score }) ?? true { best = match }
         }
         return best
@@ -101,9 +107,8 @@ public enum FuzzyMatcher {
         return 0
     }
 
-    private static func isExact(_ query: String, _ candidate: String) -> Bool {
-        func folded(_ text: String) -> String { text.filter { !$0.isWhitespace }.lowercased() }
-        return folded(query) == folded(candidate)
+    private static func isExact(_ query: String, _ folded: String) -> Bool {
+        FuzzyCandidate.fold(query) == folded
     }
 
     // MARK: Matching
@@ -159,22 +164,12 @@ public enum FuzzyMatcher {
         case character(Character)
     }
 
-    private struct Letter {
-        let character: Character
-        let folded: Character
-        let syllable: Jamo.Syllable?
-
-        init(_ character: Character) {
-            self.character = character
-            folded = Character(String(character).lowercased())
-            syllable = Jamo.syllable(character)
-        }
-    }
+    private typealias Letter = FuzzyCandidate.Letter
 
     /// The query's atoms. A double consonant the input method joined from two typed ones
     /// (`ㄱ`+`ㅅ` → `ㄳ`) counts as both.
     private static func queryAtoms(_ query: String) -> [Atom] {
-        query.flatMap { character -> [Atom] in
+        query.precomposedStringWithCanonicalMapping.flatMap { character -> [Atom] in
             if character.isWhitespace { return [] }
             if let syllable = Jamo.syllable(character) { return [.syllable(syllable)] }
             if let parts = Jamo.joinedConsonants[character] { return parts.map(Atom.consonant) }
@@ -185,10 +180,42 @@ public enum FuzzyMatcher {
     }
 }
 
+/// A text prepared for matching: each character in composed form with its lower-case form and
+/// its Hangul letters. Offsets of its letters are offsets of the text's characters.
+public struct FuzzyCandidate: Equatable, Sendable {
+    struct Letter: Equatable, Sendable {
+        let character: Character
+        let folded: Character
+        let syllable: Jamo.Syllable?
+
+        init(_ character: Character) {
+            let composed = Character(String(character).precomposedStringWithCanonicalMapping)
+            self.character = composed
+            folded = Character(String(composed).lowercased())
+            syllable = Jamo.syllable(composed)
+        }
+    }
+
+    public let text: String
+    let letters: [Letter]
+    /// The text without spaces, composed and in lower case.
+    let folded: String
+
+    public init(_ text: String) {
+        self.text = text
+        letters = text.map(Letter.init)
+        folded = Self.fold(text)
+    }
+
+    static func fold(_ text: String) -> String {
+        text.precomposedStringWithCanonicalMapping.filter { !$0.isWhitespace }.lowercased()
+    }
+}
+
 /// Hangul syllables split into compatibility jamo, with compound vowels and final consonants
 /// split into their parts (`ㅘ` → `ㅗㅏ`, `ㄺ` → `ㄹㄱ`).
 enum Jamo {
-    struct Syllable: Equatable {
+    struct Syllable: Equatable, Sendable {
         let initial: Character
         let medials: [Character]
         let finals: [Character]

@@ -53,8 +53,7 @@ extension LiveBackend {
     }
 
     public func restartDaemon() async throws {
-        try await DaemonLauncher.stopDaemon()
-        try await launcher.ensureRunning()
+        try await launcher.restart()
     }
 }
 

@@ -41,6 +41,29 @@ struct FirstColumnWidth: Equatable {
     }
 }
 
+/// The saved preferred first-column width of the table saved as `autosaveName`, kept in `defaults`.
+struct FirstColumnWidthStore {
+    let defaults: UserDefaults
+    let autosaveName: String
+
+    private var key: String { SettingsKey.Table.firstColumnWidth(autosaveName) }
+
+    /// The saved width; nil when none was saved.
+    var width: CGFloat? {
+        let saved = defaults.double(forKey: key)
+        return saved > 0 ? CGFloat(saved) : nil
+    }
+
+    func save(_ width: CGFloat) {
+        defaults.set(Double(width), forKey: key)
+    }
+}
+
+extension EnvironmentValues {
+    /// The defaults domain the app keeps settings in: the store's, `.standard` outside one.
+    @Entry public var appDefaults: UserDefaults = .standard
+}
+
 /// Column and direction a `DataTable` sorts by.
 struct DataTableSort: Equatable {
     var column: String
@@ -137,8 +160,9 @@ struct DataTable<Row: Identifiable & Equatable>: NSViewRepresentable where Row.I
             table.autosaveTableColumns = true
         }
         if let first = table.tableColumns.first {
-            let saved = autosaveName.map { UserDefaults.standard.double(forKey: Coordinator.preferredKey($0)) } ?? 0
-            coordinator.firstWidth = FirstColumnWidth(preferred: saved > 0 ? CGFloat(saved) : first.width, minimum: first.minWidth)
+            coordinator.widthStore = autosaveName.map { FirstColumnWidthStore(defaults: context.environment.appDefaults, autosaveName: $0) }
+            let saved = coordinator.widthStore?.width
+            coordinator.firstWidth = FirstColumnWidth(preferred: saved ?? first.width, minimum: first.minWidth)
         }
         let menu = NSMenu()
         menu.delegate = coordinator
@@ -192,11 +216,10 @@ struct DataTable<Row: Identifiable & Equatable>: NSViewRepresentable where Row.I
         private var shownSelection: Row.ID?
         /// Preferred and minimum width of the first column.
         var firstWidth: FirstColumnWidth?
+        /// Where the preferred first-column width is saved, for a table with an autosave name.
+        var widthStore: FirstColumnWidthStore?
         /// Column widths are being set by `fitColumns`.
         private var fitting = false
-
-        /// UserDefaults key of the preferred first-column width of the table saved as `autosaveName`.
-        static func preferredKey(_ autosaveName: String) -> String { SettingsKey.Table.firstColumnWidth(autosaveName) }
 
         init(_ parent: DataTable) {
             self.parent = parent
@@ -282,9 +305,7 @@ struct DataTable<Row: Identifiable & Equatable>: NSViewRepresentable where Row.I
             guard !fitting, let table, let column = notification.userInfo?["NSTableColumn"] as? NSTableColumn,
                   column === table.tableColumns.first else { return }
             firstWidth?.userResized(to: column.width)
-            if let name = parent.autosaveName, let preferred = firstWidth?.preferred {
-                UserDefaults.standard.set(Double(preferred), forKey: Self.preferredKey(name))
-            }
+            if let preferred = firstWidth?.preferred { widthStore?.save(preferred) }
         }
 
         // MARK: Data source and delegate

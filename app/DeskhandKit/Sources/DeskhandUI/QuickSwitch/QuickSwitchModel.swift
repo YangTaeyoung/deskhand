@@ -77,6 +77,10 @@ public struct QuickSwitchItem: Identifiable, Equatable, Sendable {
     /// The computer's connection, for computers.
     public let connection: ConnectionState?
     public let action: QuickSwitchAction
+    /// The title, keywords and subtitle prepared for matching.
+    let titleCandidate: FuzzyCandidate
+    let keywordCandidates: [FuzzyCandidate]
+    let subtitleCandidate: FuzzyCandidate?
 
     public init(id: String, kind: Kind, title: String, subtitle: String? = nil, keywords: [String] = [], symbol: String,
                 tone: Tone = .accent, shortcut: String? = nil, connection: ConnectionState? = nil, action: QuickSwitchAction) {
@@ -90,13 +94,24 @@ public struct QuickSwitchItem: Identifiable, Equatable, Sendable {
         self.shortcut = shortcut
         self.connection = connection
         self.action = action
+        titleCandidate = FuzzyCandidate(title)
+        keywordCandidates = keywords.map(FuzzyCandidate.init)
+        subtitleCandidate = subtitle.map(FuzzyCandidate.init)
     }
 }
 
-/// A result row: the item and the offsets of the title characters the query matched.
+/// A result row: the item, the offsets of the title characters the query matched, and the
+/// keyword that matched when no title characters did.
 public struct QuickSwitchRow: Identifiable, Equatable, Sendable {
     public let item: QuickSwitchItem
     public let highlights: [Int]
+    public let keyword: String?
+
+    public init(item: QuickSwitchItem, highlights: [Int], keyword: String? = nil) {
+        self.item = item
+        self.highlights = highlights
+        self.keyword = keyword
+    }
 
     public var id: String { item.id }
 }
@@ -155,9 +170,9 @@ public enum QuickSwitchRanking {
         let words = trimmed.split(whereSeparator: \.isWhitespace).map(String.init)
         var scored: [(row: QuickSwitchRow, score: Int)] = []
         for item in items {
-            guard let (base, highlights) = match(trimmed, words: words, item: item) else { continue }
-            let score = base + (recents.firstIndex(of: item.id).map { max(4, 12 - 2 * $0) } ?? 0)
-            scored.append((QuickSwitchRow(item: item, highlights: highlights), score))
+            guard let found = match(trimmed, words: words, item: item) else { continue }
+            let score = found.score + (recents.firstIndex(of: item.id).map { max(4, 12 - 2 * $0) } ?? 0)
+            scored.append((QuickSwitchRow(item: item, highlights: found.highlights, keyword: found.keyword), score))
         }
         guard !scored.isEmpty else { return [] }
         scored.sort { a, b in
@@ -186,43 +201,52 @@ public enum QuickSwitchRanking {
         return sections.filter { !$0.rows.isEmpty }
     }
 
-    /// The item's score and title highlights for the query, or nil when it does not match well enough.
-    private static func match(_ query: String, words: [String], item: QuickSwitchItem) -> (Int, [Int])? {
-        if let whole = bestMatch(query, item: item, subtitle: false) { return whole }
-        guard words.count > 1 else { return nil }
-        var total = 0
-        var highlights: [Int] = []
-        var matchedTitleOrKeyword = false
-        for word in words {
-            guard let (score, indices, field) = bestField(word, item: item, subtitle: true) else { return nil }
-            total += score
-            highlights += indices
-            if field != .subtitle { matchedTitleOrKeyword = true }
-        }
-        guard matchedTitleOrKeyword else { return nil }
-        return (total / words.count, Array(Set(highlights)).sorted())
-    }
-
-    private static func bestMatch(_ text: String, item: QuickSwitchItem, subtitle: Bool) -> (Int, [Int])? {
-        bestField(text, item: item, subtitle: subtitle).map { ($0.0, $0.1) }
+    private struct Found {
+        var score: Int
+        var highlights: [Int]
+        var keyword: String?
+        var field: Field
     }
 
     private enum Field { case title, keyword, subtitle }
 
-    private static func bestField(_ text: String, item: QuickSwitchItem, subtitle: Bool) -> (Int, [Int], Field)? {
-        var best: (Int, [Int], Field)?
-        func consider(_ score: Int, _ indices: [Int], _ field: Field) {
-            if best.map({ score > $0.0 }) ?? true { best = (score, indices, field) }
+    /// The item's score, title highlights and matched keyword for the query, or nil when it does
+    /// not match well enough.
+    private static func match(_ query: String, words: [String], item: QuickSwitchItem) -> Found? {
+        if let whole = bestField(query, item: item, subtitle: false) { return whole }
+        guard words.count > 1 else { return nil }
+        var total = 0
+        var highlights: [Int] = []
+        var keyword: String?
+        var matchedTitleOrKeyword = false
+        for word in words {
+            guard let found = bestField(word, item: item, subtitle: true) else { return nil }
+            total += found.score
+            highlights += found.highlights
+            if found.field == .keyword, keyword == nil { keyword = found.keyword }
+            if found.field != .subtitle { matchedTitleOrKeyword = true }
+        }
+        guard matchedTitleOrKeyword else { return nil }
+        let sorted = Array(Set(highlights)).sorted()
+        return Found(score: total / words.count, highlights: sorted, keyword: sorted.isEmpty ? keyword : nil, field: .title)
+    }
+
+    private static func bestField(_ text: String, item: QuickSwitchItem, subtitle: Bool) -> Found? {
+        var best: Found?
+        func consider(_ found: Found) {
+            if best.map({ found.score > $0.score }) ?? true { best = found }
         }
         let minimum = text.filter { !$0.isWhitespace }.count * minimumScorePerCharacter
-        if let title = FuzzyMatcher.match(text, in: item.title), title.score >= minimum { consider(title.score, title.indices, .title) }
-        for keyword in item.keywords {
-            if let match = FuzzyMatcher.match(text, in: keyword), match.score >= minimum {
-                consider(match.score - keywordPenalty, [], .keyword)
+        if let title = FuzzyMatcher.match(text, in: item.titleCandidate), title.score >= minimum {
+            consider(Found(score: title.score, highlights: title.indices, keyword: nil, field: .title))
+        }
+        for candidate in item.keywordCandidates {
+            if let match = FuzzyMatcher.match(text, in: candidate), match.score >= minimum {
+                consider(Found(score: match.score - keywordPenalty, highlights: [], keyword: candidate.text, field: .keyword))
             }
         }
-        if subtitle, let line = item.subtitle, let match = FuzzyMatcher.match(text, in: line), match.score >= minimum {
-            consider(match.score - subtitlePenalty, [], .subtitle)
+        if subtitle, let line = item.subtitleCandidate, let match = FuzzyMatcher.match(text, in: line), match.score >= minimum {
+            consider(Found(score: match.score - subtitlePenalty, highlights: [], keyword: nil, field: .subtitle))
         }
         return best
     }
@@ -234,8 +258,6 @@ public enum QuickSwitchKey: Equatable, Sendable {
     case down
     case enter
     case escape
-    /// ⌘ with a digit key, 1 through 9 for the visible rows.
-    case commandDigit(Int)
 }
 
 /// What a key does to the quick switch.
@@ -248,8 +270,7 @@ public enum QuickSwitchEffect: Equatable, Sendable {
 }
 
 /// Keyboard rules of the quick switch: ↑ and ↓ move the selection and stop at the ends, ↩
-/// opens the selected row, ⌘1–⌘9 open the first nine rows, and esc clears what is typed and
-/// then closes.
+/// opens the selected row, and esc clears what is typed and then closes.
 public enum QuickSwitchNavigator {
     public static func effect(for key: QuickSwitchKey, selection: Int, count: Int, queryIsEmpty: Bool) -> QuickSwitchEffect {
         switch key {
@@ -259,16 +280,15 @@ public enum QuickSwitchNavigator {
             return selection > 0 && count > 0 ? .select(min(selection, count) - 1) : .none
         case .enter:
             return count > 0 ? .activate(min(max(selection, 0), count - 1)) : .none
-        case .commandDigit(let digit):
-            return (1...9).contains(digit) && digit <= count ? .activate(digit - 1) : .none
         case .escape:
             return queryIsEmpty ? .dismiss : .clearQuery
         }
     }
 }
 
-/// State of the quick switch palette (⌘K): whether it shows, what is typed, the selected row
-/// and the items opened from it recently. The recent items are kept in UserDefaults.
+/// State of the quick switch palette (⌘K): whether it shows, what is typed, the items it
+/// offers ranked for the query, the selected row and the items opened from it recently. The
+/// recent items are kept in UserDefaults.
 @MainActor
 @Observable
 public final class QuickSwitchModel {
@@ -277,13 +297,24 @@ public final class QuickSwitchModel {
 
     public private(set) var isPresented = false
     public var query = "" {
-        didSet { if query != oldValue { selection = 0 } }
+        didSet {
+            guard query != oldValue else { return }
+            selection = 0
+            rank()
+        }
     }
+    /// Index of the selected row in `rows`.
     public var selection = 0
     /// IDs of items opened from the palette, newest first.
     public private(set) var recents: [String]
-    /// A key a menu command passed on while the palette shows, for the palette to apply to its rows.
-    public private(set) var pendingKey: QuickSwitchKey?
+    public private(set) var items: [QuickSwitchItem] = []
+    /// `items` ranked for `query`.
+    public private(set) var sections: [QuickSwitchSection] = []
+    /// The rows of `sections` in order.
+    public private(set) var rows: [QuickSwitchRow] = []
+    /// Rises each time the query is cleared from the palette, so the search field drops text the
+    /// input method is still composing.
+    public private(set) var clearRequests = 0
 
     @ObservationIgnored private let defaults: UserDefaults
 
@@ -291,6 +322,10 @@ public final class QuickSwitchModel {
         self.defaults = defaults
         recents = defaults.data(forKey: SettingsKey.QuickSwitch.recents)
             .flatMap { try? JSONDecoder().decode([String].self, from: $0) } ?? []
+    }
+
+    public var selectedRow: QuickSwitchRow? {
+        rows.indices.contains(selection) ? rows[selection] : nil
     }
 
     /// Shows the palette with nothing typed.
@@ -308,35 +343,45 @@ public final class QuickSwitchModel {
         if isPresented { dismiss() } else { present() }
     }
 
-    /// Passes `key` from a menu command to the palette.
-    public func send(_ key: QuickSwitchKey) {
-        pendingKey = key
+    /// Replaces the items the palette offers and ranks them again, keeping the selection within the rows.
+    public func update(items: [QuickSwitchItem]) {
+        guard items != self.items else { return }
+        self.items = items
+        rank()
     }
 
-    /// Takes the key a menu command passed on, if any.
-    public func takePendingKey() -> QuickSwitchKey? {
-        defer { pendingKey = nil }
-        return pendingKey
+    /// Clears what is typed, including text the input method is composing.
+    public func clearQuery() {
+        query = ""
+        clearRequests += 1
     }
 
-    /// Applies `key` to `rows`; returns the item to open, if the key opens one.
-    public func handle(_ key: QuickSwitchKey, rows: [QuickSwitchRow]) -> QuickSwitchItem? {
+    /// Applies `key` to the rows; returns the item to open, if the key opens one.
+    public func handle(_ key: QuickSwitchKey) -> QuickSwitchItem? {
         switch QuickSwitchNavigator.effect(for: key, selection: selection, count: rows.count, queryIsEmpty: query.isEmpty) {
         case .none: return nil
         case .select(let index): selection = index
         case .activate(let index): return rows[index].item
-        case .clearQuery: query = ""
+        case .clearQuery: clearQuery()
         case .dismiss: dismiss()
         }
         return nil
     }
 
-    /// Shows the palette with `query`, `selection` and `recents` without touching the stored
-    /// recent items. Snapshot scenes use it.
-    public func seed(query: String, selection: Int = 0, recents: [String]) {
-        self.query = query
-        self.selection = selection
+    private func rank() {
+        sections = QuickSwitchRanking.sections(query: query, items: items, recents: recents)
+        rows = sections.flatMap(\.rows)
+        selection = min(selection, max(rows.count - 1, 0))
+    }
+
+    /// Shows the palette with `query`, `selection` and `recents` over `items` without touching
+    /// the stored recent items. Snapshot scenes use it.
+    public func seed(items: [QuickSwitchItem], query: String, selection: Int = 0, recents: [String]) {
         self.recents = recents
+        self.items = items
+        self.query = query
+        rank()
+        self.selection = selection
         isPresented = true
     }
 
@@ -346,5 +391,6 @@ public final class QuickSwitchModel {
         recents.insert(id, at: 0)
         if recents.count > Self.recentLimit { recents.removeLast(recents.count - Self.recentLimit) }
         if let data = try? JSONEncoder().encode(recents) { defaults.set(data, forKey: SettingsKey.QuickSwitch.recents) }
+        rank()
     }
 }

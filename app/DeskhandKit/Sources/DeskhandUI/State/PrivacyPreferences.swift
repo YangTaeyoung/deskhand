@@ -148,9 +148,6 @@ public struct AIScope: Codable, Equatable, Sendable {
 
     public static let unrestricted = AIScope(allowsScreen: true, files: .all, allowsClipboard: true)
 
-    /// AI clients never run anything elevated or answer UAC prompts; the person approves those on the PC.
-    public static let allowsElevation = false
-
     public var isRestricted: Bool { self != .unrestricted }
 
     /// True when an AI client may read or change `path` under this scope.

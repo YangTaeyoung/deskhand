@@ -13,10 +13,11 @@ enum QuickSwitchScenes {
         SnapshotScene(name: name, size: WorkspaceScenes.size) {
             let store = WorkspaceScenes.store(WorkspaceScenes.Setup(selected: dev))
             let _ = seed(store)
-            let _ = store.quickSwitch.seed(query: query, selection: selection, recents: recents)
+            let _ = store.quickSwitch.seed(items: QuickSwitchCatalog.items(store: store), query: query, selection: selection,
+                                           recents: recents)
             ZStack {
                 SplitStandIn(store: store)
-                QuickSwitchOverlay(store: store)
+                QuickSwitchOverlay(store: store, chrome: .standIn)
             }
         }
     }

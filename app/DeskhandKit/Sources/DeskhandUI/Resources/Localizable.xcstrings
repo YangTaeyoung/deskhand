@@ -227,6 +227,17 @@
         }
       }
     },
+    "action.disconnect.ask": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결 끊기…"
+          }
+        }
+      }
+    },
     "action.dismiss": {
       "comment": "Button that closes an inline message",
       "extractionState": "manual",
@@ -1342,7 +1353,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "재연결 중"
+            "value": "다시 연결하는 중"
           }
         }
       }
@@ -6167,6 +6178,39 @@
           "stringUnit": {
             "state": "translated",
             "value": "오류 코드"
+          }
+        }
+      }
+    },
+    "error.command.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 명령이 실패했습니다 (종료 코드 %2$@)"
+          }
+        }
+      }
+    },
+    "error.command.stillRunning": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "데몬이 멈추지 않았습니다. 터미널에서 deskhand daemon status로 상태를 확인하세요"
+          }
+        }
+      }
+    },
+    "error.command.timedOut": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 명령이 %2$@초 안에 끝나지 않아 멈췄습니다"
           }
         }
       }
@@ -11130,7 +11174,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "최대 1920 폭 · 낮은 비트레이트"
+            "value": "최대 1920 폭으로 축소 · 낮은 비트레이트"
           }
         }
       }
@@ -11154,7 +11198,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "원본 해상도 · 높은 비트레이트"
+            "value": "원본 해상도 그대로 · 높은 비트레이트"
           }
         }
       }
@@ -15962,17 +16006,6 @@
         }
       }
     },
-    "quickSwitch.key.direct": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "바로 열기"
-          }
-        }
-      }
-    },
     "quickSwitch.key.move": {
       "extractionState": "manual",
       "localizations": {
@@ -16512,7 +16545,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "오른쪽 ⌥를 한/영 키로 보내기"
+            "value": "오른쪽 ⌥을 한/영 키로 보내기"
           }
         }
       }
@@ -16572,7 +16605,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "⌘를 Ctrl로, ⌃를 Windows 키로 보내기"
+            "value": "⌘를 Ctrl로, ⌃을 Windows 키로 보내기"
           }
         }
       }
@@ -17201,6 +17234,28 @@
         }
       }
     },
+    "settings.app.header": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱"
+          }
+        }
+      }
+    },
+    "settings.app.version": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱 버전"
+          }
+        }
+      }
+    },
     "settings.connection.address": {
       "extractionState": "manual",
       "localizations": {
@@ -17245,24 +17300,13 @@
         }
       }
     },
-    "settings.connection.agent.value": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$@ · %2$@"
-          }
-        }
-      }
-    },
     "settings.connection.blocked": {
       "extractionState": "manual",
       "localizations": {
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "인증서가 맞지 않아 연결을 막았습니다"
+            "value": "인증서 불일치"
           }
         }
       }
@@ -17289,13 +17333,24 @@
         }
       }
     },
-    "settings.connection.connection": {
+    "settings.connection.disconnect.message": {
       "extractionState": "manual",
       "localizations": {
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "연결"
+            "value": "‘연결’을 누를 때까지 다시 연결하지 않습니다. 진행 중인 전송은 다시 연결하면 이어지고, 실행 중인 명령은 중단될 수 있습니다."
+          }
+        }
+      }
+    },
+    "settings.connection.disconnect.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’ 연결 끊기"
           }
         }
       }
@@ -17340,6 +17395,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "닫기"
+          }
+        }
+      }
+    },
+    "settings.connection.header.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@"
           }
         }
       }
@@ -17614,6 +17680,17 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
+            "value": "현재"
+          }
+        }
+      }
+    },
+    "settings.connection.state.header": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
             "value": "상태"
           }
         }
@@ -17652,13 +17729,24 @@
         }
       }
     },
+    "settings.daemon.manage": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "관리"
+          }
+        }
+      }
+    },
     "settings.daemon.openLogs": {
       "extractionState": "manual",
       "localizations": {
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "로그 보기"
+            "value": "Finder에서 로그 보기"
           }
         }
       }
@@ -17878,7 +17966,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "버전"
+            "value": "데몬 버전"
           }
         }
       }
@@ -17955,7 +18043,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "메뉴와 툴바로 옮기기 전에 확인"
+            "value": "메뉴와 툴바로 옮기기 전에 묻기"
           }
         }
       }
@@ -18065,7 +18153,18 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "기본 폴더로 되돌리기"
+            "value": "기본 폴더"
+          }
+        }
+      }
+    },
+    "settings.files.download.reset.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "~/Downloads/Deskhand로 되돌립니다"
           }
         }
       }
@@ -18114,13 +18213,24 @@
         }
       }
     },
+    "settings.files.roots.add.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 루트 추가"
+          }
+        }
+      }
+    },
     "settings.files.roots.empty": {
       "extractionState": "manual",
       "localizations": {
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "작업 루트가 없습니다. AI와 사람이 주로 쓰는 폴더를 추가하세요."
+            "value": "작업 루트가 없습니다"
           }
         }
       }
@@ -18158,6 +18268,17 @@
         }
       }
     },
+    "settings.files.roots.list": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 루트 목록"
+          }
+        }
+      }
+    },
     "settings.files.roots.noHosts": {
       "extractionState": "manual",
       "localizations": {
@@ -18186,18 +18307,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "작업 루트에서 빼기"
-          }
-        }
-      }
-    },
-    "settings.files.roots.remove.a11y": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ 작업 루트에서 빼기"
+            "value": "선택한 작업 루트 빼기"
           }
         }
       }
@@ -18231,6 +18341,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Windows 입력기의 한/영 전환에 씁니다."
+          }
+        }
+      }
+    },
+    "settings.keyboard.hanja.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windows 입력기의 한자 변환에 씁니다."
           }
         }
       }
@@ -18340,7 +18461,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "⇧⌘. 긴급 정지, ⌘1–⌘7 탭, ⌥⌘0 인스펙터, ⌘K 빠른 전환, ⌘, 설정은 언제나 이 Mac에서 처리합니다. 그 밖의 ⌘ 조합은 ‘⌘를 Ctrl로’ 설정에 따라 PC로 갑니다."
+            "value": "긴급 정지(⇧⌘.), 탭 전환(⌘1–⌘7), 인스펙터(⌥⌘0), 빠른 전환(⌘K)과 설정(⌘,)은 언제나 이 Mac에서 처리합니다. 그 밖의 ⌘ 조합은 ‘⌘를 Ctrl로’ 설정에 따라 PC로 갑니다."
           }
         }
       }
@@ -18527,7 +18648,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "클립보드"
+            "value": "클립보드 허용하기"
           }
         }
       }
@@ -18538,7 +18659,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "AI가 이 PC의 클립보드를 읽고 쓸 수 있습니다."
+            "value": "적용되면, 끈 PC의 클립보드를 AI가 읽거나 쓰지 못합니다."
           }
         }
       }
@@ -18560,7 +18681,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "UAC 승인과 보안 데스크톱"
+            "value": "AI가 실행하는 명령의 권한"
           }
         }
       }
@@ -18571,7 +18692,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "UAC 승인 창, 보안 데스크톱과 잠금 화면은 AI가 조작하지 않습니다. Deskhand는 이런 보호를 우회하지 않으며, 권한 승인이 필요한 단계는 사람이 PC에서 직접 승인합니다. 이 규칙은 바꿀 수 없습니다."
+            "value": "지금은 AI가 실행한 명령도 PC 에이전트의 관리자 권한 토큰으로 실행됩니다. 이를 제한하는 기능은 아직 없습니다. AI는 UAC 승인 창이 뜨는 보안 데스크톱에는 입력할 수 없습니다."
           }
         }
       }
@@ -18593,7 +18714,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "사람만"
+            "value": "제한 없음"
           }
         }
       }
@@ -18615,7 +18736,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "AI가 읽고 바꿀 수 있는 폴더입니다."
+            "value": "적용되면 AI가 읽고 바꿀 수 있는 폴더를 이 범위로 줄입니다."
           }
         }
       }
@@ -18648,7 +18769,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이대로면 AI는 이 PC의 어떤 폴더도 쓸 수 없습니다. 파일 설정에서 작업 루트를 추가하세요."
+            "value": "적용되면 이 PC의 어떤 폴더도 AI에게 허용되지 않습니다. 지금은 AI가 모든 폴더를 씁니다. 파일 설정에서 작업 루트를 추가하세요."
           }
         }
       }
@@ -18681,7 +18802,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "여기서 정한 범위는 이 Mac에 저장됩니다. 데몬이 AI 요청에 범위를 적용하기 전까지 AI 클라이언트는 연결된 PC의 화면, 파일과 클립보드를 제한 없이 씁니다. 아래 ‘이 Mac’과 ‘관리자 권한’ 항목은 지금 적용됩니다."
+            "value": "여기서 정한 범위는 이 Mac에 저장됩니다. 데몬이 범위를 적용하기 전까지 AI 클라이언트는 연결된 PC의 화면, 파일과 클립보드를 제한 없이 씁니다. 아래 ‘이 Mac’ 항목은 지금 적용됩니다."
           }
         }
       }
@@ -18703,7 +18824,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "지금 범위: %@"
+            "value": "저장된 범위: %@"
           }
         }
       }
@@ -18719,13 +18840,24 @@
         }
       }
     },
+    "settings.privacy.scope.pending": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "적용 전"
+          }
+        }
+      }
+    },
     "settings.privacy.screen": {
       "extractionState": "manual",
       "localizations": {
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "화면 캡처"
+            "value": "화면 캡처 허용하기"
           }
         }
       }
@@ -18736,18 +18868,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "끄면 AI는 이 PC의 스크린샷을 받지 못하고 화면을 보며 조작할 수 없습니다."
-          }
-        }
-      }
-    },
-    "settings.startup.header": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "시작"
+            "value": "적용되면, 끈 PC의 스크린샷과 화면 조작을 AI에게 막습니다."
           }
         }
       }
@@ -18824,7 +18945,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "스트림 통계 표시"
+            "value": "스트림 통계 보이기"
           }
         }
       }
@@ -19364,7 +19485,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "원격 프로그램의 클립보드 쓰기 허용"
+            "value": "원격 프로그램의 클립보드 쓰기 허용하기"
           }
         }
       }
@@ -19914,7 +20035,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Option을 Meta 키로 사용"
+            "value": "Option을 Meta 키로 쓰기"
           }
         }
       }
@@ -19947,7 +20068,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "여러 줄을 붙여 넣기 전에 확인"
+            "value": "여러 줄을 붙여 넣기 전에 묻기"
           }
         }
       }

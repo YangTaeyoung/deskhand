@@ -19,9 +19,9 @@ public enum StreamPreset: String, CaseIterable, Identifiable, Sendable {
 
     public var detail: String {
         switch self {
-        case .sharp: .ui("preset.sharp.detail", "원본 해상도 · 높은 비트레이트")
+        case .sharp: .ui("preset.sharp.detail", "원본 해상도 그대로 · 높은 비트레이트")
         case .balanced: .ui("preset.balanced.detail", "최대 2560 폭으로 축소")
-        case .saver: .ui("preset.saver.detail", "최대 1920 폭 · 낮은 비트레이트")
+        case .saver: .ui("preset.saver.detail", "최대 1920 폭으로 축소 · 낮은 비트레이트")
         }
     }
 }

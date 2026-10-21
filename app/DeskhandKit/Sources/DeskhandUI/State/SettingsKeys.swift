@@ -63,6 +63,10 @@ public enum SettingsKey {
         public static let allowsClipboardWrite = "deskhand.terminal.allowsClipboardWrite"
     }
 
+    public enum Logs {
+        public static let showsSummary = "deskhand.logs.showsSummary"
+    }
+
     public enum Processes {
         public static let sortColumn = "deskhand.processes.sortColumn"
         public static let sortAscending = "deskhand.processes.sortAscending"
@@ -133,6 +137,7 @@ public enum SettingsMigration {
         ("terminalConfirmsMultilinePaste", SettingsKey.Terminal.confirmsMultilinePaste),
         ("terminalOptionAsMeta", SettingsKey.Terminal.optionAsMeta),
         ("terminalAllowsClipboardWrite", SettingsKey.Terminal.allowsClipboardWrite),
+        ("logs.showsSummary", SettingsKey.Logs.showsSummary),
         ("processes.sortColumn", SettingsKey.Processes.sortColumn),
         ("processes.sortAscending", SettingsKey.Processes.sortAscending),
         ("processes.tree", SettingsKey.Processes.tree),

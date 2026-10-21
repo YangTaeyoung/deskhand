@@ -597,6 +597,18 @@ public struct OperationError: Error, Sendable, Equatable {
             }
         case is DecodingError:
             self.init(message: .ui("error.decoding", "데몬 응답 형식이 예상과 다릅니다"))
+        case let error as DaemonCommandError:
+            switch error {
+            case .failed(let command, let status, let stderr):
+                let code = String(status)
+                let failure = String.ui("error.command.failed", "\(command) 명령이 실패했습니다 (종료 코드 \(code))")
+                self.init(message: stderr.isEmpty ? failure : failure + ": " + stderr)
+            case .timedOut(let command, let seconds):
+                let limit = String(Int(seconds.rounded()))
+                self.init(message: .ui("error.command.timedOut", "\(command) 명령이 \(limit)초 안에 끝나지 않아 멈췄습니다"))
+            case .stillRunning:
+                self.init(message: .ui("error.command.stillRunning", "데몬이 멈추지 않았습니다. 터미널에서 deskhand daemon status로 상태를 확인하세요"))
+            }
         default:
             self.init(message: error.localizedDescription)
         }

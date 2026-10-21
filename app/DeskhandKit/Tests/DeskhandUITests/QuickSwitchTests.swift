@@ -105,12 +105,10 @@ final class QuickSwitchTests: XCTestCase {
         XCTAssertEqual(QuickSwitchNavigator.effect(for: .down, selection: 0, count: 0, queryIsEmpty: false), .none)
     }
 
-    func testReturnAndCommandDigitsOpenRows() {
+    func testReturnOpensTheSelectedRow() {
         XCTAssertEqual(QuickSwitchNavigator.effect(for: .enter, selection: 1, count: 3, queryIsEmpty: false), .activate(1))
         XCTAssertEqual(QuickSwitchNavigator.effect(for: .enter, selection: 0, count: 0, queryIsEmpty: false), .none)
-        XCTAssertEqual(QuickSwitchNavigator.effect(for: .commandDigit(3), selection: 0, count: 5, queryIsEmpty: true), .activate(2))
-        XCTAssertEqual(QuickSwitchNavigator.effect(for: .commandDigit(9), selection: 0, count: 5, queryIsEmpty: true), .none)
-        XCTAssertEqual(QuickSwitchNavigator.effect(for: .commandDigit(0), selection: 0, count: 5, queryIsEmpty: true), .none)
+        XCTAssertEqual(QuickSwitchNavigator.effect(for: .enter, selection: 7, count: 3, queryIsEmpty: false), .activate(2))
     }
 
     func testEscapeClearsTheQueryBeforeClosing() {
@@ -129,16 +127,61 @@ final class QuickSwitchTests: XCTestCase {
     func testModelAppliesKeysToItsRows() {
         let model = QuickSwitchModel(defaults: defaults)
         model.present()
-        let rows = QuickSwitchRanking.sections(query: "", items: items, recents: []).flatMap(\.rows)
-        XCTAssertNil(model.handle(.down, rows: rows))
+        model.update(items: items)
+        let rows = model.rows
+        XCTAssertEqual(rows.map(\.id), QuickSwitchRanking.sections(query: "", items: items, recents: []).flatMap(\.rows).map(\.id))
+        XCTAssertNil(model.handle(.down))
         XCTAssertEqual(model.selection, 1)
-        XCTAssertEqual(model.handle(.enter, rows: rows)?.id, rows[1].item.id)
+        XCTAssertEqual(model.handle(.enter)?.id, rows[1].item.id)
         model.query = "x"
-        XCTAssertNil(model.handle(.escape, rows: rows))
+        let clears = model.clearRequests
+        XCTAssertNil(model.handle(.escape))
         XCTAssertEqual(model.query, "")
+        XCTAssertEqual(model.clearRequests, clears + 1)
         XCTAssertTrue(model.isPresented)
-        XCTAssertNil(model.handle(.escape, rows: rows))
+        XCTAssertNil(model.handle(.escape))
         XCTAssertFalse(model.isPresented)
+    }
+
+    func testModelRanksAgainWhenTheQueryChanges() {
+        let model = QuickSwitchModel(defaults: defaults)
+        model.present()
+        model.update(items: items)
+        model.query = "ㅌㅁㄴ"
+        XCTAssertEqual(model.rows.map(\.id), ["tab:terminal", "command:newTerminal"])
+        XCTAssertEqual(model.selectedRow?.id, "tab:terminal")
+    }
+
+    func testSelectionStaysWithinTheRowsWhenItemsChange() {
+        let model = QuickSwitchModel(defaults: defaults)
+        model.present()
+        model.update(items: items)
+        model.selection = model.rows.count - 1
+        model.update(items: Array(items.prefix(2)))
+        XCTAssertEqual(model.selection, 1)
+        model.update(items: [])
+        XCTAssertEqual(model.selection, 0)
+        XCTAssertNil(model.selectedRow)
+    }
+
+    func testKeywordMatchesNameTheKeyword() throws {
+        let rows = try XCTUnwrap(QuickSwitchRanking.sections(query: "term", items: items, recents: []).first?.rows)
+        XCTAssertEqual(rows.first { $0.id == "tab:terminal" }?.keyword, "terminal")
+        let title = try XCTUnwrap(QuickSwitchRanking.sections(query: "터미널", items: items, recents: []).first?.rows.first)
+        XCTAssertNil(title.keyword)
+    }
+
+    func testRankingFiveThousandItemsStaysFast() {
+        let words = ["터미널", "파일", "프로세스", "로그", "디버거", "Shop", "Admin", "report", "주문 확인", "결제"]
+        let many = (0..<5_000).map { index in
+            item("item:\(index)", .transfer, "\(words[index % words.count]) \(index).log",
+                 subtitle: "개발 PC · 받는 중", keywords: ["transfer"])
+        }
+        let started = ContinuousClock.now
+        for query in ["ㅌㅁㄴ", "report", "주문"] {
+            _ = QuickSwitchRanking.sections(query: query, items: many, recents: [])
+        }
+        XCTAssertLessThan(ContinuousClock.now - started, .seconds(1))
     }
 
     func testRecentsKeepNewestFirstWithoutDuplicates() {
@@ -194,6 +237,14 @@ final class QuickSwitchTests: XCTestCase {
         XCTAssertTrue(observing.contains { $0.id == "command:takeControl" })
         let human = QuickSwitchCatalog.items(store: store(control: ControlState(owner: "human", gen: 3, aiPaused: false)))
         XCTAssertFalse(human.contains { $0.id == "command:takeControl" })
+    }
+
+    func testShowingATabClosesThePalette() {
+        let store = store()
+        store.quickSwitch.present()
+        store.showTab(.logs)
+        XCTAssertEqual(store.layout.tab, .logs)
+        XCTAssertFalse(store.quickSwitch.isPresented)
     }
 
     func testActivatingItemsNavigatesAndRemembersThem() throws {

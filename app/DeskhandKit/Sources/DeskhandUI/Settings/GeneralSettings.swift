@@ -1,19 +1,23 @@
+import AppKit
 import DeskhandClient
 import SwiftUI
 
-/// 일반: the daemon's status, version and files with restart and the logs folder, and opening
-/// the app at login.
+/// 일반: the daemon's status, versions and files with the log in Finder and restart, the app's
+/// version, and opening the app at login.
 struct GeneralSettings: View {
     let store: AppStore
     @Bindable var model: SettingsModel
 
     var body: some View {
-        SettingsForm(pane: .general) {
+        SettingsForm(store: store, pane: .general) {
             daemonSection
-            startupSection
+            appSection
         }
         .task(id: model.daemonStatus) { await model.refreshDaemonInfo() }
         .onAppear { model.refreshLoginItem() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            model.refreshLoginItem()
+        }
         .confirmationDialog(String.ui("settings.daemon.restart.title", "데몬을 다시 시작할까요?"),
                             isPresented: $model.confirmingRestart, titleVisibility: .visible) {
             Button(String.ui("settings.daemon.restart.confirm", "다시 시작")) {
@@ -37,18 +41,46 @@ struct GeneralSettings: View {
                                title: String.ui("settings.daemon.unavailable.title", "데몬에 연결할 수 없습니다"),
                                message: message.asSentence)
             }
-            LabeledContent(String.ui("settings.daemon.version", "버전")) {
-                Text(versionText)
-                    .monospacedDigit()
-                    .textSelection(.enabled)
+            LabeledContent(String.ui("settings.daemon.version", "데몬 버전")) {
+                SettingsValue(versionText)
             }
             LabeledContent(String.ui("settings.daemon.socket", "소켓")) {
-                SettingsPath(path: (info.socketPath as NSString).abbreviatingWithTildeInPath)
+                SettingsValue((info.socketPath as NSString).abbreviatingWithTildeInPath, monospaced: true)
             }
             LabeledContent(String.ui("settings.daemon.log", "로그")) {
-                SettingsPath(path: (info.logPath as NSString).abbreviatingWithTildeInPath)
+                SettingsValue((info.logPath as NSString).abbreviatingWithTildeInPath, monospaced: true)
             }
-            actionsRow
+            LabeledContent(String.ui("settings.daemon.manage", "관리")) {
+                HStack(spacing: DS.Space.s) {
+                    Button(String.ui("settings.daemon.openLogs", "Finder에서 로그 보기")) {
+                        FinderReveal.reveal(path: info.logPath)
+                    }
+                    .help(String.ui("settings.daemon.openLogs.help", "Finder에서 데몬 로그 파일을 보여 줍니다"))
+                    if case .unavailable = model.daemonStatus {
+                        Button(String.ui("settings.daemon.start", "데몬 시작")) {
+                            Task { await model.startDaemon() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(DS.Status.selectionFill)
+                        .disabled(model.restart == .running)
+                        .help(String.ui("settings.daemon.start.help", "deskhand daemon start를 실행하고 연결합니다"))
+                    } else {
+                        Button(String.ui("settings.daemon.restart", "다시 시작…")) {
+                            model.confirmingRestart = true
+                        }
+                        .disabled(model.restart == .running || model.daemonStatus == .starting)
+                        .help(String.ui("settings.daemon.restart.help", "데몬을 멈췄다가 다시 시작합니다"))
+                    }
+                }
+            }
+            switch model.restart {
+            case .running:
+                SettingsProgress(title: String.ui("settings.daemon.restarting.detail", "데몬을 멈추고 다시 시작하는 중…"))
+            case .failed(let error):
+                SettingsError(message: String.ui("settings.daemon.restart.failed", "다시 시작하지 못했습니다: \(error.message)"))
+            case .idle:
+                EmptyView()
+            }
         } header: {
             Text(String.ui("settings.daemon.header", "데몬"))
         } footer: {
@@ -65,45 +97,13 @@ struct GeneralSettings: View {
         return .ui("settings.daemon.version.value", "\(version) · API \(apiText)")
     }
 
-    @ViewBuilder
-    private var actionsRow: some View {
-        HStack(spacing: DS.Space.s) {
-            switch model.restart {
-            case .running:
-                SettingsProgress(title: String.ui("settings.daemon.restarting.detail", "데몬을 멈추고 다시 시작하는 중…"))
-            case .failed(let error):
-                SettingsError(message: String.ui("settings.daemon.restart.failed", "다시 시작하지 못했습니다: \(error.message)"))
-            case .idle:
-                EmptyView()
-            }
-            Spacer(minLength: DS.Space.s)
-            Button {
-                FinderReveal.reveal(path: info.logPath)
-            } label: {
-                Label(String.ui("settings.daemon.openLogs", "로그 보기"), systemImage: "doc.text.magnifyingglass")
-            }
-            .help(String.ui("settings.daemon.openLogs.help", "Finder에서 데몬 로그 파일을 보여 줍니다"))
-            if case .unavailable = model.daemonStatus {
-                Button(String.ui("settings.daemon.start", "데몬 시작")) {
-                    Task { await model.startDaemon() }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(model.restart == .running)
-                .help(String.ui("settings.daemon.start.help", "deskhand daemon start를 실행하고 연결합니다"))
-            } else {
-                Button(String.ui("settings.daemon.restart", "다시 시작…")) {
-                    model.confirmingRestart = true
-                }
-                .disabled(model.restart == .running || model.daemonStatus == .starting)
-                .help(String.ui("settings.daemon.restart.help", "데몬을 멈췄다가 다시 시작합니다"))
-            }
-        }
-    }
+    // MARK: App
 
-    // MARK: Startup
-
-    private var startupSection: some View {
+    private var appSection: some View {
         Section {
+            LabeledContent(String.ui("settings.app.version", "앱 버전")) {
+                SettingsValue(model.appVersion)
+            }
             SettingsToggle(String.ui("settings.login.toggle", "로그인할 때 Deskhand 열기"),
                            detail: String.ui("settings.login.detail", "앱을 열지 않아도 CLI와 AI 클라이언트는 필요할 때 데몬을 직접 시작합니다."),
                            isOn: Binding(get: { model.launchesAtLogin }, set: { model.setLaunchesAtLogin($0) }))
@@ -119,7 +119,7 @@ struct GeneralSettings: View {
                 SettingsError(message: String.ui("settings.login.failed", "로그인 항목을 바꾸지 못했습니다: \(error)"))
             }
         } header: {
-            Text(String.ui("settings.startup.header", "시작"))
+            Text(String.ui("settings.app.header", "앱"))
         }
     }
 }
@@ -132,6 +132,7 @@ struct DaemonStatusLabel: View {
         HStack(spacing: DS.Space.s) {
             StatusDot(state: status.dot)
             Text(status.title)
+                .foregroundStyle(DS.Status.neutralText)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String.ui("settings.daemon.status.a11y", "데몬 상태: \(status.title)"))

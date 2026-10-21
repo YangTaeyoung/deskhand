@@ -31,6 +31,7 @@ public struct WorkspaceView: View {
 
     public var body: some View {
         framed
+            .environment(\.appDefaults, store.defaults)
             .task(id: host.hostID) {
                 store.debugger(for: host).start()
                 store.qa.start()

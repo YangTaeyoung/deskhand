@@ -45,7 +45,8 @@ public final class AppStore {
     public static let selectionKey = SettingsKey.selectedHost
 
     public let backend: any Backend
-    @ObservationIgnored private let defaults: UserDefaults
+    /// The defaults domain the store keeps settings in.
+    @ObservationIgnored let defaults: UserDefaults
     @ObservationIgnored private let backoff: ResubscribeBackoff
 
     public private(set) var phase: Phase = .idle
@@ -233,6 +234,12 @@ public final class AppStore {
     /// A debugged app on the host is paused, for hosts whose debugger tab state exists.
     public func debuggerPaused(hostID: String) -> Bool {
         debuggerModels[hostID]?.openSessions.contains { !$0.pausedTargets.isEmpty } ?? false
+    }
+
+    /// Shows `tab` of the selected computer and closes the quick switch.
+    public func showTab(_ tab: WorkspaceTab) {
+        quickSwitch.dismiss()
+        layout.tab = tab
     }
 
     /// Shows the logs tab with a remote file selected.

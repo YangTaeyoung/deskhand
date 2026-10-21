@@ -80,7 +80,6 @@ final class AIScopeRulesTests: XCTestCase {
         XCTAssertTrue(AIScope.unrestricted.allowsScreen)
         XCTAssertTrue(AIScope.unrestricted.allowsClipboard)
         XCTAssertEqual(AIScope.unrestricted.files, .all)
-        XCTAssertFalse(AIScope.allowsElevation)
     }
 
     func testFileAccessFollowsTheMode() {

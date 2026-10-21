@@ -403,9 +403,9 @@ struct TerminalSettingToggles: View {
     @Bindable var preferences: TerminalPreferences
 
     var body: some View {
-        Toggle(String.ui("terminal.paste.confirmSetting", "여러 줄을 붙여 넣기 전에 확인"), isOn: $preferences.confirmsMultilinePaste)
-        Toggle(String.ui("terminal.optionAsMeta", "Option을 Meta 키로 사용"), isOn: $preferences.optionAsMeta)
-        Toggle(String.ui("terminal.clipboardWrite", "원격 프로그램의 클립보드 쓰기 허용"), isOn: $preferences.allowsClipboardWrite)
+        Toggle(String.ui("terminal.paste.confirmSetting", "여러 줄을 붙여 넣기 전에 묻기"), isOn: $preferences.confirmsMultilinePaste)
+        Toggle(String.ui("terminal.optionAsMeta", "Option을 Meta 키로 쓰기"), isOn: $preferences.optionAsMeta)
+        Toggle(String.ui("terminal.clipboardWrite", "원격 프로그램의 클립보드 쓰기 허용하기"), isOn: $preferences.allowsClipboardWrite)
     }
 }
 

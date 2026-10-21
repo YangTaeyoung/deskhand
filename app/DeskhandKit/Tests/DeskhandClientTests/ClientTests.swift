@@ -587,6 +587,102 @@ final class ClientTests: XCTestCase {
     }
 }
 
+final class DaemonRestartTests: XCTestCase {
+    private static func responding(_ path: String) -> Bool {
+        guard let connection = try? Connection.connect(path: path) else { return false }
+        connection.close()
+        return true
+    }
+
+    func testRestartWaitsForTheOldDaemonToStopBeforeStarting() async throws {
+        let server = MockDaemon()
+        try server.start()
+        let path = server.path
+        let startedWhileAnswering = Received()
+        let launcher = DaemonLauncher(socketPath: path, launch: {
+            startedWhileAnswering.set(Data([Self.responding(path) ? 1 : 0]))
+            try server.start()
+        }, stop: {
+            Task.detached {
+                try? await Task.sleep(for: .milliseconds(300))
+                server.stop()
+            }
+        }, timeout: 3, stopTimeout: 3, pollInterval: 0.01)
+
+        try await launcher.restart()
+
+        XCTAssertEqual(startedWhileAnswering.get(), Data([0]))
+        XCTAssertTrue(Self.responding(path))
+    }
+
+    func testRestartGivesUpOnAStopCommandThatHangs() async throws {
+        let server = MockDaemon()
+        try server.start()
+        let launcher = DaemonLauncher(socketPath: server.path, launch: {}, stop: {
+            try await Task.sleep(for: .seconds(30))
+        }, timeout: 1, stopTimeout: 0.3, pollInterval: 0.01)
+        let started = Date()
+        do {
+            try await launcher.restart()
+            XCTFail("expected error")
+        } catch let error as DaemonCommandError {
+            XCTAssertEqual(error, .timedOut(command: "deskhand daemon stop", seconds: 0.3))
+        }
+        XCTAssertLessThan(Date().timeIntervalSince(started), 2)
+    }
+
+    func testRestartReportsADaemonThatKeepsAnswering() async throws {
+        let server = MockDaemon()
+        try server.start()
+        let launcher = DaemonLauncher(socketPath: server.path, launch: {}, stop: {}, timeout: 1, stopTimeout: 0.3, pollInterval: 0.01)
+        do {
+            try await launcher.restart()
+            XCTFail("expected error")
+        } catch let error as DaemonCommandError {
+            XCTAssertEqual(error, .stillRunning)
+        }
+    }
+
+    func testRestartReportsAFailingStartWithItsOutput() async throws {
+        let server = MockDaemon()
+        try server.start()
+        let failure = DaemonCommandError.failed(command: "deskhand daemon start", status: 1, stderr: "address already in use")
+        let launcher = DaemonLauncher(socketPath: server.path, launch: { throw failure }, stop: { server.stop() },
+                                      timeout: 1, stopTimeout: 1, pollInterval: 0.01)
+        do {
+            try await launcher.restart()
+            XCTFail("expected error")
+        } catch let error as DaemonCommandError {
+            XCTAssertEqual(error, failure)
+        }
+    }
+
+    func testCommandRunnerKeepsStandardErrorOfAFailure() async throws {
+        do {
+            try await DaemonLauncher.run(URL(fileURLWithPath: "/bin/sh"), ["-c", "echo first >&2; echo 'bind: address in use' >&2; exit 3"],
+                                         command: "deskhand daemon start", timeout: 5)
+            XCTFail("expected error")
+        } catch let error as DaemonCommandError {
+            XCTAssertEqual(error, .failed(command: "deskhand daemon start", status: 3, stderr: "first\nbind: address in use"))
+        }
+    }
+
+    func testCommandRunnerEndsACommandThatRunsTooLong() async throws {
+        let started = Date()
+        do {
+            try await DaemonLauncher.run(URL(fileURLWithPath: "/bin/sleep"), ["30"], command: "deskhand daemon stop", timeout: 0.3)
+            XCTFail("expected error")
+        } catch let error as DaemonCommandError {
+            XCTAssertEqual(error, .timedOut(command: "deskhand daemon stop", seconds: 0.3))
+        }
+        XCTAssertLessThan(Date().timeIntervalSince(started), 3)
+    }
+
+    func testCommandRunnerSucceedsOnExitZero() async throws {
+        try await DaemonLauncher.run(URL(fileURLWithPath: "/bin/sh"), ["-c", "exit 0"], command: "deskhand daemon status", timeout: 5)
+    }
+}
+
 final class Received: @unchecked Sendable {
     private let lock = NSLock()
     private var data = Data()

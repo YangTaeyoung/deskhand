@@ -2,25 +2,24 @@ import DeskhandClient
 import SwiftUI
 import struct DeskhandClient.Host
 
-/// 개인정보·AI: what of each computer reaches AI clients (screen captures, folders, the
-/// clipboard), remote clipboard writes on this Mac, and the fixed rule that AI clients never
-/// act elevated. The scope is kept on this Mac; the notice at the top says the daemon does not
-/// apply it yet.
+/// 개인정보·AI: a tinted notice that the AI scope is stored on this Mac and not applied yet, each
+/// computer's saved scope (screen captures, folders, the clipboard) marked 적용 전, remote
+/// clipboard writes on this Mac, which apply now, and what holds today for administrator rights.
 struct PrivacySettings: View {
     let store: AppStore
     @Bindable var model: SettingsModel
 
     var body: some View {
-        SettingsForm(pane: .privacy) {
-            Section {
-                SettingsNotice(symbol: "exclamationmark.shield.fill", tint: DS.Color.warning,
-                               title: String.ui("settings.privacy.pending.title", "AI 전달 범위는 아직 적용되지 않습니다"),
-                               message: String.ui("settings.privacy.pending.message", "여기서 정한 범위는 이 Mac에 저장됩니다. 데몬이 AI 요청에 범위를 적용하기 전까지 AI 클라이언트는 연결된 PC의 화면, 파일과 클립보드를 제한 없이 씁니다. 아래 ‘이 Mac’과 ‘관리자 권한’ 항목은 지금 적용됩니다."))
-            }
+        SettingsBannerForm(store: store, pane: .privacy) {
+            SettingsNotice(symbol: "exclamationmark.shield.fill", tint: DS.Color.warning,
+                           title: String.ui("settings.privacy.pending.title", "AI 전달 범위는 아직 적용되지 않습니다"),
+                           message: String.ui("settings.privacy.pending.message", "여기서 정한 범위는 이 Mac에 저장됩니다. 데몬이 범위를 적용하기 전까지 AI 클라이언트는 연결된 PC의 화면, 파일과 클립보드를 제한 없이 씁니다. 아래 ‘이 Mac’ 항목은 지금 적용됩니다."),
+                           tinted: true)
+        } content: {
             scopeSection
             Section {
                 @Bindable var terminal = store.terminalPreferences
-                SettingsToggle(String.ui("terminal.clipboardWrite", "원격 프로그램의 클립보드 쓰기 허용"),
+                SettingsToggle(String.ui("terminal.clipboardWrite", "원격 프로그램의 클립보드 쓰기 허용하기"),
                                detail: String.ui("settings.privacy.osc52.detail", "켜면 터미널에서 실행한 프로그램이 OSC 52로 이 Mac의 클립보드를 바꿀 수 있습니다. AI가 실행한 명령도 포함됩니다."),
                                isOn: $terminal.allowsClipboardWrite)
             } header: {
@@ -28,11 +27,10 @@ struct PrivacySettings: View {
             }
             Section {
                 LabeledContent {
-                    Label(String.ui("settings.privacy.elevation.value", "사람만"), systemImage: "lock.fill")
-                        .foregroundStyle(.secondary)
+                    SettingsValue(String.ui("settings.privacy.elevation.value", "제한 없음"))
                 } label: {
-                    SettingsLabel(String.ui("settings.privacy.elevation", "UAC 승인과 보안 데스크톱"),
-                                  detail: String.ui("settings.privacy.elevation.detail", "UAC 승인 창, 보안 데스크톱과 잠금 화면은 AI가 조작하지 않습니다. Deskhand는 이런 보호를 우회하지 않으며, 권한 승인이 필요한 단계는 사람이 PC에서 직접 승인합니다. 이 규칙은 바꿀 수 없습니다."))
+                    SettingsLabel(String.ui("settings.privacy.elevation", "AI가 실행하는 명령의 권한"),
+                                  detail: String.ui("settings.privacy.elevation.detail", "지금은 AI가 실행한 명령도 PC 에이전트의 관리자 권한 토큰으로 실행됩니다. 이를 제한하는 기능은 아직 없습니다. AI는 UAC 승인 창이 뜨는 보안 데스크톱에는 입력할 수 없습니다."))
                 }
                 .accessibilityElement(children: .combine)
             } header: {
@@ -50,8 +48,8 @@ struct PrivacySettings: View {
             let binding = Binding(get: { preferences.scope(for: host.hostID) }, set: { preferences.setScope($0, for: host.hostID) })
             Section {
                 SettingsHostPicker(hosts: store.hosts, selection: Binding(get: { host.hostID }, set: { model.scopeHostID = $0 }))
-                SettingsToggle(String.ui("settings.privacy.screen", "화면 캡처"),
-                               detail: String.ui("settings.privacy.screen.detail", "끄면 AI는 이 PC의 스크린샷을 받지 못하고 화면을 보며 조작할 수 없습니다."),
+                SettingsToggle(String.ui("settings.privacy.screen", "화면 캡처 허용하기"),
+                               detail: String.ui("settings.privacy.screen.detail", "적용되면, 끈 PC의 스크린샷과 화면 조작을 AI에게 막습니다."),
                                isOn: binding.allowsScreen)
                 Picker(selection: binding.files) {
                     ForEach(AIFileAccess.allCases) { access in
@@ -59,28 +57,36 @@ struct PrivacySettings: View {
                     }
                 } label: {
                     SettingsLabel(String.ui("settings.privacy.files", "파일"),
-                                  detail: String.ui("settings.privacy.files.detail", "AI가 읽고 바꿀 수 있는 폴더입니다."))
+                                  detail: String.ui("settings.privacy.files.detail", "적용되면 AI가 읽고 바꿀 수 있는 폴더를 이 범위로 줄입니다."))
                 }
                 .pickerStyle(.menu)
                 if scope.files == .workRoots {
                     workRootsRow(roots: roots, problems: scope.problems(rootCount: roots.count))
                 }
-                SettingsToggle(String.ui("settings.privacy.clipboard", "클립보드"),
-                               detail: String.ui("settings.privacy.clipboard.detail", "AI가 이 PC의 클립보드를 읽고 쓸 수 있습니다."),
+                SettingsToggle(String.ui("settings.privacy.clipboard", "클립보드 허용하기"),
+                               detail: String.ui("settings.privacy.clipboard.detail", "적용되면, 끈 PC의 클립보드를 AI가 읽거나 쓰지 못합니다."),
                                isOn: binding.allowsClipboard)
             } header: {
-                Text(String.ui("settings.privacy.scope.header", "AI 전달 범위"))
+                scopeHeader
             } footer: {
-                SettingsFootnote(String.ui("settings.privacy.scope.footer", "지금 범위: \(scope.summary(rootCount: roots.count))"))
+                SettingsFootnote(String.ui("settings.privacy.scope.footer", "저장된 범위: \(scope.summary(rootCount: roots.count))"))
             }
         } else {
             Section {
                 Text(String.ui("settings.privacy.noHosts", "컴퓨터를 추가하면 컴퓨터마다 AI에 보낼 범위를 정할 수 있습니다."))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DS.Status.neutralText)
             } header: {
-                Text(String.ui("settings.privacy.scope.header", "AI 전달 범위"))
+                scopeHeader
             }
         }
+    }
+
+    private var scopeHeader: some View {
+        HStack(spacing: DS.Space.s) {
+            Text(String.ui("settings.privacy.scope.header", "AI 전달 범위"))
+            SettingsBadge(title: String.ui("settings.privacy.scope.pending", "적용 전"), tint: DS.Color.warning, text: DS.Status.warningText)
+        }
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder
@@ -88,7 +94,7 @@ struct PrivacySettings: View {
         if problems.contains(.noWorkRoots) {
             SettingsNotice(symbol: "exclamationmark.triangle.fill", tint: DS.Color.warning,
                            title: String.ui("settings.privacy.noRoots.title", "작업 루트가 없습니다"),
-                           message: String.ui("settings.privacy.noRoots.message", "이대로면 AI는 이 PC의 어떤 폴더도 쓸 수 없습니다. 파일 설정에서 작업 루트를 추가하세요.")) {
+                           message: String.ui("settings.privacy.noRoots.message", "적용되면 이 PC의 어떤 폴더도 AI에게 허용되지 않습니다. 지금은 AI가 모든 폴더를 씁니다. 파일 설정에서 작업 루트를 추가하세요.")) {
                 Button(String.ui("settings.privacy.editRoots", "작업 루트 편집…")) { model.pane = .files }
                     .controlSize(.small)
             }
@@ -96,9 +102,9 @@ struct PrivacySettings: View {
             LabeledContent {
                 Button(String.ui("settings.privacy.editRoots", "작업 루트 편집…")) { model.pane = .files }
             } label: {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: DS.Space.xs) {
                     ForEach(roots, id: \.self) { root in
-                        SettingsPath(path: root)
+                        SettingsValue(root, monospaced: true)
                     }
                 }
             }

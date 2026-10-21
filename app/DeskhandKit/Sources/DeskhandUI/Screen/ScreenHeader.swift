@@ -134,8 +134,8 @@ struct ScreenHeader: View {
             }
             .pickerStyle(.inline)
             Divider()
-            Toggle(String.ui("screen.keyboard.swap", "⌘를 Ctrl로, ⌃를 Windows 키로 보내기"), isOn: $preferences.swapCommandControl)
-            Toggle(String.ui("screen.keyboard.hangul", "오른쪽 ⌥를 한/영 키로 보내기"), isOn: $preferences.rightOptionHangul)
+            Toggle(String.ui("screen.keyboard.swap", "⌘를 Ctrl로, ⌃을 Windows 키로 보내기"), isOn: $preferences.swapCommandControl)
+            Toggle(String.ui("screen.keyboard.hangul", "오른쪽 ⌥을 한/영 키로 보내기"), isOn: $preferences.rightOptionHangul)
             Toggle(String.ui("screen.keyboard.hanja", "오른쪽 ⌘를 한자 키로 보내기"), isOn: $preferences.rightCommandHanja)
             Divider()
             Toggle(String.ui("screen.keyboard.system", "시스템 단축키도 원격으로 보내기 (⌘Q·⌘H·⌘Tab)"), isOn: $preferences.forwardsSystemShortcuts)

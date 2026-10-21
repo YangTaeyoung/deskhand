@@ -9,13 +9,16 @@ struct FilesSettings: View {
     let store: AppStore
     @Bindable var model: SettingsModel
     @State private var draft = ""
+    @State private var adding = false
+    @State private var selectedRoot: String?
     @State private var problem: WorkRootProblem?
+    @FocusState private var draftFocused: Bool
 
     private var preferences: FilesPreferences { store.filesPreferences }
 
     var body: some View {
         @Bindable var preferences = store.filesPreferences
-        SettingsForm(pane: .files) {
+        SettingsForm(store: store, pane: .files) {
             downloadSection
             rootsSection
             Section {
@@ -25,7 +28,7 @@ struct FilesSettings: View {
                     }
                 }
                 .pickerStyle(.menu)
-                SettingsToggle(String.ui("settings.files.confirmMoves", "메뉴와 툴바로 옮기기 전에 확인"),
+                SettingsToggle(String.ui("settings.files.confirmMoves", "메뉴와 툴바로 옮기기 전에 묻기"),
                                detail: String.ui("settings.files.confirmMoves.detail", "옮기기는 확인을 마친 뒤 원본을 지웁니다. ⌘를 누른 채 끌어 옮길 때는 묻지 않습니다."),
                                isOn: $preferences.confirmMoves)
             } header: {
@@ -62,18 +65,15 @@ struct FilesSettings: View {
         Section {
             LabeledContent(String.ui("settings.files.download", "받을 폴더")) {
                 HStack(spacing: DS.Space.s) {
-                    SettingsPath(path: (preferences.downloadFolder as NSString).abbreviatingWithTildeInPath)
+                    SettingsValue((preferences.downloadFolder as NSString).abbreviatingWithTildeInPath, monospaced: true)
                     Button(String.ui("settings.files.download.choose", "변경…"), action: chooseDownloadFolder)
                         .help(String.ui("settings.files.download.choose.help", "받은 로그와 크래시 덤프를 저장할 폴더를 고릅니다"))
-                }
-            }
-            if preferences.customDownloadFolder != nil {
-                HStack {
-                    Spacer()
-                    Button(String.ui("settings.files.download.reset", "기본 폴더로 되돌리기")) {
-                        preferences.customDownloadFolder = nil
+                    if preferences.customDownloadFolder != nil {
+                        Button(String.ui("settings.files.download.reset", "기본 폴더")) {
+                            preferences.customDownloadFolder = nil
+                        }
+                        .help(String.ui("settings.files.download.reset.help", "~/Downloads/Deskhand로 되돌립니다"))
                     }
-                    .controlSize(.small)
                 }
             }
         } header: {
@@ -83,6 +83,7 @@ struct FilesSettings: View {
         }
     }
 
+    /// Asks for the folder in a sheet on the settings window, or in its own panel without one.
     private func chooseDownloadFolder() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -91,8 +92,16 @@ struct FilesSettings: View {
         panel.allowsMultipleSelection = false
         panel.prompt = String.ui("settings.files.download.prompt", "선택")
         panel.directoryURL = URL(fileURLWithPath: preferences.downloadFolder).deletingLastPathComponent()
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        preferences.customDownloadFolder = url.path == FilesPreferences.defaultDownloadFolder ? nil : url.path
+        let preferences = self.preferences
+        let apply: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .OK, let url = panel.url else { return }
+            preferences.customDownloadFolder = url.path == FilesPreferences.defaultDownloadFolder ? nil : url.path
+        }
+        if let window = NSApp.keyWindow {
+            panel.beginSheetModal(for: window, completionHandler: apply)
+        } else {
+            apply(panel.runModal())
+        }
     }
 
     // MARK: Work roots
@@ -102,50 +111,60 @@ struct FilesSettings: View {
         if let host = model.host(model.scopeHostID) {
             let roots = preferences.workRoots(for: host.hostID)
             let style = PathStyle(os: host.os)
-            let example = style == .windows ? "C:\\Work\\Project" : "/srv/project"
             Section {
                 SettingsHostPicker(hosts: store.hosts, selection: Binding(get: { host.hostID }, set: {
                     model.scopeHostID = $0
-                    draft = ""
-                    problem = nil
+                    cancelAdding()
                 }))
-                if roots.isEmpty {
-                    Text(String.ui("settings.files.roots.empty", "작업 루트가 없습니다. AI와 사람이 주로 쓰는 폴더를 추가하세요."))
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(roots, id: \.self) { root in
-                        HStack(spacing: DS.Space.s) {
-                            Image(systemName: "folder")
-                                .foregroundStyle(DS.Color.accent)
-                                .accessibilityHidden(true)
-                            SettingsPath(path: root)
-                            Spacer(minLength: DS.Space.s)
-                            Button {
-                                preferences.removeWorkRoot(root, for: host.hostID)
-                            } label: {
-                                Image(systemName: "minus.circle")
+                VStack(alignment: .leading, spacing: 0) {
+                    List(selection: $selectedRoot) {
+                        ForEach(roots, id: \.self) { root in
+                            Label {
+                                Text(root).font(DS.Font.mono)
+                            } icon: {
+                                Image(systemName: "folder")
                             }
-                            .buttonStyle(.borderless)
-                            .help(String.ui("settings.files.roots.remove", "작업 루트에서 빼기"))
-                            .accessibilityLabel(String.ui("settings.files.roots.remove.a11y", "\(root) 작업 루트에서 빼기"))
+                            .tag(root)
                         }
                     }
+                    .listStyle(.bordered(alternatesRowBackgrounds: false))
+                    .frame(height: 88)
+                    .overlay {
+                        if roots.isEmpty {
+                            Text(String.ui("settings.files.roots.empty", "작업 루트가 없습니다"))
+                                .font(DS.Font.caption)
+                                .foregroundStyle(DS.Status.neutralText)
+                        }
+                    }
+                    .accessibilityLabel(String.ui("settings.files.roots.list", "작업 루트 목록"))
+                    HStack(spacing: 0) {
+                        Button {
+                            adding = true
+                            draftFocused = true
+                        } label: {
+                            Image(systemName: "plus")
+                                .frame(width: 24, height: 20)
+                        }
+                        .help(String.ui("settings.files.roots.add.help", "작업 루트 추가"))
+                        .accessibilityLabel(String.ui("settings.files.roots.add.help", "작업 루트 추가"))
+                        Divider().frame(height: 16)
+                        Button {
+                            if let selectedRoot { preferences.removeWorkRoot(selectedRoot, for: host.hostID) }
+                            selectedRoot = nil
+                        } label: {
+                            Image(systemName: "minus")
+                                .frame(width: 24, height: 20)
+                        }
+                        .disabled(selectedRoot.map { !roots.contains($0) } ?? true)
+                        .help(String.ui("settings.files.roots.remove", "선택한 작업 루트 빼기"))
+                        .accessibilityLabel(String.ui("settings.files.roots.remove", "선택한 작업 루트 빼기"))
+                        Spacer(minLength: 0)
+                    }
+                    .buttonStyle(.borderless)
+                    .padding(.top, DS.Space.xs)
                 }
-                VStack(alignment: .leading, spacing: DS.Space.xs) {
-                    HStack(spacing: DS.Space.s) {
-                        TextField(String.ui("settings.files.roots.field", "새 작업 루트"), text: $draft,
-                                  prompt: Text(String.ui("settings.files.roots.prompt", "예: \(example)")))
-                            .font(DS.Font.mono)
-                            .textFieldStyle(.roundedBorder)
-                            .labelsHidden()
-                            .onSubmit { add(host: host, style: style) }
-                            .onChange(of: draft) { problem = nil }
-                        Button(String.ui("settings.files.roots.add", "추가")) { add(host: host, style: style) }
-                            .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
-                    }
-                    if let problem {
-                        SettingsError(message: problem.message)
-                    }
+                if adding {
+                    addRow(host: host, style: style)
                 }
             } header: {
                 Text(String.ui("settings.files.roots.header", "작업 루트"))
@@ -155,16 +174,45 @@ struct FilesSettings: View {
         } else {
             Section {
                 Text(String.ui("settings.files.roots.noHosts", "컴퓨터를 추가하면 컴퓨터마다 작업 루트를 정할 수 있습니다."))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DS.Status.neutralText)
             } header: {
                 Text(String.ui("settings.files.roots.header", "작업 루트"))
             }
         }
     }
 
+    private func addRow(host: Host, style: PathStyle) -> some View {
+        let example = style == .windows ? "C:\\Work\\Project" : "/srv/project"
+        return VStack(alignment: .leading, spacing: DS.Space.xs) {
+            HStack(spacing: DS.Space.s) {
+                TextField(String.ui("settings.files.roots.field", "새 작업 루트"), text: $draft,
+                          prompt: Text(String.ui("settings.files.roots.prompt", "예: \(example)")))
+                    .font(DS.Font.mono)
+                    .textFieldStyle(.roundedBorder)
+                    .labelsHidden()
+                    .focused($draftFocused)
+                    .onSubmit { add(host: host, style: style) }
+                    .onChange(of: draft) { problem = nil }
+                    .onExitCommand { cancelAdding() }
+                Button(String.ui("action.cancel", "취소")) { cancelAdding() }
+                Button(String.ui("settings.files.roots.add", "추가")) { add(host: host, style: style) }
+                    .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            if let problem {
+                SettingsError(message: problem.message)
+            }
+        }
+    }
+
     private func add(host: Host, style: PathStyle) {
         problem = preferences.addWorkRoot(draft, for: host.hostID, style: style)
-        if problem == nil { draft = "" }
+        if problem == nil { cancelAdding() }
+    }
+
+    private func cancelAdding() {
+        adding = false
+        draft = ""
+        problem = nil
     }
 }
 
