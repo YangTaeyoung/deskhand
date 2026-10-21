@@ -10807,17 +10807,6 @@
         }
       }
     },
-    "menu.find": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "찾기"
-          }
-        }
-      }
-    },
     "menu.hideInspector": {
       "comment": "View menu item: hide the inspector",
       "extractionState": "manual",

@@ -10,7 +10,8 @@ import SwiftUI
 /// (emergency stop ⇧⌘.) and host actions for the selected computer, the 터미널 menu and the 디버그
 /// menu (F8, F10, F11, ⇧F11 while the debugger tab is shown). 제거… takes ⌘⌫ only while the
 /// sidebar's PC list has focus (`RemoveHostShortcut`); elsewhere ⌘⌫ stays with text fields and
-/// the files and processes tables.
+/// the files and processes tables. The Edit menu keeps its native 찾기 submenu; its 찾기… (⌘F)
+/// reaches `FindCommandResponder`, which focuses the visible tab's search field.
 public struct DeskhandCommands: Commands {
     let store: AppStore
 
@@ -29,11 +30,6 @@ public struct DeskhandCommands: Commands {
         }
         CommandGroup(replacing: .saveItem) {
             CloseCommands(store: store)
-        }
-        CommandGroup(replacing: .textEditing) {
-            Button(String.ui("menu.find", "찾기")) { store.layout.requestFind() }
-                .keyboardShortcut("f")
-                .disabled(store.selectedHost == nil || !WorkspaceLayout.canFind(store.layout.tab))
         }
         CommandGroup(before: .toolbar) {
             WorkspaceViewCommands(store: store, layout: store.layout)

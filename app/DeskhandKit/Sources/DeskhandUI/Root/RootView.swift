@@ -24,6 +24,7 @@ public struct RootView: View {
             }
         }
         .frame(minWidth: 960, minHeight: 600)
+        .background { FindCommandInstaller(store: store).frame(width: 0, height: 0) }
         .task { await store.start() }
     }
 }
