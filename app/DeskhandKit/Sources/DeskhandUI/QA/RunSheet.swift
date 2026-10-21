@@ -94,6 +94,7 @@ public struct RunSheet: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(!canStart)
             }
+            .controlSize(.large)
         }
         .padding(DS.Space.xl)
         .frame(width: 620)

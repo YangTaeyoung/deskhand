@@ -17362,17 +17362,6 @@
         }
       }
     },
-    "settings.connection.error.dismiss": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "닫기"
-          }
-        }
-      }
-    },
     "settings.connection.header.detail": {
       "extractionState": "manual",
       "localizations": {
@@ -18198,6 +18187,17 @@
         }
       }
     },
+    "settings.files.roots.addButton": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "추가…"
+          }
+        }
+      }
+    },
     "settings.files.roots.empty": {
       "extractionState": "manual",
       "localizations": {
@@ -18205,6 +18205,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "작업 루트가 없습니다"
+          }
+        }
+      }
+    },
+    "settings.files.roots.empty.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에서 자주 여는 폴더를 추가하세요."
           }
         }
       }

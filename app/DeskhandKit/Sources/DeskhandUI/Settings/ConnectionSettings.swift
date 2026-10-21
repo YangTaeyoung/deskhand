@@ -134,24 +134,22 @@ private struct HostConnectionDetail: View {
     private var running: HostSettingsAction? { model.hostActions[host.hostID] }
 
     var body: some View {
+        VStack(spacing: 0) {
+            if let error = model.hostErrors[host.hostID] {
+                ErrorBanner(message: String.ui("actionError.title", "작업을 완료하지 못했습니다"), fix: error.sentences,
+                            code: error.code, dismiss: { model.dismissError(host.hostID) })
+                    .padding(.horizontal, DS.Space.l + DS.Space.xs)
+                    .padding(.top, DS.Space.l)
+            }
+            form
+        }
+    }
+
+    private var form: some View {
         Form {
-            if running != nil || model.hostErrors[host.hostID] != nil {
+            if let running {
                 Section {
-                    if let running {
-                        SettingsProgress(title: progressTitle(running))
-                    }
-                    if let error = model.hostErrors[host.hostID] {
-                        SettingsNotice(symbol: "exclamationmark.octagon.fill", tint: DS.Color.danger,
-                                       title: String.ui("actionError.title", "작업을 완료하지 못했습니다"),
-                                       message: error.sentences) {
-                            HStack(spacing: DS.Space.s) {
-                                if let code = error.code { ErrorCodeLine(code: code) }
-                                Spacer(minLength: 0)
-                                Button(String.ui("settings.connection.error.dismiss", "닫기")) { model.dismissError(host.hostID) }
-                                    .controlSize(.small)
-                            }
-                        }
-                    }
+                    SettingsProgress(title: progressTitle(running))
                 }
             }
             Section {
@@ -225,8 +223,7 @@ private struct HostConnectionDetail: View {
                     Button(String.ui("action.connect", "연결")) { model.connect(host.hostID) }
                         .disabled(running != nil)
                 case .blocked:
-                    Button(String.ui("settings.connection.repair.button", "다시 페어링…")) { model.pendingRepair = host }
-                        .disabled(running != nil)
+                    EmptyView()
                 case .ready, .degraded, .connecting, .reconnecting:
                     Button(String.ui("action.disconnect.ask", "연결 끊기…")) { model.pendingDisconnect = host }
                         .disabled(running != nil)

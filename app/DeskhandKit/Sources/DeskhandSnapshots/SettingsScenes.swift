@@ -61,6 +61,9 @@ enum SettingsScenes {
                 store.filesPreferences.addWorkRoot("C:\\Work\\Shop", for: dev, style: .windows)
                 store.filesPreferences.addWorkRoot("D:\\Builds\\nightly", for: dev, style: .windows)
             },
+            scene("settings-files-no-roots", .files) { store in
+                store.settings.scopeHostID = PreviewFixtures.qaLaptopID
+            },
             scene("settings-privacy", .privacy) { store in
                 store.settings.scopeHostID = dev
                 store.filesPreferences.addWorkRoot("C:\\Work\\Shop", for: dev, style: .windows)

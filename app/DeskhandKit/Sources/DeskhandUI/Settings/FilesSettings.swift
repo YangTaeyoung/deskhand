@@ -116,52 +116,68 @@ struct FilesSettings: View {
                     model.scopeHostID = $0
                     cancelAdding()
                 }))
-                VStack(alignment: .leading, spacing: 0) {
-                    List(selection: $selectedRoot) {
-                        ForEach(roots, id: \.self) { root in
-                            Label {
-                                Text(root).font(DS.Font.mono)
-                            } icon: {
-                                Image(systemName: "folder")
-                            }
-                            .tag(root)
-                        }
-                    }
-                    .listStyle(.bordered(alternatesRowBackgrounds: false))
-                    .frame(height: 88)
-                    .overlay {
-                        if roots.isEmpty {
+                if roots.isEmpty && !adding {
+                    HStack(spacing: DS.Space.m) {
+                        Image(systemName: "folder.badge.plus")
+                            .font(.title2)
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: DS.Space.xs) {
                             Text(String.ui("settings.files.roots.empty", "작업 루트가 없습니다"))
+                                .font(DS.Font.body.weight(.medium))
+                            Text(String.ui("settings.files.roots.empty.detail", "\(host.name)에서 자주 여는 폴더를 추가하세요."))
                                 .font(DS.Font.caption)
                                 .foregroundStyle(DS.Status.neutralText)
                         }
-                    }
-                    .accessibilityLabel(String.ui("settings.files.roots.list", "작업 루트 목록"))
-                    HStack(spacing: 0) {
-                        Button {
+                        Spacer(minLength: DS.Space.s)
+                        Button(String.ui("settings.files.roots.addButton", "추가…")) {
                             adding = true
                             draftFocused = true
-                        } label: {
-                            Image(systemName: "plus")
-                                .frame(width: 24, height: 20)
                         }
-                        .help(String.ui("settings.files.roots.add.help", "작업 루트 추가"))
-                        .accessibilityLabel(String.ui("settings.files.roots.add.help", "작업 루트 추가"))
-                        Divider().frame(height: 16)
-                        Button {
-                            if let selectedRoot { preferences.removeWorkRoot(selectedRoot, for: host.hostID) }
-                            selectedRoot = nil
-                        } label: {
-                            Image(systemName: "minus")
-                                .frame(width: 24, height: 20)
-                        }
-                        .disabled(selectedRoot.map { !roots.contains($0) } ?? true)
-                        .help(String.ui("settings.files.roots.remove", "선택한 작업 루트 빼기"))
-                        .accessibilityLabel(String.ui("settings.files.roots.remove", "선택한 작업 루트 빼기"))
-                        Spacer(minLength: 0)
                     }
-                    .buttonStyle(.borderless)
-                    .padding(.top, DS.Space.xs)
+                    .padding(.vertical, DS.Space.xs)
+                    .accessibilityElement(children: .contain)
+                } else {
+                    VStack(alignment: .leading, spacing: 0) {
+                        List(selection: $selectedRoot) {
+                            ForEach(roots, id: \.self) { root in
+                                Label {
+                                    Text(root).font(DS.Font.mono)
+                                } icon: {
+                                    Image(systemName: "folder")
+                                }
+                                .tag(root)
+                            }
+                        }
+                        .listStyle(.bordered(alternatesRowBackgrounds: false))
+                        .frame(height: Self.listHeight(rows: roots.count))
+                        .accessibilityLabel(String.ui("settings.files.roots.list", "작업 루트 목록"))
+                        HStack(spacing: 0) {
+                            Button {
+                                adding = true
+                                draftFocused = true
+                            } label: {
+                                Image(systemName: "plus")
+                                    .frame(width: 24, height: 20)
+                            }
+                            .help(String.ui("settings.files.roots.add.help", "작업 루트 추가"))
+                            .accessibilityLabel(String.ui("settings.files.roots.add.help", "작업 루트 추가"))
+                            Divider().frame(height: 16)
+                            Button {
+                                if let selectedRoot { preferences.removeWorkRoot(selectedRoot, for: host.hostID) }
+                                selectedRoot = nil
+                            } label: {
+                                Image(systemName: "minus")
+                                    .frame(width: 24, height: 20)
+                            }
+                            .disabled(selectedRoot.map { !roots.contains($0) } ?? true)
+                            .help(String.ui("settings.files.roots.remove", "선택한 작업 루트 빼기"))
+                            .accessibilityLabel(String.ui("settings.files.roots.remove", "선택한 작업 루트 빼기"))
+                            Spacer(minLength: 0)
+                        }
+                        .buttonStyle(.borderless)
+                        .padding(.top, DS.Space.xs)
+                    }
                 }
                 if adding {
                     addRow(host: host, style: style)
@@ -179,6 +195,11 @@ struct FilesSettings: View {
                 Text(String.ui("settings.files.roots.header", "작업 루트"))
             }
         }
+    }
+
+    /// Height of the work roots list: its rows, at least two and at most six.
+    static func listHeight(rows: Int) -> CGFloat {
+        CGFloat(min(max(rows, 2), 6)) * 28
     }
 
     private func addRow(host: Host, style: PathStyle) -> some View {

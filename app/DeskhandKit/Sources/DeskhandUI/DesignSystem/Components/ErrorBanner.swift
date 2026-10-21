@@ -1,21 +1,25 @@
 import SwiftUI
 
 /// Inline error: what failed (`message`), how to fix it (`fix`), the error code on a small
-/// secondary line when known, and a prominent retry button under the text when `retry` is given.
+/// secondary line when known, a prominent retry button under the text when `retry` is given,
+/// and a close button at the trailing edge when `dismiss` is given.
 public struct ErrorBanner: View {
     public let message: String
     public let fix: String?
     public let code: String?
     public let retry: (() -> Void)?
+    public let dismiss: (() -> Void)?
 
     nonisolated static let symbols = ["exclamationmark.octagon.fill", "arrow.clockwise"]
     private static let symbolWidth = DS.Space.l
 
-    public init(message: String, fix: String? = nil, code: String? = nil, retry: (() -> Void)? = nil) {
+    public init(message: String, fix: String? = nil, code: String? = nil, retry: (() -> Void)? = nil,
+                dismiss: (() -> Void)? = nil) {
         self.message = message
         self.fix = fix
         self.code = code
         self.retry = retry
+        self.dismiss = dismiss
     }
 
     public var body: some View {
@@ -43,6 +47,18 @@ public struct ErrorBanner: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityElement(children: .combine)
+                if let dismiss {
+                    Button(action: dismiss) {
+                        Image(systemName: "xmark")
+                            .font(DS.Font.caption.weight(.bold))
+                            .frame(width: DS.Space.l, height: DS.Space.l)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .help(String.ui("action.dismiss", "닫기"))
+                    .accessibilityLabel(String.ui("action.dismiss", "닫기"))
+                }
             }
             if let retry {
                 Button(action: retry) {
