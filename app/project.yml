@@ -53,6 +53,7 @@ targets:
         INFOPLIST_KEY_NSDownloadsFolderUsageDescription: "파일 탭에서 다운로드 폴더의 파일을 보여 주고 원격 PC와 주고받으려면 접근 권한이 필요합니다."
         INFOPLIST_KEY_NSRemovableVolumesUsageDescription: "파일 탭에서 외장 디스크의 파일을 보여 주고 원격 PC와 주고받으려면 접근 권한이 필요합니다."
         INFOPLIST_KEY_NSNetworkVolumesUsageDescription: "파일 탭에서 네트워크 볼륨의 파일을 보여 주고 원격 PC와 주고받으려면 접근 권한이 필요합니다."
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: "같은 네트워크의 Windows PC에 연결해 화면을 보고 입력·파일 작업을 하려면 로컬 네트워크 접근이 필요합니다."
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         DEAD_CODE_STRIPPING: YES

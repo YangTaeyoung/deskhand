@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds Deskhand.app (Debug) into app/build/Deskhand.app and prints its path.
-# Fails when the build emits any compiler warning. Copies the Go binaries from build/
-# (deskhand, deskhand-agent-windows-*.exe) into Contents/MacOS when they exist.
+# Fails when the build emits any compiler warning. Bundles the Go CLI and both
+# Windows agent variants for both architectures.
 set -euo pipefail
 
 app_dir="$(cd "$(dirname "$0")/.." && pwd)"
@@ -38,26 +38,24 @@ app="$build_dir/Deskhand.app"
 rm -rf "$app"
 ditto "$build_dir/DerivedData/Build/Products/Debug/Deskhand.app" "$app"
 
-main_executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")"
-copied=0
-for binary in "$repo_dir/build/deskhand" "$repo_dir"/build/deskhand-agent-windows-*.exe; do
-  if [ -f "$binary" ]; then
-    name="$(basename "$binary")"
-    if [ "$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')" = "$(printf '%s' "$main_executable" | tr '[:upper:]' '[:lower:]')" ]; then
-      echo "$name 이(가) 앱 실행 파일 $main_executable 과 이름이 겹칩니다" >&2
-      exit 1
-    fi
-    cp -f "$binary" "$app/Contents/MacOS/$name"
-    copied=$((copied + 1))
+for binary in deskhand deskhand-agent-windows-amd64.exe deskhand-agentw-windows-amd64.exe deskhand-agent-windows-arm64.exe deskhand-agentw-windows-arm64.exe; do
+  if [ ! -f "$repo_dir/build/$binary" ]; then
+    echo "$repo_dir/build/$binary 이(가) 없습니다. scripts/build.sh를 먼저 실행하세요" >&2
+    exit 1
   fi
 done
-if [ "$copied" -eq 0 ]; then
-  echo "경고: $repo_dir/build 에 Go 바이너리가 없어 앱에 넣지 않았습니다 (scripts/build.sh로 만들 수 있습니다)" >&2
-else
-  for binary in "$app"/Contents/MacOS/deskhand*; do
-    codesign --force --sign - "$binary"
-  done
-  codesign --force --sign - "$app"
+main_executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")"
+if [ "$(printf '%s' "$main_executable" | tr '[:upper:]' '[:lower:]')" = deskhand ]; then
+  echo "앱 실행 파일과 Go CLI의 이름이 겹칩니다" >&2
+  exit 1
 fi
+cp -f "$repo_dir/build/deskhand" "$app/Contents/MacOS/deskhand"
+mkdir -p "$app/Contents/Resources/agents"
+for binary in "$repo_dir"/build/deskhand-agent*-windows-*.exe; do
+  cp -f "$binary" "$app/Contents/Resources/agents/$(basename "$binary")"
+done
+codesign --force --sign - "$app/Contents/MacOS/deskhand"
+codesign --force --sign - "$app"
+codesign --verify --strict --deep "$app"
 
 echo "$app"
