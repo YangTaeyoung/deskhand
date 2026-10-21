@@ -57,6 +57,7 @@ func TestUIOpsOfAnOlderWriterArePreempted(t *testing.T) {
 		{"win.action", proto.Message{"window": "0x1", "action": "focus"}},
 		{"clipboard.set", proto.Message{"text": "new", "gen": 4}},
 		{"app.launch", proto.Message{"path": "notepad", "gen": 0}},
+		{"debug.electron.launch", proto.Message{"path": "deskhand-no-such-electron-app", "gen": 3}},
 	} {
 		res := c.call(req.op, req.fields)
 		if res["ok"] != false || res.String("code") != wire.CodeControlPreempted || res["retryable"] != false || res.String("error") == "" {

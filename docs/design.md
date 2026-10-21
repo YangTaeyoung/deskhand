@@ -120,7 +120,7 @@ deskhand/
 호스트마다 `owner ∈ {none, human, ai:<client>}`와 증가하는 `writer_generation`을 둔다.
 
 - AI 입력: owner가 none이면 AI lease(TTL 60초, 활동 시 갱신)를 얻고, `ai:<자기>`면 진행, `human`이면 `CONTROL_HELD_BY_HUMAN`.
-- 사람 입력: 앱에서 AI 조작 중에 화면을 클릭하면 확인 후 human으로 전환. 전환 순간 데몬은 AI 대기 입력을 버리고 `writer_generation`을 올려 에이전트에 알린다. 에이전트는 이전 세대의 모든 UI 계열 op(입력, ui.act, 창 조작, 클립보드 쓰기, app.launch)를 거부하고 눌린 입력을 해제한다.
+- 사람 입력: 앱에서 AI 조작 중에 화면을 클릭하면 확인 후 human으로 전환. 전환 순간 데몬은 AI 대기 입력을 버리고 `writer_generation`을 올려 에이전트에 알린다. 에이전트는 이전 세대의 모든 UI 계열 op(입력, ui.act, 창 조작, 클립보드 쓰기, app.launch, debug.electron.launch)를 거부하고 눌린 입력을 해제한다.
 - 긴급 정지: owner=human, AI 일시정지(사람이 "AI에게 넘기기" 할 때까지). 이미 실행한 명령은 되돌렸다고 표시하지 않는다. 장기 프로세스 취소는 별도 동작.
 - 동시 AI 클라이언트: 입력 writer는 하나. 다른 AI의 입력은 거절, 관찰·로그·명령은 병행.
 
