@@ -121,6 +121,8 @@ public final class AppStore {
     @ObservationIgnored private var reloadTask: Task<Void, Never>?
     @ObservationIgnored private var resyncTask: Task<Void, Never>?
     @ObservationIgnored private var reloadToken = 0
+    /// Orders host connection state between `host.list` replies and events.
+    @ObservationIgnored private var stateOrder = HostStateOrder()
 
     /// `loginItem` opens the app at login; without one, a `MemoryLoginItem` that never touches the system.
     public init(backend: any Backend, defaults: UserDefaults = .standard, backoff: ResubscribeBackoff = .standard,
@@ -318,7 +320,7 @@ public final class AppStore {
         reconnectsTask = Task { [weak self] in
             for await _ in reconnects {
                 guard !Task.isCancelled else { return }
-                await self?.resync()
+                self?.daemonReconnected()
             }
         }
         let backoff = self.backoff
@@ -328,6 +330,7 @@ public final class AppStore {
             while !Task.isCancelled {
                 guard let stream = self?.backend.events(kinds: EventKind.storeKinds, hostID: nil) else { return }
                 if resubscribing {
+                    self?.stateOrder.forget()
                     let loaded = await self?.reloadHosts() ?? false
                     guard !Task.isCancelled, let store = self else { return }
                     if loaded {
@@ -359,12 +362,13 @@ public final class AppStore {
     public func reloadHosts() async -> Bool {
         reloadToken += 1
         let token = reloadToken
+        let requested = stateOrder.mark
         isLoadingHosts = true
         do {
             let list = try await backend.hostList()
             guard token == reloadToken else { return false }
             isLoadingHosts = false
-            apply(hostList: list)
+            apply(hostList: list, requested: requested)
             hostsError = nil
             hostsLoaded = true
             return true
@@ -377,13 +381,27 @@ public final class AppStore {
         }
     }
 
-    private func apply(hostList list: [Host]) {
+    /// Applies a `host.list` reply asked for when the state order's mark was `requested`. A host
+    /// whose state event arrived after the request keeps that event's state and generation unless
+    /// the reply's generation is newer.
+    private func apply(hostList list: [Host], requested: Int) {
         let ids = Set(list.map(\.hostID))
         for host in hosts where !ids.contains(host.hostID) {
             controlActions.forget(host.hostID)
             forgetTabState(host.hostID)
+            stateOrder.remove(host.hostID)
         }
-        hosts = list
+        hosts = list.map { listed in
+            guard let held = hosts.first(where: { $0.hostID == listed.hostID }),
+                  !stateOrder.replyWins(listed.hostID, generation: listed.connectionGeneration, requested: requested) else {
+                stateOrder.recordReply(listed.hostID, generation: listed.connectionGeneration)
+                return listed
+            }
+            var merged = listed
+            merged.state = held.state
+            merged.connectionGeneration = held.connectionGeneration
+            return merged
+        }
         for i in hosts.indices { syncOwner(at: i) }
         controls = controls.filter { ids.contains($0.key) }
         controlErrors = controlErrors.filter { ids.contains($0.key) }
@@ -419,13 +437,20 @@ public final class AppStore {
         case EventKind.eventsDropped:
             requestResync()
         case EventKind.hostAdded, EventKind.hostUpdated:
-            guard let value = p["host"], let host = try? LiveBackend.decode(Host.self, from: value) else {
+            guard let value = p["host"], var host = try? LiveBackend.decode(Host.self, from: value) else {
                 return scheduleReload()
             }
             if let i = hosts.firstIndex(where: { $0.hostID == host.hostID }) {
+                if stateOrder.acceptsEvent(host.hostID, generation: host.connectionGeneration) {
+                    stateOrder.recordEvent(host.hostID, generation: host.connectionGeneration)
+                } else {
+                    host.state = hosts[i].state
+                    host.connectionGeneration = hosts[i].connectionGeneration
+                }
                 hosts[i] = host
                 syncOwner(at: i)
             } else {
+                stateOrder.recordEvent(host.hostID, generation: host.connectionGeneration)
                 hosts.append(host)
                 syncOwner(at: hosts.count - 1)
             }
@@ -433,6 +458,7 @@ public final class AppStore {
         case EventKind.hostRemoved:
             guard let id = event.hostID else { return }
             hosts.removeAll { $0.hostID == id }
+            stateOrder.remove(id)
             controlActions.forget(id)
             forgetTabState(id)
             controls[id] = nil
@@ -457,8 +483,11 @@ public final class AppStore {
         switch kind {
         case EventKind.connectionState:
             guard let state = p["state"]?.stringValue else { return }
+            let generation = p["connection_generation"]?.intValue ?? hosts[i].connectionGeneration
+            guard stateOrder.acceptsEvent(id, generation: generation) else { return }
+            stateOrder.recordEvent(id, generation: generation)
             hosts[i].state = state
-            if let generation = p["connection_generation"]?.intValue { hosts[i].connectionGeneration = generation }
+            hosts[i].connectionGeneration = generation
         case EventKind.controlChanged:
             guard let owner = p["owner"]?.stringValue else { return }
             let control = ControlState(owner: owner, ownerClient: p["owner_client"]?.stringValue,
@@ -532,6 +561,13 @@ public final class AppStore {
         controls[hostID] = control
         syncOwner(at: i)
         return true
+    }
+
+    /// After the daemon connection came back: drops the held connection generations, which start
+    /// over when the daemon restarts, and reads everything again.
+    func daemonReconnected() {
+        stateOrder.forget()
+        requestResync()
     }
 
     /// Runs `resync()` unless one is already running.

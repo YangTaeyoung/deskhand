@@ -54,6 +54,79 @@ final class AppStoreConsistencyTests: XCTestCase {
         XCTAssertFalse(store.isLoadingHosts)
     }
 
+    /// The development PC as `host.list` would answer, in `state` at `generation`.
+    private func dev(_ store: AppStore, state: String, generation: Int) throws -> Host {
+        var host = try XCTUnwrap(store.host(PreviewFixtures.devPCID))
+        host.state = state
+        host.connectionGeneration = generation
+        return host
+    }
+
+    private func connectionState(_ backend: GatedBackend, _ state: String, generation: Int) {
+        backend.base.emit(kind: EventKind.connectionState, hostID: PreviewFixtures.devPCID,
+                          payload: ["state": .string(state), "connection_generation": .int(generation)])
+    }
+
+    func testAHostListReplyBuiltBeforeANewerConnectionEventKeepsTheEventsState() async throws {
+        let (store, backend) = await startedStore()
+        let generation = try XCTUnwrap(store.host(PreviewFixtures.devPCID)).connectionGeneration
+        let others = try await backend.base.hostList().filter { $0.hostID != PreviewFixtures.devPCID }
+        backend.holdHostList(true)
+        let reload = Task { await store.reloadHosts() }
+        try await waitUntil { backend.pendingHostListCount == 1 }
+        connectionState(backend, "ready", generation: generation + 1)
+        try await waitUntil { store.host(PreviewFixtures.devPCID)?.connectionGeneration == generation + 1 }
+
+        backend.resumeHostList(at: 0, with: .success([try dev(store, state: "reconnecting", generation: generation)] + others))
+        _ = await reload.value
+        XCTAssertEqual(store.host(PreviewFixtures.devPCID)?.connectionGeneration, generation + 1)
+        XCTAssertEqual(store.connection(for: PreviewFixtures.devPCID), .ready)
+    }
+
+    func testAHostListReplyOfANewerGenerationReplacesTheEventsState() async throws {
+        let (store, backend) = await startedStore()
+        let generation = try XCTUnwrap(store.host(PreviewFixtures.devPCID)).connectionGeneration
+        let others = try await backend.base.hostList().filter { $0.hostID != PreviewFixtures.devPCID }
+        backend.holdHostList(true)
+        let reload = Task { await store.reloadHosts() }
+        try await waitUntil { backend.pendingHostListCount == 1 }
+        connectionState(backend, "reconnecting", generation: generation)
+        try await waitUntil { store.connection(for: PreviewFixtures.devPCID) == .reconnecting }
+
+        backend.resumeHostList(at: 0, with: .success([try dev(store, state: "ready", generation: generation + 1)] + others))
+        _ = await reload.value
+        XCTAssertEqual(store.host(PreviewFixtures.devPCID)?.connectionGeneration, generation + 1)
+        XCTAssertEqual(store.connection(for: PreviewFixtures.devPCID), .ready)
+    }
+
+    func testAConnectionEventOfAnOlderGenerationIsIgnored() async throws {
+        let (store, backend) = await startedStore()
+        let generation = try XCTUnwrap(store.host(PreviewFixtures.devPCID)).connectionGeneration
+        connectionState(backend, "ready", generation: generation + 2)
+        try await waitUntil { store.host(PreviewFixtures.devPCID)?.connectionGeneration == generation + 2 }
+        connectionState(backend, "offline", generation: generation + 1)
+        try await drainEvents(store, backend)
+        XCTAssertEqual(store.connection(for: PreviewFixtures.devPCID), .ready)
+        XCTAssertEqual(store.host(PreviewFixtures.devPCID)?.connectionGeneration, generation + 2)
+
+        connectionState(backend, "degraded", generation: generation + 2)
+        try await waitUntil { store.connection(for: PreviewFixtures.devPCID) == .degraded }
+    }
+
+    func testAfterTheDaemonComesBackItsGenerationsAreTakenAsTheyAre() async throws {
+        let (store, backend) = await startedStore()
+        connectionState(backend, "ready", generation: 40)
+        try await waitUntil { store.host(PreviewFixtures.devPCID)?.connectionGeneration == 40 }
+        let others = try await backend.base.hostList().filter { $0.hostID != PreviewFixtures.devPCID }
+        backend.holdHostList(true)
+        store.daemonReconnected()
+        try await waitUntil { backend.pendingHostListCount == 1 }
+        backend.resumeHostList(at: 0, with: .success([try dev(store, state: "ready", generation: 1)] + others))
+        try await waitUntil { store.host(PreviewFixtures.devPCID)?.connectionGeneration == 1 }
+        connectionState(backend, "degraded", generation: 1)
+        try await waitUntil { store.connection(for: PreviewFixtures.devPCID) == .degraded }
+    }
+
     func testCancelledReloadSetsNoError() async throws {
         let (store, backend) = await startedStore()
         backend.holdHostList(true)
