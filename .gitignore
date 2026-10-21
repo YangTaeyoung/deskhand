@@ -1,8 +1,11 @@
 /build/
 /spikes/*/out/
 *.h264
+!/app/DeskhandKit/Tests/Fixtures/sample.h264
 *.test
 .DS_Store
 /app/build/
 /app/*.xcodeproj/
 /.superpowers/
+/app/DeskhandKit/.build/
+/app/DeskhandKit/.swiftpm/

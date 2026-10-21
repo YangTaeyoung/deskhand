@@ -1,0 +1,73 @@
+name: Deskhand
+options:
+  bundleIdPrefix: io.github.yangtaeyoung
+  deploymentTarget:
+    macOS: "26.0"
+  developmentLanguage: ko
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "26.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    CODE_SIGN_STYLE: Automatic
+    CODE_SIGN_IDENTITY: "-"
+    ENABLE_HARDENED_RUNTIME: NO
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+packages:
+  DeskhandKit:
+    path: DeskhandKit
+targets:
+  Deskhand:
+    type: application
+    platform: macOS
+    sources:
+      - path: Deskhand/Sources
+      # XcodeGen infers the resources build phase from the file type.
+      - path: Deskhand/Resources/Assets.xcassets
+      # H.264 capture that --preview screen streams play (Debug only, see configs below).
+      - path: DeskhandKit/Tests/Fixtures/sample.h264
+        buildPhase: resources
+    dependencies:
+      - package: DeskhandKit
+        product: DeskhandUI
+      - package: DeskhandKit
+        product: DeskhandClient
+      - package: DeskhandKit
+        product: DeskhandMedia
+    settings:
+      base:
+        PRODUCT_NAME: Deskhand
+        # The bundle executable is DeskhandApp; Contents/MacOS/deskhand is the Go CLI copied by scripts/build-app.sh.
+        EXECUTABLE_NAME: DeskhandApp
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.yangtaeyoung.Deskhand
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Deskhand
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
+        INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright © 2026 YangTaeyoung"
+        INFOPLIST_KEY_NSDesktopFolderUsageDescription: "파일 탭에서 데스크탑 폴더의 파일을 보여 주고 원격 PC와 주고받으려면 접근 권한이 필요합니다."
+        INFOPLIST_KEY_NSDocumentsFolderUsageDescription: "파일 탭에서 문서 폴더의 파일을 보여 주고 원격 PC와 주고받으려면 접근 권한이 필요합니다."
+        INFOPLIST_KEY_NSDownloadsFolderUsageDescription: "파일 탭에서 다운로드 폴더의 파일을 보여 주고 원격 PC와 주고받으려면 접근 권한이 필요합니다."
+        INFOPLIST_KEY_NSRemovableVolumesUsageDescription: "파일 탭에서 외장 디스크의 파일을 보여 주고 원격 PC와 주고받으려면 접근 권한이 필요합니다."
+        INFOPLIST_KEY_NSNetworkVolumesUsageDescription: "파일 탭에서 네트워크 볼륨의 파일을 보여 주고 원격 PC와 주고받으려면 접근 권한이 필요합니다."
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        DEAD_CODE_STRIPPING: YES
+      configs:
+        # The --preview screen video ships in Debug builds only.
+        Release:
+          EXCLUDED_SOURCE_FILE_NAMES: sample.h264
+schemes:
+  Deskhand:
+    build:
+      targets:
+        Deskhand: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+    archive:
+      config: Release

@@ -1,0 +1,9 @@
+{
+  "code": -32000,
+  "data": {
+    "code": "INVALID_ARGUMENT",
+    "next_action": "fix_params",
+    "retryable": false
+  },
+  "message": "limit은 0 이상 5000 이하여야 합니다. 0이거나 없으면 기본값 500입니다"
+}

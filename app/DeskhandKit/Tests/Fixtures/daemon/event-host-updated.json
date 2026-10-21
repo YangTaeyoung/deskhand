@@ -1,0 +1,60 @@
+{
+  "host": {
+    "address": "127.0.0.1",
+    "agent_version": "test",
+    "arch": "arm64",
+    "caps": {
+      "clipboard": {
+        "state": "ready"
+      },
+      "diag": {
+        "reason": "diagnostics are read from Windows only; this agent runs on another system",
+        "state": "unsupported"
+      },
+      "exec": {
+        "state": "ready"
+      },
+      "files": {
+        "state": "ready"
+      },
+      "input": {
+        "reason": "input injection needs a Windows agent",
+        "state": "unsupported"
+      },
+      "processes": {
+        "state": "ready"
+      },
+      "pty": {
+        "shells": [
+          "sh"
+        ],
+        "state": "ready"
+      },
+      "screen": {
+        "reason": "screen capture needs a Windows agent; ask a Windows PC",
+        "state": "unsupported"
+      },
+      "tunnel": {
+        "state": "ready"
+      },
+      "uia": {
+        "reason": "UI Automation is only available on Windows",
+        "state": "unsupported"
+      }
+    },
+    "connection_generation": 2,
+    "displays": [],
+    "host_id": "pc",
+    "last_seen": "2026-10-21T03:10:09.064Z",
+    "name": "pc",
+    "os": "darwin",
+    "owner": "none",
+    "port": 55129,
+    "ssh_alias": "pc",
+    "state": "ready"
+  },
+  "host_id": "pc",
+  "kind": "host.updated",
+  "seq": 19,
+  "ts": "2026-10-21T03:10:09.064Z"
+}

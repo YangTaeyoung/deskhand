@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-10-21T03:10:07.010Z",
+  "finished_at": "2026-10-21T03:10:07.043Z",
+  "host_id": "pc",
+  "job_id": "j-01M5E700N2RMQC31QNXSJG2N39",
+  "kind": "transfer",
+  "result": {
+    "error": {
+      "code": "INVALID_ARGUMENT",
+      "message": "1개 항목을 옮기지 못했습니다. 첫 항목 link.txt: /Users/me/Build/link.txt는 링크라 옮기지 않았습니다. 링크가 가리키는 항목을 따로 옮기세요",
+      "next_action": "fix_params",
+      "retryable": false
+    },
+    "outcome": "partial",
+    "state": "failed",
+    "transfer_id": "t-01M5E700N2RMQC31QNXSJG2N38"
+  },
+  "status": "failed",
+  "summary": "보내기: /Users/me/Build → pc:/home/pc/Build",
+  "updated_at": "2026-10-21T03:10:07.043Z"
+}

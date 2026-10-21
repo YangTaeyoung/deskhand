@@ -1,0 +1,17 @@
+{
+  "action": {
+    "executed": true,
+    "outcome": "done"
+  },
+  "artifacts": [],
+  "connection_generation": 1,
+  "error": null,
+  "host_id": "pc",
+  "job_id": "j-01M5E700N2RMQC31QNXSJG2N39",
+  "next_action": null,
+  "request_id": null,
+  "schema_version": 1,
+  "session_id": null,
+  "status": "running",
+  "transfer_id": "t-01M5E700N2RMQC31QNXSJG2N38"
+}

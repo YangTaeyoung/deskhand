@@ -1,0 +1,18 @@
+{
+  "entries": [
+    {
+      "seq": 1,
+      "time": "2026-10-21T03:08:32.965Z",
+      "target_id": "node-1",
+      "source": "console",
+      "level": "log",
+      "text": "주문 합계 52000"
+    }
+  ],
+  "next_cursor": 1,
+  "first_seq": 1,
+  "has_more": false,
+  "has_earlier": false,
+  "gap": false,
+  "dropped": 0
+}

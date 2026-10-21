@@ -1,0 +1,25 @@
+{
+  "entries": [
+    {
+      "dir": true,
+      "link": false,
+      "mtime": "2026-10-21T03:10:06.000Z",
+      "name": "Sub",
+      "path": "/home/pc/listing/Sub",
+      "size": 0
+    },
+    {
+      "dir": false,
+      "link": false,
+      "mtime": "2026-10-21T03:10:06.000Z",
+      "name": "A.log",
+      "path": "/home/pc/listing/A.log",
+      "size": 6
+    }
+  ],
+  "host_id": "pc",
+  "next_cursor": "eyJkIjpmYWxzZSwiZiI6ImEubG9nIiwibiI6IkEubG9nIiwicCI6Ii92YXIvZm9sZGVycy9sei8ybTQ2dG05bjEzOTlxejV5dG05OThuYzgwMDAwZ24vVC9UZXN0WlpEdW1wRml4dHVyZXM5ODM0Nzc0MDQvMDAyL2xpc3RpbmcvQS5sb2cifQ",
+  "path": "/home/pc/listing",
+  "total": 3,
+  "truncated": false
+}

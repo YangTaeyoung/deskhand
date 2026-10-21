@@ -1,0 +1,9 @@
+{
+  "code": -32000,
+  "data": {
+    "code": "INVALID_ARGUMENT",
+    "next_action": "fix_params",
+    "retryable": false
+  },
+  "message": "전송 t-01JBXFER0000000000000000BB는 받은 쪽 검증을 마치고 원본 정리 중이라 취소할 수 없습니다. 정리가 끝날 때까지 기다리세요"
+}

@@ -1,0 +1,9 @@
+{
+  "code": -32000,
+  "data": {
+    "code": "INVALID_ARGUMENT",
+    "next_action": "fix_params",
+    "retryable": false
+  },
+  "message": "중단점을 걸 수 없습니다: url_regex가 올바르지 않습니다: SyntaxError: Invalid regular expression: /(/: Unterminated group"
+}

@@ -1,0 +1,28 @@
+{
+  "transfers": [
+    {
+      "bytes_done": 300005,
+      "bytes_total": 300005,
+      "direction": "push",
+      "error": {
+        "code": "INVALID_ARGUMENT",
+        "message": "1개 항목을 옮기지 못했습니다. 첫 항목 link.txt: /Users/me/Build/link.txt는 링크라 옮기지 않았습니다. 링크가 가리키는 항목을 따로 옮기세요",
+        "next_action": "fix_params",
+        "retryable": false
+      },
+      "files_done": 2,
+      "files_failed": 1,
+      "files_total": 3,
+      "host_id": "pc",
+      "local": "/Users/me/Build",
+      "on_conflict": "fail",
+      "outcome": "partial",
+      "rate_bps": 0,
+      "remote": "/home/pc/Build",
+      "rev": 3,
+      "state": "failed",
+      "transfer_id": "t-01M5E700N2RMQC31QNXSJG2N38",
+      "updated_at": "2026-10-21T03:10:07.043Z"
+    }
+  ]
+}

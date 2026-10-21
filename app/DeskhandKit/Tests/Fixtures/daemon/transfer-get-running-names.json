@@ -1,0 +1,79 @@
+{
+  "transfer_id": "t-01JBXFER0000000000000000AA",
+  "host_id": "windows-dev",
+  "direction": "push",
+  "local": "/Users/me/Build",
+  "remote": "C:\\Users\\me\\Build",
+  "on_conflict": "fail",
+  "state": "running",
+  "bytes_done": 1200,
+  "bytes_total": 7200,
+  "files_done": 0,
+  "files_failed": 4,
+  "files_total": 6,
+  "rate_bps": 1500000,
+  "rev": 4,
+  "updated_at": "2026-10-21T03:04:01.767Z",
+  "files": [
+    {
+      "rel": "Report.txt",
+      "size": 1200,
+      "bytes_done": 600,
+      "state": "running"
+    },
+    {
+      "rel": "report.TXT",
+      "size": 1200,
+      "bytes_done": 0,
+      "state": "failed",
+      "error": {
+        "code": "TRANSFER_CONFLICT",
+        "message": "/Users/me/Build/report.TXT는 /Users/me/Build/Report.txt와 대소문자만 다른 이름이라 대상에서 같은 이름이 되므로 옮기지 않았습니다. 둘 중 하나의 이름을 바꾼 뒤 다시 옮기세요",
+        "retryable": false,
+        "next_action": "fix_params"
+      }
+    },
+    {
+      "rel": "CON.log",
+      "size": 1200,
+      "bytes_done": 0,
+      "state": "failed",
+      "error": {
+        "code": "INVALID_ARGUMENT",
+        "message": "/Users/me/Build/CON.log의 이름 'CON.log'는 Windows가 장치 이름으로 쓰는 이름이라 옮기지 않았습니다. 이름을 바꾼 뒤 다시 옮기세요",
+        "retryable": false,
+        "next_action": "fix_params"
+      }
+    },
+    {
+      "rel": "a?b.txt",
+      "size": 1200,
+      "bytes_done": 0,
+      "state": "failed",
+      "error": {
+        "code": "INVALID_ARGUMENT",
+        "message": "/Users/me/Build/a?b.txt의 이름 'a?b.txt'는 Windows가 이름에 허용하지 않는 문자 '?'가 들어 있어 옮기지 않았습니다. 이름을 바꾼 뒤 다시 옮기세요",
+        "retryable": false,
+        "next_action": "fix_params"
+      }
+    },
+    {
+      "rel": "notes.",
+      "size": 1200,
+      "bytes_done": 0,
+      "state": "failed",
+      "error": {
+        "code": "INVALID_ARGUMENT",
+        "message": "/Users/me/Build/notes.의 이름 'notes.'는 점이나 공백으로 끝나 Windows가 그 끝을 지우므로 옮기지 않았습니다. 이름을 바꾼 뒤 다시 옮기세요",
+        "retryable": false,
+        "next_action": "fix_params"
+      }
+    },
+    {
+      "rel": "ok.txt",
+      "size": 1200,
+      "bytes_done": 600,
+      "state": "running"
+    }
+  ]
+}
