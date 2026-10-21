@@ -29,7 +29,7 @@ steps:
   - name: Send 누르기
     ui_act: {name: Send, role: button, action: invoke}
   - name: 대답이 끝날 때까지 기다리기
-    assert_ui: {name: Transcript, text_contains: '[done]', text_matches: 'Bot: echo ${message}'}
+    assert_ui: {name: Transcript, role: document, text_contains: '[done]', text_matches: 'Bot: echo ${message}'}
     timeout_ms: 15000
   - name: 화면 글 확인
     assert_screen_text: {contains: [Send, 한글 라벨, Transcript]}
