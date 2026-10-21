@@ -54,6 +54,9 @@ final class GatedBackend: Backend, LocalOverlayProviding {
         var restartFailure: (any Error & Sendable)?
         var restartCalls = 0
         var hostRemoveFailure: OperationError?
+        var holdRepair = false
+        var pendingRepairs: [CheckedContinuation<JobReceipt, Error>] = []
+        var repairCalls = 0
     }
 
     private let state = Mutex(State())
@@ -154,6 +157,20 @@ final class GatedBackend: Backend, LocalOverlayProviding {
         state.withLock { $0.restartFailure = error }
     }
 
+    /// Holds `hostRepair` calls until `resumeRepair(with:)` answers them.
+    func holdRepair(_ hold: Bool) {
+        state.withLock { $0.holdRepair = hold }
+    }
+
+    var pendingRepairCount: Int { state.withLock { $0.pendingRepairs.count } }
+    var repairCalls: Int { state.withLock { $0.repairCalls } }
+
+    /// Answers the oldest held `hostRepair` call.
+    func resumeRepair(with result: Result<JobReceipt, Error>) {
+        let continuation = state.withLock { $0.pendingRepairs.removeFirst() }
+        continuation.resume(with: result)
+    }
+
     /// Makes `hostRemove` throw `error`, or remove again when nil.
     func failHostRemove(with error: OperationError?) {
         state.withLock { $0.hostRemoveFailure = error }
@@ -178,7 +195,16 @@ final class GatedBackend: Backend, LocalOverlayProviding {
     func hostDoctor(hostID: String) async throws -> [DoctorCheck] { try await base.hostDoctor(hostID: hostID) }
     func hostConnect(hostID: String) async throws { try await base.hostConnect(hostID: hostID) }
     func hostDisconnect(hostID: String) async throws { try await base.hostDisconnect(hostID: hostID) }
-    func hostRepair(hostID: String) async throws -> JobReceipt { try await base.hostRepair(hostID: hostID) }
+    func hostRepair(hostID: String) async throws -> JobReceipt {
+        let hold = state.withLock { s -> Bool in
+            s.repairCalls += 1
+            return s.holdRepair
+        }
+        guard hold else { return try await base.hostRepair(hostID: hostID) }
+        return try await withCheckedThrowingContinuation { continuation in
+            state.withLock { $0.pendingRepairs.append(continuation) }
+        }
+    }
     func sessionInspect(hostID: String) async throws -> SessionInspect { try await base.sessionInspect(hostID: hostID) }
     func sshAliases() async -> [String] { await base.sshAliases() }
     /// Reads the preview daemon's state, then waits while `control.get` is held with `afterApplying`.

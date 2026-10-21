@@ -20,13 +20,7 @@ struct ConnectionSettings: View {
             } message: { _ in
                 Text(String.ui("settings.connection.disconnect.message", "‘연결’을 누를 때까지 다시 연결하지 않습니다. 진행 중인 전송은 다시 연결하면 이어지고, 실행 중인 명령은 중단될 수 있습니다."))
             }
-            .confirmationDialog(repairTitle, isPresented: isPresented($model.pendingRepair),
-                                titleVisibility: .visible, presenting: model.pendingRepair) { _ in
-                Button(String.ui("settings.connection.repair.confirm", "다시 페어링")) { model.confirmRepair() }
-                Button(String.ui("action.cancel", "취소"), role: .cancel) {}
-            } message: { host in
-                Text(String.ui("settings.connection.repair.message", "SSH 별칭: \(host.sshAlias). 에이전트를 다시 설치하고 이 Mac과 다시 페어링합니다. 그동안 이 PC의 원격 작업이 끊깁니다."))
-            }
+            .repairConfirmation($model.pendingRepair) { _ in model.confirmRepair() }
             .confirmationDialog(removalTitle, isPresented: isPresented($model.pendingRemoval),
                                 titleVisibility: .visible, presenting: model.pendingRemoval) { _ in
                 Button(String.ui("remove.keepAgent", "목록에서 제거"), role: .destructive) { model.confirmRemoval(uninstall: false) }
@@ -87,11 +81,6 @@ struct ConnectionSettings: View {
     private var disconnectTitle: String {
         guard let name = model.pendingDisconnect?.name else { return "" }
         return .ui("settings.connection.disconnect.title", "‘\(name)’ 연결 끊기")
-    }
-
-    private var repairTitle: String {
-        guard let name = model.pendingRepair?.name else { return "" }
-        return .ui("settings.connection.repair.title", "‘\(name)’ 다시 페어링")
     }
 
     private var removalTitle: String {
@@ -259,6 +248,21 @@ private struct HostConnectionDetail: View {
         case .disconnect: .ui("settings.connection.progress.disconnect", "연결을 끊는 중…")
         case .repair: .ui("settings.connection.progress.repair", "다시 페어링하는 중…")
         case .remove: .ui("settings.connection.progress.remove", "제거하는 중…")
+        }
+    }
+}
+
+extension View {
+    /// The confirmation of 다시 페어링 for the computer in `pending`, the same in the main window
+    /// and the settings window; `confirm` runs the shared repair.
+    func repairConfirmation(_ pending: Binding<Host?>, confirm: @escaping (Host) -> Void) -> some View {
+        confirmationDialog(pending.wrappedValue.map { name in String.ui("settings.connection.repair.title", "‘\(name.name)’ 다시 페어링") } ?? "",
+                           isPresented: Binding(get: { pending.wrappedValue != nil }, set: { if !$0 { pending.wrappedValue = nil } }),
+                           titleVisibility: .visible, presenting: pending.wrappedValue) { host in
+            Button(String.ui("settings.connection.repair.confirm", "다시 페어링")) { confirm(host) }
+            Button(String.ui("action.cancel", "취소"), role: .cancel) {}
+        } message: { host in
+            Text(String.ui("settings.connection.repair.message", "SSH 별칭: \(host.sshAlias). 에이전트를 다시 설치하고 이 Mac과 다시 페어링합니다. 그동안 이 PC의 원격 작업이 끊깁니다."))
         }
     }
 }

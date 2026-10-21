@@ -92,6 +92,11 @@ struct ControlBanner: View {
                                   retry: { actions.retry(failure.action, on: host.hostID) },
                                   dismiss: { actions.dismissFailure(failure.action, for: host.hostID) })
             }
+            if let error = store.repairError(for: host.hostID) {
+                ControlFailureBar(title: String.ui("repair.failed", "다시 페어링하지 못했습니다"), error: error,
+                                  retry: { store.requestRepair(host) },
+                                  dismiss: { store.dismissRepairError(for: host.hostID) })
+            }
         }
     }
 
@@ -141,14 +146,26 @@ struct ControlBanner: View {
                 .buttonStyle(.borderedProminent)
             }
         case .blocked:
+            let repairing = store.isRepairing(host.hostID)
             BannerBand(style: .tinted(DS.Color.danger), symbol: "exclamationmark.octagon.fill", title: kind.title,
-                       message: String.ui("banner.blocked.message", "에이전트를 다시 설치했다면 다시 페어링하세요. 아니라면 다른 PC가 이 주소를 쓰는지 먼저 진단하세요.")) {
+                       message: repairing
+                           ? String.ui("banner.blocked.repairing", "SSH로 에이전트를 다시 설치하고 이 Mac과 다시 페어링하고 있습니다. 그동안 이 PC의 원격 작업이 끊깁니다.")
+                           : String.ui("banner.blocked.message", "에이전트를 다시 설치했다면 다시 페어링하세요. 아니라면 다른 PC가 이 주소를 쓰는지 먼저 진단하세요.")) {
                 Button(String.ui("action.doctor", "진단 실행")) { store.presentDoctor(for: host.hostID) }
                     .buttonStyle(.bordered)
-                Button { store.repair(host.hostID) } label: {
-                    Label(String.ui("action.repair", "다시 페어링"), systemImage: "arrow.triangle.2.circlepath")
+                    .disabled(repairing)
+                Button { store.requestRepair(host) } label: {
+                    if repairing {
+                        HStack(spacing: DS.Space.s) {
+                            ProgressView().controlSize(.small)
+                            Text(String.ui("settings.connection.progress.repair", "다시 페어링하는 중…"))
+                        }
+                    } else {
+                        Label(String.ui("action.repair.ask", "다시 페어링…"), systemImage: "arrow.triangle.2.circlepath")
+                    }
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(repairing)
             }
         case .observing:
             EmptyView()

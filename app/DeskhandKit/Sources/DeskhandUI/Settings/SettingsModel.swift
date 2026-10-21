@@ -105,6 +105,8 @@ public final class SettingsModel {
 
     public private(set) var hostActions: [String: HostSettingsAction] = [:]
     public private(set) var hostErrors: [String: OperationError] = [:]
+    /// The action whose failure `hostErrors` holds, per computer.
+    public private(set) var failedActions: [String: HostSettingsAction] = [:]
     public var pendingRepair: Host?
     public var pendingRemoval: Host?
     public var pendingDisconnect: Host?
@@ -210,7 +212,23 @@ public final class SettingsModel {
     public func confirmRepair() {
         guard let host = pendingRepair else { return }
         pendingRepair = nil
-        run(.repair, host.hostID) { _ = try await $0.hostRepair(hostID: host.hostID) }
+        repair(host)
+    }
+
+    /// Re-pairs `host` once confirmed, wherever 다시 페어링 was chosen: one `host.repair` per computer
+    /// at a time; an envelope that did not succeed is kept as the failure with its remedy.
+    func repair(_ host: Host) {
+        run(.repair, host.hostID) { backend in
+            let receipt = try await backend.hostRepair(hostID: host.hostID)
+            switch receipt.status {
+            case .succeeded, .running, .waitingForUser:
+                return
+            case .failed, .cancelled, .unknown:
+                throw OperationError(code: receipt.error?.code ?? "EXECUTION_OUTCOME_UNKNOWN",
+                                     message: receipt.error?.message ?? .ui("error.unknown", "알 수 없는 오류가 발생했습니다"),
+                                     nextAction: receipt.nextAction ?? receipt.error?.nextAction)
+            }
+        }
     }
 
     /// Removes the computer the person confirmed in `pendingRemoval`; with `uninstall` the agent too.
@@ -222,21 +240,24 @@ public final class SettingsModel {
 
     public func dismissError(_ hostID: String) {
         hostErrors[hostID] = nil
+        failedActions[hostID] = nil
     }
 
     /// Sets the daemon's versions and the restart state without asking the backend. Snapshot scenes use it.
     public func seed(daemonInfo: DaemonInfo?, restart: RestartState = .idle, hostActions: [String: HostSettingsAction] = [:],
-                     hostErrors: [String: OperationError] = [:]) {
+                     hostErrors: [String: OperationError] = [:], failedActions: [String: HostSettingsAction] = [:]) {
         self.daemonInfo = daemonInfo
         self.restart = restart
         self.hostActions = hostActions
         self.hostErrors = hostErrors
+        self.failedActions = failedActions
     }
 
     private func run(_ action: HostSettingsAction, _ hostID: String, _ body: @escaping @MainActor (any Backend) async throws -> Void) {
         guard let store, hostActions[hostID] == nil else { return }
         hostActions[hostID] = action
         hostErrors[hostID] = nil
+        failedActions[hostID] = nil
         let backend = store.backend
         Task { [weak self, weak store] in
             do {
@@ -244,6 +265,7 @@ public final class SettingsModel {
                 await store?.reloadHosts()
             } catch {
                 self?.hostErrors[hostID] = OperationError(error)
+                self?.failedActions[hostID] = action
             }
             self?.hostActions[hostID] = nil
         }

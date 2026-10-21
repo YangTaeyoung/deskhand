@@ -98,6 +98,14 @@ enum WorkspaceScenes {
             scene("workspace-session-locked", Setup(selected: PreviewFixtures.kioskID)),
             scene("workspace-offline", Setup(selected: PreviewFixtures.designID, tab: .files, inspector: .info)),
             scene("workspace-blocked", Setup(selected: PreviewFixtures.labID, tab: .processes)),
+            scene("workspace-repairing", Setup(selected: PreviewFixtures.labID, tab: .processes)) { store in
+                store.settings.seed(daemonInfo: nil, hostActions: [PreviewFixtures.labID: .repair])
+            },
+            scene("workspace-repair-failed", Setup(selected: PreviewFixtures.labID, tab: .processes)) { store in
+                store.settings.seed(daemonInfo: nil, hostErrors: [
+                    PreviewFixtures.labID: OperationError(code: "AUTH_REQUIRED", message: "lab-pc에 SSH로 접속하지 못했습니다"),
+                ], failedActions: [PreviewFixtures.labID: .repair])
+            },
             scene("workspace-timeline-error", Setup(selected: PreviewFixtures.qaLaptopID, tab: .files, timelines: [
                 PreviewFixtures.qaLaptopID: .failure(OperationError(message: "데몬과 연결이 끊겼습니다")),
             ])),

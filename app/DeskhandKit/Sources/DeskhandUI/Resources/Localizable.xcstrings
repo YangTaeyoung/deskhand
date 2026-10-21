@@ -298,14 +298,13 @@
         }
       }
     },
-    "action.repair": {
-      "comment": "Button: repair",
+    "action.repair.ask": {
       "extractionState": "manual",
       "localizations": {
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "다시 페어링"
+            "value": "다시 페어링…"
           }
         }
       }
@@ -823,6 +822,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "에이전트를 다시 설치했다면 다시 페어링하세요. 아니라면 다른 PC가 이 주소를 쓰는지 먼저 진단하세요."
+          }
+        }
+      }
+    },
+    "banner.blocked.repairing": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH로 에이전트를 다시 설치하고 이 Mac과 다시 페어링하고 있습니다. 그동안 이 PC의 원격 작업이 끊깁니다."
           }
         }
       }
@@ -16467,6 +16477,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "에이전트까지 제거"
+          }
+        }
+      }
+    },
+    "repair.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 페어링하지 못했습니다"
           }
         }
       }

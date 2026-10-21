@@ -44,7 +44,8 @@ public struct DeskhandCommands: Commands {
                 case .offline:
                     Button(String.ui("action.connect", "연결")) { store.connect(host.hostID) }
                 case .blocked:
-                    Button(String.ui("action.repair", "다시 페어링")) { store.repair(host.hostID) }
+                    Button(String.ui("action.repair.ask", "다시 페어링…")) { store.requestRepair(host) }
+                        .disabled(store.isRepairing(host.hostID))
                 case .ready, .degraded, .connecting, .reconnecting:
                     Button(String.ui("action.disconnect.ask", "연결 끊기…")) { store.requestDisconnect(host) }
                 }

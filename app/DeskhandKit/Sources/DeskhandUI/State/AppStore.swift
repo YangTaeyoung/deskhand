@@ -77,6 +77,8 @@ public final class AppStore {
     public var pendingRemoval: Host?
     /// The host awaiting confirmation before its connection is closed.
     public var pendingDisconnect: Host?
+    /// The computer whose 다시 페어링 waits for the main window's confirmation.
+    public var pendingRepair: Host?
     /// Failure of the last host action (connect, disconnect, repair, remove).
     public var actionError: OperationError?
 
@@ -666,8 +668,28 @@ public final class AppStore {
         perform { try await $0.hostDisconnect(hostID: hostID) }
     }
 
-    public func repair(_ hostID: String) {
-        perform { _ = try await $0.hostRepair(hostID: hostID) }
+    /// Asks to confirm re-pairing `host` in the main window; `confirmRepair(_:)` runs it.
+    public func requestRepair(_ host: Host) {
+        guard !isRepairing(host.hostID) else { return }
+        pendingRepair = host
+    }
+
+    /// Re-pairs `host` through the settings model's run, the one 다시 페어링 flow of the app.
+    public func confirmRepair(_ host: Host) {
+        pendingRepair = nil
+        settings.repair(host)
+    }
+
+    public func isRepairing(_ hostID: String) -> Bool { settings.hostActions[hostID] == .repair }
+
+    /// Why the last 다시 페어링 of the computer failed.
+    public func repairError(for hostID: String) -> OperationError? {
+        settings.failedActions[hostID] == .repair ? settings.hostErrors[hostID] : nil
+    }
+
+    public func dismissRepairError(for hostID: String) {
+        guard settings.failedActions[hostID] == .repair else { return }
+        settings.dismissError(hostID)
     }
 
     public func remove(_ hostID: String, uninstall: Bool) {

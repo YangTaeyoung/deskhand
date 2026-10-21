@@ -73,6 +73,9 @@ struct ComputersSplitView: View {
         } message: { _ in
             Text(String.ui("remove.message", "이 Mac에서 페어링 정보를 지웁니다. ‘에이전트까지 제거’는 SSH로 원격 PC의 에이전트와 예약 작업, 방화벽 규칙도 지웁니다."))
         }
+        .repairConfirmation(Binding(get: { store.pendingRepair }, set: { store.pendingRepair = $0 })) { host in
+            store.confirmRepair(host)
+        }
         .confirmationDialog(
             disconnectTitle,
             isPresented: Binding(get: { store.pendingDisconnect != nil }, set: { if !$0 { store.pendingDisconnect = nil } }),
