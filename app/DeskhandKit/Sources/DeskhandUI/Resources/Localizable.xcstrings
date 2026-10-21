@@ -1898,6 +1898,17 @@
         }
       }
     },
+    "debugger.attach.noPort": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "고른 프로세스는 디버그 포트를 열지 않았습니다."
+          }
+        }
+      }
+    },
     "debugger.attach.none": {
       "extractionState": "manual",
       "localizations": {
@@ -1927,6 +1938,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "프로세스로 연결하면 메인 프로세스의 Node 검사기를 켜고 그 포트를 찾아 연결합니다. 연결을 해제하면 켠 검사기를 끌 수 있을 때 끕니다. 렌더러는 앱을 --remote-debugging-port로 시작했을 때만 함께 보입니다."
+          }
+        }
+      }
+    },
+    "debugger.attach.pidRefused": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "그 프로세스의 Node 검사기를 켜지 못했습니다"
+          }
+        }
+      }
+    },
+    "debugger.attach.pidUnsupported": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windows PC에서는 실행 중인 프로세스에 PID로 연결할 수 없습니다"
           }
         }
       }
@@ -2074,6 +2107,28 @@
         }
       }
     },
+    "debugger.attach.windowsNote": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windows PC에서는 실행 중인 프로세스의 Node 검사기를 켤 수 없습니다. --inspect나 --remote-debugging-port로 실행한 프로세스를 고르면 그 포트로 연결합니다. 다른 앱은 ‘앱 실행’으로 디버그하세요."
+          }
+        }
+      }
+    },
+    "debugger.attach.windowsTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windows에서는 포트로 연결하세요"
+          }
+        }
+      }
+    },
     "debugger.blocked": {
       "extractionState": "manual",
       "localizations": {
@@ -2114,6 +2169,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "중단점 추가…"
+          }
+        }
+      }
+    },
+    "debugger.breakpoint.badRegexEngine": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대상의 JavaScript 엔진이 이 정규식을 받지 않습니다: %@"
           }
         }
       }
@@ -3460,6 +3526,17 @@
         }
       }
     },
+    "debugger.fix.windowsPort": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windows에서는 포트로 연결하세요. 앱을 --inspect=포트나 --remote-debugging-port=포트로 실행한 뒤 그 포트로 연결하거나, ‘앱 실행’으로 디버그하세요."
+          }
+        }
+      }
+    },
     "debugger.frame.a11y": {
       "extractionState": "manual",
       "localizations": {
@@ -4556,6 +4633,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "렌더러: DevTools 응답 없음"
+          }
+        }
+      }
+    },
+    "debugger.renderer.waiting": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메인 프로세스에 먼저 연결해 첫 줄에서 멈춰 두었습니다. 렌더러의 DevTools에 연결하는 중입니다."
+          }
+        }
+      }
+    },
+    "debugger.renderer.waitingShort": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "렌더러 연결 중"
           }
         }
       }

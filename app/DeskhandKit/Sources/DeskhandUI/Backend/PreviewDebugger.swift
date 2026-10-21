@@ -121,11 +121,12 @@ extension PreviewBackend {
         let session = try debugger.state.withLock { s -> DebugSession in
             s.sessionCount += 1
             let id = "d-preview-\(s.sessionCount)"
+            let waits = request.pauseOnStart && !kiosk && !sync
             var info = Program.session(hostID: request.hostID, debugID: id, created: created,
-                                       targets: kiosk ? [Program.pageTarget()] : (sync ? [Program.mainTarget()] : Program.targets()),
+                                       targets: kiosk ? [Program.pageTarget()] : (sync || waits ? [Program.mainTarget()] : Program.targets()),
                                        exceptions: request.pauseOnExceptions ?? .uncaught,
                                        mainUnavailable: kiosk ? .inspectorDisabled : nil,
-                                       rendererUnavailable: sync ? .remoteDebuggingDisabled : nil)
+                                       rendererUnavailable: sync ? .remoteDebuggingDisabled : (waits ? .waiting : nil))
             info.name = name
             info.path = path
             info.args = request.args
@@ -156,6 +157,9 @@ extension PreviewBackend {
         let pid: Int?
         let port: Int
         switch request.target {
+        case .pid where PathStyle(os: host.os) == .windows:
+            throw OperationError(code: "CAPABILITY_UNSUPPORTED",
+                                 message: "attaching to a running process by pid is not supported on this PC; start the app with --inspect and attach by its port, or launch it with debug.electron.launch")
         case .pid(let value):
             let list = PreviewFixtures.processes(hostID: host.hostID, user: host.session?.user ?? "user", ended: processes.ended(hostID: host.hostID),
                                                  anchor: processes.anchor)
@@ -553,8 +557,27 @@ extension PreviewBackend {
 
     /// Prints the launch messages and, while time passes in the preview, runs the submit and print
     /// flows every few seconds and the coupon flow every third round.
+    /// Attaches the renderer a `pause_on_start` launch was still waiting for, as the daemon does
+    /// once the DevTools port answers: `debug.target_changed` for the page, then
+    /// `debug.session_changed` without the reason.
+    private func attachWaitingRenderer(_ debugID: String) {
+        let attached = try? debugger.with(debugID) { session -> (DebugSession, DebugTarget)? in
+            guard session.info.rendererUnavailable == .waiting else { return nil }
+            let page = Program.pageTarget()
+            session.info.targets.append(page)
+            session.info.rendererUnavailableReason = nil
+            session.info.rev += 1
+            return (session.info, page)
+        }
+        guard let (info, page) = attached ?? nil else { return }
+        emit(kind: EventKind.debugTargetChanged, hostID: info.hostID,
+             payload: ["debug_id": .string(debugID), "target": Self.payload(page), "removed": .bool(false), "rev": .int(info.rev)])
+        emit(kind: EventKind.debugSessionChanged, hostID: info.hostID, payload: ["debug_id": .string(debugID), "session": Self.payload(info)])
+    }
+
     private func startSimulation(_ debugID: String, pauseOnStart: Bool) {
         guard simulatesTime else {
+            attachWaitingRenderer(debugID)
             for item in Program.launchConsole() {
                 appendConsole(debugID, target: item.target, source: item.source, level: item.level, text: item.text, script: item.script,
                               line: item.line)
@@ -563,6 +586,10 @@ extension PreviewBackend {
         }
         let task = Task { [weak self] in
             guard let self else { return }
+            if pauseOnStart {
+                await pause(fraction: 0.6)
+                attachWaitingRenderer(debugID)
+            }
             var elapsed = 0.0
             for item in Program.launchConsole() {
                 await pause(fraction: (item.after - elapsed) / 0.7)

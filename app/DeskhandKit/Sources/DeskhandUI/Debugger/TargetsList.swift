@@ -89,7 +89,11 @@ private struct SessionRow: View {
                     UnavailableLine(text: DebugFormat.mainUnavailableShort(reason), detail: DebugFormat.mainUnavailable(reason))
                 }
                 if let reason = session.info.rendererUnavailable {
-                    UnavailableLine(text: DebugFormat.rendererUnavailableShort(reason), detail: DebugFormat.rendererUnavailable(reason))
+                    if reason.isFailure {
+                        UnavailableLine(text: DebugFormat.rendererUnavailableShort(reason), detail: DebugFormat.rendererUnavailable(reason))
+                    } else {
+                        AttachingLine(text: DebugFormat.rendererUnavailableShort(reason), detail: DebugFormat.rendererUnavailable(reason))
+                    }
                 }
             } else if let detail = DebugFormat.closedDetail(session.info.closeKind, exitCode: session.info.exitCode) {
                 Text(detail)
@@ -204,6 +208,30 @@ private struct UnavailableLine: View {
             .padding(.trailing, DS.Space.s)
             .help(detail)
             .accessibilityLabel(detail)
+    }
+}
+
+/// A target still being attached: a small spinner and what is being attached.
+private struct AttachingLine: View {
+    let text: String
+    let detail: String
+
+    var body: some View {
+        HStack(spacing: DS.Space.s) {
+            ProgressView()
+                .controlSize(.mini)
+                .accessibilityHidden(true)
+            Text(text)
+                .font(DS.Font.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .padding(.leading, SessionRow.iconSize + DS.Space.s + DS.Space.xs)
+        .padding(.trailing, DS.Space.s)
+        .help(detail)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(detail)
     }
 }
 

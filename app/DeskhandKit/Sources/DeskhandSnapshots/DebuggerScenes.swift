@@ -208,6 +208,22 @@ enum DebuggerScenes {
         })
     }
 
+    /// Shop Admin launched with 처음부터 멈춤: main is paused on its first line while the renderer
+    /// is still being attached.
+    static func rendererWaiting() -> Seeded {
+        let target = Program.mainTarget(gen: 1, paused: true)
+        let info = DebugSession(debugID: "d-admin-start", hostID: dev, kind: .launch, name: "Shop Admin", path: Program.appPath,
+                                args: ["--env=staging"], pauseOnStart: true, pid: 10244, ports: DebugPorts(inspect: 52011, remoteDebugging: 52012),
+                                state: .paused, targets: [target], rendererUnavailable: .waiting, createdAt: Timestamp(date: launched))
+        let main = Program.Script.main
+        let frame = DebugCallFrame(frameID: "start-0", function: "", scriptID: main.scriptID, url: main.url, line: 1, column: 1,
+                                   scopeChain: [DebugScope(type: "local", objectID: "min-local")])
+        let state = DebugPauseState(targetID: target.id, gen: 1, paused: true, reason: .start, callFrames: [frame])
+        return (info, { session in
+            session.seed(pause: state, properties: properties, sources: [source(main)], scripts: scripts)
+        })
+    }
+
     /// An attach session just detached, leaving the Node inspector it turned on open.
     static func inspectorLeftOpen() -> Seeded {
         let attachedSession = attached(reason: .requested)
@@ -272,11 +288,15 @@ enum DebuggerScenes {
         }
     }
 
-    static func attachSheet() -> (AppStore, DebuggerModel) -> AnyView {
+    static func attachSheet(mode: AttachSheet.Mode? = nil, selectedPID: Int = 7000) -> (AppStore, DebuggerModel) -> AnyView {
         { store, model in
             guard let host = store.host(dev) else { return AnyView(EmptyView()) }
-            return AnyView(AttachSheet(model: model, host: host, processes: store.backend,
-                                       list: PreviewFixtures.processes(hostID: dev, user: "taeyoung"), selectedPID: 7000, dismiss: {}))
+            let worker = RemoteProcess(pid: 9330, ppid: 7656, name: "node.exe", path: "C:\\Program Files\\nodejs\\node.exe",
+                                       cmd: "\"C:\\Program Files\\nodejs\\node.exe\" --inspect=9230 C:\\Shop\\worker\\index.js",
+                                       memKb: 96_000, cpuPct: 0.4, user: "taeyoung", startedByDeskhand: false)
+            return AnyView(AttachSheet(model: model, host: host, processes: store.backend, mode: mode,
+                                       list: PreviewFixtures.processes(hostID: dev, user: "taeyoung") + [worker], selectedPID: selectedPID,
+                                       dismiss: {}))
         }
     }
 
@@ -317,6 +337,8 @@ enum DebuggerScenes {
                 LaunchDraft(path: Program.notElectronPath),
                 error: OperationError(code: "TIMEOUT", message: "20초 안에 디버그 포트가 열리지 않아 앱을 종료했습니다"))),
             scene("debugger-attach-sheet", none, Tab(recent: recent), sheet: attachSheet()),
+            scene("debugger-attach-process-windows", none, Tab(recent: recent), sheet: attachSheet(mode: .process, selectedPID: 9330)),
+            scene("debugger-attach-process-no-port", none, Tab(recent: recent), sheet: attachSheet(mode: .process, selectedPID: 7000)),
             scene("debugger-running", none, Tab(sessions: [running()])),
             scene("debugger-paused", none, Tab(sessions: [paused()])),
             scene("debugger-paused-exception", none, Tab(sessions: [pausedOnException()])),
@@ -343,6 +365,7 @@ enum DebuggerScenes {
             scene("debugger-pause-pending", none, Tab(sessions: [pausePending()])),
             scene("debugger-renderer-only", none, Tab(sessions: [rendererOnly()])),
             scene("debugger-main-only", none, Tab(sessions: [mainOnly()])),
+            scene("debugger-renderer-waiting", none, Tab(sessions: [rendererWaiting()])),
             scene("debugger-inspector-left-open", none, Tab(sessions: [running(), inspectorLeftOpen()])),
             scene("debugger-closed", none, Tab(sessions: [closed()])),
             scene("debugger-detached", none, Tab(sessions: [running(), attached(reason: .requested)])),

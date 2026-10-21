@@ -295,7 +295,17 @@ public struct BreakpointSheet: View {
                 failure = nil
             }
             saving = false
-            if let failure { error = failure } else { dismiss() }
+            if let failure { error = Self.failure(failure) } else { dismiss() }
         }
+    }
+
+    /// The daemon's refusal of a `url_regex` the target's JavaScript engine does not compile,
+    /// with the engine's message; other failures as they are.
+    static func failure(_ error: OperationError) -> OperationError {
+        let prefix = "url_regex가 올바르지 않습니다: "
+        guard error.code == "INVALID_ARGUMENT", let range = error.message.range(of: prefix) else { return error }
+        let engine = String(error.message[range.upperBound...])
+        return OperationError(code: error.code, message: .ui("debugger.breakpoint.badRegexEngine", "대상의 JavaScript 엔진이 이 정규식을 받지 않습니다: \(engine)"),
+                              nextAction: error.nextAction)
     }
 }

@@ -56,10 +56,15 @@ public enum MainUnavailableReason: String, Codable, Sendable {
 
 /// `renderer_unavailable_reason` of a session with main and no renderer.
 public enum RendererUnavailableReason: String, Codable, Sendable {
+    /// A `pause_on_start` launch attached main and is still attaching the renderer.
+    case waiting
     /// The remote debugging port never opened.
     case remoteDebuggingDisabled = "remote_debugging_disabled"
     /// The port opened but `/json/list` did not answer.
     case remoteDebuggingNotResponding = "remote_debugging_not_responding"
+
+    /// The renderer could not be attached; `waiting` is not a failure yet.
+    public var isFailure: Bool { self != .waiting }
 }
 
 /// `match` of a breakpoint: how its `pattern` names scripts.

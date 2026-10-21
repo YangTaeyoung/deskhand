@@ -113,6 +113,8 @@ enum DebugFormat {
 
     static func rendererUnavailable(_ reason: RendererUnavailableReason) -> String {
         switch reason {
+        case .waiting:
+            .ui("debugger.renderer.waiting", "메인 프로세스에 먼저 연결해 첫 줄에서 멈춰 두었습니다. 렌더러의 DevTools에 연결하는 중입니다.")
         case .remoteDebuggingDisabled:
             .ui("debugger.renderer.disabled", "이 앱은 원격 디버깅 포트를 열지 않아 렌더러를 디버그할 수 없습니다. 메인 프로세스만 연결했습니다.")
         case .remoteDebuggingNotResponding:
@@ -123,6 +125,7 @@ enum DebugFormat {
     /// The one-line reason under the targets of a session without a renderer.
     static func rendererUnavailableShort(_ reason: RendererUnavailableReason) -> String {
         switch reason {
+        case .waiting: .ui("debugger.renderer.waitingShort", "렌더러 연결 중")
         case .remoteDebuggingDisabled: .ui("debugger.renderer.disabledShort", "렌더러: 원격 디버깅 꺼짐")
         case .remoteDebuggingNotResponding: .ui("debugger.renderer.notRespondingShort", "렌더러: DevTools 응답 없음")
         }

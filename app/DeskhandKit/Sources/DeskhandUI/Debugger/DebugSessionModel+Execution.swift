@@ -39,7 +39,7 @@ extension DebugSessionModel {
                 if self.command == next { self.command = nil }
                 let failure = OperationError(error)
                 self.show(.error, Self.commandFailure(next), error: failure)
-                if failure.code == "STALE_TARGET" { self.fetchState(targetID) }
+                if next != .close { self.fetchState(targetID) }
             }
         }
     }

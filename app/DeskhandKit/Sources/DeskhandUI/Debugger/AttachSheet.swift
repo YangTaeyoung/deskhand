@@ -10,12 +10,43 @@ public struct AttachCandidate: Identifiable, Equatable, Sendable {
         case other
     }
 
+    /// The debug ports a process's command line opens.
+    public struct Ports: Equatable, Sendable {
+        /// `--inspect`, `--inspect-brk` or `--inspect-port`: the Node inspector of the main process.
+        public var inspect: Int?
+        /// `--remote-debugging-port`: DevTools of the renderers.
+        public var remoteDebugging: Int?
+
+        public init(inspect: Int? = nil, remoteDebugging: Int? = nil) {
+            self.inspect = inspect
+            self.remoteDebugging = remoteDebugging
+        }
+    }
+
     public var process: RemoteProcess
     public var kind: Kind
     /// The process already listens with `--inspect` or `--remote-debugging-port`.
     public var inspectorOpen: Bool
 
     public var id: Int { process.pid }
+
+    /// The debug ports of the command line.
+    public var ports: Ports { Self.inspectorPorts(process.cmd ?? "") }
+
+    /// The ports `cmd` opens: `--inspect[-brk][=[host:]port]` (9229 without a port, or the port of
+    /// `--inspect-port`) and `--remote-debugging-port=port`.
+    public static func inspectorPorts(_ cmd: String) -> Ports {
+        func number(_ pattern: String) -> Int? {
+            guard let regex = try? NSRegularExpression(pattern: pattern),
+                  let match = regex.firstMatch(in: cmd, range: NSRange(cmd.startIndex..., in: cmd)),
+                  let range = Range(match.range(at: 1), in: cmd) else { return nil }
+            return Int(cmd[range])
+        }
+        var ports = Ports(remoteDebugging: number(#"--remote-debugging-port=(\d+)"#))
+        let inspects = cmd.range(of: #"--inspect(-brk)?(=|\s|$)"#, options: .regularExpression) != nil
+        ports.inspect = number(#"--inspect-port=(\d+)"#) ?? number(#"--inspect(?:-brk)?=(?:[^\s:]+:)?(\d+)"#) ?? (inspects ? 9229 : nil)
+        return ports
+    }
 
     /// Electron apps (a process with `--type=renderer` children, other than browsers) and Node
     /// processes first, then the rest when `all`; helper processes (`--type=…`) and the system are left out.
@@ -74,15 +105,17 @@ public struct AttachSheet: View {
     @State private var port: String
     @State private var role: DebugTargetRole?
     @State private var error: OperationError?
+    /// The failed attach was by process ID.
+    @State private var failedByPID = false
     @FocusState private var searchFocused: Bool
 
-    public init(model: DebuggerModel, host: Host, processes: any ProcessesBackend, mode: Mode = .process, list: [RemoteProcess]? = nil,
+    public init(model: DebuggerModel, host: Host, processes: any ProcessesBackend, mode: Mode? = nil, list: [RemoteProcess]? = nil,
                 selectedPID: Int? = nil, port: String = "9229", error: OperationError? = nil, dismiss: @escaping () -> Void) {
         self.model = model
         self.host = host
         self.processes = processes
         self.dismiss = dismiss
-        _mode = State(initialValue: mode)
+        _mode = State(initialValue: mode ?? Self.defaultMode(for: host))
         _list = State(initialValue: list)
         _selectedPID = State(initialValue: selectedPID)
         _port = State(initialValue: port)
@@ -90,6 +123,24 @@ public struct AttachSheet: View {
     }
 
     private var attaching: Bool { model.starting?.kind == .attach }
+
+    /// Windows has no supported way to turn on the Node inspector of a running process, so its
+    /// agent refuses a pid attach (`CAPABILITY_UNSUPPORTED`).
+    private var isWindows: Bool { Self.isWindows(host) }
+
+    static func isWindows(_ host: Host) -> Bool { PathStyle(os: host.os) == .windows }
+
+    /// Attaching by port on Windows PCs, by process elsewhere.
+    public static func defaultMode(for host: Host) -> Mode { isWindows(host) ? .port : .process }
+
+    /// An attach through the debug port a process's command line opens: the Node inspector as
+    /// main, else DevTools as the renderer; nil for a process that opens neither.
+    public static func portRequest(for candidate: AttachCandidate, hostID: String) -> DebugAttachRequest? {
+        let ports = candidate.ports
+        if let inspect = ports.inspect { return DebugAttachRequest(hostID: hostID, target: .port(inspect, role: .main)) }
+        if let devtools = ports.remoteDebugging { return DebugAttachRequest(hostID: hostID, target: .port(devtools, role: .renderer)) }
+        return nil
+    }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.l) {
@@ -126,7 +177,9 @@ public struct AttachSheet: View {
             } else if let error {
                 StatusNotice(symbol: "exclamationmark.octagon.fill", tint: DS.Color.danger,
                              title: String.ui("debugger.attach.failed", "연결하지 못했습니다"),
-                             message: [error.message.asSentence, Self.fix(error)].compactMap { $0 }.joined(separator: "\n"), code: error.code)
+                             message: [error.message.asSentence, Self.fix(error, byPID: failedByPID, windows: isWindows)].compactMap { $0 }
+                                 .joined(separator: "\n"),
+                             code: error.code)
             }
             HStack {
                 Spacer()
@@ -150,18 +203,39 @@ public struct AttachSheet: View {
         }
     }
 
-    static func fix(_ error: OperationError) -> String? {
+    /// The refusal of a pid attach (`CAPABILITY_UNSUPPORTED`) in the app's words: Windows has no
+    /// supported way to attach to a running process, elsewhere the inspector did not open.
+    static func failure(_ error: OperationError, byPID: Bool, windows: Bool) -> OperationError {
+        guard byPID, error.code == "CAPABILITY_UNSUPPORTED" else { return error }
+        let message: String = windows
+            ? .ui("debugger.attach.pidUnsupported", "Windows PC에서는 실행 중인 프로세스에 PID로 연결할 수 없습니다")
+            : .ui("debugger.attach.pidRefused", "그 프로세스의 Node 검사기를 켜지 못했습니다")
+        return OperationError(code: error.code, message: message, nextAction: error.nextAction)
+    }
+
+    static func fix(_ error: OperationError, byPID: Bool = false, windows: Bool = false) -> String? {
         switch error.code {
+        case "CAPABILITY_UNSUPPORTED" where byPID && windows:
+            .ui("debugger.fix.windowsPort", "Windows에서는 포트로 연결하세요. 앱을 --inspect=포트나 --remote-debugging-port=포트로 실행한 뒤 그 포트로 연결하거나, ‘앱 실행’으로 디버그하세요.")
         case "CAPABILITY_UNSUPPORTED": .ui("debugger.fix.notNode", "Node나 Electron 앱의 메인 프로세스를 고르세요. 브라우저와 일반 Windows 앱은 연결할 수 없습니다.")
         case "NOT_FOUND": .ui("debugger.fix.port", "앱을 --inspect=포트 또는 --remote-debugging-port=포트로 실행했는지, 번호가 맞는지 확인하세요.")
         default: error.fix
         }
     }
 
+    /// The selected process, when the list has it.
+    private var selectedCandidate: AttachCandidate? {
+        guard let selectedPID, let process = list?.first(where: { $0.pid == selectedPID }) else { return nil }
+        let cmd = process.cmd ?? ""
+        return AttachCandidate(process: process, kind: .other, inspectorOpen: cmd.contains("--inspect") || cmd.contains("--remote-debugging-port"))
+    }
+
     private var canAttach: Bool {
         switch mode {
-        case .process: selectedPID != nil
-        case .port: Int(port).map { (1...65535).contains($0) } ?? false
+        case .process:
+            guard let selectedCandidate else { return false }
+            return !isWindows || Self.portRequest(for: selectedCandidate, hostID: host.hostID) != nil
+        case .port: return Int(port).map { (1...65535).contains($0) } ?? false
         }
     }
 
@@ -186,10 +260,32 @@ public struct AttachSheet: View {
                 .background(DS.Code.background)
                 .clipShape(RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous).strokeBorder(DS.Color.separator, lineWidth: 1))
-            Text(String.ui("debugger.attach.pidNote", "프로세스로 연결하면 메인 프로세스의 Node 검사기를 켜고 그 포트를 찾아 연결합니다. 연결을 해제하면 켠 검사기를 끌 수 있을 때 끕니다. 렌더러는 앱을 --remote-debugging-port로 시작했을 때만 함께 보입니다."))
+            if isWindows {
+                windowsNote
+            } else {
+                Text(String.ui("debugger.attach.pidNote", "프로세스로 연결하면 메인 프로세스의 Node 검사기를 켜고 그 포트를 찾아 연결합니다. 연결을 해제하면 켠 검사기를 끌 수 있을 때 끕니다. 렌더러는 앱을 --remote-debugging-port로 시작했을 때만 함께 보입니다."))
+                    .font(DS.Font.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// On Windows: attach through the port a process opened; what to do for one that opened none.
+    @ViewBuilder
+    private var windowsNote: some View {
+        VStack(alignment: .leading, spacing: DS.Space.xs) {
+            Label(String.ui("debugger.attach.windowsTitle", "Windows에서는 포트로 연결하세요"), systemImage: "info.circle")
+                .font(DS.Font.caption.weight(.semibold))
+            Text(String.ui("debugger.attach.windowsNote", "Windows PC에서는 실행 중인 프로세스의 Node 검사기를 켤 수 없습니다. --inspect나 --remote-debugging-port로 실행한 프로세스를 고르면 그 포트로 연결합니다. 다른 앱은 ‘앱 실행’으로 디버그하세요."))
                 .font(DS.Font.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            if let selectedCandidate, Self.portRequest(for: selectedCandidate, hostID: host.hostID) == nil {
+                Text(String.ui("debugger.attach.noPort", "고른 프로세스는 디버그 포트를 열지 않았습니다."))
+                    .font(DS.Font.caption)
+                    .foregroundStyle(DS.Status.warningText)
+            }
         }
     }
 
@@ -271,7 +367,12 @@ public struct AttachSheet: View {
         switch mode {
         case .process:
             guard let pid = selectedPID else { return }
-            request = DebugAttachRequest(hostID: host.hostID, target: .pid(pid))
+            if isWindows {
+                guard let candidate = selectedCandidate, let byPort = Self.portRequest(for: candidate, hostID: host.hostID) else { return }
+                request = byPort
+            } else {
+                request = DebugAttachRequest(hostID: host.hostID, target: .pid(pid))
+            }
             let processName = list?.first { $0.pid == pid }?.name ?? "PID \(pid)"
             name = processName.lowercased().hasSuffix(".exe") ? String(processName.dropLast(4)) : processName
         case .port:
@@ -280,9 +381,12 @@ public struct AttachSheet: View {
             name = .ui("debugger.attach.portName", "포트 \(port)")
         }
         error = nil
+        let byPID: Bool
+        if case .pid = request.target { byPID = true } else { byPID = false }
+        failedByPID = byPID
         Task {
             if let failure = await model.attach(request, name: name) {
-                error = failure
+                error = Self.failure(failure, byPID: byPID, windows: isWindows)
             } else {
                 dismiss()
             }
