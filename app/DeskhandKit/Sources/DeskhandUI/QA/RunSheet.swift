@@ -190,7 +190,7 @@ public struct RunSheet: View {
                 Image(systemName: "hourglass")
                     .foregroundStyle(DS.Status.accentText)
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: DS.Space.xs) {
                     Text(String.ui("qa.sheet.busy", "이 PC에서 ‘\(running.name)’ 실행이 진행 중입니다. 끝난 뒤 실행할 수 있습니다."))
                         .font(DS.Font.caption)
                         .fixedSize(horizontal: false, vertical: true)
@@ -339,7 +339,7 @@ struct VarsEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.s) {
             ForEach($vars.rows) { $row in
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: DS.Space.xs) {
                     HStack(spacing: DS.Space.s) {
                         TextField(String.ui("qa.vars.name", "이름"), text: $row.name)
                             .textFieldStyle(.roundedBorder)

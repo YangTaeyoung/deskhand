@@ -94,8 +94,7 @@ struct TransferQueueView: View {
                         Text(DS.Format.count(queue.visible.count))
                             .font(DS.Font.caption.weight(.semibold).monospacedDigit())
                             .foregroundStyle(.secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 1)
+                            .padding(.horizontal, DS.Space.s)
                             .background(DS.Color.neutral.opacity(0.16), in: Capsule())
                     }
                 }
@@ -259,8 +258,7 @@ struct TransferRow: View {
                 Text(String.ui("files.drop.moveBadge", "이동"))
                     .font(DS.Font.caption.weight(.semibold))
                     .foregroundStyle(DS.Status.warningText)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 1)
+                    .padding(.horizontal, DS.Space.s)
                     .overlay(Capsule().strokeBorder(DS.Color.warning.opacity(0.6), lineWidth: 1))
                     .help(String.ui("transfer.moveHelp", "대상에서 SHA-256을 확인한 뒤에만 원본을 지웁니다"))
             }
@@ -454,7 +452,7 @@ private struct TransferFileRow: View {
 
     var body: some View {
         let row = TransferFilePresentation(file)
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: DS.Space.xs) {
             HStack(spacing: DS.Space.s) {
                 Image(systemName: FileKind(name: file.rel, isDirectory: false).symbol)
                     .foregroundStyle(.secondary)
@@ -491,7 +489,7 @@ private struct TransferFileRow: View {
                     .fixedSize()
             }
             if let message = row.errorMessage {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: DS.Space.xs) {
                     Text(message)
                         .foregroundStyle(row.tone == .danger ? DS.Status.dangerText : DS.Status.warningText)
                     if let fix = row.fix {

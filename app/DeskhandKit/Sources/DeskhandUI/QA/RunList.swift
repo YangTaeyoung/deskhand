@@ -86,7 +86,7 @@ struct RunList: View {
                     Button {
                         model.filter = .all
                     } label: {
-                        HStack(spacing: 2) {
+                        HStack(spacing: DS.Space.xs) {
                             Text(model.filter.title)
                             Image(systemName: "xmark")
                                 .font(.system(size: 8, weight: .bold))
@@ -163,7 +163,7 @@ struct RunList: View {
         let selected = model.selectedRun(in: scope)?.runID
         return ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 2) {
+                LazyVStack(spacing: DS.Space.xs) {
                     ForEach(runs) { run in
                         RunRow(run: run, counts: QAStepCounts(run: run, steps: model.record(run.runID)?.steps),
                                hostName: scope == .all ? hostName(run.hostID) : nil, selected: run.runID == selected)

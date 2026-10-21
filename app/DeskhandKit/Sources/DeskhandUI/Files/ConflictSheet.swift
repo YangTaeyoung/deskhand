@@ -150,7 +150,7 @@ private struct ConflictSide: View {
                     Text(String.ui("conflict.newer", "더 최근"))
                         .font(DS.Font.caption.weight(.semibold))
                         .foregroundStyle(DS.Status.accentText)
-                        .padding(.horizontal, 6)
+                        .padding(.horizontal, DS.Space.s)
                         .background(DS.Color.accent.opacity(0.12), in: Capsule())
                 }
             }

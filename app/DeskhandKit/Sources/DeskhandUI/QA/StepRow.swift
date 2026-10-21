@@ -17,7 +17,7 @@ struct StepRow: View {
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(DS.Status.neutralText))
                 .frame(width: 26, alignment: .trailing)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
                 HStack(spacing: DS.Space.s) {
                     Text(step.name)
                         .font(DS.Font.body.weight(isFocusStatus ? .semibold : .regular))
@@ -59,8 +59,8 @@ struct StepRow: View {
                 .fixedSize()
         }
         .padding(.horizontal, DS.Space.m)
-        .padding(.vertical, 6)
-        .frame(minHeight: 34)
+        .padding(.vertical, DS.Space.s)
+        .frame(minHeight: 36)
         .background(background, in: RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
         .onHover { hovering = $0 }
         .help(String.ui("qa.step.line.help", "시나리오 \(String(step.line))번째 줄 · \(step.action)"))
@@ -147,7 +147,7 @@ struct StepKindChip: View {
     var inverted = false
 
     var body: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: DS.Space.xs) {
             Image(systemName: QAFormat.actionSymbol(action))
                 .font(.system(size: 9, weight: .semibold))
             Text(QAFormat.action(action))
@@ -155,7 +155,7 @@ struct StepKindChip: View {
         }
         .font(DS.Font.caption)
         .foregroundStyle(inverted ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(DS.Status.neutralText))
-        .padding(.horizontal, 6)
+        .padding(.horizontal, DS.Space.s)
         .frame(height: 18)
         .background(inverted ? AnyShapeStyle(.clear) : AnyShapeStyle(DS.Color.neutral.opacity(0.1)),
                     in: RoundedRectangle(cornerRadius: 4, style: .continuous))
@@ -179,7 +179,7 @@ struct StepFlag: View {
         Text(text)
             .font(.system(size: 10, weight: .semibold))
             .foregroundStyle(inverted ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(DS.Status.neutralText))
-            .padding(.horizontal, 5)
+            .padding(.horizontal, DS.Space.xs)
             .frame(height: 16)
             .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous)
                 .strokeBorder(inverted ? AnyShapeStyle(DS.Color.onFill.opacity(0.6)) : AnyShapeStyle(DS.Color.separator), lineWidth: 1))
@@ -227,7 +227,7 @@ struct StepPhaseHeader: View {
             Text(String(steps.count))
                 .font(.system(size: 10, weight: .semibold).monospacedDigit())
                 .foregroundStyle(DS.Status.neutralText)
-                .padding(.horizontal, 5)
+                .padding(.horizontal, DS.Space.xs)
                 .frame(height: 15)
                 .background(DS.Color.neutral.opacity(0.12), in: Capsule())
             Spacer(minLength: 0)
@@ -291,7 +291,7 @@ struct StepTally: View {
     @ViewBuilder
     private func item(_ symbol: String, _ count: Int, _ color: Color) -> some View {
         if count > 0 {
-            HStack(spacing: 2) {
+            HStack(spacing: DS.Space.xs) {
                 Image(systemName: symbol)
                     .font(.system(size: 8, weight: .heavy))
                 Text(String(count))

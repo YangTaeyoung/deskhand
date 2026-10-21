@@ -87,7 +87,7 @@ struct EvidenceViewer: View {
                 .font(.system(size: 18))
                 .foregroundStyle(DS.Status.neutralText)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
                 Text(artifact.name)
                     .font(.system(size: 13, weight: .semibold, design: .monospaced))
                     .lineLimit(1)

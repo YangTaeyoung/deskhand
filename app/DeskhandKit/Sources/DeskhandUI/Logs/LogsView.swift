@@ -189,7 +189,7 @@ private struct LogFileStrip: View {
                 .font(.system(size: 18))
                 .foregroundStyle(DS.Color.accent)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
                 Text(String.ui("logs.file.title", "파일 탭에서 연 로그 · \(name)"))
                     .font(DS.Font.body.weight(.semibold))
                     .lineLimit(1)

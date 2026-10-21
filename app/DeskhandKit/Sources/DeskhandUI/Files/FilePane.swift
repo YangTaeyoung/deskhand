@@ -454,7 +454,7 @@ private struct PathBar: View {
     }
 
     private func crumbRow(_ candidate: CrumbLayout.Candidate, compressible: Bool) -> some View {
-        HStack(spacing: 2) {
+        HStack(spacing: DS.Space.xs) {
             if !candidate.folded.isEmpty {
                 Menu {
                     ForEach(candidate.folded.reversed()) { crumb in
@@ -645,7 +645,7 @@ private struct PaneErrorStrip: View {
             Image(systemName: "exclamationmark.octagon.fill")
                 .foregroundStyle(DS.Color.danger)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
                 Text(notice.message)
                     .font(DS.Font.body.weight(.semibold))
                 if let detail = notice.detail {
@@ -694,14 +694,14 @@ private struct DropBanner: View {
                     .font(DS.Font.caption.weight(.bold))
                     .foregroundStyle(DS.Color.onFill)
                     .padding(.horizontal, DS.Space.s)
-                    .padding(.vertical, 2)
+                    .padding(.vertical, DS.Space.xs)
                     .background(DS.Color.warning, in: Capsule())
             } else {
                 Image(systemName: "plus.circle.fill")
                     .foregroundStyle(DS.Color.accent)
                     .accessibilityHidden(true)
             }
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
                 Text(text)
                     .font(DS.Font.body.weight(.semibold))
                     .lineLimit(1)

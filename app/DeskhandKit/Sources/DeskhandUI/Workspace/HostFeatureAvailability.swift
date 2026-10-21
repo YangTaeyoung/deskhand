@@ -135,7 +135,7 @@ struct DiagnosticsNoticeToast: View {
             Image(systemName: symbol)
                 .foregroundStyle(tint)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
                 Text(notice.message)
                     .font(DS.Font.body.weight(.semibold))
                     .fixedSize(horizontal: false, vertical: true)

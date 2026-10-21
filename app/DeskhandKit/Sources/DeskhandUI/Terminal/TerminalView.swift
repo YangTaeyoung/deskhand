@@ -281,7 +281,7 @@ private struct DetachedShellRow: View {
                 .foregroundStyle(.secondary)
                 .frame(width: DS.Space.xl)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
                 Text(job.summary)
                     .font(DS.Font.body.weight(.medium))
                     .lineLimit(1)
@@ -386,7 +386,7 @@ public struct PasteConfirmSheet: View {
             }
             VStack(alignment: .leading, spacing: DS.Space.xs) {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 2) {
+                    LazyVStack(alignment: .leading, spacing: DS.Space.xs) {
                         ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
                             HStack(alignment: .firstTextBaseline, spacing: DS.Space.s) {
                                 Text("\(index + 1)")
@@ -463,7 +463,7 @@ private struct TerminalNoticeToast: View {
             Image(systemName: "exclamationmark.octagon.fill")
                 .foregroundStyle(DS.Color.danger)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
                 Text(notice.message)
                     .font(DS.Font.body.weight(.semibold))
                 if let detail = notice.detail {

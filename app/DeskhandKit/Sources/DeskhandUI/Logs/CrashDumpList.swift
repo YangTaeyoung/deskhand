@@ -102,7 +102,7 @@ private struct CrashDumpRow: View {
                 .foregroundStyle(DS.Color.danger.opacity(kind == .report ? 0.7 : 0.9))
                 .frame(width: 28)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
                 HStack(spacing: DS.Space.s) {
                     Text(dump.app)
                         .font(DS.Font.headline)
@@ -110,7 +110,7 @@ private struct CrashDumpRow: View {
                     Text(kind?.title ?? dump.kind)
                         .font(DS.Font.caption.weight(.medium))
                         .foregroundStyle(.secondary)
-                        .padding(.horizontal, 6)
+                        .padding(.horizontal, DS.Space.s)
                         .frame(height: 18)
                         .background(DS.Color.neutral.opacity(0.14), in: Capsule())
                 }
@@ -130,7 +130,7 @@ private struct CrashDumpRow: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            VStack(alignment: .trailing, spacing: 3) {
+            VStack(alignment: .trailing, spacing: DS.Space.xs) {
                 Text(ProcessFormat.started(dump.time.date))
                     .font(DS.Font.caption.monospacedDigit())
                 Text(DS.Format.bytes(dump.sizeBytes))
@@ -142,7 +142,7 @@ private struct CrashDumpRow: View {
                 .frame(width: 196, alignment: .trailing)
         }
         .padding(.horizontal, DS.Space.m)
-        .padding(.vertical, DS.Space.s + 2)
+        .padding(.vertical, DS.Space.m)
         .background(hovering ? DS.Color.neutral.opacity(0.06) : .clear)
         .onHover { hovering = $0 }
         .contextMenu {
@@ -189,7 +189,7 @@ private struct DownloadControl: View {
         switch transfer.transferState {
         case .queued, .running, .verifying, .paused:
             HStack(spacing: DS.Space.s) {
-                VStack(alignment: .trailing, spacing: 3) {
+                VStack(alignment: .trailing, spacing: DS.Space.xs) {
                     ProgressView(value: presentation.progress ?? 0)
                         .progressViewStyle(.linear)
                         .frame(width: 120)

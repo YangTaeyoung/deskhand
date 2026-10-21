@@ -255,11 +255,11 @@ struct QAScopeSwitch: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 0) {
             segment(hostName, selected: !showsAllHosts, maxWidth: Self.maximumNameWidth) { showsAllHosts = false }
             segment(String.ui("qa.scope.all", "모든 PC"), selected: showsAllHosts, maxWidth: nil) { showsAllHosts = true }
         }
-        .padding(2)
+        .padding(DS.Space.xs)
         .background(DS.Color.neutral.opacity(0.14), in: RoundedRectangle(cornerRadius: DS.Radius.s + 1, style: .continuous))
         .fixedSize()
         .animation(reduceMotion ? nil : .snappy(duration: 0.15), value: showsAllHosts)

@@ -18,7 +18,7 @@ struct StepList: View {
     /// The height of a row: two lines when it has an outcome line, one otherwise.
     static func rowHeight(_ step: QAStep) -> CGFloat {
         let line = !(step.message ?? "").isEmpty || [.blocked, .fail, .running].contains(step.stepStatus)
-        return line ? 47 : 35
+        return line ? 52 : 36
     }
 
     static func contentHeight(_ groups: [(phase: QAStepPhase, steps: [QAStep])]) -> CGFloat {
@@ -83,11 +83,10 @@ struct StepList: View {
                                 }
                                 .accessibilityAction { model.selectStep(step.index, of: run.runID) }
                                 .padding(.horizontal, DS.Space.s)
-                                .padding(.bottom, 1)
                         }
                     }
                     Color.clear
-                        .frame(height: Self.contentHeight(groups) > height ? max(0, height - Self.headerHeight - 47) : DS.Space.s)
+                        .frame(height: Self.contentHeight(groups) > height ? max(0, height - Self.headerHeight - 52) : DS.Space.s)
                         .accessibilityHidden(true)
                 }
             }

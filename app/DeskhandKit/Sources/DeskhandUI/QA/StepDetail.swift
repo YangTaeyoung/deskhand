@@ -353,7 +353,7 @@ struct AssertionsTable: View {
         let verdict = assertion.passed ? QAFormat.title(QAStepStatus.pass) : QAFormat.title(QAStepStatus.fail)
         let kind = QAFormat.assertion(assertion.kind)
         return HStack(alignment: .firstTextBaseline, spacing: DS.Space.m) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
                 Text(kind)
                     .font(DS.Font.body)
                 Text(assertion.kind)
@@ -507,9 +507,9 @@ struct EvidenceThumbnail: View {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(DS.Color.onFill)
-                    .padding(5)
+                    .padding(DS.Space.xs)
                     .background(DS.Color.scrim, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-                    .padding(6)
+                    .padding(DS.Space.s)
                     .opacity(hovering ? 1 : 0)
             }
             Text(artifact.name)
@@ -559,7 +559,7 @@ struct EvidenceChip: View {
                 .font(.system(size: 16))
                 .foregroundStyle(DS.Status.neutralText)
                 .frame(width: 24)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
                 Text(artifact.name)
                     .font(.system(size: 12, design: .monospaced))
                     .lineLimit(1)

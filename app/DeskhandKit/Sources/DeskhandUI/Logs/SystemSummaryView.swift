@@ -70,7 +70,7 @@ private struct SummaryErrorStrip: View {
             Image(systemName: "exclamationmark.octagon.fill")
                 .foregroundStyle(DS.Color.danger)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
                 Text(String.ui("logs.system.failed", "시스템 요약을 불러오지 못했습니다"))
                     .font(DS.Font.body.weight(.semibold))
                 Text(LogsModel.explanation(error))
@@ -288,7 +288,7 @@ private struct SummaryCard<Content: View>: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.horizontal, DS.Space.m)
-        .padding(.vertical, DS.Space.s + 2)
+        .padding(.vertical, DS.Space.m)
         .background(DS.Color.surfaceRaised, in: RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous)
@@ -321,7 +321,7 @@ private struct DiskRow: View {
         let totalText = DS.Format.bytes(total)
         let tint = SummaryFormat.tint(usedFraction: used)
         let label = disk.label ?? ""
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: DS.Space.xs) {
             HStack(spacing: DS.Space.xs) {
                 Text(disk.root)
                     .font(DS.Font.caption.monospaced().weight(.semibold))

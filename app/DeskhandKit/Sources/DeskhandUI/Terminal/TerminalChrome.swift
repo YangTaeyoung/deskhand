@@ -163,11 +163,11 @@ private struct TerminalTab: View {
     var body: some View {
         HStack(spacing: DS.Space.xs) {
             Button(action: select) {
-                HStack(spacing: 6) {
+                HStack(spacing: DS.Space.s) {
                     TerminalStatusIcon(session: session)
                         .frame(width: 14, height: 14)
                     ViewThatFits(in: .horizontal) {
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        HStack(alignment: .firstTextBaseline, spacing: DS.Space.s) {
                             primaryText
                             if let secondary {
                                 Text(secondary)
@@ -203,7 +203,7 @@ private struct TerminalTab: View {
             .help(String.ui("terminal.tab.close.help", "탭 닫기 (⌘W)"))
             .accessibilityLabel(String.ui("terminal.tab.close", "\(label) 탭 닫기"))
         }
-        .padding(.leading, 10)
+        .padding(.leading, DS.Space.m)
         .padding(.trailing, DS.Space.xs)
         .frame(height: 28)
         .background(background, in: RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
@@ -538,7 +538,7 @@ struct ExitedBar: View {
                 .font(.system(size: 16))
                 .foregroundStyle(code == 0 ? DS.Color.success : DS.Color.warning)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
                 Text(String.ui("terminal.exited.title", "셸이 종료되었습니다"))
                     .font(DS.Font.body.weight(.semibold))
                 Text(String.ui("terminal.exited.code", "\(shell.title) · 코드 \(code)"))
@@ -553,7 +553,7 @@ struct ExitedBar: View {
         }
         .controlSize(.regular)
         .padding(.horizontal, DS.Space.m)
-        .padding(.vertical, DS.Space.s + 2)
+        .padding(.vertical, DS.Space.m)
         .background(DS.Color.surface)
         .overlay(alignment: .top) {
             Rectangle()

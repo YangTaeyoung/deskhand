@@ -130,7 +130,7 @@ private struct RunHeader: View {
                 Spacer(minLength: DS.Space.m)
                 RunActions(model: model, run: run, compact: compact)
             }
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
                 Text(verdict.title)
                     .font(DS.Font.body.weight(.semibold))
                     .foregroundStyle(run.runStatus == .cancelled ? AnyShapeStyle(.primary) : AnyShapeStyle(QAFormat.text(run.runStatus)))
@@ -415,7 +415,7 @@ private struct NoteStrip<Trailing: View>: View {
             }
             .frame(width: 16)
             .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
                 Text(title)
                     .font(DS.Font.body.weight(.semibold))
                     .fixedSize(horizontal: false, vertical: true)

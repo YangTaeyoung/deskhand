@@ -335,7 +335,7 @@ private struct LevelChip: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 3) {
+            HStack(spacing: DS.Space.xs) {
                 Image(systemName: level.symbol)
                     .imageScale(.small)
                     .foregroundStyle(isOn ? AnyShapeStyle(level.tint) : AnyShapeStyle(.tertiary))
@@ -659,7 +659,7 @@ private struct EventDetailView: View {
                 .foregroundStyle(level?.tint ?? DS.Color.neutral)
                 .frame(width: 24)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
                 HStack(spacing: DS.Space.s) {
                     Text(event.provider)
                         .font(DS.Font.headline)
