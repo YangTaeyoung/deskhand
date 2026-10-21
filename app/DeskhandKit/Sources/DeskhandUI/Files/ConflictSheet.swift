@@ -172,14 +172,23 @@ private struct ConflictSide: View {
 
 /// Details of one item: kind, exact size, location, modification time and attributes, with
 /// copy path and, for this Mac, Finder.
-struct FileInfoSheet: View {
+public struct FileInfoSheet: View {
     let state: FileInfoState
     let sideName: String
     let copyPath: () -> Void
     let reveal: (() -> Void)?
     let close: () -> Void
 
-    var body: some View {
+    public init(state: FileInfoState, sideName: String, copyPath: @escaping () -> Void, reveal: (() -> Void)?,
+                close: @escaping () -> Void) {
+        self.state = state
+        self.sideName = sideName
+        self.copyPath = copyPath
+        self.reveal = reveal
+        self.close = close
+    }
+
+    public var body: some View {
         let item = state.item
         VStack(alignment: .leading, spacing: DS.Space.l) {
             HStack(alignment: .top, spacing: DS.Space.m) {
@@ -235,6 +244,7 @@ struct FileInfoSheet: View {
                 Button(String.ui("action.close", "닫기"), action: close)
                     .keyboardShortcut(.defaultAction)
             }
+            .controlSize(.large)
         }
         .padding(DS.Space.xl)
         .frame(width: 460)

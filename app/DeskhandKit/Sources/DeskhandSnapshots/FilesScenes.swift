@@ -124,6 +124,21 @@ enum FilesScenes {
                     folder: downloads, sourceName: "이 Mac", destinationName: store.host(dev)?.name ?? "개발 PC"),
                     confirm: { _ in }, cancel: {}))
             }),
+            scene("files-info", Setup(selected: dev, tab: .files, inspector: nil), Files(transfers: running), sheet: { store in
+                let path = "C:\\ProgramData\\Shop\\CrashDumps\\Shop.exe.4013.dmp"
+                let item = FileItem(name: "Shop.exe.4013.dmp", path: path, isDirectory: false, size: 412_337_152,
+                                    modified: .now.addingTimeInterval(-3_600), kind: "덤프 파일", isReadOnly: true)
+                return AnyView(FileInfoSheet(state: FileInfoState(item: item, side: .remote, isLoading: false,
+                                                                  stat: FileStat(exists: true, path: path, name: item.name, size: 412_337_152,
+                                                                                 owner: "administrators", locked: true)),
+                                             sideName: store.host(dev)?.name ?? "개발 PC", copyPath: {}, reveal: nil, close: {}))
+            }),
+            scene("files-info-local", Setup(selected: dev, tab: .files, inspector: nil), Files(transfers: running), sheet: { _ in
+                let item = FileItem(name: "Shop-Setup-1188-x64.msi", path: PreviewFixtures.localBuildFolder + "/Shop-Setup-1188-x64.msi",
+                                    isDirectory: false, size: 1_203_486_720, modified: .now.addingTimeInterval(-7_200), kind: "Windows Installer 패키지")
+                return AnyView(FileInfoSheet(state: FileInfoState(item: item, side: .local, isLoading: false),
+                                             sideName: "이 Mac", copyPath: {}, reveal: {}, close: {}))
+            }),
             scene("files-action-error", Setup(selected: dev, tab: .files, inspector: nil), Files(
                 remotePath: "C:\\ProgramData\\Shop\\CrashDumps", remoteSelection: ["Shop.exe.4013.dmp"], transfers: running,
                 paneError: (.remote, "‘Shop.exe.4013.dmp’ 파일을 열지 못했습니다",
