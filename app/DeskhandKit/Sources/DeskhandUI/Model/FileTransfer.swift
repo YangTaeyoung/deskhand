@@ -28,7 +28,7 @@ public enum ConflictPolicy: String, Sendable, CaseIterable, Codable {
     case replace
     /// The file is not transferred.
     case skip
-    /// The new copy is written under a free name such as `name (2).ext`.
+    /// The new copy is written under the first free name from `name (1).ext` on.
     case rename
 }
 
@@ -81,9 +81,23 @@ public struct TransferRequest: Sendable, Equatable {
     }
 }
 
+/// What `transfer.start` started: the transfer and the job of kind `transfer` that follows it
+/// (`jobs.cancel` on that job is `transfer.cancel`).
+public struct TransferStarted: Sendable, Equatable {
+    public var transferID: String
+    public var jobID: String?
+
+    public init(transferID: String, jobID: String? = nil) {
+        self.transferID = transferID
+        self.jobID = jobID
+    }
+}
+
 /// One page of a remote folder listing.
 public struct FileEntryPage: Sendable, Equatable {
     public var entries: [FileEntry]
+    /// The folder as the PC spells it, when the source reports it.
+    public var path: String?
     /// Cursor of the next page; nil when this page ends the folder.
     public var nextCursor: String?
     /// Entries in the folder, when known.
@@ -91,8 +105,9 @@ public struct FileEntryPage: Sendable, Equatable {
     /// The agent stopped listing before the end of the folder.
     public var truncated: Bool
 
-    public init(entries: [FileEntry], nextCursor: String? = nil, total: Int? = nil, truncated: Bool = false) {
+    public init(entries: [FileEntry], path: String? = nil, nextCursor: String? = nil, total: Int? = nil, truncated: Bool = false) {
         self.entries = entries
+        self.path = path
         self.nextCursor = nextCursor
         self.total = total
         self.truncated = truncated

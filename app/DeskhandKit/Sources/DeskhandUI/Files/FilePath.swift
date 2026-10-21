@@ -99,13 +99,20 @@ public enum FilePath {
 /// Rules for names typed into the remote pane.
 public enum FileNameRule {
     private static let reserved: Set<String> = {
-        var names: Set<String> = ["CON", "PRN", "AUX", "NUL"]
-        for n in 1...9 {
+        var names: Set<String> = ["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"]
+        for n in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "¹", "²", "³"] {
             names.insert("COM\(n)")
             names.insert("LPT\(n)")
         }
         return names
     }()
+
+    /// Windows takes `name` for a device (`CON`, `NUL`, `COM1`, `LPT¹` …, also before an extension).
+    public static func isReservedOnWindows(_ name: String) -> Bool {
+        let stem = String(name.split(separator: ".", omittingEmptySubsequences: false).first ?? "")
+        let trimmed = stem.replacingOccurrences(of: " +$", with: "", options: .regularExpression)
+        return reserved.contains(trimmed.uppercased())
+    }
 
     /// Why `name` cannot name a file in a folder of `style`, or nil when it can.
     public static func problem(_ name: String, style: PathStyle) -> String? {
@@ -122,7 +129,7 @@ public enum FileNameRule {
             }
             let base = String(name.split(separator: ".", omittingEmptySubsequences: false).first ?? "").uppercased()
                 .trimmingCharacters(in: .whitespaces)
-            if reserved.contains(base) {
+            if isReservedOnWindows(name) {
                 return .ui("name.reserved", "‘\(base)’ 이름은 Windows가 예약해 두어 쓸 수 없습니다.")
             }
             if name.utf16.count > 255 { return .ui("name.tooLong", "이름은 255자를 넘을 수 없습니다.") }
@@ -133,13 +140,13 @@ public enum FileNameRule {
         return nil
     }
 
-    /// `name (2).ext`: how a second copy of `name` is commonly named.
+    /// `name (1).ext`: the first name the daemon's `rename` tries for a second copy of `name`.
     public static func keepBothName(_ name: String) -> String {
         let ext = FileKind.pathExtension(of: name)
-        guard !ext.isEmpty else { return "\(name) (2)" }
+        guard !ext.isEmpty else { return "\(name) (1)" }
         let base = name.dropLast(ext.count + 1)
         let suffix = name.suffix(ext.count)
-        return "\(base) (2).\(suffix)"
+        return "\(base) (1).\(suffix)"
     }
 
     /// `base`, or `base 2`, `base 3` … — the first name not used by `existing`.

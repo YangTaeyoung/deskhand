@@ -41,7 +41,7 @@ struct FilesSettings: View {
                     }
                 } label: {
                     SettingsLabel(String.ui("settings.files.retention", "끝난 전송을 큐에 남겨 두기"),
-                                  detail: String.ui("settings.files.retention.detail", "기간이 지난 전송은 전송 큐에서만 사라집니다. 받거나 보낸 파일은 그대로 남습니다."))
+                                  detail: String.ui("settings.files.retention.detail", "기간이 지난 전송은 전송 큐에서만 사라지고 받거나 보낸 파일은 그대로 남습니다. 데몬은 끝난 지 30일이 지난 전송 기록을 지웁니다."))
                 }
                 .pickerStyle(.menu)
                 LabeledContent {

@@ -37,6 +37,7 @@ final class GatedBackend: Backend, LocalOverlayProviding {
         var filesListCalls: [FilesListCall] = []
         var onePageListing = false
         var transferRequests: [TransferRequest] = []
+        var transferGets: [String] = []
         var fileCalls: [FileCall] = []
         var procListCalls = 0
         var procListFailure: OperationError?
@@ -78,6 +79,8 @@ final class GatedBackend: Backend, LocalOverlayProviding {
 
     var filesListCalls: [FilesListCall] { state.withLock { $0.filesListCalls } }
     var transferRequests: [TransferRequest] { state.withLock { $0.transferRequests } }
+    /// Transfer IDs of the `transfer.get` calls, in order.
+    var transferGets: [String] { state.withLock { $0.transferGets } }
     var fileCalls: [FileCall] { state.withLock { $0.fileCalls } }
 
     /// Answers `filesList` with the whole folder in one page, as `files.list` without paging does.
@@ -264,16 +267,19 @@ final class GatedBackend: Backend, LocalOverlayProviding {
         return try await base.appLaunch(hostID: hostID, path: path, args: args, cwd: cwd)
     }
 
-    func transferStart(_ request: TransferRequest) async throws -> String {
+    func transferStart(_ request: TransferRequest) async throws -> TransferStarted {
         state.withLock { $0.transferRequests.append(request) }
         return try await base.transferStart(request)
     }
 
     func transferList(hostID: String) async throws -> [Transfer] { try await base.transferList(hostID: hostID) }
-    func transferGet(transferID: String) async throws -> Transfer { try await base.transferGet(transferID: transferID) }
-    func transferPause(transferID: String) async throws -> Transfer { try await base.transferPause(transferID: transferID) }
-    func transferResume(transferID: String) async throws -> Transfer { try await base.transferResume(transferID: transferID) }
-    func transferCancel(transferID: String) async throws -> Transfer { try await base.transferCancel(transferID: transferID) }
+    func transferGet(transferID: String) async throws -> TransferDetail {
+        state.withLock { $0.transferGets.append(transferID) }
+        return try await base.transferGet(transferID: transferID)
+    }
+    func transferPause(transferID: String) async throws -> TransferDetail { try await base.transferPause(transferID: transferID) }
+    func transferResume(transferID: String) async throws -> TransferDetail { try await base.transferResume(transferID: transferID) }
+    func transferCancel(transferID: String) async throws -> TransferDetail { try await base.transferCancel(transferID: transferID) }
 
     var procListCalls: Int { state.withLock { $0.procListCalls } }
     var killCalls: [KillCall] { state.withLock { $0.killCalls } }

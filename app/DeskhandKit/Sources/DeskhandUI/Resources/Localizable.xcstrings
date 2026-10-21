@@ -18215,7 +18215,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "기간이 지난 전송은 전송 큐에서만 사라집니다. 받거나 보낸 파일은 그대로 남습니다."
+            "value": "기간이 지난 전송은 전송 큐에서만 사라지고 받거나 보낸 파일은 그대로 남습니다. 데몬은 끝난 지 30일이 지난 전송 기록을 지웁니다."
           }
         }
       }
@@ -20683,17 +20683,6 @@
         }
       }
     },
-    "transfer.a11y.verifying": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "SHA-256 확인 중"
-          }
-        }
-      }
-    },
     "transfer.a11y.working": {
       "extractionState": "manual",
       "localizations": {
@@ -20914,6 +20903,28 @@
         }
       }
     },
+    "transfer.explain.removingPull": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "받은 파일을 모두 확인했습니다. %@의 원본을 휴지통으로 옮기는 중이라 일시정지하거나 취소할 수 없습니다."
+          }
+        }
+      }
+    },
+    "transfer.explain.removingPush": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보낸 파일을 모두 확인했습니다. %@의 원본을 지우는 중이라 일시정지하거나 취소할 수 없습니다."
+          }
+        }
+      }
+    },
     "transfer.explain.renamed": {
       "extractionState": "manual",
       "localizations": {
@@ -20998,6 +21009,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "파일 %1$@/%2$@개"
+          }
+        }
+      }
+    },
+    "transfer.files.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 목록을 읽지 못했습니다"
+          }
+        }
+      }
+    },
+    "transfer.files.loading": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 목록을 읽는 중…"
           }
         }
       }
@@ -21101,6 +21134,39 @@
         }
       }
     },
+    "transfer.refused.cancelRemoving": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원본을 정리하는 중이라 취소할 수 없습니다. 정리가 끝나면 이동이 끝납니다."
+          }
+        }
+      }
+    },
+    "transfer.refused.pauseRemoving": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원본을 정리하는 중이라 일시정지할 수 없습니다. 정리가 끝나면 이동이 끝납니다."
+          }
+        }
+      }
+    },
+    "transfer.removingDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원본 정리 중"
+          }
+        }
+      }
+    },
     "transfer.route.down": {
       "extractionState": "manual",
       "localizations": {
@@ -21185,6 +21251,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "받는 중"
+          }
+        }
+      }
+    },
+    "transfer.state.removingSource": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원본 정리 중"
           }
         }
       }
@@ -21295,6 +21372,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "원본 남음"
+          }
+        }
+      }
+    },
+    "transferFile.running": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전송 중"
           }
         }
       }

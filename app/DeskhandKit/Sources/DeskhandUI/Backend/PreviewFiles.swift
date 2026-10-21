@@ -111,7 +111,7 @@ final class PreviewFileStore: Sendable {
         }
     }
 
-    /// What a running transfer needs beyond its `Transfer`.
+    /// What a running transfer needs beyond its `TransferDetail`.
     struct Plan: Sendable {
         /// Where the item is written; differs from the request after a rename.
         var destination: String
@@ -122,7 +122,9 @@ final class PreviewFileStore: Sendable {
 
     private struct State: Sendable {
         var trees: [String: Tree] = [:]
-        var transfers: [String: Transfer] = [:]
+        var transfers: [String: TransferDetail] = [:]
+        /// What the last `transfer.updated` of each transfer reported of each file, by `rel`.
+        var published: [String: [String: String]] = [:]
         /// Transfer IDs, newest first.
         var order: [String] = []
         var plans: [String: Plan] = [:]
@@ -146,7 +148,9 @@ final class PreviewFileStore: Sendable {
         if includesTransfers, let dev = hosts.first(where: { $0.hostID == PreviewFixtures.devPCID }) {
             let fixtures = PreviewFixtures.transfers(hostID: dev.hostID, user: dev.session?.user ?? "user",
                                                      localHome: FileManager.default.homeDirectoryForCurrentUser.path)
-            for transfer in fixtures {
+            for fixture in fixtures {
+                var transfer = fixture
+                transfer.recount()
                 s.transfers[transfer.transferID] = transfer
                 s.order.append(transfer.transferID)
                 s.plans[transfer.transferID] = Plan(destination: transfer.direction.hasSuffix("push") ? transfer.remote : transfer.local,
@@ -166,16 +170,34 @@ final class PreviewFileStore: Sendable {
         }
     }
 
-    func transfer(_ id: String) -> Transfer? { state.withLock { $0.transfers[id] } }
+    func transfer(_ id: String) -> TransferDetail? { state.withLock { $0.transfers[id] } }
     func plan(_ id: String) -> Plan? { state.withLock { $0.plans[id] } }
 
+    /// The transfers of a host without their files, newest first, as `transfer.list` returns them.
     func transfers(hostID: String) -> [Transfer] {
-        state.withLock { s in s.order.compactMap { s.transfers[$0] }.filter { $0.hostID == hostID } }
+        state.withLock { s in s.order.compactMap { s.transfers[$0]?.transfer }.filter { $0.hostID == hostID } }
     }
 
-    /// Stores a new transfer at `rev` 1 and returns it as stored.
-    func add(_ transfer: Transfer, plan: Plan) -> Transfer {
+    /// The files of `transfer` whose state, outcome, path or error differ from what the previous
+    /// event reported, recorded as reported.
+    func changedFiles(of transfer: TransferDetail) -> [TransferFile] {
+        state.withLock { s in
+            var marks = s.published[transfer.transferID] ?? [:]
+            defer { s.published[transfer.transferID] = marks }
+            return transfer.files.filter { file in
+                let mark = [file.state, file.outcome ?? "", file.path ?? "", (file.error?.code ?? "") + (file.error?.message ?? "")]
+                    .joined(separator: "|")
+                guard marks[file.rel] != mark else { return false }
+                marks[file.rel] = mark
+                return true
+            }
+        }
+    }
+
+    /// Stores a new transfer at `rev` 1 with its counts taken from its files, and returns it as stored.
+    func add(_ transfer: TransferDetail, plan: Plan) -> TransferDetail {
         var stamped = transfer
+        stamped.recount()
         stamped.rev = 1
         stamped.updatedAt = Timestamp(date: .now)
         state.withLock { s in
@@ -186,11 +208,13 @@ final class PreviewFileStore: Sendable {
         return stamped
     }
 
-    /// Stores a change with the next `rev` and the current time, and returns it as stored.
+    /// Stores a change with the next `rev`, the current time and the counts of its files, and
+    /// returns it as stored.
     @discardableResult
-    func update(_ transfer: Transfer) -> Transfer {
+    func update(_ transfer: TransferDetail) -> TransferDetail {
         state.withLock { s in
             var stamped = transfer
+            stamped.recount()
             stamped.rev = max(s.transfers[transfer.transferID]?.rev ?? 0, transfer.rev) + 1
             stamped.updatedAt = Timestamp(date: .now)
             s.transfers[transfer.transferID] = stamped
@@ -222,16 +246,28 @@ final class PreviewFileStore: Sendable {
         }
     }
 
-    /// `name (2).ext`, `name (3).ext` … — the first name for which `exists` is false.
+    /// `name (1).ext`, `name (2).ext` … — the first name for which `exists` is false, as the
+    /// daemon's `rename` picks it.
     static func copyName(_ name: String, exists: (String) -> Bool) -> String {
         let ext = FileKind.pathExtension(of: name)
         let base = ext.isEmpty ? name : String(name.dropLast(ext.count + 1))
-        var n = 2
+        var n = 1
         while true {
             let candidate = ext.isEmpty ? "\(base) (\(n))" : "\(base) (\(n)).\(name.suffix(ext.count))"
             if !exists(candidate) { return candidate }
             n += 1
         }
+    }
+}
+
+extension TransferDetail {
+    /// Sets the counts and byte totals of the transfer from its files, as the daemon counts them.
+    mutating func recount() {
+        transfer.filesTotal = files.count
+        transfer.filesDone = files.filter { $0.transferState == .done }.count
+        transfer.filesFailed = files.filter { $0.transferState == .failed }.count
+        transfer.bytesTotal = files.reduce(0) { $0 + $1.size }
+        transfer.bytesDone = files.reduce(0) { $0 + $1.bytesDone }
     }
 }
 
@@ -330,7 +366,7 @@ extension PreviewBackend {
 
     // MARK: Transfers
 
-    public func transferStart(_ request: TransferRequest) async throws -> String {
+    public func transferStart(_ request: TransferRequest) async throws -> TransferStarted {
         let host = try readyHost(request.hostID)
         await pause(fraction: 0.2)
         let id = files.nextID()
@@ -343,11 +379,14 @@ extension PreviewBackend {
         let name = request.direction.isUpload
             ? FilePath.lastComponent(request.local, style: .posix)
             : FilePath.lastComponent(request.remote, style: .windows)
-        var transfer = Transfer(
+        var transfer = TransferDetail(Transfer(
             transferID: id, hostID: request.hostID, direction: request.direction.rawValue, local: request.local,
             remote: request.remote, onConflict: request.onConflict.rawValue, state: TransferState.queued.rawValue,
-            bytesDone: 0, bytesTotal: items.reduce(0) { $0 + $1.size }, filesDone: 0, filesTotal: items.count, rateBps: 0,
+            bytesDone: 0, bytesTotal: 0, filesDone: 0, filesTotal: 0, rateBps: 0),
             files: items.map { TransferFile(rel: $0.rel, size: $0.size, bytesDone: 0, state: TransferState.queued.rawValue) })
+        if request.direction.isUpload, items.count > 1 || items.first?.rel.contains("/") == true {
+            PreviewTransferNames.screen(&transfer.files, source: request.local)
+        }
         if exists {
             switch request.onConflict {
             case .fail:
@@ -379,7 +418,6 @@ extension PreviewBackend {
                 }
                 plan.destination = FilePath.join(folder, free, style: request.direction.isUpload ? .windows : .posix)
                 plan.renamed = true
-                if transfer.files.count == 1 { transfer.files[0].rel = free }
             case .replace:
                 break
             }
@@ -387,7 +425,7 @@ extension PreviewBackend {
         transfer = files.add(transfer, plan: plan)
         emitTransfer(transfer)
         if !transfer.transferState.isFinished { runTransfer(id) }
-        return id
+        return TransferStarted(transferID: id, jobID: "j-" + id)
     }
 
     /// The files a request moves, with sizes and paths relative to the transferred item.
@@ -403,11 +441,12 @@ extension PreviewBackend {
                 return [(url.lastPathComponent, size)]
             }
             var items: [(String, Int)] = []
+            let root = url.resolvingSymlinksInPath().path
             let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey, .isDirectoryKey])
             while let child = enumerator?.nextObject() as? URL, items.count < 400 {
                 let values = try? child.resourceValues(forKeys: [.fileSizeKey, .isDirectoryKey])
                 guard values?.isDirectory != true else { continue }
-                items.append((String(child.path.dropFirst(url.path.count + 1)), values?.fileSize ?? 0))
+                items.append((String(child.resolvingSymlinksInPath().path.dropFirst(root.count + 1)), values?.fileSize ?? 0))
             }
             return items.sorted { $0.0.localizedStandardCompare($1.0) == .orderedAscending }
         }
@@ -416,11 +455,16 @@ extension PreviewBackend {
             throw RPCErrorInfo(message: "\(host.name)에 ‘\(name)’ 항목이 없습니다", code: "NOT_FOUND")
         }
         guard entry.dir else { return [(entry.name, entry.size)] }
-        return files.tree(request.hostID) { $0.files(under: request.remote) }.map { ($0.rel, $0.entry.size) }
+        return files.tree(request.hostID) { $0.files(under: request.remote) }.map { ($0.rel.replacingOccurrences(of: "\\", with: "/"), $0.entry.size) }
     }
 
-    private func emitTransfer(_ transfer: Transfer) {
-        emit(kind: EventKind.transferUpdated, hostID: transfer.hostID, payload: ["transfer": Self.payload(transfer)])
+    /// `transfer.updated` as the daemon sends it: the transfer without its files and the files
+    /// whose state, outcome, path or error changed since the previous event of that transfer.
+    private func emitTransfer(_ transfer: TransferDetail) {
+        var payload: [String: JSONValue] = ["transfer": Self.payload(transfer.transfer)]
+        let changed = files.changedFiles(of: transfer)
+        if !changed.isEmpty { payload["changed_files"] = .array(changed.map { Self.payload($0) }) }
+        emit(kind: EventKind.transferUpdated, hostID: transfer.hostID, payload: payload)
     }
 
     private func runTransfer(_ id: String) {
@@ -441,7 +485,9 @@ extension PreviewBackend {
         }
     }
 
-    /// Moves bytes at a plausible rate, then verifies and finishes the transfer.
+    /// Moves bytes at a plausible rate with each file checked as it completes, then finishes the
+    /// transfer. A move whose files all arrived spends a moment in `verifying` while it removes
+    /// its source, when pause and cancel are refused.
     private func simulate(_ id: String) async {
         let tick = 0.25
         while !Task.isCancelled {
@@ -449,14 +495,14 @@ extension PreviewBackend {
             transfer.state = TransferState.running.rawValue
             let base = transfer.transferDirection.isUpload ? 46_137_344.0 : 29_360_128.0
             let jitter = 0.94 + Double((transfer.bytesDone / 7_919) % 13) / 100
-            let remaining = transfer.bytesTotal - transfer.bytesDone
+            let pending = transfer.files.filter { $0.transferState == .queued || $0.transferState == .running }
+            let remaining = pending.reduce(0) { $0 + $1.size - $1.bytesDone }
             let step = Double(transfer.bytesTotal) < base * 1.5 ? max(transfer.bytesTotal / 6, 1) : Int(base * jitter * tick)
             let advance = min(remaining, step)
-            transfer.bytesDone += advance
             transfer.rateBps = Int(Double(step) / tick)
             var budget = advance
             for i in transfer.files.indices where budget > 0 || transfer.files[i].size == 0 {
-                guard transfer.files[i].transferState != .done else { continue }
+                guard transfer.files[i].transferState != .done, transfer.files[i].transferState != .failed else { continue }
                 let need = transfer.files[i].size - transfer.files[i].bytesDone
                 let take = min(need, budget)
                 transfer.files[i].bytesDone += take
@@ -465,74 +511,91 @@ extension PreviewBackend {
                     ? TransferState.verifying.rawValue : TransferState.running.rawValue
                 if transfer.files[i].bytesDone < transfer.files[i].size { break }
             }
-            transfer.filesDone = transfer.files.filter { $0.bytesDone >= $0.size }.count
             transfer = files.update(transfer)
             emitTransfer(transfer)
-            if transfer.bytesDone >= transfer.bytesTotal { break }
+            if !transfer.files.contains(where: { $0.transferState == .queued || $0.transferState == .running }) { break }
             await simulatedSleep(tick)
         }
-        guard !Task.isCancelled, var transfer = files.transfer(id), transfer.transferState == .running else { return }
-        transfer.state = TransferState.verifying.rawValue
+        guard !Task.isCancelled, var transfer = files.transfer(id), transfer.transferState == .running,
+              let plan = files.plan(id) else { return }
+        await simulatedSleep(0.4)
+        guard !Task.isCancelled, files.transfer(id)?.transferState == .running else { return }
+        settleFiles(&transfer, plan: plan)
         transfer.rateBps = 0
-        transfer = files.update(transfer)
-        emitTransfer(transfer)
-        await simulatedSleep(0.8)
-        guard !Task.isCancelled, files.transfer(id)?.transferState == .verifying else { return }
-        finish(id)
+        if transfer.transferDirection.isMove, !transfer.files.contains(where: { $0.transferState == .failed }) {
+            transfer.state = TransferState.verifying.rawValue
+            transfer = files.update(transfer)
+            emitTransfer(transfer)
+            await simulatedSleep(0.8)
+            guard !Task.isCancelled, files.transfer(id)?.transferState == .verifying, let latest = files.transfer(id) else { return }
+            transfer = latest
+        }
+        finish(transfer, plan: plan)
     }
 
-    private func finish(_ id: String) {
-        guard var transfer = files.transfer(id), let plan = files.plan(id) else { return }
+    /// Marks the files that arrived as written (or renamed) with their hashes and paths, and
+    /// fails the pulls of protected Windows files.
+    private func settleFiles(_ transfer: inout TransferDetail, plan: PreviewFileStore.Plan) {
         let direction = transfer.transferDirection
-        var failures = 0
-        for i in transfer.files.indices {
+        let protected = PreviewFileStore.Tree.key("C:\\Windows") + "\\"
+        let temp = PreviewFileStore.Tree.key("C:\\Windows\\Temp") + "\\"
+        let single = transfer.files.count == 1 && !(transfer.files.first?.rel.contains("/") ?? false)
+        for i in transfer.files.indices where transfer.files[i].transferState != .failed {
+            let rel = transfer.files[i].rel
+            if !direction.isUpload {
+                let source = PreviewFileStore.Tree.key(single ? transfer.remote
+                    : FilePath.join(transfer.remote, rel.replacingOccurrences(of: "/", with: "\\"), style: .windows))
+                if source.hasPrefix(protected), !source.hasPrefix(temp) {
+                    transfer.files[i].state = TransferState.failed.rawValue
+                    transfer.files[i].bytesDone = 0
+                    transfer.files[i].error = EnvelopeError(code: "ELEVATION_REQUIRED", message: "관리자 권한이 필요한 파일입니다.")
+                    continue
+                }
+            }
             transfer.files[i].state = TransferState.done.rawValue
             transfer.files[i].bytesDone = transfer.files[i].size
             transfer.files[i].outcome = plan.renamed ? TransferOutcome.renamed.rawValue : TransferOutcome.written.rawValue
-            transfer.files[i].sha256 = String(format: "%016lx", UInt(bitPattern: transfer.files[i].rel.hashValue ^ transfer.files[i].size))
+            transfer.files[i].sha256 = String(format: "%016lx", UInt(bitPattern: rel.hashValue ^ transfer.files[i].size))
+            let style: PathStyle = direction.isUpload ? .windows : .posix
+            transfer.files[i].path = single ? plan.destination
+                : FilePath.join(plan.destination, style == .windows ? rel.replacingOccurrences(of: "/", with: "\\") : rel, style: style)
         }
+    }
+
+    /// Ends a transfer whose files are settled: `failed` + `partial` or `failed` when files failed,
+    /// else `done` with the files' outcome; a move removes its source.
+    private func finish(_ settled: TransferDetail, plan: PreviewFileStore.Plan) {
+        var transfer = settled
+        let id = transfer.transferID
+        let direction = transfer.transferDirection
+        let failed = transfer.files.filter { $0.transferState == .failed }
         if direction.isUpload {
             let name = FilePath.lastComponent(plan.destination, style: .windows)
             let localIsFolder = (try? URL(fileURLWithPath: transfer.local).resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
             let isFolder = localIsFolder || transfer.files.count != 1 || transfer.files.first?.rel.contains("/") == true
+            let written = transfer.files.filter { $0.transferState == .done }
             files.tree(transfer.hostID) { tree in
                 tree.insert(FileEntry(name: name, path: plan.destination, dir: isFolder, size: isFolder ? 0 : transfer.bytesTotal,
                                       mtime: Timestamp(date: .now), link: false))
                 guard isFolder else { return }
-                for file in transfer.files {
+                for file in written {
                     let rel = file.rel.replacingOccurrences(of: "/", with: "\\")
                     let path = FilePath.join(plan.destination, rel, style: .windows)
                     tree.insert(FileEntry(name: FilePath.lastComponent(path, style: .windows), path: path, dir: false,
                                           size: file.size, mtime: Timestamp(date: .now), link: false))
                 }
             }
-        } else {
-            let protected = PreviewFileStore.Tree.key("C:\\Windows") + "\\"
-            let temp = PreviewFileStore.Tree.key("C:\\Windows\\Temp") + "\\"
-            for i in transfer.files.indices {
-                let source = PreviewFileStore.Tree.key(transfer.files.count == 1 ? transfer.remote
-                    : FilePath.join(transfer.remote, transfer.files[i].rel, style: .windows))
-                guard source.hasPrefix(protected), !source.hasPrefix(temp) else { continue }
-                transfer.files[i].state = TransferState.failed.rawValue
-                transfer.files[i].outcome = TransferOutcome.failed.rawValue
-                transfer.files[i].sha256 = nil
-                transfer.files[i].bytesDone = 0
-                transfer.files[i].error = EnvelopeError(code: "ELEVATION_REQUIRED", message: "관리자 권한이 필요한 파일입니다.")
-                failures += 1
-            }
-            if plan.toOverlay {
-                addToOverlay(transfer, plan: plan)
-            }
+        } else if plan.toOverlay {
+            addToOverlay(transfer, plan: plan)
         }
-        transfer.filesDone = transfer.files.count - failures
         transfer.rateBps = 0
-        if failures == transfer.files.count, failures > 0 {
+        if let first = failed.first {
             transfer.state = TransferState.failed.rawValue
-            transfer.outcome = TransferOutcome.failed.rawValue
-            transfer.error = transfer.files.first?.error
-        } else if failures > 0 {
-            transfer.state = TransferState.done.rawValue
-            transfer.outcome = TransferOutcome.partial.rawValue
+            transfer.outcome = failed.count == transfer.files.count ? TransferOutcome.failed.rawValue : TransferOutcome.partial.rawValue
+            let message = first.error?.message ?? "이유를 기록하지 못한 실패입니다."
+            transfer.error = transfer.files.count > 1
+                ? EnvelopeError(code: first.error?.code, message: "\(failed.count)개 항목을 옮기지 못했습니다. 첫 항목 \(first.rel): \(message)")
+                : first.error
         } else if direction == .movePush {
             transfer.state = TransferState.done.rawValue
             transfer.outcome = TransferOutcome.copiedSourceRetained.rawValue
@@ -562,9 +625,9 @@ extension PreviewBackend {
     }
 
     /// Shows a finished pull in the local pane: the item, and for a folder its files.
-    private func addToOverlay(_ transfer: Transfer, plan: PreviewFileStore.Plan) {
+    private func addToOverlay(_ transfer: TransferDetail, plan: PreviewFileStore.Plan) {
         let now = Date.now
-        let single = transfer.files.count == 1 && !(transfer.files.first?.rel.contains("\\") ?? false)
+        let single = transfer.files.count == 1 && !(transfer.files.first?.rel.contains("/") ?? false)
             && files.tree(transfer.hostID, { $0.entry(at: transfer.remote) })?.dir != true
         if single {
             if let file = transfer.files.first, file.transferState != .failed {
@@ -576,7 +639,7 @@ extension PreviewBackend {
         localOverlay.add(FileItem(name: FilePath.lastComponent(plan.destination, style: .posix), path: plan.destination,
                                   isDirectory: true, modified: now))
         for file in transfer.files where file.transferState != .failed {
-            let path = FilePath.join(plan.destination, file.rel.replacingOccurrences(of: "\\", with: "/"), style: .posix)
+            let path = FilePath.join(plan.destination, file.rel, style: .posix)
             localOverlay.add(FileItem(name: FilePath.lastComponent(path, style: .posix), path: path, isDirectory: false,
                                       size: file.size, modified: now))
         }
@@ -588,21 +651,34 @@ extension PreviewBackend {
         return files.transfers(hostID: hostID)
     }
 
-    public func transferGet(transferID: String) async throws -> Transfer {
+    public func transferGet(transferID: String) async throws -> TransferDetail {
         guard let transfer = files.transfer(transferID) else {
-            throw RPCErrorInfo(message: "전송 \(transferID) 항목을 찾을 수 없습니다", code: "NOT_FOUND")
+            throw RPCErrorInfo(message: "전송 \(transferID)가 없습니다. transfer.list로 transfer_id를 확인하세요", code: "NOT_FOUND")
         }
         return transfer
     }
 
-    public func transferPause(transferID: String) async throws -> Transfer {
+    /// The daemon's refusal of a pause or cancel while a move removes its source.
+    private static func removingRefusal(_ id: String, _ what: String) -> RPCErrorInfo {
+        RPCErrorInfo(message: "전송 \(id)는 받은 쪽 검증을 마치고 원본 정리 중이라 \(what)할 수 없습니다. 정리가 끝날 때까지 기다리세요",
+                     code: "INVALID_ARGUMENT")
+    }
+
+    public func transferPause(transferID: String) async throws -> TransferDetail {
         var transfer = try await transferGet(transferID: transferID)
-        guard [.queued, .running].contains(transfer.transferState) else { return transfer }
+        switch transfer.transferState {
+        case .paused: return transfer
+        case .verifying: throw Self.removingRefusal(transferID, "일시정지")
+        case .done, .failed, .cancelled:
+            throw RPCErrorInfo(message: "전송 \(transferID)는 이미 \(transfer.state) 상태로 끝나 일시정지할 수 없습니다. 다시 보내려면 transfer.resume이나 transfer.start를 쓰세요",
+                               code: "INVALID_ARGUMENT")
+        case .queued, .running: break
+        }
         files.setTask(nil, for: transferID)
         transfer.state = TransferState.paused.rawValue
         transfer.rateBps = 0
         transfer.error = nil
-        for i in transfer.files.indices where transfer.files[i].transferState == .running {
+        for i in transfer.files.indices where [.running, .verifying].contains(transfer.files[i].transferState) {
             transfer.files[i].state = TransferState.paused.rawValue
         }
         transfer = files.update(transfer)
@@ -610,38 +686,90 @@ extension PreviewBackend {
         return transfer
     }
 
-    public func transferResume(transferID: String) async throws -> Transfer {
+    public func transferResume(transferID: String) async throws -> TransferDetail {
         var transfer = try await transferGet(transferID: transferID)
-        guard [.paused, .failed, .cancelled].contains(transfer.transferState) else { return transfer }
+        switch transfer.transferState {
+        case .queued, .running, .verifying: return transfer
+        case .done:
+            throw RPCErrorInfo(message: "전송 \(transferID)는 이미 끝났습니다. 다시 보내려면 transfer.start로 새 전송을 시작하세요", code: "INVALID_ARGUMENT")
+        case .paused, .failed, .cancelled: break
+        }
         _ = try readyHost(transfer.hostID)
         transfer.state = TransferState.queued.rawValue
         transfer.outcome = nil
         transfer.error = nil
-        for i in transfer.files.indices where transfer.files[i].transferState != .done || transfer.files[i].transferOutcome == .failed {
+        for i in transfer.files.indices where transfer.files[i].transferState != .done {
             if transfer.files[i].transferState == .failed { transfer.files[i].bytesDone = 0 }
             transfer.files[i].state = TransferState.queued.rawValue
             transfer.files[i].outcome = nil
             transfer.files[i].error = nil
         }
-        transfer.bytesDone = transfer.files.reduce(0) { $0 + $1.bytesDone }
+        if transfer.transferDirection.isUpload, transfer.files.count > 1 {
+            PreviewTransferNames.screen(&transfer.files, source: transfer.local)
+        }
         transfer = files.update(transfer)
         emitTransfer(transfer)
         runTransfer(transferID)
         return transfer
     }
 
-    public func transferCancel(transferID: String) async throws -> Transfer {
+    public func transferCancel(transferID: String) async throws -> TransferDetail {
         var transfer = try await transferGet(transferID: transferID)
-        guard !transfer.transferState.isFinished else { return transfer }
+        switch transfer.transferState {
+        case .cancelled: return transfer
+        case .verifying: throw Self.removingRefusal(transferID, "취소")
+        case .done:
+            throw RPCErrorInfo(message: "전송 \(transferID)는 이미 끝나 취소할 것이 없습니다. 받은 파일을 지우려면 files.trash를 쓰세요", code: "INVALID_ARGUMENT")
+        case .queued, .running, .paused, .failed: break
+        }
         files.setTask(nil, for: transferID)
         transfer.state = TransferState.cancelled.rawValue
         transfer.rateBps = 0
+        transfer.outcome = nil
+        transfer.error = nil
         for i in transfer.files.indices where transfer.files[i].transferState != .done {
             transfer.files[i].state = TransferState.cancelled.rawValue
         }
-        transfer.filesDone = transfer.files.filter { $0.transferState == .done }.count
         transfer = files.update(transfer)
         emitTransfer(transfer)
         return transfer
+    }
+}
+
+/// The names a folder sent to Windows cannot hold, as the daemon screens them (local-api.md §8):
+/// such an item fails with `INVALID_ARGUMENT`, and the later of two names that differ only in
+/// letter case with `TRANSFER_CONFLICT`.
+enum PreviewTransferNames {
+    /// Why Windows cannot hold the element `name`, in the daemon's words, or nil.
+    static func problem(_ name: String) -> String? {
+        if let bad = name.unicodeScalars.first(where: { $0.value < 0x20 || "<>:\"|?*".unicodeScalars.contains($0) }) {
+            return "Windows가 이름에 허용하지 않는 문자 '\(Character(bad))'가 들어 있어"
+        }
+        if name.hasSuffix(".") || name.hasSuffix(" ") { return "점이나 공백으로 끝나 Windows가 그 끝을 지우므로" }
+        if FileNameRule.isReservedOnWindows(name) { return "Windows가 장치 이름으로 쓰는 이름이라" }
+        return nil
+    }
+
+    /// Fails the files of a folder push from `source` that a Windows destination cannot hold.
+    static func screen(_ files: inout [TransferFile], source: String) {
+        var seen: [String: String] = [:]
+        for i in files.indices where files[i].transferState != .failed {
+            let rel = files[i].rel
+            let full = source + "/" + rel
+            if let element = rel.split(separator: "/").map(String.init).first(where: { problem($0) != nil }), let reason = problem(element) {
+                files[i].state = TransferState.failed.rawValue
+                files[i].error = EnvelopeError(code: "INVALID_ARGUMENT",
+                                               message: "\(full)의 이름 '\(element)'는 \(reason) 옮기지 않았습니다. 이름을 바꾼 뒤 다시 옮기세요")
+                continue
+            }
+            let key = rel.lowercased()
+            if let first = seen[key] {
+                files[i].state = TransferState.failed.rawValue
+                files[i].error = EnvelopeError(code: "TRANSFER_CONFLICT",
+                                               message: "\(full)는 \(source + "/" + first)와 대소문자만 다른 이름이라 대상에서 같은 이름이 되므로 옮기지 않았습니다. 둘 중 하나의 이름을 바꾼 뒤 다시 옮기세요")
+                continue
+            }
+            seen[key] = rel
+        }
     }
 }

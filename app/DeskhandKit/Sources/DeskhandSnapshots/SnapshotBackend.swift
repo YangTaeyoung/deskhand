@@ -95,12 +95,12 @@ final class SnapshotBackend: Backend {
     func filesTrash(hostID: String, path: String) async throws {}
     func filesDelete(hostID: String, path: String) async throws {}
     func appLaunch(hostID: String, path: String, args: [String]?, cwd: String?) async throws -> Int? { nil }
-    func transferStart(_ request: TransferRequest) async throws -> String { throw ClientError.notConnected }
+    func transferStart(_ request: TransferRequest) async throws -> TransferStarted { throw ClientError.notConnected }
     func transferList(hostID: String) async throws -> [Transfer] { [] }
-    func transferGet(transferID: String) async throws -> Transfer { throw ClientError.notConnected }
-    func transferPause(transferID: String) async throws -> Transfer { throw ClientError.notConnected }
-    func transferResume(transferID: String) async throws -> Transfer { throw ClientError.notConnected }
-    func transferCancel(transferID: String) async throws -> Transfer { throw ClientError.notConnected }
+    func transferGet(transferID: String) async throws -> TransferDetail { throw ClientError.notConnected }
+    func transferPause(transferID: String) async throws -> TransferDetail { throw ClientError.notConnected }
+    func transferResume(transferID: String) async throws -> TransferDetail { throw ClientError.notConnected }
+    func transferCancel(transferID: String) async throws -> TransferDetail { throw ClientError.notConnected }
 
     /// Throws; scenes draw the screen with `ScreenStandIn`.
     func screenAttach(hostID: String, display: Int, preset: StreamPreset) async throws -> any ScreenStream {

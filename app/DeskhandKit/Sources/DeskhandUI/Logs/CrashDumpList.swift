@@ -227,7 +227,7 @@ private struct DownloadControl: View {
                     .labelStyle(.titleAndIcon)
                 Button(String.ui("logs.download.reveal", "Finder에서 보기")) { model.reveal(transfer) }
                     .controlSize(.small)
-                    .help(LogsModel.savedPath(of: transfer))
+                    .help(model.savedPath(of: transfer))
             }
         case .failed, .cancelled:
             HStack(spacing: DS.Space.s) {

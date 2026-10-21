@@ -103,17 +103,21 @@ public protocol FilesBackend: Sendable {
     /// Starts `path` on the remote computer in the signed-in user's session and returns its
     /// process ID when the agent reports one.
     func appLaunch(hostID: String, path: String, args: [String]?, cwd: String?) async throws -> Int?
-    /// Starts a transfer and returns its `transfer_id`; progress arrives as `transfer.updated` events.
-    func transferStart(_ request: TransferRequest) async throws -> String
-    /// Transfers of `hostID`, newest first.
+    /// Starts a transfer and returns its `transfer_id` with the job that follows it; progress
+    /// arrives as `transfer.updated` events.
+    func transferStart(_ request: TransferRequest) async throws -> TransferStarted
+    /// Transfers of `hostID`, newest first, without their files.
     func transferList(hostID: String) async throws -> [Transfer]
-    func transferGet(transferID: String) async throws -> Transfer
-    /// Stops a running transfer, keeping the finished files and verified chunks.
-    func transferPause(transferID: String) async throws -> Transfer
+    /// A transfer with its files.
+    func transferGet(transferID: String) async throws -> TransferDetail
+    /// Stops a running transfer, keeping the finished files and verified chunks. A move that
+    /// removes its source refuses with `INVALID_ARGUMENT`.
+    func transferPause(transferID: String) async throws -> TransferDetail
     /// Continues a paused, failed or cancelled transfer from its verified chunks.
-    func transferResume(transferID: String) async throws -> Transfer
-    /// Stops a transfer; finished files stay at the destination.
-    func transferCancel(transferID: String) async throws -> Transfer
+    func transferResume(transferID: String) async throws -> TransferDetail
+    /// Stops a transfer; finished files stay at the destination. A move that removes its source
+    /// refuses with `INVALID_ARGUMENT`.
+    func transferCancel(transferID: String) async throws -> TransferDetail
 }
 
 /// `pty.open`, `stream.attach` with kind `pty`, and the pty jobs of `jobs.*` (local-api.md §3–§5).

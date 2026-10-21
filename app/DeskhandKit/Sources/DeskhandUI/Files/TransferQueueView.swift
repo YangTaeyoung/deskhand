@@ -228,7 +228,7 @@ struct TransferRow: View {
                         .font(DS.Font.caption)
                         .foregroundStyle(DS.Status.dangerText)
                 }
-                if transfer.files.count > 1 || hasFileDetail { filesSection }
+                if transfer.filesTotal > 1 { filesSection }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             actions(row)
@@ -238,13 +238,6 @@ struct TransferRow: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .contain)
         .accessibilityLabel(row.accessibilitySummary)
-    }
-
-    /// A single-file transfer whose file has its own error message.
-    private var hasFileDetail: Bool {
-        guard let file = transfer.files.first, transfer.files.count == 1,
-              let message = TransferFilePresentation(file).errorMessage else { return false }
-        return row.explanation?.contains(message) == false
     }
 
     private func titleLine(_ row: TransferPresentation) -> some View {
@@ -293,10 +286,9 @@ struct TransferRow: View {
                     .tint(row.state == .paused ? DS.Color.neutral : DS.Color.accent)
             } else {
                 WorkingBar(tint: row.state == .verifying ? DS.Color.success : DS.Color.accent)
-                    .accessibilityLabel(row.state == .verifying ? String.ui("transfer.a11y.verifying", "SHA-256 확인 중")
-                                                                : String.ui("transfer.a11y.working", "진행 중"))
+                    .accessibilityLabel(row.state == .verifying ? verifyingText(row) : String.ui("transfer.a11y.working", "진행 중"))
             }
-            Text((row.state == .verifying ? [String.ui("transfer.verifyingDetail", "SHA-256 확인 중"), row.bytesText, row.filesText]
+            Text((row.state == .verifying ? [verifyingText(row), row.bytesText, row.filesText]
                   : [row.progress.map(DS.Format.percent), row.bytesText, row.rateText, row.etaText, row.filesText])
                 .compactMap { $0 }.joined(separator: " · "))
                 .font(DS.Font.caption.monospacedDigit())
@@ -304,6 +296,11 @@ struct TransferRow: View {
                 .lineLimit(1)
         }
         .accessibilityElement(children: .combine)
+    }
+
+    /// `원본 정리 중` for a move removing its source, `SHA-256 확인 중` otherwise.
+    private func verifyingText(_ row: TransferPresentation) -> String {
+        row.direction.isMove ? .ui("transfer.removingDetail", "원본 정리 중") : .ui("transfer.verifyingDetail", "SHA-256 확인 중")
     }
 
     private func explanationLine(_ text: String, row: TransferPresentation) -> some View {
@@ -324,11 +321,7 @@ struct TransferRow: View {
     @ViewBuilder
     private var filesSection: some View {
         Button {
-            if isExpanded {
-                queue.expanded.remove(transfer.transferID)
-            } else {
-                queue.expanded.insert(transfer.transferID)
-            }
+            queue.toggleFiles(transfer.transferID)
         } label: {
             HStack(spacing: DS.Space.xs) {
                 Image(systemName: "chevron.right")
@@ -344,34 +337,60 @@ struct TransferRow: View {
         .accessibilityLabel(filesTitle)
         .accessibilityValue(isExpanded ? String.ui("a11y.expanded", "펼침") : String.ui("a11y.collapsed", "접힘"))
         if isExpanded {
-            LazyVStack(spacing: 0) {
-                ForEach(Array(orderedFiles.enumerated()), id: \.offset) { _, file in
-                    TransferFileRow(file: file)
+            Group {
+                if let files = queue.files[transfer.transferID] {
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(Self.ordered(files).enumerated()), id: \.offset) { _, file in
+                            TransferFileRow(file: file)
+                        }
+                    }
+                } else if let error = queue.fileErrors[transfer.transferID], !queue.loadingFiles.contains(transfer.transferID) {
+                    HStack(alignment: .firstTextBaseline, spacing: DS.Space.s) {
+                        Label(String.sentences(String.ui("transfer.files.failed", "파일 목록을 읽지 못했습니다"), error.message),
+                              systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(DS.Status.dangerText)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: DS.Space.s)
+                        Button(String.ui("action.retry", "다시 시도")) {
+                            Task { await queue.loadFiles(transfer.transferID) }
+                        }
+                        .buttonStyle(.link)
+                    }
+                    .font(DS.Font.caption)
+                    .padding(DS.Space.s)
+                } else {
+                    HStack(spacing: DS.Space.s) {
+                        ProgressView().controlSize(.small)
+                        Text(String.ui("transfer.files.loading", "파일 목록을 읽는 중…"))
+                            .font(DS.Font.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(DS.Space.s)
                 }
             }
             .padding(.vertical, DS.Space.xs)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(DS.Color.neutral.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
         }
     }
 
     /// Failed files first, then files with another outcome than written, then the rest, each
     /// group in transfer order.
-    private var orderedFiles: [TransferFile] {
+    static func ordered(_ files: [TransferFile]) -> [TransferFile] {
         func rank(_ file: TransferFile) -> Int {
             if file.transferState == .failed || file.transferOutcome == .failed { return 0 }
             if let outcome = file.transferOutcome, outcome != .written { return 1 }
             return 2
         }
-        return transfer.files.enumerated().sorted { a, b in
+        return files.enumerated().sorted { a, b in
             rank(a.element) != rank(b.element) ? rank(a.element) < rank(b.element) : a.offset < b.offset
         }.map(\.element)
     }
 
     private var filesTitle: String {
-        let total = DS.Format.count(transfer.files.count)
-        let failed = transfer.files.filter { $0.transferState == .failed || $0.transferOutcome == .failed }.count
-        if failed > 0 {
-            let bad = DS.Format.count(failed)
+        let total = DS.Format.count(transfer.filesTotal)
+        if transfer.filesFailed > 0 {
+            let bad = DS.Format.count(transfer.filesFailed)
             return .ui("transfer.filesFailed", "파일 \(total)개 · 실패 \(bad)개")
         }
         return .ui("transfer.filesAll", "파일 \(total)개")
@@ -476,12 +495,6 @@ private struct TransferFileRow: View {
                     .foregroundStyle(.secondary)
                     .frame(minWidth: 64, alignment: .trailing)
                     .fixedSize()
-                if row.state == .running, let progress = row.progress {
-                    ProgressView(value: progress)
-                        .progressViewStyle(.linear)
-                        .frame(width: 56)
-                        .tint(DS.Color.accent)
-                }
                 Text(row.title)
                     .font(DS.Font.caption.weight(.semibold))
                     .foregroundStyle(row.tone.textColor)

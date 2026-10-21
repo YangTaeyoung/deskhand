@@ -19,8 +19,10 @@ enum FilesScenes {
         var remotePhase: FileBrowser.Phase = .loaded
         var remoteBack: [String] = []
         var active: FileSide = .remote
-        var transfers: [Transfer] = []
+        var transfers: [TransferDetail] = []
         var expanded: Set<String> = []
+        /// Refused pause, resume or cancel calls by transfer ID.
+        var actionErrors: [String: OperationError] = [:]
         var queueExpanded = false
         var queueHeight: Double = 232
         var hidden: [FileSide: Set<FileColumn>] = [:]
@@ -55,7 +57,7 @@ enum FilesScenes {
         model.remote.seed(path: files.remotePath, items: remoteItems,
                           selection: Set(files.remoteSelection.map { files.remotePath + "\\" + $0 }),
                           phase: files.remotePhase, backStack: files.remoteBack)
-        model.transfers.seed(files.transfers, expanded: files.expanded)
+        model.transfers.seed(files.transfers, expanded: files.expanded, actionErrors: files.actionErrors)
         model.activeSide = files.active
         model.dismissError(.local)
         model.dismissError(.remote)
@@ -101,6 +103,9 @@ enum FilesScenes {
                 remoteBack: [home + "\\Documents"])),
             scene("files-transfers", Setup(selected: dev, tab: .files, inspector: nil), Files(
                 transfers: [fixtures[0], PreviewFixtures.verifyingTransfer()] + fixtures.dropFirst(),
+                actionErrors: ["t-preview-verifying": TransferActionFailure.explained(
+                    OperationError(code: "INVALID_ARGUMENT", message: "전송 t-preview-verifying는 받은 쪽 검증을 마치고 원본 정리 중이라 취소할 수 없습니다. 정리가 끝날 때까지 기다리세요"),
+                    action: .cancel)],
                 queueExpanded: true, queueHeight: 600)),
             scene("files-transfer-files", Setup(selected: dev, tab: .files, inspector: nil), Files(
                 transfers: fixtures.filter { $0.transferID == "t-preview-partial" } + fixtures.filter { $0.transferID != "t-preview-partial" },

@@ -63,7 +63,7 @@ enum DiagnosticsScenes {
         var eventsPhase: LoadPhase = .loaded
         var crashesPhase: LoadPhase = .loaded
         var systemRefreshError: OperationError?
-        var transfers: [Transfer] = []
+        var transfers: [TransferDetail] = []
         var logFile: String?
     }
 
@@ -104,7 +104,7 @@ enum DiagnosticsScenes {
     }
 
     /// Pulls of the crash dump fixtures: Shop.exe received, the dotnet full dump arriving.
-    static func dumpTransfers() -> [Transfer] {
+    static func dumpTransfers() -> [TransferDetail] {
         let folder = FilesPreferences.defaultDownloadFolder
         let dumps = PreviewFixtures.crashDumps(hostID: dev, user: "taeyoung")
         let shop = dumps[0]
@@ -112,14 +112,15 @@ enum DiagnosticsScenes {
         func name(_ dump: CrashDump) -> String { FilePath.lastComponent(dump.path, style: .windows) }
         let done = Int(Double(dotnet.sizeBytes) * 0.38)
         return [
-            Transfer(transferID: "t-dump-dotnet", hostID: dev, direction: "pull", local: folder + "/" + name(dotnet), remote: dotnet.path,
-                     onConflict: "rename", state: "running", bytesDone: done, bytesTotal: dotnet.sizeBytes, filesDone: 0, filesTotal: 1,
-                     rateBps: 29_360_128,
-                     files: [TransferFile(rel: name(dotnet), size: dotnet.sizeBytes, bytesDone: done, state: "running")]),
-            Transfer(transferID: "t-dump-shop", hostID: dev, direction: "pull", local: folder + "/" + name(shop), remote: shop.path,
-                     onConflict: "rename", state: "done", bytesDone: shop.sizeBytes, bytesTotal: shop.sizeBytes, filesDone: 1, filesTotal: 1,
-                     rateBps: 0, outcome: "written",
-                     files: [TransferFile(rel: name(shop), size: shop.sizeBytes, bytesDone: shop.sizeBytes, state: "done", outcome: "written")]),
+            TransferDetail(Transfer(transferID: "t-dump-dotnet", hostID: dev, direction: "pull", local: folder + "/" + name(dotnet),
+                                    remote: dotnet.path, onConflict: "rename", state: "running", bytesDone: done, bytesTotal: dotnet.sizeBytes,
+                                    filesDone: 0, filesTotal: 1, rateBps: 29_360_128),
+                           files: [TransferFile(rel: name(dotnet), size: dotnet.sizeBytes, bytesDone: done, state: "running")]),
+            TransferDetail(Transfer(transferID: "t-dump-shop", hostID: dev, direction: "pull", local: folder + "/" + name(shop), remote: shop.path,
+                                    onConflict: "rename", state: "done", bytesDone: shop.sizeBytes, bytesTotal: shop.sizeBytes, filesDone: 1,
+                                    filesTotal: 1, rateBps: 0, outcome: "written"),
+                           files: [TransferFile(rel: name(shop), size: shop.sizeBytes, bytesDone: shop.sizeBytes, state: "done", outcome: "written",
+                                                path: folder + "/" + name(shop))]),
         ]
     }
 

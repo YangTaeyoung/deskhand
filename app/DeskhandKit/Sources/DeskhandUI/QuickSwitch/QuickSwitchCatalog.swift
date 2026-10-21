@@ -178,7 +178,7 @@ extension AppStore {
             selectedHostID = hostID
             layout.tab = .files
             filesPreferences.queueExpanded = true
-            if let host = host(hostID) { files(for: host).transfers.expanded.insert(transferID) }
+            if let host = host(hostID) { files(for: host).transfers.expand(transferID) }
         case .showDebugSession(let hostID, let debugID):
             selectedHostID = hostID
             layout.tab = .debugger

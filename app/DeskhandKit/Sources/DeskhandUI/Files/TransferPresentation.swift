@@ -145,8 +145,6 @@ public struct TransferPresentation: Sendable, Equatable {
         return .ui("transfer.eta", "\(text) 남음")
     }
 
-    private var failedFiles: Int { transfer.files.filter { $0.transferState == .failed || $0.transferOutcome == .failed }.count }
-
     /// Short state or outcome: `보내는 중`, `복사됨 · 원본 남음`, `일부 완료`.
     public var headline: String {
         switch state {
@@ -155,7 +153,8 @@ public struct TransferPresentation: Sendable, Equatable {
             if direction.isMove { return .ui("transfer.state.moving", "옮기는 중") }
             return direction.isUpload ? .ui("transfer.state.sending", "보내는 중") : .ui("transfer.state.receiving", "받는 중")
         case .paused: return .ui("transfer.state.paused", "일시정지됨")
-        case .verifying: return .ui("transfer.state.verifying", "확인 중")
+        case .verifying:
+            return direction.isMove ? .ui("transfer.state.removingSource", "원본 정리 중") : .ui("transfer.state.verifying", "확인 중")
         case .cancelled: return .ui("transfer.state.cancelled", "취소됨")
         case .failed: return outcome == .partial ? Self.outcomeTitle(.partial) : .ui("transfer.state.failed", "실패")
         case .done: return outcome.map(Self.outcomeTitle) ?? Self.outcomeTitle(.written)
@@ -198,7 +197,10 @@ public struct TransferPresentation: Sendable, Equatable {
             }
             return nil
         case .verifying:
-            return .ui("transfer.explain.verifying", "대상에 쓴 파일의 SHA-256을 원본과 비교하고 있습니다.")
+            guard direction.isMove else { return .ui("transfer.explain.verifying", "대상에 쓴 파일의 SHA-256을 원본과 비교하고 있습니다.") }
+            return direction == .movePull
+                ? .ui("transfer.explain.removingPull", "받은 파일을 모두 확인했습니다. \(side)의 원본을 휴지통으로 옮기는 중이라 일시정지하거나 취소할 수 없습니다.")
+                : .ui("transfer.explain.removingPush", "보낸 파일을 모두 확인했습니다. \(side)의 원본을 지우는 중이라 일시정지하거나 취소할 수 없습니다.")
         case .paused:
             let resume = direction.isUpload
                 ? String.ui("transfer.explain.resumeUp", "재개하면 확인된 부분 다음부터 이어서 보냅니다.")
@@ -245,16 +247,15 @@ public struct TransferPresentation: Sendable, Equatable {
         return message
     }
 
-    /// How to resolve the transfer's error, chosen by its code; for a partial transfer, by the
-    /// code of its first failed file.
+    /// How to resolve the transfer's error, chosen by its code; a partial transfer's error is
+    /// the error of its first failed file.
     public var fix: String? {
         guard state == .failed || state == .paused || outcome == .failed || outcome == .partial else { return nil }
-        let error = transfer.error ?? transfer.files.first { $0.transferState == .failed || $0.transferOutcome == .failed }?.error
-        return error.map { OperationError($0).fix } ?? nil
+        return transfer.error.map { OperationError($0).fix } ?? nil
     }
 
     private var partialExplanation: String {
-        let failed = max(failedFiles, transfer.filesTotal - transfer.filesDone)
+        let failed = max(transfer.filesFailed, transfer.filesTotal - transfer.filesDone)
         let total = DS.Format.count(transfer.filesTotal)
         let ok = DS.Format.count(max(0, transfer.filesTotal - failed))
         let bad = DS.Format.count(failed)
@@ -268,7 +269,7 @@ public struct TransferPresentation: Sendable, Equatable {
     public var actions: [TransferAction] {
         switch state {
         case .queued, .running: return [.pause, .cancel]
-        case .verifying: return [.cancel]
+        case .verifying: return direction.isMove ? [] : [.cancel]
         case .paused: return [.resume, .cancel]
         case .failed: return outcome == .partial ? [.retry, .showDestination, .dismiss] : [.retry, .dismiss]
         case .cancelled: return [.resume, .dismiss]
@@ -299,16 +300,10 @@ public struct TransferFilePresentation: Sendable, Equatable {
 
     public var state: TransferState { file.transferState }
 
-    public var progress: Double? {
-        guard file.size > 0 else { return nil }
-        return min(1, Double(file.bytesDone) / Double(file.size))
-    }
-
     public var title: String {
         switch state {
         case .queued: return .ui("transferFile.queued", "대기")
-        case .running:
-            return DS.Format.percent(progress ?? 0)
+        case .running: return .ui("transferFile.running", "전송 중")
         case .paused: return .ui("transferFile.paused", "일시정지")
         case .verifying: return .ui("transferFile.verifying", "확인 중")
         case .cancelled: return .ui("transferFile.cancelled", "취소됨")

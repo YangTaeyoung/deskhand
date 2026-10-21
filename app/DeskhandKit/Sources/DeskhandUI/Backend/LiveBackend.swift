@@ -284,8 +284,9 @@ private struct AppLaunchResult: Decodable {
     let pid: Int?
 }
 
+/// `transfer_id` of `transfer.start` alongside the envelope; null when the transfer did not start.
 private struct TransferStartResult: Decodable {
-    let transferID: String
+    let transferID: String?
 
     private enum CodingKeys: String, CodingKey {
         case transferID = "transferId"
@@ -332,14 +333,15 @@ extension LiveBackend {
         return envelope.payload.pid
     }
 
-    public func transferStart(_ request: TransferRequest) async throws -> String {
-        let value: JSONValue = try await client.call("transfer.start", TransferStartParams(
+    public func transferStart(_ request: TransferRequest) async throws -> TransferStarted {
+        let envelope: Envelope<TransferStartResult> = try await client.call("transfer.start", TransferStartParams(
             direction: request.direction.rawValue, hostID: request.hostID, local: request.local,
             remote: request.remote, onConflict: request.onConflict.rawValue))
-        if value["status"] != nil {
-            try Self.check(try Self.decode(Envelope<Empty>.self, from: value))
+        try Self.check(envelope)
+        guard let id = envelope.payload.transferID else {
+            throw OperationError(message: .ui("error.unknown", "알 수 없는 오류가 발생했습니다"), nextAction: envelope.nextAction)
         }
-        return try Self.decode(TransferStartResult.self, from: value).transferID
+        return TransferStarted(transferID: id, jobID: envelope.jobID)
     }
 
     public func transferList(hostID: String) async throws -> [Transfer] {
@@ -347,30 +349,20 @@ extension LiveBackend {
         return result.transfers
     }
 
-    public func transferGet(transferID: String) async throws -> Transfer {
+    public func transferGet(transferID: String) async throws -> TransferDetail {
         try await client.call("transfer.get", TransferIDParams(transferID: transferID))
     }
 
-    public func transferPause(transferID: String) async throws -> Transfer {
-        try await transferChange("transfer.pause", transferID: transferID)
+    public func transferPause(transferID: String) async throws -> TransferDetail {
+        try await client.call("transfer.pause", TransferIDParams(transferID: transferID))
     }
 
-    public func transferResume(transferID: String) async throws -> Transfer {
-        try await transferChange("transfer.resume", transferID: transferID)
+    public func transferResume(transferID: String) async throws -> TransferDetail {
+        try await client.call("transfer.resume", TransferIDParams(transferID: transferID))
     }
 
-    public func transferCancel(transferID: String) async throws -> Transfer {
-        try await transferChange("transfer.cancel", transferID: transferID)
-    }
-
-    /// Calls a transfer method and returns the transfer from its result, or from `transfer.get`
-    /// when the result does not carry it.
-    private func transferChange(_ method: String, transferID: String) async throws -> Transfer {
-        let value: JSONValue = try await client.call(method, TransferIDParams(transferID: transferID))
-        if value["status"] != nil { try Self.check(try Self.decode(Envelope<Empty>.self, from: value)) }
-        if let transfer = try? Self.decode(Transfer.self, from: value) { return transfer }
-        if let nested = value["transfer"], let transfer = try? Self.decode(Transfer.self, from: nested) { return transfer }
-        return try await transferGet(transferID: transferID)
+    public func transferCancel(transferID: String) async throws -> TransferDetail {
+        try await client.call("transfer.cancel", TransferIDParams(transferID: transferID))
     }
 
     /// Calls a method whose result is an envelope and throws its error unless it succeeded.

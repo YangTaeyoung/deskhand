@@ -319,9 +319,9 @@ public final class FilesModel {
             remote: direction.isUpload ? candidate.destination : candidate.source,
             onConflict: policy)
         do {
-            let id = try await backend.transferStart(request)
+            let started = try await backend.transferStart(request)
             preferences.queueExpanded = true
-            await transfers.track(id)
+            await transfers.track(started.transferID)
         } catch {
             let name = candidate.name
             show(.error, .ui("files.error.transferStart", "‘\(name)’ 전송을 시작하지 못했습니다"), error: OperationError(error),

@@ -14,8 +14,8 @@ extension FilesModel {
         let name = FilePath.lastComponent(remotePath, style: remote.style)
         let request = TransferRequest(hostID: hostID, direction: .pull, local: FilePath.join(folder, name, style: .posix),
                                       remote: remotePath, onConflict: .rename)
-        let id = try await backend.transferStart(request)
-        await transfers.track(id)
-        return id
+        let started = try await backend.transferStart(request)
+        await transfers.track(started.transferID)
+        return started.transferID
     }
 }

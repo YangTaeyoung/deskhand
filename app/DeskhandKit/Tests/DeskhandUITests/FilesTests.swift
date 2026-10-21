@@ -333,12 +333,12 @@ final class FilesTests: XCTestCase {
 
     func testPartialTransferExplainsFailures() throws {
         let partial = try XCTUnwrap(PreviewFixtures.transfers().first { $0.transferID == "t-preview-partial" })
-        let row = TransferPresentation(partial, hostName: "개발 PC")
+        let row = TransferPresentation(partial.transfer, hostName: "개발 PC")
         XCTAssertEqual(row.headline, "일부 완료")
         XCTAssertEqual(row.tone, .warning)
-        XCTAssertEqual(row.explanation, "24개 중 22개를 보냈고 2개는 실패했습니다. 실패한 파일은 아래 목록에 이유가 있습니다.")
+        XCTAssertEqual(row.explanation, "26개 중 22개를 보냈고 4개는 실패했습니다. 실패한 파일은 아래 목록에 이유가 있습니다.")
         let running = try XCTUnwrap(PreviewFixtures.transfers().first { $0.transferID == "t-preview-running" })
-        let progress = TransferPresentation(running, hostName: "개발 PC")
+        let progress = TransferPresentation(running.transfer, hostName: "개발 PC")
         XCTAssertEqual(progress.route, "이 Mac → 개발 PC")
         XCTAssertNotNil(progress.rateText)
         XCTAssertEqual(progress.etaText?.hasSuffix("남음"), true)
@@ -497,7 +497,7 @@ final class FilesTests: XCTestCase {
         var revs: [Int] = []
         let events = base.events(kinds: [EventKind.transferUpdated], hostID: dev)
         let id = try await base.transferStart(TransferRequest(hostID: dev, direction: .push, local: url.path,
-                                                              remote: downloads + "\\rev.bin", onConflict: .fail))
+                                                              remote: downloads + "\\rev.bin", onConflict: .fail)).transferID
         for try await event in events {
             guard let value = event.payload["transfer"], let t = try? LiveBackend.decode(Transfer.self, from: value),
                   t.transferID == id else { continue }
@@ -507,9 +507,13 @@ final class FilesTests: XCTestCase {
         XCTAssertGreaterThan(revs.count, 2)
         XCTAssertEqual(revs, revs.sorted())
         XCTAssertEqual(Set(revs).count, revs.count)
-        let paused = try await base.transferPause(transferID: id)
+        do {
+            _ = try await base.transferPause(transferID: id)
+            XCTFail("pausing a finished transfer is refused")
+        } catch {
+            XCTAssertEqual(OperationError(error).code, "INVALID_ARGUMENT")
+        }
         let stored = try await base.transferGet(transferID: id)
-        XCTAssertEqual(paused.rev, stored.rev)
         XCTAssertEqual(stored.rev, revs.last)
     }
 
@@ -531,7 +535,7 @@ final class FilesTests: XCTestCase {
         XCTAssertEqual(row.fix, OperationError(code: "DISK_FULL", message: "").fix)
         XCTAssertNotNil(row.fix)
         let partial = try XCTUnwrap(PreviewFixtures.transfers().first { $0.transferID == "t-preview-partial" })
-        XCTAssertEqual(TransferPresentation(partial, hostName: "개발 PC").fix, OperationError(code: "PERMISSION_DENIED", message: "").fix)
+        XCTAssertEqual(TransferPresentation(partial.transfer, hostName: "개발 PC").fix, OperationError(code: "PERMISSION_DENIED", message: "").fix)
     }
 
     func testLaunchReportsProgressAndInlineError() async throws {

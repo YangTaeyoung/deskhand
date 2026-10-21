@@ -458,7 +458,7 @@ public final class LogsModel {
     /// Opens a downloaded file with its default app on this Mac, or shows it as `reveal` does
     /// when it is not on the disk.
     public func open(_ transfer: Transfer) {
-        let path = Self.savedPath(of: transfer)
+        let path = savedPath(of: transfer)
         if FileManager.default.fileExists(atPath: path) {
             NSWorkspace.shared.open(URL(fileURLWithPath: path))
         } else {
@@ -472,17 +472,17 @@ public final class LogsModel {
         store.files(for: host).transfers.perform(action, on: transfer.transferID)
     }
 
-    /// Where a finished pull wrote its file: the requested path, or the free name it chose.
-    public static func savedPath(of transfer: Transfer) -> String {
-        guard transfer.transferOutcome == .renamed, transfer.files.count == 1, let rel = transfer.files.first?.rel,
-              let folder = FilePath.parent(transfer.local, style: .posix) else { return transfer.local }
-        return FilePath.join(folder, rel, style: .posix)
+    /// Where a finished pull wrote its file: the path the daemon reported once the queue read the
+    /// transfer's file (a free name after a rename), else the requested path.
+    public func savedPath(of transfer: Transfer) -> String {
+        guard let store, let host = store.host(hostID) else { return transfer.local }
+        return store.files(for: host).transfers.writtenPath(of: transfer)
     }
 
     /// Shows a downloaded file in Finder, or for a file the preview keeps in memory, in the local
     /// pane of the files tab.
     public func reveal(_ transfer: Transfer) {
-        let path = Self.savedPath(of: transfer)
+        let path = savedPath(of: transfer)
         if FileManager.default.fileExists(atPath: path) {
             NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
             return

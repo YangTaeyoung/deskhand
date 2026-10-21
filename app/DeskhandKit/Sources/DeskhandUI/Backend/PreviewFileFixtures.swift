@@ -208,9 +208,9 @@ extension PreviewFixtures {
 
     // MARK: Transfers
 
-    /// Transfers of the development PC in every state: running, paused, verifying, a move that
-    /// kept its source, a partial success, a failure and a finished push.
-    public static func transfers(hostID: String = devPCID, user: String = "taeyoung", localHome: String = "/Users/taeyoung") -> [Transfer] {
+    /// Transfers of the development PC in every state: running, paused, a move that kept its
+    /// source, a partial success with names Windows cannot hold, a failure and a finished push.
+    public static func transfers(hostID: String = devPCID, user: String = "taeyoung", localHome: String = "/Users/taeyoung") -> [TransferDetail] {
         let downloads = remoteHome(user: user) + "\\Downloads"
         func files(_ count: Int, prefix: String, size: Int, done: Int, ext: String = "png") -> [TransferFile] {
             (1...count).map { n in
@@ -220,60 +220,70 @@ extension PreviewFixtures {
                                     sha256: finished ? String(format: "%08lx9c1f07d24ab2e8f1", n * 2_654_435) : nil)
             }
         }
+        let qaFolder = localHome + "/Desktop/QA 캡처 10월"
         var partialFiles = files(24, prefix: "QA 캡처", size: 1_480_000, done: 24)
         partialFiles[6].outcome = "renamed"
-        partialFiles[6].rel = "QA 캡처-07 (2).png"
+        partialFiles[6].rel = "QA 캡처-07 (1).png"
         partialFiles[11].outcome = "skipped"
         partialFiles[11].sha256 = nil
-        partialFiles[17] = TransferFile(rel: "QA 캡처-18.png", size: 1_480_000, bytesDone: 0, state: "failed", outcome: "failed",
+        partialFiles[17] = TransferFile(rel: "QA 캡처-18.png", size: 1_480_000, bytesDone: 0, state: "failed",
                                         error: EnvelopeError(code: "PERMISSION_DENIED", message: "액세스가 거부되었습니다. 대상 폴더에 쓰기 권한이 없습니다"))
         partialFiles[22] = TransferFile(rel: "원본/2026년 10월 결제 승인 실패 재현 화면 녹화 원본 — 편집 전 (개인정보 가림 처리 안 됨).mov", size: 1_480_000,
-                                        bytesDone: 0, state: "failed", outcome: "failed",
+                                        bytesDone: 0, state: "failed",
                                         error: EnvelopeError(code: "INVALID_ARGUMENT", message: "대상 경로가 Windows 경로 길이 한도를 넘습니다. 폴더 이름을 줄이세요"))
+        partialFiles.append(TransferFile(rel: "QA 캡처-03.PNG", size: 1_480_000, bytesDone: 0, state: "failed", error: EnvelopeError(
+            code: "TRANSFER_CONFLICT",
+            message: "\(qaFolder)/QA 캡처-03.PNG는 \(qaFolder)/QA 캡처-03.png와 대소문자만 다른 이름이라 대상에서 같은 이름이 되므로 옮기지 않았습니다. 둘 중 하나의 이름을 바꾼 뒤 다시 옮기세요")))
+        partialFiles.append(TransferFile(rel: "aux.png", size: 1_480_000, bytesDone: 0, state: "failed", error: EnvelopeError(
+            code: "INVALID_ARGUMENT", message: "\(qaFolder)/aux.png의 이름 'aux.png'는 Windows가 장치 이름으로 쓰는 이름이라 옮기지 않았습니다. 이름을 바꾼 뒤 다시 옮기세요")))
+        let partialError = EnvelopeError(code: "PERMISSION_DENIED",
+                                         message: "4개 항목을 옮기지 못했습니다. 첫 항목 QA 캡처-18.png: 액세스가 거부되었습니다. 대상 폴더에 쓰기 권한이 없습니다")
         let pausedFiles = files(7, prefix: "Shop.exe", size: 54_000_000, done: 3, ext: "dmp")
         return [
-            Transfer(transferID: "t-preview-running", hostID: hostID, direction: "push",
-                     local: localHome + "/Builds/Shop-1188/Shop-Setup-1188-x64.msi",
-                     remote: downloads + "\\Shop-Setup-1188-x64.msi", onConflict: "fail", state: "running",
-                     bytesDone: 457_324_953, bytesTotal: 1_203_486_720, filesDone: 0, filesTotal: 1, rateBps: 46_137_344,
-                     files: [TransferFile(rel: "Shop-Setup-1188-x64.msi", size: 1_203_486_720, bytesDone: 457_324_953, state: "running")]),
-            Transfer(transferID: "t-preview-paused", hostID: hostID, direction: "pull",
-                     local: localHome + "/Downloads/CrashDumps", remote: "C:\\ProgramData\\Shop\\CrashDumps", onConflict: "fail",
-                     state: "paused", bytesDone: 162_000_000, bytesTotal: 378_000_000, filesDone: 3, filesTotal: 7, rateBps: 0,
-                     error: EnvelopeError(code: "OFFLINE", message: "연결이 끊겨 멈췄습니다."), files: pausedFiles),
-            Transfer(transferID: "t-preview-retained", hostID: hostID, direction: "move_pull",
-                     local: localHome + "/Downloads/shop-2026-10-19.log", remote: "C:\\Shop\\logs\\shop-2026-10-19.log",
-                     onConflict: "fail", state: "done", bytesDone: 14_220_118, bytesTotal: 14_220_118, filesDone: 1, filesTotal: 1,
-                     rateBps: 0, outcome: "copied_source_retained",
-                     error: EnvelopeError(code: "PERMISSION_DENIED", message: "Shop.exe가 이 파일을 열어 두고 있어 원격 PC의 원본을 지우지 못했습니다."),
-                     files: [TransferFile(rel: "shop-2026-10-19.log", size: 14_220_118, bytesDone: 14_220_118, state: "done",
-                                          outcome: "copied_source_retained", sha256: "4f9c2b7ee21a90c3",
-                                          error: EnvelopeError(code: "PERMISSION_DENIED", message: "원본 삭제 실패: 다른 프로세스가 파일을 사용 중입니다"))]),
-            Transfer(transferID: "t-preview-partial", hostID: hostID, direction: "push",
-                     local: localHome + "/Desktop/QA 캡처 10월", remote: "C:\\qa\\uploads\\QA 캡처 10월", onConflict: "rename",
-                     state: "done", bytesDone: 32_560_000, bytesTotal: 35_520_000, filesDone: 22, filesTotal: 24, rateBps: 0,
-                     outcome: "partial", files: partialFiles),
-            Transfer(transferID: "t-preview-failed", hostID: hostID, direction: "pull",
-                     local: localHome + "/Downloads/MEMORY.DMP", remote: "C:\\Windows\\MEMORY.DMP", onConflict: "fail",
-                     state: "failed", bytesDone: 0, bytesTotal: 2_147_483_648, filesDone: 0, filesTotal: 1, rateBps: 0,
-                     outcome: "failed", error: EnvelopeError(code: "ELEVATION_REQUIRED", message: "관리자 권한이 필요한 파일입니다."),
-                     files: [TransferFile(rel: "MEMORY.DMP", size: 2_147_483_648, bytesDone: 0, state: "failed", outcome: "failed",
-                                          error: EnvelopeError(code: "ELEVATION_REQUIRED", message: "관리자 권한이 필요한 파일입니다."))]),
-            Transfer(transferID: "t-preview-done", hostID: hostID, direction: "push",
-                     local: localHome + "/Downloads/Deskhand-agent-0.1.0.zip", remote: downloads + "\\Deskhand-agent-0.1.0.zip",
-                     onConflict: "fail", state: "done", bytesDone: 14_221_312, bytesTotal: 14_221_312, filesDone: 1, filesTotal: 1,
-                     rateBps: 0, outcome: "written",
-                     files: [TransferFile(rel: "Deskhand-agent-0.1.0.zip", size: 14_221_312, bytesDone: 14_221_312, state: "done",
-                                          outcome: "written", sha256: "9c1f07d24ab2e8f1")]),
+            TransferDetail(Transfer(transferID: "t-preview-running", hostID: hostID, direction: "push",
+                                    local: localHome + "/Builds/Shop-1188/Shop-Setup-1188-x64.msi",
+                                    remote: downloads + "\\Shop-Setup-1188-x64.msi", onConflict: "fail", state: "running",
+                                    bytesDone: 457_324_953, bytesTotal: 1_203_486_720, filesDone: 0, filesTotal: 1, rateBps: 46_137_344),
+                           files: [TransferFile(rel: "Shop-Setup-1188-x64.msi", size: 1_203_486_720, bytesDone: 457_324_953, state: "running")]),
+            TransferDetail(Transfer(transferID: "t-preview-paused", hostID: hostID, direction: "pull",
+                                    local: localHome + "/Downloads/CrashDumps", remote: "C:\\ProgramData\\Shop\\CrashDumps", onConflict: "fail",
+                                    state: "paused", bytesDone: 162_000_000, bytesTotal: 378_000_000, filesDone: 3, filesTotal: 7, rateBps: 0,
+                                    error: EnvelopeError(code: "OFFLINE", message: "연결이 끊겨 멈췄습니다.")),
+                           files: pausedFiles),
+            TransferDetail(Transfer(transferID: "t-preview-retained", hostID: hostID, direction: "move_pull",
+                                    local: localHome + "/Downloads/shop-2026-10-19.log", remote: "C:\\Shop\\logs\\shop-2026-10-19.log",
+                                    onConflict: "fail", state: "done", bytesDone: 14_220_118, bytesTotal: 14_220_118, filesDone: 1, filesTotal: 1,
+                                    rateBps: 0, outcome: "copied_source_retained",
+                                    error: EnvelopeError(code: "PERMISSION_DENIED", message: "Shop.exe가 이 파일을 열어 두고 있어 원격 PC의 원본을 지우지 못했습니다.")),
+                           files: [TransferFile(rel: "shop-2026-10-19.log", size: 14_220_118, bytesDone: 14_220_118, state: "done",
+                                                outcome: "written", sha256: "4f9c2b7ee21a90c3", path: localHome + "/Downloads/shop-2026-10-19.log")]),
+            TransferDetail(Transfer(transferID: "t-preview-partial", hostID: hostID, direction: "push",
+                                    local: qaFolder, remote: "C:\\qa\\uploads\\QA 캡처 10월", onConflict: "rename",
+                                    state: "failed", bytesDone: 32_560_000, bytesTotal: 38_480_000, filesDone: 22, filesFailed: 4, filesTotal: 26,
+                                    rateBps: 0, outcome: "partial", error: partialError),
+                           files: partialFiles),
+            TransferDetail(Transfer(transferID: "t-preview-failed", hostID: hostID, direction: "pull",
+                                    local: localHome + "/Downloads/MEMORY.DMP", remote: "C:\\Windows\\MEMORY.DMP", onConflict: "fail",
+                                    state: "failed", bytesDone: 0, bytesTotal: 2_147_483_648, filesDone: 0, filesFailed: 1, filesTotal: 1, rateBps: 0,
+                                    outcome: "failed", error: EnvelopeError(code: "ELEVATION_REQUIRED", message: "관리자 권한이 필요한 파일입니다.")),
+                           files: [TransferFile(rel: "MEMORY.DMP", size: 2_147_483_648, bytesDone: 0, state: "failed",
+                                                error: EnvelopeError(code: "ELEVATION_REQUIRED", message: "관리자 권한이 필요한 파일입니다."))]),
+            TransferDetail(Transfer(transferID: "t-preview-done", hostID: hostID, direction: "push",
+                                    local: localHome + "/Downloads/Deskhand-agent-0.1.0.zip", remote: downloads + "\\Deskhand-agent-0.1.0.zip",
+                                    onConflict: "fail", state: "done", bytesDone: 14_221_312, bytesTotal: 14_221_312, filesDone: 1, filesTotal: 1,
+                                    rateBps: 0, outcome: "written"),
+                           files: [TransferFile(rel: "Deskhand-agent-0.1.0.zip", size: 14_221_312, bytesDone: 14_221_312, state: "done",
+                                                outcome: "written", sha256: "9c1f07d24ab2e8f1", path: downloads + "\\Deskhand-agent-0.1.0.zip")]),
         ]
     }
 
-    /// A transfer in its verifying step, for snapshot scenes.
-    public static func verifyingTransfer(hostID: String = devPCID, localHome: String = "/Users/taeyoung") -> Transfer {
-        Transfer(transferID: "t-preview-verifying", hostID: hostID, direction: "move_push",
-                 local: localHome + "/Builds/Shop-1188/Shop-1188-symbols.zip", remote: "C:\\Shop\\symbols\\Shop-1188-symbols.zip",
-                 onConflict: "replace", state: "verifying", bytesDone: 318_767_104, bytesTotal: 318_767_104, filesDone: 0,
-                 filesTotal: 1, rateBps: 0,
-                 files: [TransferFile(rel: "Shop-1188-symbols.zip", size: 318_767_104, bytesDone: 318_767_104, state: "verifying")])
+    /// A move removing its source on this Mac after the PC verified every file, for snapshot scenes.
+    public static func verifyingTransfer(hostID: String = devPCID, localHome: String = "/Users/taeyoung") -> TransferDetail {
+        TransferDetail(Transfer(transferID: "t-preview-verifying", hostID: hostID, direction: "move_push",
+                                local: localHome + "/Builds/Shop-1188/Shop-1188-symbols.zip", remote: "C:\\Shop\\symbols\\Shop-1188-symbols.zip",
+                                onConflict: "replace", state: "verifying", bytesDone: 318_767_104, bytesTotal: 318_767_104, filesDone: 1,
+                                filesTotal: 1, rateBps: 0),
+                       files: [TransferFile(rel: "Shop-1188-symbols.zip", size: 318_767_104, bytesDone: 318_767_104, state: "done",
+                                            outcome: "written", sha256: "6a0e3b91c27d44f8", path: "C:\\Shop\\symbols\\Shop-1188-symbols.zip")])
     }
 }
