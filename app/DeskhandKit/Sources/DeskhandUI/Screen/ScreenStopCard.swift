@@ -3,8 +3,9 @@ import DeskhandMedia
 import SwiftUI
 import struct DeskhandClient.Host
 
-/// What the screen says when frames stop: a symbol, a title, the explanation with the fix, a
-/// command to copy when the fix is one, the actions that apply, and the reason or error code.
+/// What the screen says when frames stop or the stream cannot open: a symbol, a title, the
+/// explanation with the fix, a command to copy when the fix is one, the actions that apply, and
+/// the reason or error code.
 struct ScreenStopNotice: Equatable {
     enum Action: Equatable {
         /// Attaches again; the title says what that means here.
@@ -14,6 +15,8 @@ struct ScreenStopNotice: Equatable {
     }
 
     let symbol: String
+    /// The symbol's color: orange for a stop the PC causes, red for a failure.
+    var symbolTint: Color = DS.Color.warning
     let title: String
     let message: String
     var command: String?
@@ -104,6 +107,22 @@ struct ScreenStopNotice: Equatable {
             codeLabel: .ui("error.codeLabel", "오류 코드"), code: error.code ?? "DISPLAY_UNAVAILABLE")
     }
 
+    /// The notice for an attach that failed with `error`: the daemon's message and the fix as
+    /// sentences, and retry.
+    static func failed(_ error: OperationError) -> ScreenStopNotice {
+        ScreenStopNotice(
+            symbol: "exclamationmark.octagon", symbolTint: DS.Color.danger,
+            title: .ui("screen.failed.title", "화면 스트림을 열지 못했습니다"),
+            message: error.sentences,
+            actions: [.retry(.ui("screen.stop.retry", "다시 시도"))],
+            codeLabel: .ui("error.codeLabel", "오류 코드"), code: error.code ?? "INTERNAL")
+    }
+
+    /// True when the PC's agent cannot stream its screen at all, so trying again cannot help.
+    static func isUnsupported(_ error: OperationError) -> Bool {
+        error.code == "CAPABILITY_UNSUPPORTED"
+    }
+
     private static func otherDisplays(_ host: Host, _ display: Int) -> [Action] {
         host.displays.filter { $0.index != display }.map { .showDisplay(index: $0.index, title: $0.title) }
     }
@@ -126,8 +145,8 @@ struct ScreenStopCard: View {
         VStack(alignment: .leading, spacing: DS.Space.m) {
             HStack(alignment: .top, spacing: DS.Space.m) {
                 Image(systemName: notice.symbol)
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(DS.Color.warning)
+                    .font(.title2.weight(.medium))
+                    .foregroundStyle(notice.symbolTint)
                     .frame(width: Self.symbolWidth)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: DS.Space.xs) {
@@ -151,15 +170,7 @@ struct ScreenStopCard: View {
                         }
                     }
                 }
-                HStack(spacing: DS.Space.xs) {
-                    Text(notice.codeLabel)
-                    Text(notice.code)
-                        .monospaced()
-                        .textSelection(.enabled)
-                }
-                .font(DS.Font.caption)
-                .foregroundStyle(.tertiary)
-                .accessibilityElement(children: .combine)
+                ErrorCodeLine(label: notice.codeLabel, code: notice.code)
             }
             .padding(.leading, Self.symbolWidth + DS.Space.m)
         }

@@ -82,10 +82,13 @@ private struct ProcessesContent: View {
         switch model.phase {
         case .idle, .loading:
             ProcessesSkeleton()
+        case .failed(let error) where error.code == "CAPABILITY_UNSUPPORTED":
+            HostFeatureUnavailableView(host: host, availability: .unavailable(.unsupported, reason: error.message.asSentence),
+                                       feature: .processes)
         case .failed(let error):
             VStack(alignment: .leading, spacing: DS.Space.m) {
                 ErrorBanner(message: String.ui("processes.failed", "프로세스 목록을 불러오지 못했습니다"),
-                            fix: [error.message, error.fix].compactMap { $0 }.joined(separator: "\n"), code: error.code) {
+                            fix: error.sentences, code: error.code) {
                     Task { await model.refresh() }
                 }
             }
@@ -423,7 +426,7 @@ private struct ProcessesStatusBar: View {
                 Text(String.ui("processes.refreshFailed", "새로 고치지 못했습니다 · \(updated) 기준"))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .help(error.detail)
+                    .help(error.sentences)
                 Button(String.ui("action.retry", "다시 시도")) { Task { await model.refresh() } }
                     .buttonStyle(.link)
                     .tint(DS.Color.accent)

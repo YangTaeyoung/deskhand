@@ -240,7 +240,7 @@ public struct RunSheet: View {
         } else if error.code == "NOT_FOUND" {
             ErrorBanner(message: String.ui("qa.sheet.notFound", "시나리오 파일이나 PC를 찾을 수 없습니다"), fix: error.message, code: error.code)
         } else {
-            ErrorBanner(message: String.ui("qa.sheet.failed", "실행을 시작하지 못했습니다"), fix: error.detail, code: error.code)
+            ErrorBanner(message: String.ui("qa.sheet.failed", "실행을 시작하지 못했습니다"), fix: error.sentences, code: error.code)
         }
     }
 
@@ -297,7 +297,7 @@ struct ScenarioProblemBox: View {
                     .foregroundStyle(DS.Status.neutralText)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
-                QAErrorCodeLine(code: "INVALID_ARGUMENT")
+                ErrorCodeLine(code: "INVALID_ARGUMENT")
                 HStack(spacing: DS.Space.s) {
                     if problem.file.hasPrefix("/") {
                         Button(String.ui("qa.problem.edit", "편집기에서 열기")) {

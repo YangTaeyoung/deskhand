@@ -169,6 +169,14 @@ public final class LogsModel {
 
     public private(set) var crashes: [CrashDump] = []
     public private(set) var crashesPhase: LoadPhase = .idle
+
+    /// The first read that failed with `CAPABILITY_UNSUPPORTED`: the PC cannot give diagnostics at all.
+    public var unsupportedError: OperationError? {
+        for phase in [systemPhase, eventsPhase, crashesPhase] {
+            if case .failed(let error) = phase, error.code == "CAPABILITY_UNSUPPORTED" { return error }
+        }
+        return nil
+    }
     /// When `crashes` arrived.
     public private(set) var crashesUpdatedAt: Date?
     /// Downloads whose `transfer.start` is in flight, by remote path.

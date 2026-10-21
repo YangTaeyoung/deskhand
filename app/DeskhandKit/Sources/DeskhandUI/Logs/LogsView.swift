@@ -72,7 +72,10 @@ private struct LogsContent: View {
         @Bindable var layout = store.layout
         let showsSummary = layout.showsLogSummary
         VStack(spacing: 0) {
-            if availability == .ready {
+            if let unsupported = model.unsupportedError {
+                HostFeatureUnavailableView(host: host, availability: .unavailable(.unsupported, reason: unsupported.message.asSentence),
+                                           feature: .diagnostics)
+            } else if availability == .ready {
                 if let selection = store.logSelection, selection.hostID == host.hostID {
                     LogFileStrip(model: model, path: selection.path) { store.logSelection = nil }
                 }

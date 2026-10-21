@@ -585,7 +585,7 @@ private struct EventStatusBar: View {
                 Text(String.ui("logs.more.failed", "이전 이벤트를 불러오지 못했습니다"))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .help(error.detail)
+                    .help(error.sentences)
                 Button(String.ui("action.retry", "다시 시도")) { Task { await model.loadMoreEvents() } }
                     .buttonStyle(.link)
                     .tint(DS.Color.accent)

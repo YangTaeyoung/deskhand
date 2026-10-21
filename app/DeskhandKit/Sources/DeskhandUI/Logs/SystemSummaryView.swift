@@ -53,7 +53,7 @@ private struct SummaryHeader: View {
                         .accessibilityHidden(true)
                     Text(String.ui("logs.summary.stale", "새로 고치지 못했습니다 · \(time) 기준"))
                         .foregroundStyle(.secondary)
-                        .help(error.detail)
+                        .help(error.sentences)
                 } else {
                     Text(String.ui("logs.updated", "\(time) 기준"))
                         .foregroundStyle(.secondary)
@@ -82,7 +82,7 @@ private struct SummaryErrorStrip: View {
                     .font(DS.Font.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
-                    .help(error.detail)
+                    .help(error.sentences)
             }
             Spacer(minLength: DS.Space.s)
             if let code = error.code {

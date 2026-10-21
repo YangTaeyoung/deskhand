@@ -599,14 +599,9 @@ private struct FailureCard: View {
                          ? String.ui("terminal.failed.reattach", "셸에 다시 연결하지 못했습니다")
                          : String.ui("terminal.failed.open", "\(session.shell.title) 셸을 열지 못했습니다"))
                         .font(DS.Font.headline)
-                    Text(error.message)
+                    Text(error.sentences)
                         .font(DS.Font.body)
                         .foregroundStyle(.secondary)
-                    if let fix = error.fix {
-                        Text(fix)
-                            .font(DS.Font.body)
-                            .foregroundStyle(.secondary)
-                    }
                     if let code = error.code {
                         ErrorCodeLine(code: code)
                             .padding(.top, DS.Space.xs)
@@ -628,7 +623,7 @@ private struct FailureCard: View {
                     Button(String.ui("terminal.failed.openPowerShell", "PowerShell 열기"), action: openPowerShell)
                         .buttonStyle(.borderedProminent)
                         .disabled(!hostConnected)
-                } else {
+                } else if error.code != "CAPABILITY_UNSUPPORTED" {
                     Button(String.ui("action.retry", "다시 시도"), action: retry)
                         .buttonStyle(.borderedProminent)
                         .disabled(!hostConnected)

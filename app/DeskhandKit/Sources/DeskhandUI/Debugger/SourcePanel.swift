@@ -133,10 +133,11 @@ struct RetryPanel: View {
 
     var body: some View {
         VStack(spacing: DS.Space.m) {
-            DebugPanePlaceholder(symbol: symbol, title: title,
-                                 message: [error.message.asSentence, error.code.map { String.ui("error.codeInline", "오류 코드 \($0)") }]
-                                    .compactMap { $0 }.joined(separator: "\n"))
+            DebugPanePlaceholder(symbol: symbol, title: title, message: error.sentences)
                 .fixedSize(horizontal: false, vertical: true)
+            if let code = error.code {
+                ErrorCodeLine(code: code)
+            }
             Button(String.ui("action.retry", "다시 시도"), action: retry)
                 .controlSize(.small)
         }

@@ -64,23 +64,27 @@ public struct ErrorBanner: View {
     }
 }
 
-/// Small secondary line `오류 코드 CODE` with a selectable monospaced code.
+/// Small secondary line `오류 코드 CODE` (or another `label`, such as `사유 코드`) with a selectable
+/// monospaced code, in the neutral gray that stays legible on tinted boxes. Every error and stop
+/// notice ends with it.
 public struct ErrorCodeLine: View {
+    public let label: String
     public let code: String
 
-    public init(code: String) {
+    public init(label: String? = nil, code: String) {
+        self.label = label ?? String.ui("error.codeLabel", "오류 코드")
         self.code = code
     }
 
     public var body: some View {
         HStack(spacing: DS.Space.xs) {
-            Text(String.ui("error.codeLabel", "오류 코드"))
+            Text(label)
             Text(code)
                 .monospaced()
                 .textSelection(.enabled)
         }
         .font(DS.Font.caption)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(DS.Status.neutralText)
         .accessibilityElement(children: .combine)
     }
 }

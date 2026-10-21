@@ -628,11 +628,6 @@ public struct OperationError: Error, Sendable, Equatable {
     /// The next action of a call the daemon did not answer in time: restart the daemon.
     public static let restartDaemon = "daemon_restart"
 
-    /// The daemon's message followed by the remedy on its own line when one is known.
-    public var detail: String {
-        [message, fix].compactMap { $0 }.joined(separator: "\n")
-    }
-
     /// The message and the remedy as sentences on one line.
     public var sentences: String {
         String.sentences(message, fix)

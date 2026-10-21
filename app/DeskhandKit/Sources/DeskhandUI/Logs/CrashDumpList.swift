@@ -153,10 +153,10 @@ private struct CrashDumpRow: View {
     }
 
     private func errorText(transfer: Transfer?, startError: OperationError?) -> String? {
-        if let startError { return [startError.message, startError.fix].compactMap { $0 }.joined(separator: " ") }
+        if let startError { return startError.sentences }
         guard let transfer, transfer.transferState == .failed else { return nil }
         let presentation = TransferPresentation(transfer, hostName: "")
-        return [presentation.errorMessage, presentation.fix].compactMap { $0 }.joined(separator: " ")
+        return String.sentences(presentation.errorMessage, presentation.fix)
     }
 }
 

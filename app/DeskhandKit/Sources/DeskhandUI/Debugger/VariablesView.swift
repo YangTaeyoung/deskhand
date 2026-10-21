@@ -156,7 +156,7 @@ private struct VariableRowView: View {
                     .font(DS.Font.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .help(row.error?.detail ?? "")
+                    .help(row.error?.sentences ?? "")
                 Button(String.ui("action.retry", "다시 시도")) { toggle(row) }
                     .buttonStyle(.link)
                     .font(DS.Font.caption)

@@ -397,11 +397,11 @@ struct ControlFailureBar: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text(failure.action.failureTitle)
                     .font(DS.Font.headline)
-                Text(failure.error.detail)
+                Text(failure.error.sentences)
                     .font(DS.Font.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
-                    .help(failure.error.detail)
+                    .help(failure.error.sentences)
                 if let code = failure.error.code {
                     ErrorCodeLine(code: code)
                 }

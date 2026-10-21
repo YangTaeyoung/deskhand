@@ -96,6 +96,12 @@ enum ScreenScenes {
                     host(PreviewFixtures.qaLaptopID), phase: .failed(OperationError(
                         code: "CAPABILITY_UNSUPPORTED", message: "이 에이전트 버전은 화면 스트리밍을 지원하지 않습니다")),
                     hasFrame: false)])),
+            WorkspaceScenes.scene("screen-attach-failed", Setup(
+                selected: PreviewFixtures.qaLaptopID,
+                screens: [PreviewFixtures.qaLaptopID: standIn(
+                    host(PreviewFixtures.qaLaptopID), phase: .failed(OperationError(
+                        code: "INTERNAL", message: "화면 스트림을 준비하지 못했습니다. 데몬 로그를 확인하세요")),
+                    hasFrame: false)])),
             WorkspaceScenes.scene("screen-mac-input", Setup(selected: dev, controls: [dev: human],
                                                             screens: [dev: standIn(host(dev), captured: true, markedText: "한")])),
             WorkspaceScenes.scene("screen-offline", Setup(selected: PreviewFixtures.designID)),

@@ -49,7 +49,7 @@ struct ConnectionSettings: View {
         } else if let error = store.hostsError, !store.hostsLoaded {
             SettingsEmptyState(symbol: "exclamationmark.triangle",
                                title: String.ui("hosts.failed", "PC 목록을 불러오지 못했습니다"),
-                               message: [error.message.asSentence, error.fix].compactMap { $0 }.joined(separator: " "),
+                               message: error.sentences,
                                actionTitle: String.ui("action.retry", "다시 시도")) {
                 Task { await store.reloadHosts() }
             }
@@ -143,7 +143,7 @@ private struct HostConnectionDetail: View {
                     if let error = model.hostErrors[host.hostID] {
                         SettingsNotice(symbol: "exclamationmark.octagon.fill", tint: DS.Color.danger,
                                        title: String.ui("actionError.title", "작업을 완료하지 못했습니다"),
-                                       message: [error.message.asSentence, error.fix].compactMap { $0 }.joined(separator: " ")) {
+                                       message: error.sentences) {
                             HStack(spacing: DS.Space.s) {
                                 if let code = error.code { ErrorCodeLine(code: code) }
                                 Spacer(minLength: 0)

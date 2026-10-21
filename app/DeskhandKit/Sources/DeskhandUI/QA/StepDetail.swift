@@ -224,7 +224,7 @@ struct OutcomeBox<Extra: View>: View {
                 }
                 extra
                 if let code {
-                    QAErrorCodeLine(code: code)
+                    ErrorCodeLine(code: code)
                 }
             }
             .textSelection(.enabled)
@@ -577,23 +577,5 @@ struct EvidenceChip: View {
             .strokeBorder(hovering ? DS.Color.accent : DS.Color.separator, lineWidth: 1))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-    }
-}
-
-/// `오류 코드 CODE` with a selectable monospaced code, in the neutral gray that stays legible on
-/// tinted boxes.
-struct QAErrorCodeLine: View {
-    let code: String
-
-    var body: some View {
-        HStack(spacing: DS.Space.xs) {
-            Text(String.ui("error.codeLabel", "오류 코드"))
-            Text(code)
-                .monospaced()
-                .textSelection(.enabled)
-        }
-        .font(DS.Font.caption)
-        .foregroundStyle(DS.Status.neutralText)
-        .accessibilityElement(children: .combine)
     }
 }

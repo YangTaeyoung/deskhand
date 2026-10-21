@@ -743,7 +743,7 @@ public final class FilesModel {
     /// Shows a toast, or for an error with a pane, an inline message in that pane. A success or
     /// information toast clears the inline errors.
     public func show(_ tone: FilesNotice.Tone, _ message: String, error: OperationError? = nil, side: FileSide? = nil) {
-        let notice = FilesNotice(tone: tone, message: message, detail: error.map(\.detail), code: error?.code, side: side)
+        let notice = FilesNotice(tone: tone, message: message, detail: error.map(\.sentences), code: error?.code, side: side)
         if tone == .error, let side {
             paneErrors[side] = notice
             return

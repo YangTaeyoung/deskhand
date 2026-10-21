@@ -109,7 +109,7 @@ public struct DoctorView: View {
             .accessibilityElement(children: .combine)
         case .failed(let error):
             ErrorBanner(message: String.ui("doctor.failed", "진단을 실행하지 못했습니다"),
-                        fix: [error.message, error.fix].compactMap { $0 }.joined(separator: " "),
+                        fix: error.sentences,
                         code: error.code,
                         retry: { model.run() })
                 .padding(.horizontal, DS.Space.xl)

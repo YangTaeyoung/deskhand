@@ -437,7 +437,7 @@ public final class DebugSessionModel: Identifiable {
 
     func show(_ tone: DiagnosticsNotice.Tone, _ message: String, error: OperationError? = nil) {
         noticeTask?.cancel()
-        let notice = DiagnosticsNotice(tone: tone, message: message, detail: error.map { $0.detail }, code: error?.code)
+        let notice = DiagnosticsNotice(tone: tone, message: message, detail: error.map { $0.sentences }, code: error?.code)
         self.notice = notice
         noticeTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(tone == .success ? 4 : 8))

@@ -557,7 +557,7 @@ private struct FilePaneStatus: View {
                     .accessibilityHidden(true)
                 Text(String.ui("files.page.failed", "나머지를 불러오지 못했습니다"))
                     .lineLimit(1)
-                    .help(error.detail)
+                    .help(error.sentences)
                 Button(String.ui("action.retry", "다시 시도")) { Task { await browser.retryLoadMore() } }
                     .buttonStyle(.link)
             } else if browser.isLoadingMore || browser.isRefreshing {

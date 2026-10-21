@@ -224,9 +224,13 @@ public struct ScreenView: View {
                 if shown.hasFrame { Scrim(rect: rect) }
                 ScreenStopCard(notice: .displayUnavailable(error, host: host, display: display), perform: perform)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .failed(let error) where ScreenStopNotice.isUnsupported(error):
+                StageMessage(symbol: "display.trianglebadge.exclamationmark",
+                             title: String.ui("screen.unsupported.title", "이 PC는 화면 스트리밍을 지원하지 않습니다"),
+                             message: error.sentences)
             case .failed(let error):
                 if shown.hasFrame { Scrim(rect: rect) }
-                StageError(error: error) { session.retry() }
+                ScreenStopCard(notice: .failed(error), perform: perform)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         case .connecting:
@@ -406,7 +410,7 @@ struct ScreenSkeleton: View {
                         .font(DS.Font.caption)
                         .foregroundStyle(DS.Color.warning)
                         .lineLimit(2)
-                        .help(error.detail)
+                        .help(error.sentences)
                 }
             }
             .multilineTextAlignment(.center)
@@ -452,9 +456,7 @@ private struct StageWaiting: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(verbatim: "\(notice.codeLabel) \(notice.code)")
-                .font(DS.Font.caption.monospaced())
-                .foregroundStyle(.tertiary)
+            ErrorCodeLine(label: notice.codeLabel, code: notice.code)
         }
         .padding(.horizontal, DS.Space.l)
         .padding(.vertical, DS.Space.m)
@@ -495,22 +497,6 @@ private struct StageMessage: View {
     var body: some View {
         EmptyStateView(symbol: symbol, title: title, message: message)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-/// A failure the person must act on, with retry.
-private struct StageError: View {
-    let error: OperationError
-    let retry: () -> Void
-
-    var body: some View {
-        VStack(spacing: DS.Space.l) {
-            ErrorBanner(message: String.ui("screen.failed.title", "화면 스트림을 열지 못했습니다"),
-                        fix: [error.message, error.fix].compactMap { $0 }.joined(separator: " "),
-                        code: error.code, retry: retry)
-                .frame(maxWidth: 480)
-        }
-        .padding(DS.Space.xl)
     }
 }
 

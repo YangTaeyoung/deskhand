@@ -79,7 +79,7 @@ struct ComputersSplitView: View {
         ) { _ in
             Button(String.ui("action.ok", "확인"), role: .cancel) {}
         } message: { error in
-            Text([error.message, error.fix].compactMap { $0 }.joined(separator: "\n"))
+            Text(error.sentences)
         }
     }
 
@@ -130,7 +130,7 @@ public struct RootDetailView: View {
         if let error = store.hostsError, !store.hostsLoaded {
             VStack {
                 ErrorBanner(message: String.ui("hosts.failed", "PC 목록을 불러오지 못했습니다"),
-                            fix: [error.message, error.fix].compactMap { $0 }.joined(separator: " "),
+                            fix: error.sentences,
                             code: error.code,
                             retry: { Task { await store.reloadHosts() } })
                     .frame(maxWidth: 560)

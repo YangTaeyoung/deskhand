@@ -462,7 +462,7 @@ public final class QAModel {
                 await refresh(runID)
             } else {
                 cancels[runID] = previous
-                notice = DiagnosticsNotice(tone: .error, message: .ui("qa.cancel.failed", "취소하지 못했습니다"), detail: failure.detail,
+                notice = DiagnosticsNotice(tone: .error, message: .ui("qa.cancel.failed", "취소하지 못했습니다"), detail: failure.sentences,
                                            code: failure.code)
             }
         }

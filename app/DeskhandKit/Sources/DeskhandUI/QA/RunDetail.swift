@@ -428,7 +428,7 @@ private struct NoteStrip<Trailing: View>: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if let code {
-                    QAErrorCodeLine(code: code)
+                    ErrorCodeLine(code: code)
                 }
             }
             .textSelection(.enabled)

@@ -6214,17 +6214,6 @@
         }
       }
     },
-    "error.codeInline": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "오류 코드 %@"
-          }
-        }
-      }
-    },
     "error.codeLabel": {
       "comment": "Label before a daemon error code",
       "extractionState": "manual",

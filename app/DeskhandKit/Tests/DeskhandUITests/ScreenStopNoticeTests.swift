@@ -24,6 +24,17 @@ final class ScreenStopNoticeTests: XCTestCase {
         }
     }
 
+    func testAFailedAttachJoinsTheMessageAndTheFixAsSentencesWithRetry() {
+        let error = OperationError(code: "OFFLINE", message: "개발 PC에 연결되어 있지 않습니다")
+        let notice = ScreenStopNotice.failed(error)
+        XCTAssertEqual(notice.message, "개발 PC에 연결되어 있지 않습니다. PC가 켜져 있고 같은 네트워크나 VPN에 있는지 확인하세요.")
+        XCTAssertEqual(notice.actions, [.retry("다시 시도")])
+        XCTAssertEqual(notice.codeLabel, "오류 코드")
+        XCTAssertEqual(notice.code, "OFFLINE")
+        XCTAssertFalse(ScreenStopNotice.isUnsupported(error))
+        XCTAssertTrue(ScreenStopNotice.isUnsupported(OperationError(code: "CAPABILITY_UNSUPPORTED", message: "화면 스트림은 아직 지원하지 않습니다")))
+    }
+
     func testDisconnectedAndSuppressedSessionsOfferTheConsoleCommand() {
         let session = dev.session!.sessionID
         for reason in [PauseReason.sessionDisconnected, .rdpOutputSuppressed] {
