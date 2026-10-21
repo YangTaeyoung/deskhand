@@ -54,7 +54,7 @@ final class LogsModelTests: XCTestCase {
 
     func testErrorExplanationJoinsTheMessageAndTheFixAsSentences() {
         XCTAssertEqual(LogsModel.explanation(OperationError(code: "TIMEOUT", message: "에이전트가 10초 안에 시스템 정보를 보내지 않았습니다")),
-                       "에이전트가 10초 안에 시스템 정보를 보내지 않았습니다. 컴퓨터가 켜져 있고 같은 네트워크나 VPN에 있는지 확인하세요.")
+                       "에이전트가 10초 안에 시스템 정보를 보내지 않았습니다. PC가 바쁘거나 연결이 느릴 수 있습니다. 잠시 뒤 다시 시도하고, 계속되면 진단을 실행하세요.")
         XCTAssertEqual(LogsModel.explanation(OperationError(message: "응답이 없습니다.")), "응답이 없습니다.")
     }
 

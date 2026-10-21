@@ -45,7 +45,8 @@ public final class ControlActions {
     }
 
     private var pending: [String: PendingTakeover] = [:]
-    private var running: [String: Set<Action>] = [:]
+    /// Per host, the number of calls of each action in flight.
+    private var running: [String: [Action: Int]] = [:]
     /// Per host, newest first, at most one per action.
     private var failures: [String: [Failure]] = [:]
 
@@ -59,7 +60,7 @@ public final class ControlActions {
     // MARK: State
 
     public func isRunning(_ action: Action, on hostID: String) -> Bool {
-        running[hostID]?.contains(action) ?? false
+        (running[hostID]?[action] ?? 0) > 0
     }
 
     /// Failed actions on `hostID`, newest first. Each stays until it is dismissed or the same
@@ -109,7 +110,8 @@ public final class ControlActions {
     }
 
     /// Emergency stop: the human takes control and AI input stays paused until `giveBack(_:)`.
-    /// Runs even while a takeover or give-back is in flight, and on computers that are offline.
+    /// Runs even while a takeover, a give-back or another stop is in flight, and on computers
+    /// that are offline.
     @discardableResult
     public func stop(_ hostID: String) -> Task<Void, Never>? {
         run(.stop, on: hostID) { try await $0.controlStop(hostID: hostID) }
@@ -149,8 +151,8 @@ public final class ControlActions {
         run(.takeOver, on: hostID) { try await $0.controlAcquire(hostID: hostID, as: .human, force: force) }
     }
 
-    /// Starts `call` unless the same action, or the other of take-over and give-back, is in
-    /// flight on `hostID`. Starting clears the earlier failure of the same action only. The
+    /// Starts `call` unless take-over or give-back is in flight on `hostID` and `action` is one of
+    /// them; a stop always starts. Starting clears the earlier failure of the same action only. The
     /// returned control state goes through `AppStore.applyControl`; a failure is kept for
     /// `failures(for:)` and the control state is read again.
     private func run(
@@ -159,20 +161,18 @@ public final class ControlActions {
         _ call: @escaping @Sendable (any Backend) async throws -> ControlState
     ) -> Task<Void, Never>? {
         guard store?.host(hostID) != nil else { return nil }
-        let active = running[hostID] ?? []
-        let exclusive: Set<Action> = action == .stop ? [.stop] : [.takeOver, .giveBack]
-        guard active.isDisjoint(with: exclusive) else { return nil }
-        running[hostID, default: []].insert(action)
+        if action != .stop, isRunning(.takeOver, on: hostID) || isRunning(.giveBack, on: hostID) { return nil }
+        running[hostID, default: [:]][action, default: 0] += 1
         dismissFailure(action, for: hostID)
         let backend = self.backend
         return Task { [weak self] in
             do {
                 let control = try await call(backend)
-                self?.running[hostID]?.remove(action)
+                self?.finished(action, on: hostID)
                 self?.store?.applyControl(control, for: hostID)
             } catch {
                 guard let self else { return }
-                running[hostID]?.remove(action)
+                finished(action, on: hostID)
                 if error is CancellationError { return }
                 if store?.host(hostID) != nil {
                     failures[hostID, default: []].insert(Failure(action: action, error: OperationError(error)), at: 0)
@@ -180,5 +180,10 @@ public final class ControlActions {
                 await store?.loadControl(for: hostID)
             }
         }
+    }
+
+    private func finished(_ action: Action, on hostID: String) {
+        guard let count = running[hostID]?[action] else { return }
+        running[hostID]?[action] = count > 1 ? count - 1 : nil
     }
 }

@@ -69,6 +69,8 @@ public struct MockRequest: @unchecked Sendable {
 public enum MockReply {
     case result(String)
     case error(code: Int, message: String, data: String?)
+    /// The daemon reads the request and never answers it.
+    case noReply
 }
 
 /// In-process unix-socket NDJSON JSON-RPC server used by the client and UI tests.
@@ -216,6 +218,8 @@ public final class MockDaemon: @unchecked Sendable {
 
     private func reply(_ conn: MockConnection, _ id: Int, _ r: MockReply) {
         switch r {
+        case .noReply:
+            return
         case .result(let json):
             conn.send(line: #"{"jsonrpc":"2.0","id":\#(id),"result":\#(json)}"#)
         case .error(let code, let message, let data):

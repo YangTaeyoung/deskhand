@@ -161,7 +161,7 @@ extension LiveBackend {
         try await debugEnvelope("debug.electron.launch", DebugLaunchParams(
             hostID: request.hostID, path: request.path, args: request.args.isEmpty ? nil : request.args, cwd: request.cwd,
             pauseOnStart: request.pauseOnStart ? true : nil, breakpoints: request.breakpoints.isEmpty ? nil : request.breakpoints,
-            pauseOnExceptions: request.pauseOnExceptions?.rawValue), as: SessionResult.self).session
+            pauseOnExceptions: request.pauseOnExceptions?.rawValue), as: SessionResult.self, timeout: CallLimit.debugStart).session
     }
 
     public func debugAttach(_ request: DebugAttachRequest) async throws -> DebugSession {
@@ -176,7 +176,7 @@ extension LiveBackend {
             params = DebugAttachParams(hostID: request.hostID, port: nil, pid: pid, role: nil, breakpoints: breakpoints,
                                        pauseOnExceptions: exceptions)
         }
-        return try await debugEnvelope("debug.attach", params, as: SessionResult.self).session
+        return try await debugEnvelope("debug.attach", params, as: SessionResult.self, timeout: CallLimit.debugStart).session
     }
 
     public func debugTargetAttach(debugID: String, targetID: String) async throws -> DebugTarget {
@@ -238,7 +238,8 @@ extension LiveBackend {
 
     public func debugEvaluate(debugID: String, targetID: String, expression: String, frameID: String?) async throws -> DebugEvaluation {
         try await debugEnvelope("debug.evaluate", EvaluateParams(
-            debugID: debugID, targetID: targetID, expression: expression, frameID: frameID), as: DebugEvaluation.self)
+            debugID: debugID, targetID: targetID, expression: expression, frameID: frameID), as: DebugEvaluation.self,
+            timeout: CallLimit.evaluate)
     }
 
     public func debugScripts(debugID: String, targetID: String?) async throws -> [DebugScript] {
@@ -269,8 +270,9 @@ extension LiveBackend {
 
     /// Calls a method whose result is an envelope, throws its error with the envelope's next action
     /// unless it succeeded, then decodes `T` from the same object.
-    private func debugEnvelope<T: Decodable>(_ method: String, _ params: some Encodable & Sendable, as type: T.Type) async throws -> T {
-        let value: JSONValue = try await client.call(method, params)
+    private func debugEnvelope<T: Decodable>(_ method: String, _ params: some Encodable & Sendable, as type: T.Type,
+                                             timeout: Duration? = nil) async throws -> T {
+        let value: JSONValue = try await client.call(method, params, timeout: timeout)
         if value["status"] != nil {
             let envelope = try Self.decode(Envelope<Empty>.self, from: value)
             do {

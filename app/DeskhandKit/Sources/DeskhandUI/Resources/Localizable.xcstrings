@@ -6271,6 +6271,17 @@
         }
       }
     },
+    "error.daemonTimeout": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "데몬이 제때 답하지 않았습니다"
+          }
+        }
+      }
+    },
     "error.daemonUnavailable": {
       "comment": "Error message: daemon unavailable",
       "extractionState": "manual",
@@ -7688,7 +7699,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "컴퓨터가 켜져 있고 같은 네트워크나 VPN에 있는지 확인하세요."
+            "value": "PC가 켜져 있고 같은 네트워크나 VPN에 있는지 확인하세요."
           }
         }
       }
@@ -7716,6 +7727,17 @@
         }
       }
     },
+    "fix.remoteTimeout": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PC가 바쁘거나 연결이 느릴 수 있습니다. 잠시 뒤 다시 시도하고, 계속되면 진단을 실행하세요."
+          }
+        }
+      }
+    },
     "fix.sessionLocked": {
       "comment": "How to fix the error code: session locked",
       "extractionState": "manual",
@@ -7724,6 +7746,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "원격 컴퓨터에서 로그인하거나 잠금을 해제하세요."
+          }
+        }
+      }
+    },
+    "fix.timeout": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "데몬이 바쁘거나 멈췄을 수 있습니다. 잠시 뒤 다시 시도하고, 계속되면 설정 › 일반에서 데몬을 다시 시작하세요."
           }
         }
       }

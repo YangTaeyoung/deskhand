@@ -26,6 +26,22 @@ public final class LiveBackend: Backend {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
     }
 
+    /// Call limits of methods that wait on long work in the daemon; other calls use the client's limit.
+    enum CallLimit {
+        /// `host.add` and `host.repair`.
+        static let install: Duration = .seconds(600)
+        /// `host.remove` and `host.doctor`.
+        static let ssh: Duration = .seconds(120)
+        /// `files.trash`, `files.delete` and `artifacts.export`.
+        static let bulkFiles: Duration = .seconds(300)
+        /// `diag.events`.
+        static let eventLog: Duration = .seconds(90)
+        /// `debug.electron.launch` and `debug.attach`.
+        static let debugStart: Duration = .seconds(90)
+        /// `debug.evaluate`.
+        static let evaluate: Duration = .seconds(60)
+    }
+
     /// Decodes a result value that `DeskhandClient.call` returned as `JSONValue`.
     static func decode<T: Decodable>(_ type: T.Type, from value: JSONValue) throws -> T {
         let data = try JSONEncoder().encode(value)
@@ -95,16 +111,16 @@ extension LiveBackend {
     }
 
     public func hostAdd(name: String, ssh: String) async throws -> JobReceipt {
-        let envelope: Envelope<Empty> = try await client.call("host.add", HostAddParams(name: name, ssh: ssh))
+        let envelope: Envelope<Empty> = try await client.call("host.add", HostAddParams(name: name, ssh: ssh), timeout: CallLimit.install)
         return JobReceipt(envelope)
     }
 
     public func hostRemove(hostID: String, uninstall: Bool) async throws {
-        let _: Empty = try await client.call("host.remove", HostRemoveParams(hostID: hostID, uninstall: uninstall))
+        let _: Empty = try await client.call("host.remove", HostRemoveParams(hostID: hostID, uninstall: uninstall), timeout: CallLimit.ssh)
     }
 
     public func hostDoctor(hostID: String) async throws -> [DoctorCheck] {
-        let result: DoctorResult = try await client.call("host.doctor", HostIDParams(hostID: hostID))
+        let result: DoctorResult = try await client.call("host.doctor", HostIDParams(hostID: hostID), timeout: CallLimit.ssh)
         return result.checks
     }
 
@@ -117,7 +133,7 @@ extension LiveBackend {
     }
 
     public func hostRepair(hostID: String) async throws -> JobReceipt {
-        let envelope: Envelope<Empty> = try await client.call("host.repair", HostIDParams(hostID: hostID))
+        let envelope: Envelope<Empty> = try await client.call("host.repair", HostIDParams(hostID: hostID), timeout: CallLimit.install)
         return JobReceipt(envelope)
     }
 
@@ -299,11 +315,11 @@ extension LiveBackend {
     }
 
     public func filesTrash(hostID: String, path: String) async throws {
-        try await envelopeCall("files.trash", FilePathParams(hostID: hostID, path: path))
+        try await envelopeCall("files.trash", FilePathParams(hostID: hostID, path: path), timeout: CallLimit.bulkFiles)
     }
 
     public func filesDelete(hostID: String, path: String) async throws {
-        try await envelopeCall("files.delete", FileDeleteParams(hostID: hostID, path: path, permanent: true))
+        try await envelopeCall("files.delete", FileDeleteParams(hostID: hostID, path: path, permanent: true), timeout: CallLimit.bulkFiles)
     }
 
     public func appLaunch(hostID: String, path: String, args: [String]?, cwd: String?) async throws -> Int? {
@@ -355,8 +371,8 @@ extension LiveBackend {
     }
 
     /// Calls a method whose result is an envelope and throws its error unless it succeeded.
-    private func envelopeCall(_ method: String, _ params: some Encodable & Sendable) async throws {
-        let envelope: Envelope<Empty> = try await client.call(method, params)
+    private func envelopeCall(_ method: String, _ params: some Encodable & Sendable, timeout: Duration? = nil) async throws {
+        let envelope: Envelope<Empty> = try await client.call(method, params, timeout: timeout)
         try Self.check(envelope)
     }
 
@@ -528,7 +544,7 @@ extension LiveBackend {
             hostID: query.hostID, log: query.log.rawValue, since: query.since.map(Timestamp.init(date:)),
             until: query.until.map(Timestamp.init(date:)), levels: query.levels?.map(\.rawValue), provider: query.provider,
             max: min(max(query.max, 1), EventLogQuery.maximumCount))
-        let result = try await enveloped("diag.events", params, as: DiagEventsResult.self)
+        let result = try await enveloped("diag.events", params, as: DiagEventsResult.self, timeout: CallLimit.eventLog)
         return EventLogPage(events: result.events, truncated: result.truncated ?? false)
     }
 
@@ -539,8 +555,9 @@ extension LiveBackend {
 
     /// Calls a method whose result may carry the envelope of local-api.md §2, throws the
     /// envelope's error unless it succeeded, then decodes `T` from the same object.
-    private func enveloped<T: Decodable>(_ method: String, _ params: some Encodable & Sendable, as type: T.Type) async throws -> T {
-        let value: JSONValue = try await client.call(method, params)
+    private func enveloped<T: Decodable>(_ method: String, _ params: some Encodable & Sendable, as type: T.Type,
+                                         timeout: Duration? = nil) async throws -> T {
+        let value: JSONValue = try await client.call(method, params, timeout: timeout)
         if value["status"] != nil {
             try Self.check(try Self.decode(Envelope<Empty>.self, from: value))
         }

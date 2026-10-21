@@ -119,6 +119,26 @@ final class ControlFlowTests: XCTestCase {
         XCTAssertEqual(backend.controlCalls.count, 1)
     }
 
+    func testEmergencyStopSendsAgainWhileAStopIsInFlight() async throws {
+        let (store, backend) = await startedStore()
+        let dev = PreviewFixtures.devPCID
+        backend.holdControl("control.stop")
+        let first = store.controlActions.stop(dev)
+        try await waitUntil { backend.pendingControlCount == 1 }
+        XCTAssertTrue(store.controlActions.isRunning(.stop, on: dev))
+
+        let second = store.controlActions.stop(dev)
+
+        XCTAssertNotNil(second, "a second press sends another stop")
+        try await waitUntil { backend.pendingControlCount == 2 }
+        backend.releaseControl("control.stop")
+        await first?.value
+        await second?.value
+        XCTAssertEqual(backend.controlCalls.map(\.method), ["control.stop", "control.stop"])
+        XCTAssertFalse(store.controlActions.isRunning(.stop, on: dev))
+        XCTAssertEqual(store.control(for: dev)?.aiPaused, true)
+    }
+
     func testEmergencyStopRunsWhileTakeoverIsInFlight() async throws {
         let (store, backend) = await startedStore()
         let meeting = PreviewFixtures.meetingPCID

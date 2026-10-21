@@ -120,6 +120,5 @@ private struct ControlCommands: View {
             .disabled(contextualRunning || !kind.offersGiveBack)
         Button(ControlActions.Action.stop.title) { actions.stop(hostID) }
             .keyboardShortcut(".", modifiers: [.command, .shift])
-            .disabled(actions.isRunning(.stop, on: hostID))
     }
 }

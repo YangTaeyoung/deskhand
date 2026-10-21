@@ -215,8 +215,8 @@ struct TakeOverButton: View {
     }
 }
 
-/// Red 긴급 정지 button (⇧⌘. in the menu bar), with a spinner while the call runs. `running`
-/// is read where the toolbar is built.
+/// Red 긴급 정지 button (⇧⌘. in the menu bar), with a spinner while a call runs; it stays
+/// pressable and sends another stop. `running` is read where the toolbar is built.
 struct EmergencyStopButton: View {
     let store: AppStore
     let host: Host
@@ -230,7 +230,6 @@ struct EmergencyStopButton: View {
         }
         .buttonStyle(.borderedProminent)
         .tint(DS.Color.danger)
-        .disabled(running)
         .help(String.ui("help.stop", "AI 입력을 즉시 멈추고 내가 제어권을 가집니다 (⇧⌘.)"))
     }
 }

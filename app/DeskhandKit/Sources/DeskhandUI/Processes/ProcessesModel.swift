@@ -295,7 +295,7 @@ public final class ProcessesModel {
         guard let error = error as? ClientError else { return false }
         switch error {
         case .notConnected, .daemonUnavailable, .socketPathTooLong, .connectFailed: return true
-        case .disconnected, .closed, .protocolViolation: return false
+        case .disconnected, .closed, .protocolViolation, .timeout: return false
         }
     }
 

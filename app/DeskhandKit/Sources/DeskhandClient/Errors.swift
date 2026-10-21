@@ -28,4 +28,6 @@ public enum ClientError: Error, Sendable, Equatable {
     case connectFailed(errno: Int32)
     case protocolViolation(String)
     case daemonUnavailable(logPath: String)
+    /// The daemon did not answer `method` within the call's limit.
+    case timeout(method: String)
 }

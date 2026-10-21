@@ -57,7 +57,7 @@ extension LiveBackend {
     }
 
     public func artifactsExport(jobID: String, dir: String) async throws -> ArtifactExport {
-        try await client.call("artifacts.export", ExportParams(jobID: jobID, dir: dir))
+        try await client.call("artifacts.export", ExportParams(jobID: jobID, dir: dir), timeout: CallLimit.bulkFiles)
     }
 
     /// Reads the file off the main thread.

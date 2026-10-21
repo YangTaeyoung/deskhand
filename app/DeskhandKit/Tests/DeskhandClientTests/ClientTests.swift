@@ -182,6 +182,93 @@ final class ClientTests: XCTestCase {
         await client.close()
     }
 
+    func testCallWithoutAnswerFailsWithTimeoutAndLeavesNothingPending() async throws {
+        let server = try makeServer()
+        server.setHandler { req in req.method == "slow.method" ? .noReply : nil }
+        let client = DeskhandClient(socketPath: server.path, callTimeout: .milliseconds(200))
+        try await client.connect(kind: "app", name: "Deskhand", version: "1")
+        let started = ContinuousClock.now
+        do {
+            let _: Empty = try await client.call("slow.method", NoParams())
+            XCTFail("expected a timeout")
+        } catch let error as ClientError {
+            XCTAssertEqual(error, .timeout(method: "slow.method"))
+        }
+        XCTAssertLessThan(ContinuousClock.now - started, .seconds(2))
+        let pending = await client.pendingCount
+        XCTAssertEqual(pending, 0)
+        let _: Empty = try await client.call("control.release", HostParams(hostID: "w"))
+        await client.close()
+    }
+
+    func testTimeoutMsOfTheParametersExtendsTheCallLimit() async throws {
+        struct Params: Encodable, Sendable { let timeoutMs: Int }
+        let server = try makeServer()
+        server.setHandler { req in
+            guard req.method == "exec.run" else { return nil }
+            Thread.sleep(forTimeInterval: 0.4)
+            return .result("{}")
+        }
+        let client = DeskhandClient(socketPath: server.path, callTimeout: .milliseconds(200))
+        try await client.connect(kind: "app", name: "Deskhand", version: "1")
+        let _: Empty = try await client.call("exec.run", Params(timeoutMs: 600))
+        await client.close()
+    }
+
+    func testAnExplicitTimeoutReplacesTheDefault() async throws {
+        let server = try makeServer()
+        server.setHandler { req in
+            guard req.method == "host.add" else { return nil }
+            Thread.sleep(forTimeInterval: 0.4)
+            return .result("{}")
+        }
+        let client = DeskhandClient(socketPath: server.path, callTimeout: .milliseconds(200))
+        try await client.connect(kind: "app", name: "Deskhand", version: "1")
+        let _: Empty = try await client.call("host.add", NoParams(), timeout: .seconds(5))
+        await client.close()
+    }
+
+    func testCancellingTheCallingTaskEndsTheCallAndForgetsIt() async throws {
+        let server = try makeServer()
+        server.setHandler { req in req.method == "slow.method" ? .noReply : nil }
+        let client = DeskhandClient(socketPath: server.path)
+        try await client.connect(kind: "app", name: "Deskhand", version: "1")
+        let task = Task { () -> Error? in
+            do {
+                let _: Empty = try await client.call("slow.method", NoParams())
+                return nil
+            } catch {
+                return error
+            }
+        }
+        XCTAssertTrue(server.waitForRequests(method: "slow.method", count: 1))
+        task.cancel()
+        let error = await task.value
+        XCTAssertTrue(error is CancellationError, String(describing: error))
+        let pending = await client.pendingCount
+        XCTAssertEqual(pending, 0)
+        await client.close()
+    }
+
+    func testACallFromAnAlreadyCancelledTaskIsNotSent() async throws {
+        let server = try makeServer()
+        let client = DeskhandClient(socketPath: server.path)
+        try await client.connect(kind: "app", name: "Deskhand", version: "1")
+        let task = Task { () -> Error? in
+            withUnsafeCurrentTask { $0?.cancel() }
+            do {
+                let _: Empty = try await client.call("control.release", HostParams(hostID: "w"))
+                return nil
+            } catch {
+                return error
+            }
+        }
+        let error = await task.value
+        XCTAssertTrue(error is CancellationError, String(describing: error))
+        XCTAssertEqual(server.requests(method: "control.release").count, 0)
+        await client.close()
+    }
+
     func testCallBeforeConnectThrowsNotConnected() async throws {
         let client = DeskhandClient(socketPath: "/tmp/dhc-none/d.sock")
         do {

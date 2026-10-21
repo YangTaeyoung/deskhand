@@ -594,6 +594,9 @@ public struct OperationError: Error, Sendable, Equatable {
                 self.init(message: .ui("error.connectFailed", "데몬 소켓에 연결할 수 없습니다 (errno \(Int(errno)))"))
             case .protocolViolation:
                 self.init(message: .ui("error.protocol", "데몬 응답을 이해할 수 없습니다"))
+            case .timeout:
+                self.init(code: "TIMEOUT", message: .ui("error.daemonTimeout", "데몬이 제때 답하지 않았습니다"),
+                          nextAction: Self.restartDaemon)
             }
         case is DecodingError:
             self.init(message: .ui("error.decoding", "데몬 응답 형식이 예상과 다릅니다"))
@@ -619,6 +622,9 @@ public struct OperationError: Error, Sendable, Equatable {
                   nextAction: error.nextAction)
     }
 
+    /// The next action of a call the daemon did not answer in time: restart the daemon.
+    public static let restartDaemon = "daemon_restart"
+
     /// The daemon's message followed by the remedy on its own line when one is known.
     public var detail: String {
         [message, fix].compactMap { $0 }.joined(separator: "\n")
@@ -629,8 +635,12 @@ public struct OperationError: Error, Sendable, Equatable {
         switch code {
         case "AUTH_REQUIRED":
             .ui("fix.authRequired", "이 별칭으로 비밀번호 없이 ssh 접속되는지 확인하세요.")
-        case "OFFLINE", "TIMEOUT":
-            .ui("fix.offline", "컴퓨터가 켜져 있고 같은 네트워크나 VPN에 있는지 확인하세요.")
+        case "OFFLINE":
+            .ui("fix.offline", "PC가 켜져 있고 같은 네트워크나 VPN에 있는지 확인하세요.")
+        case "TIMEOUT" where nextAction == Self.restartDaemon:
+            .ui("fix.timeout", "데몬이 바쁘거나 멈췄을 수 있습니다. 잠시 뒤 다시 시도하고, 계속되면 설정 › 일반에서 데몬을 다시 시작하세요.")
+        case "TIMEOUT":
+            .ui("fix.remoteTimeout", "PC가 바쁘거나 연결이 느릴 수 있습니다. 잠시 뒤 다시 시도하고, 계속되면 진단을 실행하세요.")
         case "ELEVATION_REQUIRED", "PERMISSION_DENIED":
             .ui("fix.elevation", "관리자 계정의 SSH 별칭으로 다시 시도하세요.")
         case "SESSION_LOCKED":
