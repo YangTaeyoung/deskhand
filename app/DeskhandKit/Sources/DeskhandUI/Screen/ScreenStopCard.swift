@@ -163,6 +163,7 @@ struct ScreenStopCard: View {
                 if let command = notice.command {
                     commandBox(command)
                 }
+                ErrorCodeLine(label: notice.codeLabel, code: notice.code)
                 if !notice.actions.isEmpty {
                     FlowLayout(spacing: DS.Space.s) {
                         ForEach(Array(notice.actions.enumerated()), id: \.offset) { index, action in
@@ -170,7 +171,6 @@ struct ScreenStopCard: View {
                         }
                     }
                 }
-                ErrorCodeLine(label: notice.codeLabel, code: notice.code)
             }
             .padding(.leading, Self.symbolWidth + DS.Space.m)
         }

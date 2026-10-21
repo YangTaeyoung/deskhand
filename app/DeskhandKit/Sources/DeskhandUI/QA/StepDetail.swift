@@ -132,15 +132,11 @@ struct StepDetail: View {
             let reason = QAFormat.blockedReason(step)
             if StepRow.isHumanControl(step) {
                 OutcomeBox(symbol: "hand.raised.fill", tint: DS.Color.human, title: reason.title, detail: nil, code: step.error?.code,
-                           next: reason.next) {
-                    if let giveBack {
-                        Button(action: giveBack) {
-                            Label(String.ui("control.giveBack", "AI에게 넘기기"), systemImage: "sparkles")
-                        }
-                        .controlSize(.regular)
-                        .help(String.ui("qa.blocked.human.giveBack.help", "이 PC의 제어권을 AI에게 넘깁니다. 그다음 다시 실행하세요."))
-                    }
-                }
+                           next: reason.next, action: giveBack.map { giveBack in
+                               OutcomeAction(title: String.ui("control.giveBack", "AI에게 넘기기"), symbol: "sparkles",
+                                             help: String.ui("qa.blocked.human.giveBack.help", "이 PC의 제어권을 AI에게 넘깁니다. 그다음 다시 실행하세요."),
+                                             perform: giveBack)
+                           })
             } else {
                 OutcomeBox(symbol: QAFormat.isCancelStopped(step) ? "stop.circle" : "nosign",
                            tint: QAFormat.isCancelStopped(step) ? DS.Color.neutral : DS.Color.warning, title: reason.title, detail: nil,
@@ -174,8 +170,17 @@ struct StepDetail: View {
     }
 }
 
-/// What happened in a tinted box: a symbol (a spinner when nil), a title, a detail, what to do
-/// next, the daemon's own sentence, extra content such as failed checks or a button, and the code.
+/// A button at the end of an `OutcomeBox`.
+struct OutcomeAction {
+    let title: String
+    let symbol: String
+    let help: String
+    let perform: () -> Void
+}
+
+/// What happened in a tinted box, in the order of every error card: a symbol (a spinner when
+/// nil), a title, a detail, the daemon's own sentence, extra content such as failed checks, what
+/// to do next, the code, then the action.
 struct OutcomeBox<Extra: View>: View {
     let symbol: String?
     let tint: Color
@@ -185,6 +190,7 @@ struct OutcomeBox<Extra: View>: View {
     var next: String?
     /// The daemon's sentence, shown under the explanation.
     var source: String?
+    var action: OutcomeAction?
     @ViewBuilder var extra: Extra
 
     var body: some View {
@@ -210,12 +216,6 @@ struct OutcomeBox<Extra: View>: View {
                         .foregroundStyle(DS.Status.neutralText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                if let next {
-                    Label(next, systemImage: "arrow.turn.down.right")
-                        .font(DS.Font.body)
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
                 if let source {
                     Text(String.ui("qa.detail.daemonSays", "데몬: \(source)"))
                         .font(DS.Font.caption)
@@ -223,8 +223,22 @@ struct OutcomeBox<Extra: View>: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 extra
+                if let next {
+                    Label(next, systemImage: "arrow.turn.down.right")
+                        .font(DS.Font.body)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let code {
                     ErrorCodeLine(code: code)
+                }
+                if let action {
+                    Button(action: action.perform) {
+                        Label(action.title, systemImage: action.symbol)
+                    }
+                    .controlSize(.regular)
+                    .help(action.help)
+                    .padding(.top, DS.Space.xs)
                 }
             }
             .textSelection(.enabled)
@@ -238,8 +252,9 @@ struct OutcomeBox<Extra: View>: View {
 }
 
 extension OutcomeBox where Extra == EmptyView {
-    init(symbol: String?, tint: Color, title: String, detail: String?, code: String?, next: String? = nil, source: String? = nil) {
-        self.init(symbol: symbol, tint: tint, title: title, detail: detail, code: code, next: next, source: source) { EmptyView() }
+    init(symbol: String?, tint: Color, title: String, detail: String?, code: String?, next: String? = nil, source: String? = nil,
+         action: OutcomeAction? = nil) {
+        self.init(symbol: symbol, tint: tint, title: title, detail: detail, code: code, next: next, source: source, action: action) { EmptyView() }
     }
 }
 

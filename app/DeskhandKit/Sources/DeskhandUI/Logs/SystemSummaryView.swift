@@ -60,7 +60,8 @@ private struct SummaryHeader: View {
     }
 }
 
-/// The summary failed before any arrived: what failed, the reason, the code and retry, in one row.
+/// The summary failed before any arrived: what failed, the reason and the code, with retry at the
+/// end of the row.
 private struct SummaryErrorStrip: View {
     let error: OperationError
     let retry: () -> Void
@@ -78,11 +79,11 @@ private struct SummaryErrorStrip: View {
                     .foregroundStyle(DS.Status.secondaryOnTint)
                     .lineLimit(2)
                     .help(error.sentences)
+                if let code = error.code {
+                    ErrorCodeLine(code: code)
+                }
             }
             Spacer(minLength: DS.Space.s)
-            if let code = error.code {
-                ErrorCodeLine(code: code)
-            }
             Button(action: retry) {
                 Label(String.ui("action.retry", "다시 시도"), systemImage: "arrow.clockwise")
             }
