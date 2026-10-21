@@ -104,6 +104,16 @@ public enum DoctorStatus: String, CaseIterable, Sendable {
         case .skip: DS.Color.neutral
         }
     }
+
+    /// The status word's color on its tinted chip.
+    public var textColor: Color {
+        switch self {
+        case .pass: DS.Status.successText
+        case .fail: DS.Status.dangerText
+        case .warn: DS.Status.warningText
+        case .skip: DS.Status.neutralText
+        }
+    }
 }
 
 extension DoctorCheck {

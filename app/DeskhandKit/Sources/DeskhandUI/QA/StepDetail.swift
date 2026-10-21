@@ -77,7 +77,7 @@ struct StepDetail: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: DS.Space.s) {
             HStack(alignment: .firstTextBaseline, spacing: DS.Space.s) {
-                QAStatusBadge(step: step, large: true)
+                StatusChip(step: step, large: true)
                 Text(String(step.index) + ". " + step.name)
                     .font(DS.Font.headline)
                     .textSelection(.enabled)
@@ -400,7 +400,7 @@ struct AssertionsTable: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            QAStatusBadge(step: assertion.passed ? .pass : .fail)
+            StatusChip(step: assertion.passed ? .pass : .fail)
                 .frame(width: Self.resultWidth, alignment: .leading)
         }
         .padding(.horizontal, DS.Space.m)

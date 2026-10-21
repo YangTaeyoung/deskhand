@@ -305,6 +305,31 @@ final class TokensTests: XCTestCase {
         }
     }
 
+    /// Each Doctor status chip — its word and symbol in the status text color on the status tint —
+    /// reaches 4.5:1 inside the chip over the window background, in both appearances.
+    @MainActor
+    func testDoctorStatusChipsReachFourAndAHalfToOne() throws {
+        let size = CGSize(width: 96, height: 34)
+        for name in [NSAppearance.Name.aqua, .darkAqua] {
+            for status in DoctorStatus.allCases {
+                let chip = StatusChip(title: status.title, symbol: status.symbol, tint: status.tint, text: status.textColor)
+                    .frame(width: 80, height: 18)
+                    .frame(width: size.width, height: size.height)
+                    .background(DS.Color.surface)
+                let drawn = try Self.draw(chip, size: size, appearance: name)
+                let scale = CGFloat(drawn.pixelsWide) / size.width
+                var pixels: [NSColor] = []
+                for y in Int(12 * scale)..<Int(22 * scale) {
+                    for x in Int(16 * scale)..<Int(80 * scale) { pixels.append(Self.pixel(drawn, x: x, y: y)) }
+                }
+                let text = try XCTUnwrap(pixels.max { DS.Terminal.luminance($0) < DS.Terminal.luminance($1) })
+                let ground = try XCTUnwrap(pixels.min { DS.Terminal.luminance($0) < DS.Terminal.luminance($1) })
+                let ratio = DS.Terminal.contrast(text, ground)
+                XCTAssertGreaterThanOrEqual(ratio, 4.5, "\(status) chip in \(name.rawValue): \(ratio)")
+            }
+        }
+    }
+
     /// The pixel at `x`, `y` of an sRGB bitmap as an sRGB color, read from its stored components.
     static func pixel(_ bitmap: NSBitmapImageRep, x: Int, y: Int) -> NSColor {
         var components = [Int](repeating: 0, count: max(4, bitmap.samplesPerPixel))

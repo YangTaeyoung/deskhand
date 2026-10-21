@@ -215,17 +215,16 @@ struct DoctorSummary: View {
     }
 }
 
-/// One check: status symbol, title, detail and, when the check has one, the fix with a copy button.
+/// One check: its status chip, title, detail and, when the check has one, the fix — with a copy
+/// button when the fix is a command.
 struct DoctorRow: View {
     let check: DoctorCheck
     @State private var copied = false
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: DS.Space.m) {
-            Image(systemName: check.doctorStatus.symbol)
-                .foregroundStyle(check.doctorStatus.tint)
-                .font(DS.Font.headline)
-                .frame(width: DS.Space.l)
+            StatusChip(title: check.doctorStatus.title, symbol: check.doctorStatus.symbol, tint: check.doctorStatus.tint,
+                       text: check.doctorStatus.textColor)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: DS.Space.xs) {
                 HStack(alignment: .firstTextBaseline, spacing: DS.Space.m) {
@@ -240,8 +239,7 @@ struct DoctorRow: View {
                             .truncationMode(.tail)
                             .help(check.detail)
                     }
-                    Spacer(minLength: DS.Space.s)
-                    statusBadge
+                    Spacer(minLength: 0)
                 }
                 if !isCompact, !check.detail.isEmpty {
                     Text(check.detail)
@@ -262,18 +260,9 @@ struct DoctorRow: View {
         .accessibilityLabel(String.ui("a11y.doctorRow", "\(check.title), \(check.doctorStatus.title)"))
     }
 
-    /// Passed checks without a fix take one line: title, detail and badge.
+    /// Passed checks without a fix take one line: chip, title and detail.
     private var isCompact: Bool {
         check.doctorStatus == .pass && (check.fix ?? "").isEmpty
-    }
-
-    private var statusBadge: some View {
-        Text(check.doctorStatus.title)
-            .font(DS.Font.caption.weight(.semibold))
-            .foregroundStyle(.primary)
-            .padding(.horizontal, DS.Space.s)
-            .padding(.vertical, DS.Space.xs)
-            .background(check.doctorStatus.tint.opacity(0.2), in: Capsule())
     }
 
     private func fixBox(_ fix: String) -> some View {
@@ -288,23 +277,29 @@ struct DoctorRow: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Button {
-                Pasteboard.copy(fix)
-                copied = true
-                Task {
-                    try? await Task.sleep(for: .seconds(1.5))
-                    copied = false
-                }
-            } label: {
-                Label(copied ? String.ui("action.copied", "복사됨") : String.ui("action.copy", "복사"),
-                      systemImage: copied ? "checkmark" : "doc.on.doc")
-                    .frame(minWidth: 56)
+            if DoctorModel.looksLikeCommand(fix) {
+                copyButton(fix)
             }
-            .controlSize(.small)
-            .help(String.ui("help.copyFix", "해결 방법을 클립보드에 복사합니다"))
-            .accessibilityLabel(String.ui("a11y.copyFix", "\(check.title) 해결 방법 복사"))
         }
         .padding(DS.Space.m)
         .background(DS.Color.surface, in: RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
+    }
+
+    private func copyButton(_ fix: String) -> some View {
+        Button {
+            Pasteboard.copy(fix)
+            copied = true
+            Task {
+                try? await Task.sleep(for: .seconds(1.5))
+                copied = false
+            }
+        } label: {
+            Label(copied ? String.ui("action.copied", "복사됨") : String.ui("action.copy", "복사"),
+                  systemImage: copied ? "checkmark" : "doc.on.doc")
+                .frame(minWidth: 56)
+        }
+        .controlSize(.small)
+        .help(String.ui("help.copyFix", "명령을 클립보드에 복사합니다"))
+        .accessibilityLabel(String.ui("a11y.copyFix", "\(check.title) 명령 복사"))
     }
 }

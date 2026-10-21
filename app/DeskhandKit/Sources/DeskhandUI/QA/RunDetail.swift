@@ -121,7 +121,7 @@ private struct RunHeader: View {
         let counts = QAStepCounts(run: run, steps: steps)
         VStack(alignment: .leading, spacing: DS.Space.s) {
             HStack(alignment: .center, spacing: DS.Space.m) {
-                QAStatusBadge(run: run, large: true)
+                StatusChip(run: run, large: true)
                 Text(run.name)
                     .font(DS.Font.title)
                     .lineLimit(1)

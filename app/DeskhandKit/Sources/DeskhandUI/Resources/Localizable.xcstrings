@@ -79,7 +79,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ 해결 방법 복사"
+            "value": "%@ 명령 복사"
           }
         }
       }
@@ -7834,7 +7834,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "해결 방법을 클립보드에 복사합니다"
+            "value": "명령을 클립보드에 복사합니다"
           }
         }
       }

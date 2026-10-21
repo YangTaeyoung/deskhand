@@ -253,7 +253,7 @@ struct RunRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.xs) {
             HStack(spacing: DS.Space.s) {
-                QAStatusBadge(run: run, inverted: selected)
+                StatusChip(run: run, inverted: selected)
                 Text(run.name)
                     .font(DS.Font.body.weight(.semibold))
                     .foregroundStyle(selected ? AnyShapeStyle(DS.Color.onFill) : AnyShapeStyle(.primary))
@@ -293,7 +293,7 @@ struct RunRow: View {
                     .lineLimit(1)
                     .fixedSize()
             }
-            .padding(.leading, QAStatusBadge.width + DS.Space.s)
+            .padding(.leading, StatusChip.width + DS.Space.s)
         }
         .padding(.horizontal, DS.Space.s)
         .padding(.vertical, DS.Space.s)
@@ -310,7 +310,7 @@ struct RunRow: View {
     }
 
     private var accessibilityText: String {
-        let status = QAStatusBadge.title(run)
+        let status = StatusChip.title(run)
         let started = DS.Format.dateTime(run.startedAt.date)
         let tally = StepTally.spoken(counts)
         var text = String.ui("qa.row.a11y", "\(run.name), \(status), \(started) 시작, \(tally)")
@@ -319,19 +319,8 @@ struct RunRow: View {
     }
 }
 
-/// A run's status or a step's status as a tinted capsule with its symbol, of one width. On a
-/// selected row it draws white on an outline instead.
-struct QAStatusBadge: View {
-    static let width: CGFloat = 64
-
-    let title: String
-    let symbol: String
-    let tint: Color
-    let text: Color
-    var spinning = false
-    var large = false
-    var inverted = false
-
+/// A run's status or a step's status as a `StatusChip`.
+extension StatusChip {
     /// 취소하는 중 while a running run has taken a cancel, otherwise the run's status.
     static func title(_ run: QARun) -> String {
         run.isRunning && run.cancelRequested ? .ui("qa.status.cancelling", "취소하는 중") : QAFormat.title(run.runStatus)
@@ -364,30 +353,6 @@ struct QAStatusBadge: View {
         text = StepRow.isHumanControl(step) ? DS.Status.humanText : QAFormat.text(step: step)
         spinning = step.stepStatus == .running
         self.large = large
-    }
-
-    var body: some View {
-        HStack(spacing: DS.Space.xs) {
-            if spinning {
-                ProgressView()
-                    .controlSize(.mini)
-                    .frame(width: 10, height: 10)
-            } else {
-                Image(systemName: symbol)
-                    .font(.system(size: large ? 11 : 9, weight: .bold))
-            }
-            Text(title)
-                .font(.system(size: large ? 12 : 11, weight: .semibold))
-                .lineLimit(1)
-        }
-        .foregroundStyle(inverted ? DS.Color.onFill : text)
-        .padding(.horizontal, DS.Space.s)
-        .frame(minWidth: large ? nil : Self.width)
-        .frame(height: large ? 22 : 18)
-        .chipBackground(tint, selected: inverted)
-        .fixedSize()
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(title)
     }
 }
 
