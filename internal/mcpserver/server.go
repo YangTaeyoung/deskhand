@@ -59,7 +59,9 @@ Playbook:
 8. To find why a PC misbehaves, read diag_system, diag_services, diag_events (Windows event logs, newest first) and diag_crashes (crash dumps and error reports; copy a dump to this Mac with files_pull), and proc_list for CPU and memory per process.
 9. To reach a service that listens only on the PC's loopback (a Node inspector, DevTools, a dev server), open a tunnel with tunnel_open and connect to 127.0.0.1:<local_port> on this Mac; tunnels are loopback-only on both ends. Close it with tunnel_close when done.
 10. To test an app on the PC, run a QA scenario with qa_run (a scenario file on this Mac, or YAML text for a short check while exploring) and follow it with qa_get until finished_at is set; read each step's assertions and evidence and the report bundle. Steps that drive the UI are blocked, never forced, while a person holds control.
-11. Screen and input control tools arrive in a later version.`
+11. For computer use, call screen_capture (it returns image content and capture_id), then input_click / input_move / input_drag / input_scroll with that capture_id and coordinates in the image. Recapture after a display or connection change; STALE_TARGET never means the click ran.
+12. Check control_status before input. control_request takes the AI lease only when a person and other AI clients are not using the PC; control_release gives it back. A person can take over at any time. Never retry CONTROL_HELD_BY_HUMAN in a loop.
+13. ui_tree / ui_find / ui_text / ui_at read Windows UI Automation state; ui_act and win_action change it under the same control rules. After each action call observe or screen_capture. A partial or unknown input outcome may have changed the PC: inspect before retrying.`
 
 // Server holds the lazily opened daemon connection shared by the tools.
 type Server struct {
@@ -82,6 +84,7 @@ func New(version string, dial Dialer) *mcp.Server {
 	s.registerTunnel(srv)
 	s.registerDebug(srv)
 	s.registerQA(srv)
+	s.registerScreen(srv)
 	return srv
 }
 

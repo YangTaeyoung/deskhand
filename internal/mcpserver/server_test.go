@@ -183,7 +183,10 @@ var allTools = []string{"hosts_list", "host_doctor", "session_inspect", "exec_ru
 	"debug_launch", "debug_attach", "debug_list", "debug_get", "debug_breakpoint_set", "debug_breakpoint_remove", "debug_exceptions",
 	"debug_pause", "debug_resume", "debug_step", "debug_state", "debug_variables", "debug_evaluate", "debug_scripts", "debug_source",
 	"debug_console", "debug_close",
-	"qa_run", "qa_get", "qa_list", "qa_cancel"}
+	"qa_run", "qa_get", "qa_list", "qa_cancel",
+	"control_status", "control_request", "control_release", "screen_capture", "observe",
+	"input_click", "input_move", "input_drag", "input_scroll", "input_key", "input_type",
+	"ui_tree", "ui_find", "ui_text", "ui_act", "ui_at", "win_list", "win_action"}
 
 func TestToolsListed(t *testing.T) {
 	cs := connect(t)
