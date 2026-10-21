@@ -130,8 +130,9 @@ struct DataTable<Row: Identifiable & Equatable>: NSViewRepresentable where Row.I
         let table = DataNSTableView()
         table.keyHandler = { [weak coordinator] key in coordinator?.handle(key) ?? false }
         table.style = .inset
-        table.metrics = DS.TableMetrics(context.environment.dynamicTypeSize)
-        table.rowHeight = table.metrics.rowHeight
+        let metrics = DS.TableMetrics(context.environment.dynamicTypeSize)
+        table.metrics = metrics
+        table.rowHeight = metrics.rowHeight
         table.intercellSpacing = NSSize(width: 8, height: 0)
         table.allowsMultipleSelection = false
         table.allowsEmptySelection = true
@@ -144,9 +145,9 @@ struct DataTable<Row: Identifiable & Equatable>: NSViewRepresentable where Row.I
         for column in columns {
             let tableColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(column.id))
             tableColumn.title = column.title
-            tableColumn.width = column.width
-            tableColumn.minWidth = column.minWidth
-            tableColumn.maxWidth = column.maxWidth
+            tableColumn.minWidth = metrics.columnWidth(column.minWidth)
+            tableColumn.maxWidth = max(metrics.columnWidth(column.maxWidth), tableColumn.minWidth)
+            tableColumn.width = metrics.columnWidth(column.width)
             tableColumn.resizingMask = column.fills ? [.autoresizingMask, .userResizingMask] : .userResizingMask
             tableColumn.headerCell.alignment = column.alignment
             tableColumn.headerToolTip = column.headerHelp
@@ -156,12 +157,13 @@ struct DataTable<Row: Identifiable & Equatable>: NSViewRepresentable where Row.I
             table.addTableColumn(tableColumn)
         }
         if let sort { table.sortDescriptors = [NSSortDescriptor(key: sort.column, ascending: sort.ascending)] }
-        if let autosaveName {
-            table.autosaveName = autosaveName
+        let savedName = autosaveName.map(metrics.autosaveName)
+        if let savedName {
+            table.autosaveName = savedName
             table.autosaveTableColumns = true
         }
         if let first = table.tableColumns.first {
-            coordinator.widthStore = autosaveName.map { FirstColumnWidthStore(defaults: context.environment.appDefaults, autosaveName: $0) }
+            coordinator.widthStore = savedName.map { FirstColumnWidthStore(defaults: context.environment.appDefaults, autosaveName: $0) }
             let saved = coordinator.widthStore?.width
             coordinator.firstWidth = FirstColumnWidth(preferred: saved ?? first.width, minimum: first.minWidth)
         }
@@ -198,7 +200,11 @@ struct DataTable<Row: Identifiable & Equatable>: NSViewRepresentable where Row.I
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
-        context.coordinator.table?.apply(DS.TableMetrics(context.environment.dynamicTypeSize))
+        let metrics = DS.TableMetrics(context.environment.dynamicTypeSize)
+        if let table = context.coordinator.table, table.metrics != metrics {
+            context.coordinator.rescaleColumns(from: table.metrics, to: metrics)
+            table.apply(metrics)
+        }
         context.coordinator.update(self)
     }
 
@@ -289,7 +295,7 @@ struct DataTable<Row: Identifiable & Equatable>: NSViewRepresentable where Row.I
             defer { fitting = false }
             for column in table.tableColumns {
                 guard let spec = parent.columns.first(where: { $0.id == column.identifier.rawValue }), let limit = spec.hideBelow else { continue }
-                let hidden = width < limit
+                let hidden = width < table.metrics.columnWidth(limit)
                 if column.isHidden != hidden { column.isHidden = hidden }
             }
             let visible = table.tableColumns.filter { !$0.isHidden }
@@ -300,6 +306,24 @@ struct DataTable<Row: Identifiable & Equatable>: NSViewRepresentable where Row.I
                 if abs(first.width - target) > 0.5 { first.width = target }
             }
             table.sizeLastColumnToFit()
+        }
+
+        /// Sets the column widths, minimums and the first column's preferred width for text drawn
+        /// at `new` instead of `old`.
+        func rescaleColumns(from old: DS.TableMetrics, to new: DS.TableMetrics) {
+            guard let table else { return }
+            fitting = true
+            defer { fitting = false }
+            for column in table.tableColumns {
+                guard let spec = parent.columns.first(where: { $0.id == column.identifier.rawValue }) else { continue }
+                column.minWidth = new.columnWidth(spec.minWidth)
+                column.maxWidth = max(new.columnWidth(spec.maxWidth), column.minWidth)
+                column.width = max(column.minWidth, new.columnWidth(old.baseWidth(column.width)))
+            }
+            if let firstWidth, let first = table.tableColumns.first {
+                self.firstWidth = FirstColumnWidth(preferred: new.columnWidth(old.baseWidth(firstWidth.preferred)), minimum: first.minWidth)
+            }
+            fitColumns()
         }
 
         /// A drag of the first column's edge sets its preferred width, saved with the table's columns.

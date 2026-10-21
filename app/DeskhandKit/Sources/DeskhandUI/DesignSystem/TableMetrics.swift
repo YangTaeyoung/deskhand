@@ -35,6 +35,18 @@ extension DS {
         /// A symbol beside row text.
         public var symbolSize: CGFloat { (12 * scale).rounded() }
         public var rowHeight: CGFloat { max(24, (24 * scale / 4).rounded(.up) * 4) }
+
+        /// A column width given for the default text size, at this text size.
+        public func columnWidth(_ width: CGFloat) -> CGFloat { (width * scale).rounded() }
+
+        /// A column width drawn at this text size, at the default text size.
+        public func baseWidth(_ width: CGFloat) -> CGFloat { width / scale }
+
+        /// The name a table saves its column widths under at this text size; the default size
+        /// keeps `name`, so each text size keeps its own widths.
+        public func autosaveName(_ name: String) -> String {
+            scale == 1 ? name : name + "@" + String(Int((scale * 100).rounded()))
+        }
     }
 }
 

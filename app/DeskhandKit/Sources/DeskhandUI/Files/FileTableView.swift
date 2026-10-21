@@ -107,8 +107,9 @@ struct FileTableView: NSViewRepresentable {
         table.coordinator = coordinator
         table.style = .inset
         table.usesAlternatingRowBackgroundColors = true
-        table.metrics = DS.TableMetrics(context.environment.dynamicTypeSize)
-        table.rowHeight = table.metrics.rowHeight
+        let metrics = DS.TableMetrics(context.environment.dynamicTypeSize)
+        table.metrics = metrics
+        table.rowHeight = metrics.rowHeight
         table.intercellSpacing = NSSize(width: 8, height: 0)
         table.allowsMultipleSelection = true
         table.allowsEmptySelection = true
@@ -120,8 +121,8 @@ struct FileTableView: NSViewRepresentable {
         for column in FileColumn.allCases {
             let tableColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(column.rawValue))
             tableColumn.title = column.title
-            tableColumn.minWidth = column.minWidth
-            tableColumn.width = widths[column] ?? column.defaultWidth
+            tableColumn.minWidth = metrics.columnWidth(column.minWidth)
+            tableColumn.width = Self.width(column, saved: widths[column], metrics: metrics)
             tableColumn.resizingMask = column == .name ? [.autoresizingMask, .userResizingMask] : .userResizingMask
             tableColumn.sortDescriptorPrototype = NSSortDescriptor(key: column.rawValue, ascending: column != .modified && column != .size)
             if column == .size { tableColumn.headerCell.alignment = .right }
@@ -168,8 +169,23 @@ struct FileTableView: NSViewRepresentable {
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
-        (scroll.documentView as? FileNSTableView)?.apply(DS.TableMetrics(context.environment.dynamicTypeSize))
+        let metrics = DS.TableMetrics(context.environment.dynamicTypeSize)
+        if let table = scroll.documentView as? FileNSTableView, table.metrics != metrics {
+            table.apply(metrics)
+            context.coordinator.rescaleColumns(metrics)
+        }
         context.coordinator.update(self)
+    }
+
+    /// A column's width at the text size of `metrics`: its saved width, else its default, both
+    /// kept at the default text size.
+    static func width(_ column: FileColumn, saved: Double?, metrics: DS.TableMetrics) -> CGFloat {
+        metrics.columnWidth(CGFloat(saved ?? column.defaultWidth))
+    }
+
+    /// A width drawn at the text size of `metrics`, as it is saved: at the default text size.
+    static func savedWidth(_ width: CGFloat, metrics: DS.TableMetrics) -> Double {
+        Double(metrics.baseWidth(width).rounded())
     }
 
     static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
@@ -241,11 +257,24 @@ struct FileTableView: NSViewRepresentable {
             applyColumnVisibility()
         }
 
+        /// Sets every column's minimum and width for text drawn at `metrics`.
+        func rescaleColumns(_ metrics: DS.TableMetrics) {
+            guard let table else { return }
+            applyingColumns = true
+            for column in table.tableColumns {
+                guard let kind = FileColumn(rawValue: column.identifier.rawValue) else { continue }
+                column.minWidth = metrics.columnWidth(kind.minWidth)
+                column.width = FileTableView.width(kind, saved: parent.widths[kind], metrics: metrics)
+            }
+            applyingColumns = false
+            applyColumnVisibility()
+        }
+
         /// Hides the columns the person turned off and those the pane is too narrow for.
         func applyColumnVisibility() {
             guard let table, let scroll else { return }
             let width = scroll.contentSize.width
-            let auto = Set(FileColumn.allCases.filter { width > 0 && width < $0.collapseBelow })
+            let auto = Set(FileColumn.allCases.filter { width > 0 && width < table.metrics.columnWidth($0.collapseBelow) })
             let hidden = parent.hiddenColumns.union(auto)
             let changed = auto != autoHidden || table.tableColumns.contains { column in
                 FileColumn(rawValue: column.identifier.rawValue).map { hidden.contains($0) != column.isHidden } ?? false
@@ -265,7 +294,7 @@ struct FileTableView: NSViewRepresentable {
         @objc func columnResized(_ notification: Notification) {
             guard !applyingColumns, let column = notification.userInfo?["NSTableColumn"] as? NSTableColumn,
                   let kind = FileColumn(rawValue: column.identifier.rawValue), kind != .name else { return }
-            handlers.columnWidthChanged(kind, Double(column.width))
+            handlers.columnWidthChanged(kind, FileTableView.savedWidth(column.width, metrics: table?.metrics ?? DS.TableMetrics(.large)))
         }
 
         @objc func toggleColumn(_ sender: NSMenuItem) {
