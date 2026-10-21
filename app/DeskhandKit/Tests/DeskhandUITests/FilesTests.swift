@@ -547,7 +547,7 @@ final class FilesTests: XCTestCase {
         failed.outcome = TransferOutcome.failed.rawValue
         failed.error = EnvelopeError(code: "DISK_FULL", message: "대상 디스크 공간이 부족합니다")
         let row = TransferPresentation(failed, hostName: "개발 PC")
-        XCTAssertEqual(row.explanation, "대상 디스크 공간이 부족합니다")
+        XCTAssertEqual(row.explanation, "대상 디스크 공간이 부족합니다.")
         XCTAssertEqual(row.fix, OperationError(code: "DISK_FULL", message: "").fix)
         XCTAssertNotNil(row.fix)
         let partial = try XCTUnwrap(PreviewFixtures.transfers().first { $0.transferID == "t-preview-partial" })
@@ -558,6 +558,24 @@ final class FilesTests: XCTestCase {
         let taken = TransferFile(rel: "a.txt", size: 1, bytesDone: 0, state: "failed",
                                  error: EnvelopeError(code: "TRANSFER_CONFLICT", message: "대상에 같은 이름의 항목이 있습니다"))
         XCTAssertEqual(TransferFilePresentation(taken).fix, OperationError(code: "TRANSFER_CONFLICT", message: "").fix)
+    }
+
+    /// The daemon's message of a transfer or a file reads as a sentence, and a partial transfer
+    /// shows its remedy once: a failed file with the same remedy shows only its message.
+    func testTransferMessagesAreSentencesAndAPartialRemedyShowsOnce() throws {
+        var paused = transfer(.paused, bytes: 40)
+        paused.error = EnvelopeError(code: "OFFLINE", message: "연결이 끊겨 멈췄습니다")
+        XCTAssertEqual(TransferPresentation(paused, hostName: "개발 PC").explanation,
+                       "연결이 끊겨 멈췄습니다. 재개하면 확인된 부분 다음부터 이어서 보냅니다.")
+        let partial = try XCTUnwrap(PreviewFixtures.transfers().first { $0.transferID == "t-preview-partial" })
+        let row = TransferPresentation(partial.transfer, hostName: "개발 PC")
+        let denied = try XCTUnwrap(partial.files.first { $0.error?.code == "PERMISSION_DENIED" })
+        XCTAssertEqual(TransferFilePresentation(denied).errorMessage, "액세스가 거부되었습니다. 대상 폴더에 쓰기 권한이 없습니다.")
+        XCTAssertNotNil(row.fix)
+        XCTAssertEqual(TransferFilePresentation(denied).fix, row.fix)
+        XCTAssertNil(row.fileFix(denied), "the transfer already shows this remedy")
+        let named = try XCTUnwrap(partial.files.first { $0.rel == "aux.png" })
+        XCTAssertEqual(row.fileFix(named), TransferFilePresentation(named).fix)
     }
 
     func testLaunchReportsProgressAndInlineError() async throws {

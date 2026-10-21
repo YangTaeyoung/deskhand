@@ -224,7 +224,7 @@ struct TransferRow: View {
                         .foregroundStyle(DS.Status.warningText)
                 }
                 if let error = queue.actionErrors[transfer.transferID] {
-                    Label(error.message, systemImage: "exclamationmark.octagon.fill")
+                    Label(error.sentences, systemImage: "exclamationmark.octagon.fill")
                         .font(DS.Font.caption)
                         .foregroundStyle(DS.Status.dangerText)
                 }
@@ -341,7 +341,7 @@ struct TransferRow: View {
                 if let files = queue.files[transfer.transferID] {
                     LazyVStack(spacing: 0) {
                         ForEach(Array(Self.ordered(files).enumerated()), id: \.offset) { _, file in
-                            TransferFileRow(file: file)
+                            TransferFileRow(file: file, fix: row.fileFix(file))
                         }
                     }
                 } else if let error = queue.fileErrors[transfer.transferID], !queue.loadingFiles.contains(transfer.transferID) {
@@ -465,9 +465,11 @@ private struct StateChip: View {
     }
 }
 
-/// One file of a transfer: its relative path, size, state and hash, and its error.
+/// One file of a transfer: its relative path, size, state and hash, and its error with `fix`.
 private struct TransferFileRow: View {
     let file: TransferFile
+    /// The remedy of the file's error when the transfer does not already show it.
+    let fix: String?
 
     var body: some View {
         let row = TransferFilePresentation(file)
@@ -486,7 +488,7 @@ private struct TransferFileRow: View {
                 if let hash = row.hashText {
                     Text(hash)
                         .font(DS.Font.caption.monospaced())
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(DS.Status.neutralText)
                         .lineLimit(1)
                         .fixedSize()
                 }
@@ -505,7 +507,7 @@ private struct TransferFileRow: View {
                 VStack(alignment: .leading, spacing: DS.Space.xs) {
                     Text(message)
                         .foregroundStyle(row.tone == .danger ? DS.Status.dangerText : DS.Status.warningText)
-                    if let fix = row.fix {
+                    if let fix {
                         Text(fix)
                             .foregroundStyle(DS.Status.neutralText)
                     }

@@ -241,10 +241,10 @@ public struct TransferPresentation: Sendable, Equatable {
         }
     }
 
-    /// The daemon's message for the transfer's error.
+    /// The daemon's message for the transfer's error, as a sentence.
     public var errorMessage: String? {
         guard let message = transfer.error?.message, !message.isEmpty else { return nil }
-        return message
+        return message.asSentence
     }
 
     /// How to resolve the transfer's error, chosen by its code; a partial transfer's error is
@@ -263,6 +263,12 @@ public struct TransferPresentation: Sendable, Equatable {
             return .ui("transfer.explain.partialMove", "\(total)개 중 \(ok)개를 옮겼고 \(bad)개는 실패했습니다. 실패한 파일의 원본은 지우지 않았습니다.")
         }
         return .ui("transfer.explain.partial", "\(total)개 중 \(ok)개를 보냈고 \(bad)개는 실패했습니다. 실패한 파일은 아래 목록에 이유가 있습니다.")
+    }
+
+    /// How to resolve `file`'s error, or nil when it is the remedy the transfer already shows.
+    public func fileFix(_ file: TransferFile) -> String? {
+        let fix = TransferFilePresentation(file).fix
+        return fix == self.fix ? nil : fix
     }
 
     /// The button title of `action`: Finder에서 보기 for a destination or source on this Mac,
@@ -346,10 +352,10 @@ public struct TransferFilePresentation: Sendable, Equatable {
         }
     }
 
-    /// The daemon's message for the file's error.
+    /// The daemon's message for the file's error, as a sentence.
     public var errorMessage: String? {
         guard let message = file.error?.message, !message.isEmpty else { return nil }
-        return message
+        return message.asSentence
     }
 
     /// How to resolve the file's error, chosen by its code.
