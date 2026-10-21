@@ -151,3 +151,18 @@ public enum FileNameRule {
         return "\(base) \(n)"
     }
 }
+
+/// Ways to show a path's crumbs in less room: every crumb, then one more leading crumb folded into
+/// a menu at a time, down to the last crumb alone.
+enum CrumbLayout {
+    struct Candidate: Equatable {
+        /// Leading crumbs behind the `…` menu, outermost first.
+        var folded: [PathCrumb]
+        var shown: [PathCrumb]
+    }
+
+    static func candidates(_ crumbs: [PathCrumb]) -> [Candidate] {
+        guard !crumbs.isEmpty else { return [Candidate(folded: [], shown: [])] }
+        return (0..<crumbs.count).map { Candidate(folded: Array(crumbs.prefix($0)), shown: Array(crumbs.dropFirst($0))) }
+    }
+}

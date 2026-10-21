@@ -438,41 +438,56 @@ private struct PathBar: View {
         .accessibilityLabel(String.ui("files.places", "자주 쓰는 위치"))
     }
 
+    /// The crumbs that fit, trailing ones first; the leading crumbs that do not fit fold into a
+    /// `…` menu, so no crumb is cut.
     private var crumbs: some View {
         let crumbs = browser.crumbs
-        return ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 2) {
-                    ForEach(Array(crumbs.enumerated()), id: \.element.id) { index, crumb in
-                        if index > 0 {
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(.tertiary)
-                                .accessibilityHidden(true)
-                        }
-                        CrumbButton(crumb: crumb, isLast: index == crumbs.count - 1) {
-                            Task { await model.open(side, path: crumb.path) }
-                        }
-                        .id(crumb.id)
-                    }
-                }
-                .padding(.horizontal, DS.Space.m)
+        return ViewThatFits(in: .horizontal) {
+            ForEach(CrumbLayout.candidates(crumbs), id: \.folded.count) { candidate in
+                crumbRow(candidate, compressible: candidate.shown.count == 1)
             }
-            .mask {
-                HStack(spacing: 0) {
-                    LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
-                        .frame(width: DS.Space.m)
-                    Color.black
-                    LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
-                        .frame(width: DS.Space.m)
-                }
-            }
-            .onAppear { proxy.scrollTo(crumbs.last?.id, anchor: .trailing) }
-            .onChange(of: browser.path) { _, _ in proxy.scrollTo(browser.crumbs.last?.id, anchor: .trailing) }
         }
-        .frame(maxWidth: .infinity)
+        .padding(.horizontal, DS.Space.s)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(String.ui("files.a11y.path", "경로: \(browser.path)"))
+    }
+
+    private func crumbRow(_ candidate: CrumbLayout.Candidate, compressible: Bool) -> some View {
+        HStack(spacing: 2) {
+            if !candidate.folded.isEmpty {
+                Menu {
+                    ForEach(candidate.folded.reversed()) { crumb in
+                        Button(crumb.title) { Task { await model.open(side, path: crumb.path) } }
+                    }
+                } label: {
+                    Text(verbatim: "…")
+                        .font(DS.Font.body)
+                        .foregroundStyle(.secondary)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help(String.ui("files.crumbs.folded", "상위 폴더 \(String(candidate.folded.count))개"))
+                .accessibilityLabel(String.ui("files.crumbs.folded", "상위 폴더 \(String(candidate.folded.count))개"))
+                chevron
+            }
+            ForEach(Array(candidate.shown.enumerated()), id: \.element.id) { index, crumb in
+                if index > 0 { chevron }
+                CrumbButton(crumb: crumb, isLast: index == candidate.shown.count - 1, compressible: compressible) {
+                    Task { await model.open(side, path: crumb.path) }
+                }
+            }
+        }
+        .fixedSize(horizontal: !compressible, vertical: false)
+    }
+
+    private var chevron: some View {
+        Image(systemName: "chevron.right")
+            .font(DS.Font.caption.weight(.semibold))
+            .imageScale(.small)
+            .foregroundStyle(.tertiary)
+            .accessibilityHidden(true)
     }
 
     private var goToField: some View {
@@ -505,10 +520,12 @@ private struct PathBar: View {
     }
 }
 
-/// One crumb: the folder name truncated in the middle, the full path as tooltip.
+/// One crumb: the folder name, truncated in the middle past 180 pt or, when `compressible`, to
+/// the width left; the full path as tooltip.
 private struct CrumbButton: View {
     let crumb: PathCrumb
     let isLast: Bool
+    var compressible = false
     let action: () -> Void
     @State private var hovering = false
 
@@ -520,9 +537,9 @@ private struct CrumbButton: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(maxWidth: 180)
-                .fixedSize(horizontal: true, vertical: false)
-                .padding(.horizontal, 6)
-                .frame(height: 22)
+                .fixedSize(horizontal: !compressible, vertical: false)
+                .padding(.horizontal, DS.Space.s)
+                .frame(height: 24)
                 .background(hovering ? DS.Color.neutral.opacity(0.14) : .clear,
                             in: RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
                 .contentShape(Rectangle())
