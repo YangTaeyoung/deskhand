@@ -53,7 +53,7 @@ public enum ControlBannerKind: Equatable, Sendable {
     /// The AI band's second line; after a failed emergency stop it no longer promises one.
     public static func aiMessage(stopFailed: Bool) -> String {
         stopFailed
-            ? .ui("banner.ai.stopFailed", "긴급 정지가 실패했습니다. 제어권을 직접 가져오세요.")
+            ? .ui("banner.ai.stopFailed", "제어권을 직접 가져오세요.")
             : .ui("banner.ai.message", "언제든 제어권을 가져올 수 있고, 툴바의 긴급 정지(⇧⌘.)로 AI 입력을 바로 멈출 수 있습니다.")
     }
 
@@ -153,6 +153,7 @@ struct ControlBanner: View {
                     Label(String.ui("action.connect", "연결"), systemImage: "bolt.horizontal")
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(DS.Status.selectionFill)
             }
         case .blocked:
             let repairing = store.isRepairing(host.hostID)
@@ -178,6 +179,7 @@ struct ControlBanner: View {
                         Label(String.ui("action.repair.ask", "다시 페어링…"), systemImage: "arrow.triangle.2.circlepath")
                     }
                     .buttonStyle(.borderedProminent)
+                    .tint(DS.Status.selectionFill)
                 }
             }
         case .observing:
@@ -212,9 +214,11 @@ struct ControlActionLabel: View {
                         .lineLimit(1)
                 }
             } else {
-                Label(action.title, systemImage: action.symbol)
-                    .labelStyle(.titleAndIcon)
-                    .lineLimit(1)
+                HStack(spacing: DS.Space.s) {
+                    Image(systemName: action.symbol)
+                    Text(action.title)
+                        .lineLimit(1)
+                }
             }
         }
         .accessibilityElement(children: .ignore)
@@ -302,7 +306,7 @@ struct BannerBand<Actions: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
                 .font(DS.Font.headline)
-                .foregroundStyle(.primary)
+                .foregroundStyle(isSolid ? DS.Color.onFill : SwiftUI.Color.primary)
                 .lineLimit(2)
             Text(message)
                 .font(DS.Font.caption)
@@ -435,7 +439,7 @@ struct ControlFailureBar: View {
                 Label(String.ui("action.retry", "다시 시도"), systemImage: "arrow.clockwise")
             }
             .buttonStyle(.borderedProminent)
-            .tint(DS.Color.accent)
+            .tint(DS.Status.selectionFill)
             Button(action: dismiss) {
                 Image(systemName: "xmark")
                     .font(.system(.subheadline, weight: .bold))

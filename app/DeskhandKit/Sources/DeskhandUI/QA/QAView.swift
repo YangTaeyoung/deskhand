@@ -202,6 +202,7 @@ private struct QAToolbar: View {
                 Label(String.ui("qa.run", "시나리오 실행…"), systemImage: "play.fill")
             }
             .buttonStyle(.borderedProminent)
+            .tint(DS.Status.selectionFill)
             .help(String.ui("qa.run.help", "시나리오 YAML 파일을 골라 이 PC에서 실행합니다 (⌘R)"))
             QAScopeSwitch(hostName: host.name, showsAllHosts: $model.showsAllHosts)
             Spacer(minLength: DS.Space.s)

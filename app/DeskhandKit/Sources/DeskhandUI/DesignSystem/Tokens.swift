@@ -20,10 +20,14 @@ public enum DS {
         public static let observe = SwiftUI.Color.secondary
         /// Errors, destructive actions and the emergency stop.
         public static let danger = SwiftUI.Color.red
+        /// Saturated danger button fill that keeps white text above the code contrast threshold.
+        public static let dangerFill = SwiftUI.Color(nsColor: Status.fillUnderWhite(.systemRed, by: 0))
         public static let success = SwiftUI.Color.green
         public static let warning = SwiftUI.Color.orange
         /// Inactive or unsupported states that carry no alarm.
         public static let neutral = SwiftUI.Color.gray
+        /// Neutral button fill under white text, with the same rendered contrast margin as other fills.
+        public static let neutralFill = SwiftUI.Color(nsColor: Status.fillUnderWhite(.systemGray, by: 0))
         /// Window content background.
         public static let surface = SwiftUI.Color(nsColor: .windowBackgroundColor)
         /// Panels and cards that sit one level above `surface`.
@@ -221,24 +225,26 @@ public enum DS {
         public static let secondaryOnTint = neutralText
         /// The backdrop of the QA run list.
         public static let listBackground = SwiftUI.Color(nsColor: .underPageBackgroundColor).opacity(listOpacity)
-        /// Fill of a selected row: the accent blended toward black until white text on it reaches `Code.ratio`.
+        /// Fill of a selected row: the accent blended toward black with room for button rendering.
         public static let selectionFillNS = fillUnderWhite(.systemIndigo, by: 0)
         public static let selectionFill = SwiftUI.Color(nsColor: selectionFillNS)
 
-        /// `hue` blended `by` toward black, then further until white text on it reaches `Code.ratio`.
+        /// `hue` blended `by` toward black, then further until white text reaches 5:1. SwiftUI
+        /// button rendering can brighten the 8-bit fill enough to miss the 4.6:1 drawn target.
         static func fillUnderWhite(_ hue: NSColor, by darkening: CGFloat) -> NSColor {
             NSColor(name: nil) { appearance in
                 var base = hue
                 appearance.performAsCurrentDrawingAppearance { base = hue.usingColorSpace(.sRGB) ?? hue }
                 let start = (base.blended(withFraction: darkening, of: .black) ?? base).usingColorSpace(.sRGB) ?? base
                 let white = NSColor.white
-                if Terminal.contrast(white, start) >= Code.ratio { return start }
+                let fillRatio = 5.0
+                if Terminal.contrast(white, start) >= fillRatio { return start }
                 var low: CGFloat = 0
                 var high: CGFloat = 1
                 for _ in 0..<20 {
                     let mid = (low + high) / 2
                     let mixed = start.blended(withFraction: mid, of: .black) ?? start
-                    if Terminal.contrast(white, mixed) >= Code.ratio { high = mid } else { low = mid }
+                    if Terminal.contrast(white, mixed) >= fillRatio { high = mid } else { low = mid }
                 }
                 return (start.blended(withFraction: high, of: .black) ?? start).usingColorSpace(.sRGB) ?? start
             }

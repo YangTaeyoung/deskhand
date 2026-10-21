@@ -68,14 +68,14 @@ struct TimelineRow: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Text(DS.Format.clock(entry.ts.date))
                         .font(DS.Font.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DS.Status.neutralText)
                         .monospacedDigit()
                         .fixedSize()
                 }
                 HStack(spacing: DS.Space.s) {
                     Text(verbatim: "\(entry.actorName) · \(entry.kindTitle)")
                         .font(DS.Font.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DS.Status.neutralText)
                         .lineLimit(1)
                     if let outcome = OutcomeBadge.Outcome(rawValue: entry.outcome) {
                         OutcomeBadge(outcome: outcome)

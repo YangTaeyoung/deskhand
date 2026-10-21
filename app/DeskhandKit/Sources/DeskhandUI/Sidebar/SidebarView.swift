@@ -38,6 +38,7 @@ public struct SidebarView: View {
                 }
             } header: {
                 Text(String.ui("sidebar.section", "PC"))
+                    .foregroundStyle(DS.Status.neutralText)
             }
         }
         .listStyle(.sidebar)
@@ -105,7 +106,7 @@ public struct AddHostButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(DS.Status.neutralText)
         .padding(.horizontal, DS.Space.l)
         .padding(.vertical, DS.Space.m)
         .help(String.ui("help.addHost", "SSH 별칭으로 새 PC를 추가합니다 (⌘N)"))

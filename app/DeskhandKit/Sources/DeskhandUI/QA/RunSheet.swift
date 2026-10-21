@@ -92,6 +92,7 @@ public struct RunSheet: View {
                 Button(String.ui("qa.sheet.run", "실행")) { start() }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
+                    .tint(DS.Status.selectionFill)
                     .disabled(!canStart)
             }
             .controlSize(.large)

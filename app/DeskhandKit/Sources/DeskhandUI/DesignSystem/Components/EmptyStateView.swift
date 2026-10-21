@@ -37,7 +37,7 @@ public struct EmptyStateView: View {
                     .accessibilityAddTraits(.isHeader)
                 Text(message)
                     .font(DS.Font.body)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DS.Status.neutralText)
                     .frame(maxWidth: 440)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -45,6 +45,7 @@ public struct EmptyStateView: View {
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
                     .buttonStyle(.borderedProminent)
+                    .tint(DS.Status.selectionFill)
                     .controlSize(.large)
             }
         }
@@ -71,7 +72,7 @@ public struct PlaceholderNote: View {
                 .accessibilityHidden(true)
             Text(message)
                 .font(DS.Font.body)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DS.Status.neutralText)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 400)
                 .fixedSize(horizontal: false, vertical: true)

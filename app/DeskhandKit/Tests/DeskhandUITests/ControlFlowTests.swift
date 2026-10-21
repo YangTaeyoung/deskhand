@@ -35,7 +35,8 @@ final class ControlFlowTests: XCTestCase {
     func testAIBannerStopsPromisingEmergencyStopAfterItFails() {
         XCTAssertTrue(ControlBannerKind.aiMessage(stopFailed: false).contains("긴급 정지"))
         let failed = ControlBannerKind.aiMessage(stopFailed: true)
-        XCTAssertTrue(failed.contains("실패"))
+        XCTAssertTrue(failed.contains("제어권을 직접 가져오세요"))
+        XCTAssertFalse(failed.contains("긴급 정지"))
         XCTAssertNotEqual(failed, ControlBannerKind.aiMessage(stopFailed: false))
     }
 

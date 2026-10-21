@@ -80,7 +80,7 @@ struct ScreenHeader: View {
                     Text(info.detail)
                         .font(DS.Font.caption)
                         .monospacedDigit()
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DS.Status.neutralText)
                         .lineLimit(1)
                         .fixedSize()
                 }
@@ -95,7 +95,7 @@ struct ScreenHeader: View {
                 if density == .full, let info {
                     Text(info.detail)
                         .monospacedDigit()
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DS.Status.neutralText)
                 }
             }
             .font(DS.Font.caption)
@@ -243,7 +243,7 @@ private struct InputStatus: View {
                   ? String.ui("screen.input.idle.short", "클릭하여 조작")
                   : String.ui("screen.input.idle", "화면을 클릭하면 키보드와 마우스를 보냅니다"),
                   systemImage: "cursorarrow.click")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DS.Status.neutralText)
         }
     }
 }

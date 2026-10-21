@@ -821,7 +821,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "긴급 정지가 실패했습니다. 제어권을 직접 가져오세요."
+            "value": "제어권을 직접 가져오세요."
           }
         }
       }

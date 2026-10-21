@@ -30,4 +30,4 @@ cd app/DeskhandKit && swift test
 
 `go vet`, `go test`(darwin), Windows 대상 `go vet`와 패키지별 테스트 바이너리 컴파일을 차례로 실행한다.
 
-실기기 검증 결과와 남은 제한은 [통합 검증 기록](docs/acceptance/integration.md)을 참고한다. 현재 Windows 캡처 경로의 프레임률과 직접 LAN UDP 연결이 릴리스 판정의 미해결 항목이다.
+실기기 검증 결과와 남은 제한은 [통합 검증 기록](docs/acceptance/integration.md)을 참고한다. 공용 PC는 모니터를 켜 두지 않는 사용 조건이며 [헤드리스 화면 설계](docs/design/headless-display.md)에 검증 문턱을 기록했다. 현재 화면 프레임률, 직접 LAN UDP 연결, [AI 범위 강제](docs/local-api.md)와 개인정보 설정이 릴리스 판정의 미해결 항목이다.

@@ -26,7 +26,7 @@ public struct HostRow: View {
                     StatusDot(state: host.connection)
                     Text(host.statusLine())
                         .font(DS.Font.caption)
-                        .foregroundStyle(prominence == .increased ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
+                        .foregroundStyle(prominence == .increased ? AnyShapeStyle(.white) : AnyShapeStyle(DS.Status.neutralText))
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }

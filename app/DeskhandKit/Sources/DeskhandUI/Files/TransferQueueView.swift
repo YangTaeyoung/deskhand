@@ -85,15 +85,15 @@ struct TransferQueueView: View {
                     Image(systemName: "chevron.up")
                         .font(.system(.caption, weight: .bold))
                         .rotationEffect(.degrees(preferences.queueExpanded ? 180 : 0))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DS.Status.neutralText)
                     Image(systemName: "arrow.up.arrow.down.circle")
-                        .foregroundStyle(summary.active > 0 ? AnyShapeStyle(DS.Color.accent) : AnyShapeStyle(.secondary))
+                        .foregroundStyle(summary.active > 0 ? AnyShapeStyle(DS.Color.accent) : AnyShapeStyle(DS.Status.neutralText))
                     Text(String.ui("queue.title", "전송"))
                         .font(DS.Font.headline)
                     if !queue.visible.isEmpty {
                         Text(DS.Format.count(queue.visible.count))
                             .font(DS.Font.caption.weight(.semibold).monospacedDigit())
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(DS.Status.neutralText)
                             .padding(.horizontal, DS.Space.s)
                             .background(DS.Color.neutral.opacity(0.16), in: Capsule())
                     }
@@ -106,17 +106,17 @@ struct TransferQueueView: View {
             if let text = summary.text {
                 Text(text)
                     .font(DS.Font.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DS.Status.neutralText)
                     .lineLimit(1)
                     .truncationMode(.tail)
             } else if queue.loaded, !queue.visible.isEmpty {
                 Text(String.ui("queue.idle", "진행 중인 전송 없음"))
                     .font(DS.Font.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DS.Status.neutralText)
             } else if queue.loaded, !preferences.queueExpanded {
                 Text(String.ui("queue.none", "전송 기록 없음"))
                     .font(DS.Font.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DS.Status.neutralText)
             }
             if let progress = summary.progress {
                 ProgressView(value: progress)
@@ -130,6 +130,7 @@ struct TransferQueueView: View {
                 Button(String.ui("queue.clear", "완료 항목 지우기")) { queue.clearFinished() }
                     .buttonStyle(.borderless)
                     .font(DS.Font.caption)
+                    .foregroundStyle(DS.Status.accentText)
             }
         }
         .padding(.horizontal, DS.Space.l)
@@ -142,7 +143,7 @@ struct TransferQueueView: View {
             HStack(spacing: DS.Space.s) {
                 ProgressView().controlSize(.small)
                 Text(String.ui("queue.loading", "전송 목록을 불러오는 중…"))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DS.Status.neutralText)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = queue.loadError, queue.visible.isEmpty {
@@ -164,7 +165,7 @@ struct TransferQueueView: View {
                     .font(DS.Font.headline)
                 Text(String.ui("queue.emptyMessage", "파일을 다른 패널로 끌어다 놓으면 여기에서 진행률과 결과를 확인할 수 있습니다. ⌘를 누른 채 놓으면 이동합니다."))
                     .font(DS.Font.body)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DS.Status.neutralText)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 420)
             }
@@ -198,7 +199,7 @@ struct TransferRow: View {
         HStack(alignment: .top, spacing: DS.Space.m) {
             Image(systemName: row.direction.isUpload ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
                 .font(.system(.title))
-                .foregroundStyle(row.tone == .neutral ? AnyShapeStyle(.secondary) : AnyShapeStyle(row.tone.color))
+                .foregroundStyle(row.tone == .neutral ? AnyShapeStyle(DS.Status.neutralText) : AnyShapeStyle(row.tone.color))
                 .frame(width: 28)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: DS.Space.xs) {
@@ -275,7 +276,7 @@ struct TransferRow: View {
                 .textSelection(.enabled)
         }
         .font(DS.Font.caption)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(DS.Status.neutralText)
     }
 
     private func progressLine(_ row: TransferPresentation) -> some View {
@@ -427,7 +428,7 @@ struct TransferRow: View {
                     .frame(width: 18, height: 18)
             }
             .buttonStyle(.borderless)
-            .foregroundStyle(action == .dismiss ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
+            .foregroundStyle(DS.Status.neutralText)
             .help(action.title)
             .accessibilityLabel(action.title)
         }
@@ -476,7 +477,7 @@ private struct TransferFileRow: View {
         VStack(alignment: .leading, spacing: DS.Space.xs) {
             HStack(spacing: DS.Space.s) {
                 Image(systemName: FileKind(name: file.rel, isDirectory: false).symbol)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DS.Status.neutralText)
                     .frame(width: 16)
                     .accessibilityHidden(true)
                 Text(file.rel)
@@ -494,7 +495,7 @@ private struct TransferFileRow: View {
                 }
                 Text(DS.Format.bytes(file.size))
                     .font(DS.Font.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DS.Status.neutralText)
                     .frame(minWidth: 64, alignment: .trailing)
                     .fixedSize()
                 Text(row.title)

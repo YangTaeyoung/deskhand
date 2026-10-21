@@ -33,7 +33,18 @@ public struct StatusDot: View {
         .accessibilityLabel(String.ui("a11y.connectionState", "연결 상태: \(state.title)"))
     }
 
-    private var tint: Color { state.tint }
+    /// Dots carry the connection state without adjacent text in several panes, so use the
+    /// contrast-checked status colors instead of the lighter decorative state hues.
+    private var tint: Color {
+        switch state {
+        case .ready: DS.Status.successText
+        case .degraded: DS.Status.warningText
+        case .connecting: DS.Status.neutralText
+        case .reconnecting: DS.Status.accentText
+        case .blocked: DS.Status.dangerText
+        case .offline: DS.Status.neutralText
+        }
+    }
     private var onHighlight: Bool { prominence == .increased }
 
     private var dot: some View {

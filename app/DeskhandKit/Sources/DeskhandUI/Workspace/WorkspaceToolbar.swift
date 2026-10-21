@@ -101,7 +101,7 @@ public struct WorkspaceToolbarStrip: View {
                 if let host = store.selectedHost {
                     Text(host.sessionSubtitle)
                         .font(DS.Font.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DS.Status.neutralText)
                 }
             }
             .lineLimit(1)
@@ -164,12 +164,12 @@ struct StreamQualityLabel: View {
     var body: some View {
         HStack(spacing: DS.Space.xs) {
             Image(systemName: connection == .degraded ? "wifi.exclamationmark" : "gauge.with.dots.needle.50percent")
-                .foregroundStyle(connection == .degraded ? AnyShapeStyle(DS.Color.warning) : AnyShapeStyle(.secondary))
+                .foregroundStyle(connection == .degraded ? AnyShapeStyle(DS.Color.warning) : AnyShapeStyle(DS.Status.neutralText))
             Text(text)
                 .monospacedDigit()
         }
         .font(DS.Font.caption)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(DS.Status.neutralText)
         .fixedSize()
         .help(help)
         .accessibilityElement(children: .ignore)
@@ -229,7 +229,7 @@ struct EmergencyStopButton: View {
             ControlActionLabel(action: .stop, running: running)
         }
         .buttonStyle(.borderedProminent)
-        .tint(DS.Color.danger)
+        .tint(DS.Color.dangerFill)
         .help(String.ui("help.stop", "AI 입력을 즉시 멈추고 내가 제어권을 가집니다 (⇧⌘.)"))
     }
 }

@@ -550,6 +550,7 @@ struct ExitedBar: View {
             Button(String.ui("terminal.tab.closeMenu", "탭 닫기"), action: close)
             Button(String.ui("terminal.restart", "새로 시작"), action: restart)
                 .buttonStyle(.borderedProminent)
+                .tint(DS.Status.selectionFill)
         }
         .controlSize(.regular)
         .padding(.horizontal, DS.Space.m)
@@ -614,6 +615,7 @@ private struct FailureCard: View {
                 if lostJob {
                     Button(String.ui("terminal.failed.openNew", "새 셸 열기"), action: openNew)
                         .buttonStyle(.borderedProminent)
+                        .tint(DS.Status.selectionFill)
                         .disabled(!hostConnected)
                     if error.code != "NOT_FOUND" {
                         Button(String.ui("action.retry", "다시 시도"), action: retry)
@@ -622,10 +624,12 @@ private struct FailureCard: View {
                 } else if shellUnavailable {
                     Button(String.ui("terminal.failed.openPowerShell", "PowerShell 열기"), action: openPowerShell)
                         .buttonStyle(.borderedProminent)
+                        .tint(DS.Status.selectionFill)
                         .disabled(!hostConnected)
                 } else if error.code != "CAPABILITY_UNSUPPORTED" {
                     Button(String.ui("action.retry", "다시 시도"), action: retry)
                         .buttonStyle(.borderedProminent)
+                        .tint(DS.Status.selectionFill)
                         .disabled(!hostConnected)
                 }
                 Button(String.ui("terminal.tab.closeMenu", "탭 닫기"), action: close)

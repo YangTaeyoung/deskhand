@@ -65,6 +65,7 @@ public struct ErrorBanner: View {
                     Label(String.ui("action.retry", "다시 시도"), systemImage: Self.symbols[1])
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(DS.Status.selectionFill)
                 .controlSize(.regular)
                 .padding(.leading, Self.symbolWidth + DS.Space.m)
             }

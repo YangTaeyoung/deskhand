@@ -146,7 +146,7 @@ struct ComponentsGallery: View {
                 Spacer()
                 Button("긴급 정지", systemImage: "stop.fill") {}
                     .buttonStyle(.borderedProminent)
-                    .tint(DS.Color.danger)
+                    .tint(DS.Color.dangerFill)
             }
         }
     }

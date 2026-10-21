@@ -199,7 +199,7 @@ struct ScreenStopCard: View {
                       systemImage: copied ? "checkmark" : "doc.on.doc")
             }
             .buttonStyle(.borderedProminent)
-            .tint(DS.Color.neutral)
+            .tint(DS.Color.neutralFill)
             .controlSize(.small)
             .help(String.ui("screen.paused.rdp.copyHelp", "명령을 복사합니다"))
         }
@@ -223,6 +223,7 @@ struct ScreenStopCard: View {
         }
         if primary {
             button.buttonStyle(.borderedProminent)
+                .tint(DS.Status.selectionFill)
         } else {
             button.buttonStyle(.bordered)
         }

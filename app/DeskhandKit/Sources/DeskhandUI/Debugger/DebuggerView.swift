@@ -337,6 +337,7 @@ private struct DebuggerIdleView: View {
                             Label(String.ui("debugger.launch.button", "앱 실행…"), systemImage: "play.rectangle")
                         }
                         .buttonStyle(.borderedProminent)
+                        .tint(DS.Status.selectionFill)
                         .controlSize(.large)
                         Button {
                             model.sheet = .attach

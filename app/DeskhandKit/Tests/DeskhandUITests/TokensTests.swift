@@ -161,7 +161,7 @@ final class TokensTests: XCTestCase {
     /// Draws each status text color on the window, the text background and the run list's
     /// backdrop, bare and under its badge, box, band, hovered badge and neutral chip tints — the
     /// neutral gray also under every other hue's box and band — in an offscreen sRGB window; the
-    /// drawn pixels reach 4.5:1. White on the selection, human and AI fills does too.
+    /// drawn pixels reach 4.5:1. White on the selection, human, AI, danger and neutral fills does too.
     @MainActor
     func testDrawnStatusTextReachesFourAndAHalfToOneOnItsDrawnBackgrounds() throws {
         let colors: [(String, Color, Color)] = [
@@ -170,7 +170,9 @@ final class TokensTests: XCTestCase {
             ("neutral", DS.Status.neutralText, DS.Color.neutral), ("human", DS.Status.humanText, DS.Color.human),
             ("ai", DS.Status.aiText, DS.Color.ai),
         ]
-        let fills: [(String, Color)] = [("selection", DS.Status.selectionFill), ("human", DS.Color.humanFill), ("ai", DS.Color.aiFill)]
+        let fills: [(String, Color)] = [("selection", DS.Status.selectionFill), ("human", DS.Color.humanFill),
+                                        ("ai", DS.Color.aiFill), ("danger", DS.Color.dangerFill),
+                                        ("neutral", DS.Color.neutralFill)]
         let bases: [(String, Color, Color?)] = [("window", DS.Color.surface, nil), ("text", DS.Code.background, nil),
                                                 ("list", DS.Color.surface, DS.Status.listBackground)]
         let layers: [(String, (Color) -> [Color])] = [
@@ -223,7 +225,8 @@ final class TokensTests: XCTestCase {
                     let base = bases[row / layers.count].0
                     let layer = layers[row % layers.count].0
                     if layer.hasSuffix("of another hue"), label != "neutral" { continue }
-                    XCTAssertGreaterThanOrEqual(ratio, 4.5, "\(label) on \(layer) over \(base) in \(name.rawValue): \(ratio)")
+                    XCTAssertGreaterThanOrEqual(ratio, column >= colors.count ? 4.6 : 4.5,
+                                                "\(label) on \(layer) over \(base) in \(name.rawValue): \(ratio)")
                 }
             }
         }

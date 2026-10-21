@@ -219,6 +219,7 @@ private struct TerminalEmptyState: View {
                 Label(String.ui("terminal.open", "\(primary.title) 열기"), systemImage: primary.symbol)
             }
             .buttonStyle(.borderedProminent)
+            .tint(DS.Status.selectionFill)
             .help(String.ui("terminal.open.help", "새 탭에서 \(primary.title) 열기 (⌘T)"))
             ForEach(shells.filter { $0 != primary }) { shell in
                 Button {

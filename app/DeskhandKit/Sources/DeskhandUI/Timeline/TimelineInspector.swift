@@ -73,7 +73,7 @@ struct ActivityPane: View {
                         ForEach(timeline.days) { day in
                             Text(DS.Format.day(day.day))
                                 .font(DS.Font.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(DS.Status.neutralText)
                                 .padding(.bottom, DS.Space.s)
                                 .padding(.top, day.isFirst ? 0 : DS.Space.s)
                                 .accessibilityAddTraits(.isHeader)

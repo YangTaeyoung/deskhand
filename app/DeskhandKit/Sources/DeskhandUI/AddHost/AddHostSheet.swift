@@ -279,6 +279,7 @@ public struct AddHostSheet: View {
                 Button(String.ui("addHost.start", "설치하고 연결")) { flow.start() }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
+                    .tint(DS.Status.selectionFill)
                     .disabled(!flow.canStart)
             case .running:
                 Text(runningStatus)
@@ -304,17 +305,20 @@ public struct AddHostSheet: View {
                     Button(String.ui("addHost.edit", "설정 수정")) { flow.edit() }
                         .keyboardShortcut(.defaultAction)
                         .buttonStyle(.borderedProminent)
+                        .tint(DS.Status.selectionFill)
                 } else {
                     Button(String.ui("addHost.edit", "설정 수정")) { flow.edit() }
                     Button(String.ui("action.retry", "다시 시도")) { flow.start() }
                         .keyboardShortcut(.defaultAction)
                         .buttonStyle(.borderedProminent)
+                        .tint(DS.Status.selectionFill)
                 }
             case .succeeded:
                 Spacer()
                 Button(String.ui("action.done", "완료")) { flow.finish() }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
+                    .tint(DS.Status.selectionFill)
             }
         }
         .controlSize(.large)

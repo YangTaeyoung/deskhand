@@ -75,6 +75,7 @@ public struct TakeoverConfirmView: View {
                 }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
+                .tint(DS.Status.selectionFill)
             }
             .controlSize(.large)
         }

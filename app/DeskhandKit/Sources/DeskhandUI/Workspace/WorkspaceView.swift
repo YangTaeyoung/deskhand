@@ -208,7 +208,7 @@ struct TabButton: View {
                 if badge, !iconOnly { PausedDot() }
             }
             .font(isSelected ? DS.Font.body.weight(.semibold) : DS.Font.body)
-            .foregroundStyle(isSelected ? AnyShapeStyle(DS.Status.accentText) : AnyShapeStyle(.secondary))
+            .foregroundStyle(isSelected ? AnyShapeStyle(DS.Status.accentText) : AnyShapeStyle(DS.Status.neutralText))
             .padding(.horizontal, iconOnly ? DS.Space.s : DS.Space.m)
             .frame(height: 28)
             .background(background, in: Capsule())

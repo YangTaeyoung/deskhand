@@ -12,7 +12,7 @@ struct SearchField: View {
     var body: some View {
         HStack(spacing: DS.Space.xs) {
             Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DS.Status.neutralText)
                 .imageScale(.small)
                 .accessibilityHidden(true)
             TextField(prompt, text: $text)
@@ -29,7 +29,7 @@ struct SearchField: View {
                     text = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DS.Status.neutralText)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(String.ui("files.search.clear", "검색어 지우기"))
@@ -143,7 +143,7 @@ struct PathBar: View {
                 } label: {
                     Text(verbatim: "…")
                         .font(DS.Font.body)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DS.Status.neutralText)
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
@@ -213,7 +213,7 @@ struct CrumbButton: View {
         Button(action: action) {
             Text(crumb.title)
                 .font(isLast ? DS.Font.body.weight(.semibold) : DS.Font.body)
-                .foregroundStyle(isLast ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+                .foregroundStyle(isLast ? AnyShapeStyle(.primary) : AnyShapeStyle(DS.Status.neutralText))
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(maxWidth: 180)

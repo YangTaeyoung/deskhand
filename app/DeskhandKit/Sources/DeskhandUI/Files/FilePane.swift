@@ -55,10 +55,10 @@ struct FilePane: View {
                     .controlSize(.regular)
                 Text(String.ui("files.loading", "폴더를 여는 중…"))
                     .font(DS.Font.body)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DS.Status.neutralText)
                 Text(browser.path)
                     .font(DS.Font.mono)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(DS.Status.neutralText)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .frame(maxWidth: 360)
@@ -186,7 +186,7 @@ struct FilePane: View {
                 .font(DS.Font.headline)
             Text(emptyMessage(searching: searching))
                 .font(DS.Font.body)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DS.Status.neutralText)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 300)
                 .fixedSize(horizontal: false, vertical: true)
@@ -242,7 +242,7 @@ private struct FilePaneHeader: View {
         @Bindable var browser = browser
         HStack(spacing: DS.Space.s) {
             Image(systemName: side == .local ? "laptopcomputer" : "desktopcomputer")
-                .foregroundStyle(isActive ? AnyShapeStyle(DS.Color.accent) : AnyShapeStyle(.secondary))
+                .foregroundStyle(isActive ? AnyShapeStyle(DS.Color.accent) : AnyShapeStyle(DS.Status.neutralText))
                 .accessibilityHidden(true)
             Text(model.sideName(side))
                 .font(DS.Font.headline)
@@ -367,7 +367,7 @@ private struct FilePaneStatus: View {
             }
         }
         .font(DS.Font.caption)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(DS.Status.neutralText)
         .padding(.horizontal, DS.Space.m)
         .frame(height: 26)
         .overlay(alignment: .top) {
@@ -434,7 +434,7 @@ private struct PaneErrorStrip: View {
             Button(action: dismiss) {
                 Image(systemName: "xmark")
                     .font(.system(.caption, weight: .bold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DS.Status.neutralText)
                     .frame(width: 18, height: 18)
             }
             .buttonStyle(.plain)
@@ -480,7 +480,7 @@ private struct DropBanner: View {
                 if move {
                     Text(moveDetail)
                         .font(DS.Font.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DS.Status.neutralText)
                 }
             }
         }
@@ -533,10 +533,10 @@ private struct FolderErrorView: View {
             ErrorBanner(message: error.message, fix: fix, code: error.code == LocalFileSource.localPermissionCode ? nil : error.code)
             HStack(spacing: DS.Space.s) {
                 if goUpLeads {
-                    goUpButton.buttonStyle(.borderedProminent)
+                    goUpButton.buttonStyle(.borderedProminent).tint(DS.Status.selectionFill)
                     retryButton.buttonStyle(.bordered)
                 } else {
-                    retryButton.buttonStyle(.borderedProminent)
+                    retryButton.buttonStyle(.borderedProminent).tint(DS.Status.selectionFill)
                     if canGoUp { goUpButton.buttonStyle(.bordered) }
                 }
                 if side == .local, error.code == LocalFileSource.localPermissionCode {
