@@ -2,13 +2,13 @@ name: Deskhand
 options:
   bundleIdPrefix: io.github.yangtaeyoung
   deploymentTarget:
-    macOS: "26.0"
+    macOS: "27.0"
   developmentLanguage: ko
   createIntermediateGroups: true
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    MACOSX_DEPLOYMENT_TARGET: "26.0"
+    MACOSX_DEPLOYMENT_TARGET: "27.0"
     SWIFT_STRICT_CONCURRENCY: complete
     CODE_SIGN_STYLE: Automatic
     CODE_SIGN_IDENTITY: "-"

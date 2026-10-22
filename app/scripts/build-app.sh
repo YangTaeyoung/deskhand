@@ -70,6 +70,7 @@ for binary in "$repo_dir"/build/deskhand-agent*-windows-*.exe; do
   cp -f "$binary" "$app/Contents/Resources/agents/$(basename "$binary")"
 done
 codesign --force --sign - "$app/Contents/MacOS/deskhand"
+python3 "$app_dir/scripts/check-minimum-os.py" "$app" > "$build_dir/minimum-os.json"
 codesign --force --sign - "$app"
 codesign --verify --strict --deep "$app"
 

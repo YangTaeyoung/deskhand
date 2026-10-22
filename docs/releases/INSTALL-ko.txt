@@ -1,6 +1,6 @@
 Deskhand 0.1.0 Preview
 
-Apple Silicon Mac / macOS 26 이상
+Apple Silicon Mac / macOS 27 이상
 
 1. Deskhand.app을 Applications 폴더로 드래그합니다.
 2. 디스크 이미지를 추출하고 응용 프로그램 폴더에서 Deskhand를 실행합니다.
