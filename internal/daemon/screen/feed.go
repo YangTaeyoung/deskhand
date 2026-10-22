@@ -216,7 +216,7 @@ func (f *feed) shutdown() {
 	cur := f.cur
 	f.mu.Unlock()
 	for _, v := range viewers {
-		v.end()
+		v.Close()
 	}
 	if cur != nil {
 		cur.abort()

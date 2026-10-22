@@ -18,6 +18,7 @@ func (s *Server) registerSession() {
 	s.methods["hello"] = s.hello
 	s.methods["events.subscribe"] = s.eventsSubscribe
 	s.methods["timeline.list"] = s.timelineList
+	s.methods["session.rdp"] = s.sessionRDP
 }
 
 type helloParams struct {

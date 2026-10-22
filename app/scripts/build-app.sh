@@ -1,14 +1,22 @@
 #!/usr/bin/env bash
-# Builds Deskhand.app (Debug) into app/build/Deskhand.app and prints its path.
+# Builds Deskhand.app; defaults to Debug in app/build. Release packaging uses an isolated build directory.
 # Fails when the build emits any compiler warning. Bundles the Go CLI and both
 # Windows agent variants for both architectures.
 set -euo pipefail
 
 app_dir="$(cd "$(dirname "$0")/.." && pwd)"
 repo_dir="$(cd "$app_dir/.." && pwd)"
-build_dir="$app_dir/build"
+build_dir="${DESKHAND_BUILD_DIR:-$app_dir/build}"
+configuration="${DESKHAND_CONFIGURATION:-Debug}"
+case "$configuration" in Debug|Release) ;; *) echo 'Configuration must be Debug or Release' >&2; exit 2 ;; esac
 log="$build_dir/xcodebuild.log"
 mkdir -p "$build_dir"
+
+# A library inside Deskhand.app; no external remote-desktop application is launched.
+"$repo_dir/scripts/build-rdp.sh" > "$build_dir/rdp-build.log" 2>&1 || {
+  tail -n 35 "$build_dir/rdp-build.log"
+  exit 1
+}
 
 xcodegen generate --spec "$app_dir/project.yml" --project "$app_dir" --quiet
 
@@ -16,7 +24,7 @@ xcodegen generate --spec "$app_dir/project.yml" --project "$app_dir" --quiet
 if ! xcodebuild \
     -project "$app_dir/Deskhand.xcodeproj" \
     -scheme Deskhand \
-    -configuration Debug \
+    -configuration "$configuration" \
     -destination "platform=macOS,arch=$(uname -m)" \
     -derivedDataPath "$build_dir/DerivedData" \
     -skipPackagePluginValidation \
@@ -36,7 +44,7 @@ fi
 
 app="$build_dir/Deskhand.app"
 rm -rf "$app"
-ditto "$build_dir/DerivedData/Build/Products/Debug/Deskhand.app" "$app"
+ditto "$build_dir/DerivedData/Build/Products/$configuration/Deskhand.app" "$app"
 
 for binary in deskhand deskhand-agent-windows-amd64.exe deskhand-agentw-windows-amd64.exe deskhand-agent-windows-arm64.exe deskhand-agentw-windows-arm64.exe; do
   if [ ! -f "$repo_dir/build/$binary" ]; then
@@ -50,6 +58,13 @@ if [ "$(printf '%s' "$main_executable" | tr '[:upper:]' '[:lower:]')" = deskhand
   exit 1
 fi
 cp -f "$repo_dir/build/deskhand" "$app/Contents/MacOS/deskhand"
+python3 "$app_dir/scripts/bundle-rdp.py" "$repo_dir/build/rdp/engine/libDeskhandRDPEngine.dylib" "$app/Contents/Frameworks"
+mkdir -p "$app/Contents/Resources/rdp-licenses"
+cp "$repo_dir/build/rdp/FreeRDP/LICENSE" "$app/Contents/Resources/rdp-licenses/FreeRDP-LICENSE"
+ditto "$repo_dir/build/rdp/engine/licenses" "$app/Contents/Resources/rdp-licenses"
+ditto "$repo_dir/build/rdp/codec/prefix/share/licenses" "$app/Contents/Resources/rdp-licenses"
+ditto "$repo_dir/build/rdp/codec/prefix/share/ffmpeg" "$app/Contents/Resources/rdp-sources"
+
 mkdir -p "$app/Contents/Resources/agents"
 for binary in "$repo_dir"/build/deskhand-agent*-windows-*.exe; do
   cp -f "$binary" "$app/Contents/Resources/agents/$(basename "$binary")"

@@ -940,7 +940,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "원격 PC 앞에서 잠금을 해제하세요. 그동안은 사람도 AI도 화면과 입력을 쓸 수 없습니다."
+            "value": "Windows 계정으로 로그인해 원격 화면을 연결하세요."
           }
         }
       }
@@ -16952,7 +16952,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "잠금이 풀리면 화면이 바로 나타납니다. 잠금 화면은 원격으로 볼 수 없습니다."
+            "value": "Deskhand에서는 Windows 로그인 화면을 조작할 수 없습니다. 잠금이 풀리면 화면이 다시 연결됩니다."
           }
         }
       }
@@ -17191,7 +17191,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "PC 앞에서 잠금을 풀면 화면이 바로 이어집니다. 잠금 화면은 원격으로 조작할 수 없습니다."
+            "value": "다른 원격 접속 도구나 PC에서 Windows 잠금을 해제하세요. Deskhand에서는 로그인 화면을 조작할 수 없습니다."
           }
         }
       }

@@ -435,7 +435,7 @@ func (s *session) attach(req request, br *bufio.Reader) bool {
 	}
 	h, ok := s.srv.streams[p.Kind]
 	if !ok {
-		s.reply(req.ID, nil, rpcErr(codeInvalidParams, apierr.Invalid(fmt.Sprintf("stream.attach의 kind %q를 모릅니다. kind는 screen이나 pty로 주세요", p.Kind))))
+		s.reply(req.ID, nil, rpcErr(codeInvalidParams, apierr.Invalid(fmt.Sprintf("stream.attach의 kind %q를 모릅니다. kind는 screen, input, pty로 주세요", p.Kind))))
 		return false
 	}
 	result, run, err := s.callStream(h, req)

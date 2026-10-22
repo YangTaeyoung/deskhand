@@ -53,7 +53,7 @@ struct ScreenStopNotice: Equatable {
             return ScreenStopNotice(
                 symbol: "lock.display",
                 title: .ui("screen.stop.locked.title", "Windows가 잠겨 있습니다"),
-                message: .ui("screen.stop.locked.message", "PC 앞에서 잠금을 풀면 화면이 바로 이어집니다. 잠금 화면은 원격으로 조작할 수 없습니다."),
+                message: .ui("screen.stop.locked.message", "다른 원격 접속 도구나 PC에서 Windows 잠금을 해제하세요. Deskhand에서는 로그인 화면을 조작할 수 없습니다."),
                 codeLabel: reasonLabel, code: code)
         case .sessionDisconnected:
             return ScreenStopNotice(

@@ -8,6 +8,7 @@ let package = Package(
     products: [
         .library(name: "DeskhandClient", targets: ["DeskhandClient"]),
         .library(name: "DeskhandMedia", targets: ["DeskhandMedia"]),
+        .library(name: "DeskhandRDP", targets: ["DeskhandRDP"]),
         .library(name: "DeskhandUI", targets: ["DeskhandUI"]),
         .executable(name: "DeskhandSnapshots", targets: ["DeskhandSnapshots"]),
     ],
@@ -20,10 +21,11 @@ let package = Package(
         .target(name: "DeskhandClient"),
         // Video decoding and display for the remote screen stream.
         .target(name: "DeskhandMedia"),
+        .target(name: "DeskhandRDP"),
         // Views, design system and view state shared by the app and the snapshot renderer.
         .target(
             name: "DeskhandUI",
-            dependencies: ["DeskhandClient", "DeskhandMedia", .product(name: "SwiftTerm", package: "SwiftTerm")],
+            dependencies: ["DeskhandClient", "DeskhandMedia", "DeskhandRDP", .product(name: "SwiftTerm", package: "SwiftTerm")],
             resources: [.process("Resources")]
         ),
         // Renders registered scenes to PNG offscreen, in light and dark mode.
@@ -32,6 +34,7 @@ let package = Package(
         .target(name: "DeskhandTestSupport", path: "Tests/DeskhandTestSupport"),
         .testTarget(name: "DeskhandClientTests", dependencies: ["DeskhandClient", "DeskhandTestSupport"]),
         .testTarget(name: "DeskhandMediaTests", dependencies: ["DeskhandMedia"]),
+        .testTarget(name: "DeskhandRDPTests", dependencies: ["DeskhandRDP"]),
         .testTarget(name: "DeskhandUITests", dependencies: ["DeskhandUI", "DeskhandMedia", "DeskhandTestSupport"]),
     ],
     swiftLanguageModes: [.v6]

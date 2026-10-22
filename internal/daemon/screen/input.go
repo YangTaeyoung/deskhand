@@ -41,15 +41,16 @@ type inputLink struct {
 	h      *Hub
 	hostID string
 
-	mu      sync.Mutex
-	st      conn.DataStream
-	connGen uint64
-	seq     uint64
-	ended   chan struct{}
-	last    time.Time
-	idle    *time.Timer
-	closed  bool
-	logged  time.Time
+	mu       sync.Mutex
+	st       conn.DataStream
+	connGen  uint64
+	identity *InputBinding // identity of st, not the next connection
+	seq      uint64
+	ended    chan struct{}
+	last     time.Time
+	idle     *time.Timer
+	closed   bool
+	logged   time.Time
 
 	resyncAt atomic.Int64
 }
@@ -104,8 +105,8 @@ var errNotReady = apierr.New(wire.CodeOffline, "PC와의 연결이 준비되지 
 // gives c when acquire is set. Right before the write, a person must still
 // hold control at ev's gen, or ev is dropped with CONTROL_PREEMPTED. It
 // returns why ev did not go out.
-func (l *inputLink) send(c model.Caller, ev wire.InputEvent, acquire bool) error {
-	err := l.sendErr(c, ev, acquire)
+func (l *inputLink) send(c model.Caller, ev wire.InputEvent, acquire bool, binding *InputBinding) error {
+	err := l.sendErr(c, ev, acquire, binding)
 	if err != nil {
 		l.mu.Lock()
 		if time.Since(l.logged) >= logEvery {
@@ -117,13 +118,17 @@ func (l *inputLink) send(c model.Caller, ev wire.InputEvent, acquire bool) error
 	return err
 }
 
-func (l *inputLink) sendErr(c model.Caller, ev wire.InputEvent, acquire bool) error {
+func (l *inputLink) sendErr(c model.Caller, ev wire.InputEvent, acquire bool, binding *InputBinding) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.closed || l.h.base.Err() != nil {
 		return errClosed
 	}
 	a := l.h.agent(l.hostID)
+	if binding != nil && !binding.matches(a) {
+		l.retireBoundLocked(binding)
+		return errInputSessionChanged
+	}
 	if a == nil {
 		return apierr.New(wire.CodeOffline, "이 PC와 연결돼 있지 않습니다", true, apierr.NextHostConnect)
 	}
@@ -131,10 +136,15 @@ func (l *inputLink) sendErr(c model.Caller, ev wire.InputEvent, acquire bool) er
 		return errNotReady
 	}
 	ctl := l.h.opt.Control
-	if !l.usableLocked(a) {
-		l.endLocked()
+	opened := false
+	if !l.usableLocked(a) || (binding != nil && (l.identity == nil || *l.identity != *binding)) {
+		if binding != nil {
+			l.abortLocked()
+		} else {
+			l.endLocked()
+		}
 		err := l.openLocked(a, ev.Gen)
-		if apierr.CodeOf(err) == wire.CodeControlPreempted && acquire && ctl.Resync(l.hostID, ev.Gen) {
+		if apierr.CodeOf(err) == wire.CodeControlPreempted && acquire && (binding == nil || binding.matches(a)) && ctl.Resync(l.hostID, ev.Gen) {
 			gen, cerr := ctl.CheckHuman(l.hostID, c)
 			if cerr != nil {
 				return cerr
@@ -145,6 +155,7 @@ func (l *inputLink) sendErr(c model.Caller, ev wire.InputEvent, acquire bool) er
 		if err != nil {
 			return err
 		}
+		opened = true
 	}
 	if st := ctl.Get(l.hostID); st.Owner != model.OwnerHuman || st.Gen != ev.Gen {
 		return errControlChanged
@@ -156,6 +167,17 @@ func (l *inputLink) sendErr(c model.Caller, ev wire.InputEvent, acquire bool) er
 		return err
 	}
 	_ = l.st.SetWriteDeadline(time.Now().Add(inputWriteTimeout))
+	// OpenStream may wait through a reconnect; check both its returned
+	// generation and the authoritative identity after acceptance and directly
+	// before writing. A stale viewer must never reopen to send release_all.
+	if binding != nil && (!binding.matches(l.h.agent(l.hostID)) || l.connGen != binding.ConnectionGeneration || l.identity == nil || *l.identity != *binding) {
+		if opened {
+			l.abortLocked()
+		} else {
+			l.retireBoundLocked(binding)
+		}
+		return errInputSessionChanged
+	}
 	if err := wire.WriteFrame(l.st, wire.KindClientInput, b); err != nil {
 		l.abortLocked()
 		return err
@@ -188,6 +210,7 @@ func (l *inputLink) usableLocked(a Agent) bool {
 func (l *inputLink) openLocked(a Agent, gen uint64) error {
 	ctx, cancel := context.WithTimeout(l.h.base, inputOpenTimeout)
 	defer cancel()
+	identity, verified := currentInputBinding(a)
 	st, connGen, err := a.OpenStream(ctx, wire.StreamHeader{S: "input", Gen: gen})
 	if err != nil {
 		return err
@@ -217,6 +240,10 @@ func (l *inputLink) openLocked(a Agent, gen uint64) error {
 	}
 	ended := make(chan struct{})
 	l.st, l.connGen, l.seq, l.ended = st, connGen, 0, ended
+	l.identity = nil
+	if verified && identity.ConnectionGeneration == connGen {
+		l.identity = &identity
+	}
 	l.h.wg.Add(1)
 	go l.drain(st, br, ended)
 	return nil
@@ -322,4 +349,19 @@ func (l *inputLink) abortLocked() {
 		l.st.CancelRead()
 		l.st = nil
 	}
+}
+
+// retireBoundLocked resets only the stream used by this binding. Resetting
+// that old stream releases its held keys at the old agent; it writes no
+// release_all into a replacement session, even if another viewer reopened it.
+func (l *inputLink) retireBoundLocked(binding *InputBinding) {
+	if l.identity != nil && *l.identity == *binding {
+		l.abortLocked()
+	}
+}
+
+func (l *inputLink) retireBound(binding *InputBinding) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.retireBoundLocked(binding)
 }

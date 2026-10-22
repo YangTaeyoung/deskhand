@@ -1,6 +1,6 @@
 # Deskhand 설계 v1
 
-작성 2026-10-20. 요구사항 원본은 [docs/plan](plan/README.md)이다. 이 문서는 그중 **Jump Desktop 결합을 전제로 한 부분을 대체**한다. 나머지 요구(P0 목록, 상태 모델, 파일 계약, 인수 테스트 A01–A24, 금지되는 완료 판정)는 그대로 유효하다.
+작성 2026-10-20, 화면 아키텍처 변경 2026-10-22. 사용자는 **Windows 내장 RDP 화면 + 자체 에이전트 통합**으로 전환을 승인했다. [전환 설계](superpowers/specs/2026-10-22-rdp-screen-design.md)가 이전의 자체 화면 전송·RDP 배제 서술보다 우선한다. 나머지 [요구사항](plan/README.md)과 금지되는 완료 판정은 유지한다.
 
 ## 1. 의도
 
@@ -11,8 +11,8 @@
 | 결정 | 내용 |
 |---|---|
 | 이름 | Deskhand. CLI `deskhand` |
-| 자체 구현 | 원격 화면 전송·입력을 포함해 우리 손으로 만든다. Jump Desktop, RDP/VNC 클라이언트 등 기성 원격 제품을 핵심 경로에 쓰지 않는다 |
-| 실시간 화면 | 화면 캡처·인코딩·스트리밍·표시를 자체 구현한다 |
+| 자체 구현 | Deskhand 앱·에이전트·CLI/MCP·제어권을 직접 만든다. Jump Desktop 등 기성 원격 제품을 실행하지 않는다. 표준 RDP와 FreeRDP 라이브러리 사용은 허용한다 (2026-10-22 사용자 변경) |
+| 실시간 화면 | Windows 내장 RDP 서버의 화면을 Deskhand 안에 표시한다. 별도 커스텀 디스플레이 드라이버를 요구하지 않는다 |
 | 언어 | CLI·공유 코어는 Go |
 | 품질 | 현대적 상업용 UI. 적대적 UI 검수를 통과할 때까지 반복 수정 |
 
@@ -22,7 +22,7 @@
 |---|---|---|
 | 오픈소스 라이브러리 | 허용 (quic-go, MCP go-sdk, modernc sqlite, SwiftTerm 등). 기성 원격 *제품*만 배제 | 자체 구현 범위를 프로토콜·제품 동작으로 해석 |
 | Windows 에이전트 | Go, Alcove `guest-tools`(MIT, 같은 저작자)를 가져와 확장 | 실행·job·파일·프로세스·UIA가 이미 있고 전송이 `net.Listener`로 분리됨 |
-| 화면 파이프라인 | DXGI Desktop Duplication → GPU BGRA→NV12 → Media Foundation H.264(하드웨어 MFT 우선, 소프트웨어 MFT 대체) → QUIC 스트림 → Mac VideoToolbox → `AVSampleBufferDisplayLayer` | cgo·외부 바이너리 없이 Mac에서 교차 빌드 가능, 요청 시 키프레임·비트레이트 변경 가능 |
+| 화면 파이프라인 | Windows RDP → 내장 FreeRDP 엔진 → AppKit 화면. 입력은 세대 검사를 거치는 자체 에이전트 스트림 | 모니터 없는 환경에서 OS 화면 공급 경로 사용. 기존 DXGI/H.264는 회귀 비교와 API 호환용으로 유지 |
 | 전송 | QUIC(quic-go), ALPN `deskhand/1`, 상호 TLS(인증서 고정) | 다중 스트림·혼잡 제어·TLS 1.3 내장. LAN/VPN 우선이라 ICE/STUN 불필요 |
 | Mac 코어 | `deskhand daemon`(launchd 사용자 에이전트)이 연결·제어권·작업 저장을 소유. 앱·CLI·MCP는 unix socket으로 붙는다 | 앱을 닫아도 장기 작업 유지, 세 경로가 같은 상태 공유 |
 | Mac 앱 | Swift 6 + SwiftUI/AppKit, XcodeGen(`project.yml`) + SwiftPM 패키지 `DeskhandKit` | Alcove와 같은 빌드 체계 |
@@ -37,7 +37,7 @@
 
 **목표(P0)**: 계획 01 문서의 P0 요구 전부. 단 CON-02는 "Deskhand 실시간 화면과 AI가 같은 세션을 본다"로 바뀐다.
 
-**비목표**: RDP/VNC 서버 접속 클라이언트, NAT 통과·클라우드 중계, 오디오, 원격 프린터, macOS/Linux 원격(확장 지점만 유지), 전용 IDE.
+**비목표**: VNC 서버 접속, NAT 통과·클라우드 중계, 오디오, 원격 프린터, macOS/Linux 원격(확장 지점만 유지), 전용 IDE.
 
 **반목표 (기술적으로 돌아가도 실패)**
 - 사람이 앱을 열어 둬야만 AI 작업이 되는 구조.

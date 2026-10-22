@@ -16,7 +16,7 @@ func TestJournaledOpsAreTheStateChangingOps(t *testing.T) {
 			t.Errorf("%s is not journaled", op)
 		}
 	}
-	for _, op := range []string{"fs.list", "fs.read", "fs.hash", "proc.list", "exec.read", "exec.list", "ping", "req.status", "session.info", "xfer.prepare"} {
+	for _, op := range []string{"fs.list", "fs.read", "fs.hash", "proc.list", "exec.read", "exec.list", "ping", "req.status", "session.info", "session.rdp", "xfer.prepare"} {
 		if Journaled(op) {
 			t.Errorf("%s is journaled", op)
 		}

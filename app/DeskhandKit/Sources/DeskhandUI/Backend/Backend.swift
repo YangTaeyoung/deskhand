@@ -88,6 +88,18 @@ public protocol ScreenBackend: Sendable {
     /// Opens a stream connection for the screen of `display` at `preset`. Frames follow
     /// protocol.md §4–§5 and local-api.md §4; the stream finishes when the daemon closes it.
     func screenAttach(hostID: String, display: Int, preset: StreamPreset) async throws -> any ScreenStream
+    func rdpEndpoint(hostID: String) async throws -> RDPEndpoint
+    func inputAttach(hostID: String, sessionID: UInt32, sid: String, connectionGeneration: Int) async throws -> any ScreenStream
+}
+
+extension ScreenBackend {
+    public func rdpEndpoint(hostID: String) async throws -> RDPEndpoint {
+        throw OperationError(code: "CAPABILITY_UNSUPPORTED", message: "이 연결은 Windows 로그인을 지원하지 않습니다")
+    }
+
+    public func inputAttach(hostID: String, sessionID: UInt32, sid: String, connectionGeneration: Int) async throws -> any ScreenStream {
+        throw OperationError(code: "CAPABILITY_UNSUPPORTED", message: "이 연결은 입력 전용 스트림을 지원하지 않습니다")
+    }
 }
 
 /// `files.*`, `app.launch` and `transfer.*` (local-api.md §3). Calls that change remote state

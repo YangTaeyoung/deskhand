@@ -27,6 +27,7 @@ type Agent interface {
 	OpenStream(ctx context.Context, hdr wire.StreamHeader) (conn.DataStream, uint64, error)
 	State() conn.ConnState
 	Generation() uint64
+	SessionInfo() proto.Message
 }
 
 // Agents finds the agent connection of a host.
@@ -164,6 +165,7 @@ type Hub struct {
 
 	mu     sync.Mutex
 	feeds  map[feedKey]*feed
+	inputs map[*Viewer]struct{}
 	links  map[string]*inputLink
 	closed bool
 
@@ -195,7 +197,7 @@ func New(opt Options) *Hub {
 	if opt.QueueBytes <= 0 {
 		opt.QueueBytes = defaultQueueBytes
 	}
-	h := &Hub{opt: opt, lg: lg, clock: opt.Clock, feeds: map[feedKey]*feed{}, links: map[string]*inputLink{}, clocks: map[string]*hostClock{}}
+	h := &Hub{opt: opt, lg: lg, clock: opt.Clock, feeds: map[feedKey]*feed{}, inputs: map[*Viewer]struct{}{}, links: map[string]*inputLink{}, clocks: map[string]*hostClock{}}
 	if h.clock == nil {
 		start := time.Now()
 		h.clock = func() int64 { return time.Since(start).Microseconds() }
@@ -225,18 +227,55 @@ func (h *Hub) Close() {
 	for _, l := range h.links {
 		links = append(links, l)
 	}
+	inputs := make([]*Viewer, 0, len(h.inputs))
+	for v := range h.inputs {
+		inputs = append(inputs, v)
+	}
 	h.mu.Unlock()
-	h.stop()
-	if h.sub != nil {
-		h.sub.Close()
+	// Release held keys before cancelling the context used by inputLink.send.
+	for _, v := range inputs {
+		v.Close()
 	}
 	for _, f := range feeds {
 		f.shutdown()
+	}
+	h.stop()
+	if h.sub != nil {
+		h.sub.Close()
 	}
 	for _, l := range links {
 		l.close()
 	}
 	h.wg.Wait()
+}
+
+// AttachInput creates a human viewer without a display or capture feed.
+// The input upstream is opened lazily by Viewer's existing arbitration.
+func (h *Hub) AttachInput(ctx context.Context, hostID string, binding InputBinding, c model.Caller) (*Viewer, error) {
+	if c.Actor == model.ActorAI {
+		return nil, apierr.New(wire.CodePermissionDenied, "AI 클라이언트는 사람 입력 스트림에 붙을 수 없습니다", false, "")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if h.agent(hostID) == nil {
+		return nil, apierr.NotFound(fmt.Sprintf("PC %s가 등록돼 있지 않습니다", hostID))
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.closed {
+		return nil, errClosed
+	}
+	if binding.SID == "" || binding.ConnectionGeneration == 0 {
+		return nil, apierr.Invalid("sid와 connection_generation은 필수입니다")
+	}
+	if !binding.matches(h.agent(hostID)) {
+		return nil, errInputSessionChanged
+	}
+	v := newViewer(h, hostID, c, "")
+	v.binding = &binding
+	h.inputs[v] = struct{}{}
+	return v, nil
 }
 
 func (h *Hub) agent(hostID string) Agent {
@@ -361,6 +400,7 @@ func (h *Hub) event(ev events.Event) {
 		}
 		h.noticeHost(ev.HostID, n)
 	case events.ConnectionState:
+		h.revokeInputs(ev.HostID)
 		n := map[string]any{"type": noticeConnectionState, "state": ev.Fields["state"]}
 		if r, ok := ev.Fields["reason"].(string); ok && r != "" {
 			n["reason"] = r
@@ -376,6 +416,7 @@ func (h *Hub) event(ev events.Event) {
 			}
 		}
 	case events.SessionChanged:
+		h.revokeInputs(ev.HostID)
 		for _, f := range h.hostFeeds(ev.HostID) {
 			f.requestKeyframe()
 		}
@@ -427,11 +468,26 @@ func (h *Hub) noticeHost(hostID string, n any) {
 	for _, f := range h.hostFeeds(hostID) {
 		f.broadcastNotice(frame)
 	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for v := range h.inputs {
+		if v.hostID != hostID {
+			continue
+		}
+		v.q.push(frame)
+	}
 }
 
 // hostViewers returns the viewers of hostID.
 func (h *Hub) hostViewers(hostID string) []*Viewer {
 	var out []*Viewer
+	h.mu.Lock()
+	for v := range h.inputs {
+		if v.hostID == hostID {
+			out = append(out, v)
+		}
+	}
+	h.mu.Unlock()
 	for _, f := range h.hostFeeds(hostID) {
 		f.mu.Lock()
 		for v := range f.viewers {

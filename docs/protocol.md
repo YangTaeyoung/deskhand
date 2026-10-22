@@ -85,6 +85,7 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 | `req.status` | `rid` | `state`(`done`/`running`/`unknown`), 완료 시 원래 결과 |
 | `time.sync` | — | `mono_us`(에이전트 단조 시계 µs) |
 | `session.info` | — | `session_id`, `user`, `sid`, `connect_state`(`active`/`connected`/`disconnected`), `protocol`(`console`/`rdp`), `locked`(잠금 상태를 읽지 못하면 생략), `input_desktop`(`Default`/`Winlogon`/`unknown`), `integrity` |
+| `session.rdp` | — | `enabled`(bool), `port`(int), `certificate_sha256`(대문자 64HEX, 구분자 없음), `session_id`(int), `user`, `sid`, `protocol`(`console`/`rdp`), `connect_state`(`active`/`connected`/`disconnected`), `locked`(bool, 필수) |
 | `display.list` | — | `displays`: [{`index`, `name`, `adapter`, `x`, `y`, `width`, `height`, `dpi`, `scale`, `primary`, `refresh_hz`}] |
 | `screen.capture` | `display`, `format`(`png`/`jpeg`), `max_width`, `quality`, `window`(선택: 창 영역만) | `capture_id`, `data`(base64), `width`, `height`, `scale`(원본 대비), `origin`({x,y} 가상 데스크톱 좌표), `dpi`, `mono_us`, `method`(`dd`/`gdi`) |
 | `input.state` | — | `gen`, `pressed`(에이전트가 누른 채인 키·버튼: `{"k":"button","b":…}`, `{"k":"key","sc":…,"ext":true}`(E0 키만 `ext`), `{"k":"key","vk":…}` — 버튼, 스캔코드, 가상 키 순) |
@@ -151,6 +152,16 @@ Alcove에서 이식(필드·의미 동일, `rid` 추가): `ping`, `exec.run`, `e
 - `session.changed`: hello의 `session`과 같은 필드(Windows는 `session.info` 결과의 필드)를 이벤트에 바로 담는다 — `{"t":"ev","name":"session.changed","session_id":…,"user":…,"sid":…,"connect_state":…,"protocol":…,"locked":…,"input_desktop":…,"integrity":…}`(빈 `sid`·`integrity`와 알 수 없는 `locked`는 빠진다).
 - `display.changed`: `{"t":"ev","name":"display.changed","displays":[…]}`, `displays`는 `display.list`의 `displays`.
 - 둘 다 에이전트가 `caps`와 같이 5초마다 읽어, welcome이 온 연결마다 그 연결에 마지막으로 보낸 값(처음은 그 연결의 hello가 담은 값)과 다를 때만 보낸다. 그래서 hello 뒤 첫 확인은 hello 이후 바뀐 것만 보낸다. 세션이나 디스플레이 목록을 읽지 못한 확인(Session 0의 디스플레이 등)에서는 그 이벤트를 보내지 않는다.
+
+### RDP 리스너 메타데이터
+
+`session.rdp`는 인증된 기존 RPC 연결에서 읽기 전용으로 동작하며 `AllowExec`, writer 세대, 요청 저널을 요구하지 않는다. 사용자 인자·암호·임의 스크립트를 받지 않는다. 신원은 기존 `session.Current`가 읽은 에이전트 프로세스의 세션/계정이며 콘솔 사용자나 RDP 로그인 대상 계정으로 대체하지 않는다. Session 0, 누락된 SID/사용자, 알 수 없는 잠금 상태는 `INTERNAL`로 거절한다. Windows 밖은 `CAPABILITY_UNSUPPORTED`다.
+
+Windows 조회는 고정 PowerShell을 시스템 경로에서 프로필 없이 실행한다. `RDP-Tcp`의 `PortNumber`, `Win32_TSGeneralSetting.SSLCertificateSHA1Hash`, LocalMachine `Remote Desktop`/`My` 저장소의 **그 thumbprint와 일치하는** 인증서 `RawData`를 읽어 DER의 SHA-256을 만든다. SHA-1 thumbprint 자체를 반환하지 않는다. `enabled`는 `fDenyTSConnections=0`, TermService 실행, 해당 프로세스의 그 포트 Listen 상태를 모두 확인한다. 바인딩·인증서·권한·포트·파싱 조회 실패는 명시적 `INTERNAL`이며 인증서 추측이나 보안 설정 변경은 없다. 8초 실행 제한, 종료 정리 1초, stdout/stderr 각각 64 KiB 한도를 둔다.
+
+근거: [리스너 인증서 바인딩](https://learn.microsoft.com/en-us/troubleshoot/windows-server/remote/remote-desktop-listener-certificate-configurations), [인증서 RawData](https://learn.microsoft.com/en-us/dotnet/api/system.security.cryptography.x509certificates.x509certificate2.rawdata), [TCP 리스너·프로세스 조회](https://learn.microsoft.com/en-us/powershell/module/nettcpip/get-nettcpconnection). 구현은 `internal/agent/server/rdp_windows.go`, `internal/wire/rdp.go`다.
+
+로컬 `stream.attach{kind:"input",host_id}`는 이 에이전트 프로토콜에 새 스트림을 추가하지 않는다. 기존 `input` 헤더/`0x41`/세대 검사를 재사용하며 `video`·`cursor`·캡처 upstream을 열지 않는다. RDP와 에이전트 SID·세션 ID의 일치 판정 및 입력 활성화는 앱 책임이다(local-api.md §4).
 
 ## 4. `video` 프레임
 

@@ -189,6 +189,7 @@ func (c *fakeCursor) write(kind byte, payload []byte) {
 // fakeInput is what an input stream of the fake agent received.
 type fakeInput struct {
 	hdrGen uint64
+	held   map[string]bool
 	events []wire.InputEvent
 	acks   []wire.InputAck
 	ended  bool
@@ -197,14 +198,15 @@ type fakeInput struct {
 // fakeAgent serves video, cursor and input streams and answers
 // control.set_writer and time.sync with the rules of docs/protocol.md.
 type fakeAgent struct {
-	mu      sync.Mutex
-	state   conn.ConnState
-	connGen uint64
-	writer  uint64
-	held    map[string]bool
-	videos  []*fakeVideo
-	cursors []*fakeCursor
-	inputs  []*fakeInput
+	mu          sync.Mutex
+	state       conn.ConnState
+	connGen     uint64
+	sessionInfo proto.Message
+	writer      uint64
+	held        map[string]bool
+	videos      []*fakeVideo
+	cursors     []*fakeCursor
+	inputs      []*fakeInput
 	// refuseVideo answers a video stream of a display with a refusal of
 	// that code.
 	refuseVideo map[int]string
@@ -220,7 +222,7 @@ type fakeAgent struct {
 }
 
 func newFakeAgent() *fakeAgent {
-	return &fakeAgent{state: conn.StateReady, connGen: 1, held: map[string]bool{}, refuseVideo: map[int]string{}, changed: make(chan struct{})}
+	return &fakeAgent{state: conn.StateReady, connGen: 1, sessionInfo: proto.Message{"session_id": float64(7), "sid": "S-1-5-21-1-1001"}, held: map[string]bool{}, refuseVideo: map[int]string{}, changed: make(chan struct{})}
 }
 
 // setState changes the connection state; open streams stay open.
@@ -271,6 +273,16 @@ func (a *fakeAgent) Generation() uint64 {
 	return a.connGen
 }
 
+func (a *fakeAgent) SessionInfo() proto.Message {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	out := proto.Message{}
+	for k, v := range a.sessionInfo {
+		out[k] = v
+	}
+	return out
+}
+
 func (a *fakeAgent) Call(_ context.Context, op string, params proto.Message, _ conn.CallOpts) (proto.Message, error) {
 	a.mu.Lock()
 	switch op {
@@ -298,6 +310,9 @@ func (a *fakeAgent) raiseLocked(gen uint64) {
 	if gen > a.writer {
 		a.writer = gen
 		a.held = map[string]bool{}
+		for _, input := range a.inputs {
+			input.held = map[string]bool{}
+		}
 	}
 }
 
@@ -375,7 +390,7 @@ func (a *fakeAgent) serveInput(st pipeEnd, hdr wire.StreamHeader) {
 		return
 	}
 	a.raiseLocked(hdr.Gen)
-	fs := &fakeInput{hdrGen: hdr.Gen}
+	fs := &fakeInput{hdrGen: hdr.Gen, held: map[string]bool{}}
 	a.inputs = append(a.inputs, fs)
 	a.mu.Unlock()
 	a.hook("accepted")
@@ -389,6 +404,15 @@ func (a *fakeAgent) serveInput(st pipeEnd, hdr wire.StreamHeader) {
 	defer func() {
 		a.mu.Lock()
 		fs.ended = true
+		for key := range fs.held {
+			delete(a.held, key)
+			for _, other := range a.inputs {
+				if other != fs && !other.ended && other.held[key] {
+					a.held[key] = true
+				}
+			}
+		}
+		fs.held = map[string]bool{}
 		a.mu.Unlock()
 	}()
 	for {
@@ -415,18 +439,25 @@ func (a *fakeAgent) serveInput(st pipeEnd, hdr wire.StreamHeader) {
 				k := fmt.Sprintf("sc:%#x", ev.SC)
 				if ev.Down {
 					a.held[k] = true
+					fs.held[k] = true
 				} else {
 					delete(a.held, k)
+					delete(fs.held, k)
 				}
 			case "button":
 				k := "b:" + ev.B
 				if ev.Down {
 					a.held[k] = true
+					fs.held[k] = true
 				} else {
 					delete(a.held, k)
+					delete(fs.held, k)
 				}
 			case "release_all":
 				a.held = map[string]bool{}
+				for _, input := range a.inputs {
+					input.held = map[string]bool{}
+				}
 			}
 		}
 		fs.acks = append(fs.acks, ack)

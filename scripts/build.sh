@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-version="$(git describe --always --dirty)"
+version="${DESKHAND_VERSION:-$(git describe --always --dirty)}"
 ldflags="-X main.version=${version}"
 mkdir -p build
 

@@ -133,7 +133,7 @@ struct ControlBanner: View {
             }
         case .sessionLocked:
             BannerBand(style: .tinted(DS.Color.warning), symbol: "lock.fill", title: kind.title,
-                       message: String.ui("banner.locked.message", "원격 PC 앞에서 잠금을 해제하세요. 그동안은 사람도 AI도 화면과 입력을 쓸 수 없습니다.")) {
+                       message: String.ui("banner.locked.message", "Windows 계정으로 로그인해 원격 화면을 연결하세요.")) {
                 EmptyView()
             }
         case .connecting, .reconnecting:

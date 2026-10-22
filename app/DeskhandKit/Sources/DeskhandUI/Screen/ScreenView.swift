@@ -158,6 +158,15 @@ public struct ScreenView: View {
     }
 
     public var body: some View {
+        if store.backend is LiveBackend, standIn == nil, chrome == .native {
+            RDPWorkspaceView(store: store, host: host)
+                .id(host.hostID)
+        } else {
+            legacyBody
+        }
+    }
+
+    private var legacyBody: some View {
         VStack(spacing: 0) {
             ScreenHeader(preferences: preferences, host: host, display: display, owner: owner,
                          live: isLive, captured: shown.isCaptured, enabled: availability.allowsStreamSettings(phase: shown.phase))
@@ -272,7 +281,7 @@ public struct ScreenView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .locked:
             PlaceholderNote(symbol: "lock.display",
-                            message: String.ui("screen.locked.message", "잠금이 풀리면 화면이 바로 나타납니다. 잠금 화면은 원격으로 볼 수 없습니다."))
+                            message: String.ui("screen.locked.message", "Deskhand에서는 Windows 로그인 화면을 조작할 수 없습니다. 잠금이 풀리면 화면이 다시 연결됩니다."))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .unavailable(let state, let reason):
             StageMessage(symbol: "display.trianglebadge.exclamationmark",

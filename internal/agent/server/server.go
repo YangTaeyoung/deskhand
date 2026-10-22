@@ -50,6 +50,9 @@ type Options struct {
 	// session.info, the hello's session and the screen and input
 	// capabilities; nil means session.Current.
 	SessionInfo func() (session.Info, error)
+	// RDPListener reads RDP-Tcp's port and bound certificate without changes.
+	// Nil uses the bounded platform query; non-Windows is unsupported.
+	RDPListener func(context.Context) (wire.RDPListener, error)
 	// Displays lists the displays for display.list and the hello; nil means
 	// display.List.
 	Displays func() ([]display.Info, error)
@@ -140,6 +143,9 @@ func New(opt Options) *Server {
 	}
 	if opt.SessionInfo == nil {
 		opt.SessionInfo = session.Current
+	}
+	if opt.RDPListener == nil {
+		opt.RDPListener = currentRDPListener
 	}
 	if opt.Displays == nil {
 		opt.Displays = display.List

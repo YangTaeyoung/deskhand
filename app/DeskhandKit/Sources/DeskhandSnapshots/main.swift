@@ -8,7 +8,7 @@ let scenes: [SnapshotScene] = [
         ComponentsGallery()
     },
 ] + RootScenes.all + WorkspaceScenes.all + ScreenScenes.all + FilesScenes.all + TerminalScenes.all + DiagnosticsScenes.all + DebuggerScenes.all
-    + QAScenes.all + SettingsScenes.all + QuickSwitchScenes.all
+    + QAScenes.all + SettingsScenes.all + QuickSwitchScenes.all + RDPScenes.all
 
 let usage = """
     사용법: DeskhandSnapshots --out <디렉터리> [--only <장면>]

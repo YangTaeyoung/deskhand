@@ -26,6 +26,7 @@ const (
 // scopeMethods are the methods an AI client's scope limits (docs/local-api.md
 // §3 AI 범위).
 var scopeMethods = map[string]scopeKind{
+	"session.rdp":    scopeScreen,
 	"screen.capture": scopeScreen, "observe": scopeScreen,
 	"input.click": scopeScreen, "input.move": scopeScreen, "input.drag": scopeScreen,
 	"input.scroll": scopeScreen, "input.key": scopeScreen, "input.type": scopeScreen,

@@ -16,6 +16,50 @@ func (s *Server) registerScreen() {
 		return
 	}
 	s.streams["screen"] = s.screenStream
+	s.streams["input"] = s.inputStream
+}
+
+func (s *Server) inputStream(ctx context.Context, sess *session, raw json.RawMessage) (any, func(io.ReadWriteCloser), error) {
+	if sess.Caller().Actor == model.ActorAI {
+		return nil, nil, apierr.New(wire.CodePermissionDenied, "AI 클라이언트는 사람 입력 스트림에 붙을 수 없습니다", false, "")
+	}
+	// Keep the input-only contract exact, including key spelling. The legacy
+	// screen params intentionally retain their existing permissive decoder.
+	var fields map[string]json.RawMessage
+	if err := decode(raw, &fields); err != nil {
+		return nil, nil, err
+	}
+	for k := range fields {
+		switch k {
+		case "kind", "host_id", "session_id", "sid", "connection_generation":
+		default:
+			return nil, nil, &paramError{e: apierr.Invalid("input 파라미터를 모릅니다: " + k)}
+		}
+	}
+	var p struct {
+		HostID               string  `json:"host_id"`
+		SessionID            *uint32 `json:"session_id"`
+		SID                  string  `json:"sid"`
+		ConnectionGeneration *uint64 `json:"connection_generation"`
+	}
+	if err := decode(raw, &p); err != nil {
+		return nil, nil, err
+	}
+	if err := hostRequired(p.HostID); err != nil {
+		return nil, nil, &paramError{e: apierr.As(err)}
+	}
+	if p.SessionID == nil || p.SID == "" || p.ConnectionGeneration == nil || *p.ConnectionGeneration == 0 {
+		return nil, nil, &paramError{e: apierr.Invalid("input에는 session_id(uint32), sid, connection_generation(uint64)가 필요합니다")}
+	}
+	_, row, err := s.d.Hosts.Conn(p.HostID)
+	if err != nil {
+		return nil, nil, err
+	}
+	v, err := s.d.Screens.AttachInput(ctx, row.HostID, screen.InputBinding{SessionID: *p.SessionID, SID: p.SID, ConnectionGeneration: *p.ConnectionGeneration}, sess.Caller())
+	if err != nil {
+		return nil, nil, err
+	}
+	return map[string]any{"host_id": row.HostID}, v.Run, nil
 }
 
 // screenParams are the params of stream.attach{kind:"screen"}.

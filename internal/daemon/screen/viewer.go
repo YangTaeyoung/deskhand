@@ -42,6 +42,7 @@ type Viewer struct {
 	caller  model.Caller
 	initial Preset
 	maxFPS  int
+	binding *InputBinding // nil for the legacy screen contract
 	q       *queue
 
 	// f, preset, needKey and stale are guarded by f.mu once the viewer
@@ -56,6 +57,7 @@ type Viewer struct {
 	lagging atomic.Bool
 
 	imu      sync.Mutex
+	opMu     sync.Mutex // serializes input with detach/release
 	held     map[heldKey]bool
 	deniedAt time.Time
 
@@ -140,9 +142,9 @@ func (v *Viewer) read(rw io.Reader) {
 	}
 }
 
-// Close ends the viewer; Run, called or not yet called, then closes its
-// connection and takes it off its display.
-func (v *Viewer) Close() { v.end() }
+// Close ends and detaches the viewer, including an attach whose handshake
+// failed before Run could start.
+func (v *Viewer) Close() { v.end(); v.detach() }
 
 // end closes the viewer's queue and connection.
 func (v *Viewer) end() {
@@ -162,9 +164,14 @@ func (v *Viewer) end() {
 // buttons it holds; the host's input stream closes with its last viewer.
 func (v *Viewer) detach() {
 	v.detOne.Do(func() {
+		v.opMu.Lock()
+		defer v.opMu.Unlock()
 		if v.f != nil {
 			v.f.leave(v)
 		}
+		v.h.mu.Lock()
+		delete(v.h.inputs, v)
+		v.h.mu.Unlock()
 		v.release()
 		if len(v.h.hostViewers(v.hostID)) == 0 {
 			v.h.closeLink(v.hostID)
@@ -201,6 +208,32 @@ func (v *Viewer) control(payload []byte) {
 // (CONTROL_PREEMPTED) is dropped with a control_denied notice. release_all
 // goes out only while a person holds control, with that owner's gen.
 func (v *Viewer) input(payload []byte) {
+	v.opMu.Lock()
+	defer func() {
+		// Also revoke when opening failed or control changed while the identity
+		// changed. No event delivery is required to finish the viewer's lifetime.
+		if v.binding != nil && !v.binding.matches(v.h.agent(v.hostID)) {
+			v.end()
+		}
+		v.opMu.Unlock()
+		v.emu.Lock()
+		ended := v.ended
+		v.emu.Unlock()
+		if ended {
+			v.detach()
+		}
+	}()
+	v.emu.Lock()
+	ended := v.ended
+	v.emu.Unlock()
+	if ended {
+		return
+	}
+	if v.binding != nil && !v.binding.matches(v.h.agent(v.hostID)) {
+		v.h.link(v.hostID).retireBound(v.binding)
+		v.end()
+		return
+	}
 	var ev wire.InputEvent
 	if json.Unmarshal(payload, &ev) != nil || !inputKinds[ev.K] {
 		return
@@ -222,7 +255,9 @@ func (v *Viewer) input(payload []byte) {
 			return
 		}
 		ev.Gen = st.Gen
-		_ = v.h.link(v.hostID).send(v.caller, ev, false)
+		if err := v.h.link(v.hostID).send(v.caller, ev, false, v.binding); apierr.CodeOf(err) == wire.CodeSessionChanged {
+			v.end()
+		}
 		return
 	}
 	if a := v.h.agent(v.hostID); a == nil || a.State() != conn.StateReady {
@@ -231,7 +266,11 @@ func (v *Viewer) input(payload []byte) {
 	gen, err := ctl.CheckHuman(v.hostID, v.caller)
 	if err == nil {
 		ev.Gen = gen
-		err = v.h.link(v.hostID).send(v.caller, ev, true)
+		err = v.h.link(v.hostID).send(v.caller, ev, true, v.binding)
+	}
+	if apierr.CodeOf(err) == wire.CodeSessionChanged {
+		v.end()
+		return
 	}
 	if apierr.CodeOf(err) == wire.CodeControlPreempted {
 		v.denied(ctl.Get(v.hostID))
@@ -278,6 +317,10 @@ func (v *Viewer) release() {
 	held := len(v.held) > 0
 	v.held = map[heldKey]bool{}
 	v.imu.Unlock()
+	if v.binding != nil && !v.binding.matches(v.h.agent(v.hostID)) {
+		v.h.link(v.hostID).retireBound(v.binding)
+		return
+	}
 	ctl := v.h.opt.Control
 	if !held || ctl == nil {
 		return
@@ -286,7 +329,7 @@ func (v *Viewer) release() {
 	if st.Owner != model.OwnerHuman {
 		return
 	}
-	_ = v.h.link(v.hostID).send(v.caller, wire.InputEvent{K: "release_all", Gen: st.Gen}, false)
+	_ = v.h.link(v.hostID).send(v.caller, wire.InputEvent{K: "release_all", Gen: st.Gen}, false, v.binding)
 }
 
 // denied sends the viewer a control_denied notice with the owner of st, at

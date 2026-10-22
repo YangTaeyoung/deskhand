@@ -29,7 +29,7 @@ var foundationOps = []string{
 // mediaOps are the ops of the media track that the agent serves
 // (docs/protocol.md §3.1).
 var mediaOps = []string{
-	"time.sync", "session.info", "display.list", "screen.capture", "input.state", "input.release_all", "control.set_writer",
+	"time.sync", "session.info", "session.rdp", "display.list", "screen.capture", "input.state", "input.release_all", "control.set_writer",
 }
 
 func TestTheAgentRegistersTheOpsOfBothTracks(t *testing.T) {

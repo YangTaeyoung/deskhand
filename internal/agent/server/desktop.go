@@ -18,6 +18,7 @@ const errSession0Displays = "the agent runs in Session 0, which has no displays;
 // registerDesktop adds session.info and display.list.
 func (s *Server) registerDesktop() {
 	s.register("session.info", false, s.sessionInfoOp)
+	s.register("session.rdp", false, s.sessionRDPOp)
 	s.register("display.list", false, s.displayListOp)
 }
 

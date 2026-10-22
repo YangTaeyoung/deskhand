@@ -9,3 +9,7 @@
 /.superpowers/
 /app/DeskhandKit/.build/
 /app/DeskhandKit/.swiftpm/
+
+# Local Python cache and diagnostics are not release source.
+__pycache__/
+*.py[cod]
