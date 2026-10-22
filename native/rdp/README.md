@@ -116,3 +116,9 @@ The Swift UI defaults to one remote pixel per window point and Windows 100%
 scale, without Retina supersampling. Very large windows are bounded by 3840 per
 axis and 8,294,400 pixels. One-second pipeline metrics count reception and layer
 submission; they do not measure physical display presentation.
+
+### Signed macOS authentication provider
+
+NTLM uses OpenSSL legacy-provider MD4/RC4. The provider is loaded at runtime and does not appear in the engine dylib dependency list. `build-app.sh --provider` bundles `legacy.dylib`, including its first LC_LOAD_DYLIB (it is MH_BUNDLE with no LC_ID_DYLIB). The engine resolves its own directory with `dladdr` and sets OpenSSL's provider search path there before FreeRDP SSL initialization. All Frameworks modules receive the same Developer ID signature. No library-validation entitlement or NLA downgrade is used.
+
+`tests/probe_auth_crypto.c` is an offline regression probe: instantiate/free a local session without connecting, then fetch MD4/RC4 from the bundled provider. Release packaging signs the probe with hardened runtime and runs with an invalid `OPENSSL_MODULES` directory. This caught the original Preview 1 failure, where ad-hoc builds loaded Homebrew's provider and signed builds rejected its different Team ID.

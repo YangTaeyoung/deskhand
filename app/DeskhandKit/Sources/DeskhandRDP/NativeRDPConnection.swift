@@ -79,6 +79,9 @@ public final class NativeRDPConnection {
 
     private func receive(_ snapshot: RDPSnapshot, generation: UUID) -> Bool {
         guard self.generation == generation else { return false }
+        if snapshot.phase != phase, case .failed(let code) = snapshot.phase {
+            performanceLogger.error("RDP_CONNECT_FAILED code=\(code, privacy: .public)")
+        }
         phase = snapshot.phase
         serverSessionID = snapshot.sessionID
         if let frame = snapshot.frame {

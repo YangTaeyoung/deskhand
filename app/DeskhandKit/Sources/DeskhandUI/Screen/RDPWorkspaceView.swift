@@ -17,6 +17,11 @@ public struct RDPWorkspaceView: View {
     @State private var loadingEndpoint = true
     @State private var username = ""
     @State private var password = ""
+    @State private var rememberLogin = true
+    @State private var savedLogin = false
+    @State private var credentialNotice: String?
+    @State private var loadedCredentialKey: String?
+    @State private var loginMemory = RDPLoginMemory()
     @State private var retry = 0
     @State private var inputRetry = 0
     @State private var captured = false
@@ -30,6 +35,8 @@ public struct RDPWorkspaceView: View {
         _endpoint = State(initialValue: standIn)
         _username = State(initialValue: standIn?.user ?? "")
         _loadingEndpoint = State(initialValue: standIn == nil)
+        _rememberLogin = State(initialValue: standIn == nil
+            ? UserDefaults.standard.object(forKey: "rdp.remember.\(host.hostID)") as? Bool ?? true : true)
     }
 
     private var owner: ControlOwner {
@@ -61,6 +68,9 @@ public struct RDPWorkspaceView: View {
                     Label(captured ? "입력 보내는 중" : "화면 연결됨", systemImage: captured ? "keyboard" : "checkmark.circle")
                         .font(DS.Font.caption).foregroundStyle(.secondary)
                 }
+                if live, savedLogin {
+                    Button("저장한 로그인 삭제") { forgetLogin() }.buttonStyle(.bordered)
+                }
                 if connecting || live {
                     Button(connecting ? "취소" : "화면 연결 끊기") { disconnect() }
                         .buttonStyle(.bordered)
@@ -68,6 +78,12 @@ public struct RDPWorkspaceView: View {
             }
             .padding(.horizontal, DS.Space.l).padding(.vertical, DS.Space.m)
             Divider()
+            if live, let credentialNotice {
+                Label(credentialNotice, systemImage: "key")
+                    .font(DS.Font.caption).fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, DS.Space.l).padding(.vertical, DS.Space.s)
+            }
             GeometryReader { geometry in
                 Group {
                     if live { liveScreen } else { login }
@@ -88,6 +104,18 @@ public struct RDPWorkspaceView: View {
             do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
             guard !Task.isCancelled else { return }
             connection.resize(to: viewport)
+        }
+        .onChange(of: connection.phase) { _, phase in
+            switch phase {
+            case .live:
+                do {
+                    if try loginMemory.connected() { savedLogin = true; credentialNotice = nil }
+                } catch {
+                    credentialNotice = "연결됐지만 이번 로그인 정보를 저장하지 못했습니다. 다음 연결 전에 저장 상태를 확인하세요."
+                }
+            case .failed, .stopped: loginMemory.failed()
+            default: break
+            }
         }
         .onDisappear { disconnect() }
     }
@@ -134,11 +162,36 @@ public struct RDPWorkspaceView: View {
                             .font(DS.Font.caption).foregroundStyle(DS.Status.neutralText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                    Toggle("이 Mac에 로그인 정보 저장", isOn: $rememberLogin)
+                        .disabled(connecting)
+                        .onChange(of: rememberLogin) { _, enabled in
+                            guard standIn == nil else { return }
+                            UserDefaults.standard.set(enabled, forKey: "rdp.remember.\(host.hostID)")
+                            if !enabled { forgetLogin(clearPassword: false) }
+                        }
+                    Text("사용자 이름과 암호를 이 Mac의 키체인에 저장합니다. 해제하면 저장한 정보도 삭제합니다.")
+                        .font(DS.Font.caption).foregroundStyle(DS.Status.neutralText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if savedLogin {
+                        HStack {
+                            Label(password.isEmpty ? "이 PC의 로그인 정보가 저장돼 있습니다." : "저장한 로그인 정보를 불러왔습니다.", systemImage: "key.fill")
+                            Spacer()
+                            if password.isEmpty {
+                                Button("불러오기") { restoreLogin() }.buttonStyle(.bordered).disabled(connecting)
+                            }
+                            Button("삭제") { forgetLogin() }.buttonStyle(.bordered).disabled(connecting)
+                        }
+                        .font(DS.Font.caption)
+                    }
+                    if let credentialNotice {
+                        Text(credentialNotice).font(DS.Font.caption).fixedSize(horizontal: false, vertical: true)
+                    }
                     if case .failed(let code) = connection.phase {
                         Label(connectionFailureMessage(code),
                               systemImage: "exclamationmark.triangle")
                             .font(DS.Font.body).fixedSize(horizontal: false, vertical: true)
-                            .help(String(format: "오류 코드: %08X", code))
+                            Text(String(format: "오류 코드: %08X", code))
+                            .font(.system(.caption, design: .monospaced)).textSelection(.enabled)
                         if code == 0xD4000004 {
                             Button("PC 신원 다시 확인") { retry += 1 }.buttonStyle(.bordered)
                         }
@@ -160,7 +213,7 @@ public struct RDPWorkspaceView: View {
                     }
                     Divider()
                     VStack(alignment: .leading, spacing: DS.Space.s) {
-                        Label("암호는 저장하지 않습니다.", systemImage: "lock")
+                        Label("저장한 암호는 이 Mac의 키체인에서 보호합니다.", systemImage: "lock")
                         Label("PC 모니터는 켜지 않아도 됩니다.", systemImage: "display")
                     }
                     .font(DS.Font.caption).foregroundStyle(DS.Status.neutralText)
@@ -224,6 +277,26 @@ public struct RDPWorkspaceView: View {
             guard !Task.isCancelled else { return }
             endpoint = value
             if username.isEmpty { username = value.user }
+            let key = RDPLoginMemory.key(hostID: host.hostID, certificate: value.certificateSHA256)
+            if loadedCredentialKey != key {
+                loadedCredentialKey = key
+                savedLogin = false
+                do {
+                    let indexKey = "rdp.saved-key.\(host.hostID)"
+                    if let previous = UserDefaults.standard.string(forKey: indexKey), previous != key {
+                        try loginMemory.forget(key: previous)
+                    }
+                    UserDefaults.standard.set(key, forKey: indexKey)
+                    if let saved = try loginMemory.restore(key: key),
+                       password.isEmpty, username == value.user || username == saved.username {
+                        username = saved.username
+                        password = saved.password
+                        savedLogin = true
+                    }
+                } catch {
+                    credentialNotice = "저장한 로그인 정보를 불러오지 못했습니다. 계정 암호를 입력해 연결하세요."
+                }
+            }
         } catch {
             if !Task.isCancelled { endpointError = OperationError(error); endpoint = nil }
         }
@@ -239,6 +312,8 @@ public struct RDPWorkspaceView: View {
         let user = parts.count == 2 ? String(parts[1]) : account
         let secret = password
         password = ""
+        let key = RDPLoginMemory.key(hostID: host.hostID, certificate: endpoint.certificateSHA256)
+        loginMemory.prepare(key: key, username: account, password: secret, remember: rememberLogin)
         do {
             let configuration = try RDPConfiguration(host: host.address, port: port,
                                                      certificateSHA256: endpoint.certificateSHA256,
@@ -246,11 +321,47 @@ public struct RDPWorkspaceView: View {
             try connection.connect(configuration: configuration, username: user, domain: domain, password: secret)
             if let viewport { connection.resize(to: viewport) }
         } catch {
+            loginMemory.failed()
             endpointError = OperationError(code: "RDP_CONNECT", message: "화면 연결을 시작하지 못했습니다. 앱 진단을 확인한 뒤 다시 시도하세요")
         }
     }
 
+    private func restoreLogin() {
+        guard let loadedCredentialKey, standIn == nil else { return }
+        do {
+            if let saved = try loginMemory.restore(key: loadedCredentialKey) {
+                username = saved.username
+                password = saved.password
+                savedLogin = true
+                credentialNotice = nil
+            } else {
+                savedLogin = false
+                credentialNotice = "저장한 로그인 정보가 없습니다."
+            }
+        } catch {
+            credentialNotice = "저장한 로그인 정보를 불러오지 못했습니다. 계정 암호를 입력해 연결하세요."
+        }
+    }
+
+    private func forgetLogin(clearPassword: Bool = true) {
+        guard let loadedCredentialKey, standIn == nil else { return }
+        do {
+            let indexKey = "rdp.saved-key.\(host.hostID)"
+            if let previous = UserDefaults.standard.string(forKey: indexKey), previous != loadedCredentialKey {
+                try loginMemory.forget(key: previous)
+            }
+            try loginMemory.forget(key: loadedCredentialKey)
+            UserDefaults.standard.removeObject(forKey: indexKey)
+            savedLogin = false
+            if clearPassword { password = "" }
+            credentialNotice = clearPassword ? "저장한 로그인 정보를 삭제했습니다." : "로그인 정보를 저장하지 않습니다."
+        } catch {
+            credentialNotice = "저장한 로그인 정보를 삭제하지 못했습니다. 키체인 접근 상태를 확인한 뒤 다시 시도하세요."
+        }
+    }
+
     private func disconnect() {
+        loginMemory.failed()
         password = ""
         input.close()
         connection.disconnect()
@@ -268,7 +379,7 @@ public struct RDPWorkspaceView: View {
         case 0x0002000E, 0x0002000F, 0x00020013:
             "Windows 계정 암호를 변경해야 합니다. 암호를 변경한 뒤 다시 연결하세요."
         default:
-            "Windows 화면에 연결하지 못했습니다. PC와 네트워크 연결 상태를 확인한 뒤 다시 시도하세요."
+            "Windows 화면 연결이 종료됐습니다. 아래 오류 코드로 실패 원인을 확인할 수 있습니다."
         }
     }
 }

@@ -27,6 +27,10 @@ done
 codesign --force --options runtime --timestamp --sign "$release_identity" "$release_app/Contents/MacOS/deskhand"
 codesign --force --options runtime --timestamp --sign "$release_identity" "$release_app"
 codesign --verify --deep --strict "$release_app"
+# A plain dlopen smoke test misses OpenSSL's runtime-loaded NTLM provider.
+clang -Wall -Wextra -Werror "$release_root/native/rdp/tests/probe_auth_crypto.c" -o "$release_dir/rdp-auth-probe"
+codesign --force --options runtime --timestamp --sign "$release_identity" "$release_dir/rdp-auth-probe"
+OPENSSL_MODULES=/deskhand-no-external-providers "$release_dir/rdp-auth-probe" "$release_app/Contents/Frameworks" > "$release_dir/rdp-auth-verification.log" 2>&1
 "$release_app/Contents/MacOS/deskhand" --json version > "$release_dir/cli-version.json"
 
 # Notarize the app first so its stapled ticket survives drag-install from DMG.

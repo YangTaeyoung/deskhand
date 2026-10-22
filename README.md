@@ -6,7 +6,7 @@ Mac에서 Windows PC를 직접 연결해 조작하고, 화면·터미널·파일
 
 첫 배포는 **0.1.0 Preview 1**, Apple Silicon·macOS 27 이상을 대상으로 한다. GitHub Release의 DMG에서 `Deskhand.app`을 `Applications`로 드래그한다. Windows PC에는 SSH 연결과 원격 데스크톱 호스트 기능이 준비돼 있어야 한다. [설치 안내](docs/releases/INSTALL-ko.txt)와 [릴리즈 노트](docs/releases/0.1.0-preview.1.md)를 참고한다.
 
-화면 탭에서 Windows 계정 암호로 로그인하며 PIN은 사용하지 않는다. 암호를 저장하지 않는다. 모니터 전원과 별도 가상 디스플레이 드라이버는 기본 연결 요건이 아니다.
+화면 탭에서 Windows 계정 암호로 로그인하며 PIN은 사용하지 않는다. 로그인 정보 저장을 선택하면 연결 성공 후 이 Mac의 키체인에 PC별로 저장하며, 다음 실행에서 불러온다. 저장한 정보는 앱에서 삭제할 수 있다. 출시된 Preview 1에는 이 기능이 없으며 다음 빌드부터 적용된다. 모니터 전원과 별도 가상 디스플레이 드라이버는 기본 연결 요건이 아니다.
 
 ## 구성
 

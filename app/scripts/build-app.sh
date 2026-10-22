@@ -58,7 +58,7 @@ if [ "$(printf '%s' "$main_executable" | tr '[:upper:]' '[:lower:]')" = deskhand
   exit 1
 fi
 cp -f "$repo_dir/build/deskhand" "$app/Contents/MacOS/deskhand"
-python3 "$app_dir/scripts/bundle-rdp.py" "$repo_dir/build/rdp/engine/libDeskhandRDPEngine.dylib" "$app/Contents/Frameworks"
+python3 "$app_dir/scripts/bundle-rdp.py" "$repo_dir/build/rdp/engine/libDeskhandRDPEngine.dylib" "$app/Contents/Frameworks" --provider "$(brew --prefix openssl@3)/lib/ossl-modules/legacy.dylib"
 mkdir -p "$app/Contents/Resources/rdp-licenses"
 cp "$repo_dir/build/rdp/FreeRDP/LICENSE" "$app/Contents/Resources/rdp-licenses/FreeRDP-LICENSE"
 ditto "$repo_dir/build/rdp/engine/licenses" "$app/Contents/Resources/rdp-licenses"

@@ -34,6 +34,8 @@ cmake -S "$ROOT/native/rdp" -B "$ENGINE" -G Ninja \
   }
 cmake --build "$ENGINE" --target DeskhandRDPEngine rdp_test_abi rdp_test_engine rdp_test_disp \
   > "$RDP_ROOT/build.log" 2>&1 || { tail -80 "$RDP_ROOT/build.log" >&2; exit 1; }
+# Match the engine's explicit provider search directory in unbundled native tests.
+cp -f "$OPENSSL_PREFIX/lib/ossl-modules/legacy.dylib" "$ENGINE/legacy.dylib"
 ctest --test-dir "$ENGINE" --output-on-failure > "$RDP_ROOT/tests.log" 2>&1 || {
   cat "$RDP_ROOT/tests.log" >&2; exit 1;
 }

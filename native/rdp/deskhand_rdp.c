@@ -15,6 +15,7 @@
 #include <winpr/synch.h>
 #include <openssl/crypto.h>
 #include <openssl/pem.h>
+#include <openssl/provider.h>
 #include <openssl/x509.h>
 
 #include <limits.h>
@@ -28,6 +29,7 @@
 #include <arpa/inet.h>
 #include <dns_sd.h>
 #include <errno.h>
+#include <dlfcn.h>
 #include <poll.h>
 #include <time.h>
 
@@ -590,6 +592,22 @@ static BOOL client_new(freerdp* instance, rdpContext* context) {
     return TRUE;
 }
 
+/* OpenSSL's legacy provider supplies NTLM's MD4/RC4. Resolve it next to this
+ * engine, never from a developer's Homebrew directory or OPENSSL_MODULES.
+ * Configure before FreeRDP creates its process-wide SSL state. */
+static pthread_once_t crypto_path_once = PTHREAD_ONCE_INIT;
+static bool crypto_path_ready = false;
+static void configure_crypto_path(void) {
+    Dl_info image = {0};
+    char path[PATH_MAX];
+    if (!dladdr((const void*)&dh_rdp_new, &image) || !image.dli_fname ||
+        !realpath(image.dli_fname, path)) return;
+    char* slash = strrchr(path, '/');
+    if (!slash) return;
+    *slash = '\0';
+    crypto_path_ready = OSSL_PROVIDER_set_default_search_path(NULL, path) == 1;
+}
+
 void* dh_rdp_new(const char* host, uint16_t port, const char* username, const char* domain,
                  const char* password, const char* certificate_sha256,
                  uint32_t width, uint32_t height) {
@@ -601,6 +619,8 @@ void* dh_rdp_new(const char* host, uint16_t port, const char* username, const ch
         !password || strnlen(password, 65536) >= 65536 ||
         !parse_pin(certificate_sha256, pin) || width < 200 || height < 200 ||
         !frame_size(width, height, &bytes)) return NULL;
+    pthread_once(&crypto_path_once, configure_crypto_path);
+    if (!crypto_path_ready) return NULL;
     dh_session* s = calloc(1, sizeof(*s));
     if (!s) return NULL;
     atomic_init(&s->used, false);

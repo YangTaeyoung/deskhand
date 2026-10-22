@@ -10,8 +10,15 @@ def run(*args):
     return subprocess.check_output(args, text=True)
 
 
+def install_ids(snapshot):
+    return [line.strip() for line in run('otool', '-D', str(snapshot)).splitlines()[1:] if line.strip()]
+
+
 def dependencies(snapshot):
-    return [line.strip().split(' (', 1)[0] for line in run('otool', '-L', str(snapshot)).splitlines()[2:]]
+    # MH_BUNDLE providers have no LC_ID_DYLIB: their first line is a real dependency.
+    ids = install_ids(snapshot)
+    return [value for line in run('otool', '-L', str(snapshot)).splitlines()[1:]
+            if (value := line.strip().split(' (', 1)[0]) not in ids]
 
 
 def rpaths(snapshot):
@@ -24,7 +31,7 @@ def system(path):
     return path.startswith(('/usr/lib/', '/System/Library/'))
 
 
-def bundle(engine: Path, destination: Path):
+def bundle(engine: Path, destination: Path, provider: Path | None = None):
     destination = destination.resolve()
     destination.mkdir(parents=True, exist_ok=True)
     digests = {}
@@ -67,13 +74,16 @@ def bundle(engine: Path, destination: Path):
                 raise RuntimeError(f'Unexpected dependency {dependency} of {source}')
             child = copy(target)
             subprocess.run(['install_name_tool', '-change', dependency, f'@loader_path/{child}', str(output)], check=True)
-        subprocess.run(['install_name_tool', '-id', f'@rpath/{name}', str(output)], check=True)
+        if install_ids(output):
+            subprocess.run(['install_name_tool', '-id', f'@rpath/{name}', str(output)], check=True)
         for value in paths:
             subprocess.run(['install_name_tool', '-delete_rpath', value, str(output)], check=True)
         sign_order.append(output)
         return name
 
     name = copy(engine)
+    if provider is not None:
+        copy(provider)  # OpenSSL loads this module dynamically; otool cannot discover it.
     # install_name_tool can silently ignore unmatched -change targets. Verify every result.
     for output in sign_order:
         for dependency in dependencies(output):
@@ -93,5 +103,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('engine', type=Path)
     parser.add_argument('destination', type=Path)
+    parser.add_argument('--provider', type=Path, help='OpenSSL legacy module required by NTLM')
     args = parser.parse_args()
-    print(bundle(args.engine, args.destination))
+    print(bundle(args.engine, args.destination, args.provider))
