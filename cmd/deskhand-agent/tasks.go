@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"path/filepath"
@@ -12,6 +13,8 @@ import (
 const (
 	// taskName names the scheduled task that starts the agent at logon.
 	taskName = "Deskhand Agent"
+	// consoleHandoffTaskName is reserved for explicitly enabled unattended mode.
+	consoleHandoffTaskName = "Deskhand Console Handoff"
 	// firewallRule names the inbound firewall rule of the agent's UDP port.
 	firewallRule = "Deskhand Agent"
 	// installDir holds the installed agent.
@@ -28,6 +31,18 @@ const (
 
 // agentImages are the image names of agent processes.
 var agentImages = []string{"deskhand-agent.exe", windowExeName}
+
+// removeManagedTasks always attempts both app-owned task names. In particular,
+// a failed agent removal must not leave automatic console handoff enabled.
+func removeManagedTasks(remove func(string) error) error {
+	var errs []error
+	for _, name := range []string{taskName, consoleHandoffTaskName} {
+		if err := remove(name); err != nil {
+			errs = append(errs, fmt.Errorf("remove task %q: %w", name, err))
+		}
+	}
+	return errors.Join(errs...)
+}
 
 // xmlText escapes s for XML element content.
 func xmlText(s string) string {

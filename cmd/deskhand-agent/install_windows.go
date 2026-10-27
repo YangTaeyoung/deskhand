@@ -202,8 +202,8 @@ func install(cfg config.Agent, configPath string, stdout io.Writer) error {
 func uninstall(dataDir string, purge bool, stdout io.Writer) error {
 	var errs []error
 	stopAgents()
-	if out, err := tool("schtasks.exe", taskDeleteArgs()...); err != nil && taskExists() {
-		errs = append(errs, commandError("the scheduled task "+taskName+" could not be deleted", err, out, elevatedRerun))
+	if err := removeManagedTasks(removeScheduledTask); err != nil {
+		errs = append(errs, err)
 	}
 	if out, err := netsh(firewallDeleteLine()); err != nil && ruleExists() {
 		errs = append(errs, commandError("the firewall rule "+firewallRule+" could not be deleted", err, out, elevatedRerun))
@@ -227,10 +227,36 @@ func uninstall(dataDir string, purge bool, stdout io.Writer) error {
 	return nil
 }
 
-// taskExists reports whether schtasks finds the agent's task.
-func taskExists() bool {
-	_, err := tool("schtasks.exe", "/Query", "/TN", taskName)
-	return err == nil
+// removeScheduledTask treats only a missing task as success; query failures
+// such as access denied must not hide a task that remains installed. Task names
+// come only from removeManagedTasks, never from caller input.
+func removeScheduledTask(name string) error {
+	script := `$ErrorActionPreference='Stop'
+$service=New-Object -ComObject Schedule.Service
+$service.Connect()
+$folder=$service.GetFolder('\')
+try { $task=$folder.GetTask('` + strings.ReplaceAll(name, "'", "''") + `') }
+catch {
+  if ($_.Exception.GetBaseException().HResult -eq -2147024894) { exit 0 }
+  throw
+}
+if ($task.Name -eq 'Deskhand Console Handoff') {
+  $definition=$task.Definition
+  $expectedProgram=Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\v1.0\powershell.exe'
+  $expectedScript=Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'Deskhand\setup\console-handoff.ps1'
+  if ($definition.RegistrationInfo.Description -ne 'Deskhand console handoff (explicit unattended mode)' -or
+      $definition.Actions.Count -ne 1 -or $definition.Actions.Item(1).Path -ine $expectedProgram -or
+      -not $definition.Actions.Item(1).Arguments.Contains('"'+$expectedScript+'"')) {
+    throw 'An unrelated task uses the handoff task name; it was not changed.'
+  }
+}
+if ($task.State -eq 4) { $task.Stop(0) }
+$folder.DeleteTask('` + strings.ReplaceAll(name, "'", "''") + `',0)`
+	out, err := tool(`WindowsPowerShell\v1.0\powershell.exe`, "-NoProfile", "-NonInteractive", "-Command", script)
+	if err != nil {
+		return commandError("the scheduled task "+name+" could not be deleted", err, out, elevatedRerun)
+	}
+	return nil
 }
 
 // ruleExists reports whether netsh finds the agent's firewall rule.

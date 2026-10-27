@@ -82,13 +82,18 @@ func run(args []string) int {
 			continue
 		}
 		var text []string
+		images, imageBytes := 0, 0
 		for _, ct := range res.Content {
 			if tc, ok := ct.(*mcp.TextContent); ok {
 				text = append(text, tc.Text)
 			}
+			if img, ok := ct.(*mcp.ImageContent); ok {
+				images++
+				imageBytes += len(img.Data)
+			}
 		}
 		printJSON(map[string]any{"tool": c.tool, "is_error": res.IsError, "structured": res.StructuredContent,
-			"text": strings.Join(text, "\n"), "elapsed_ms": elapsed})
+			"text": strings.Join(text, "\n"), "elapsed_ms": elapsed, "images": images, "image_bytes": imageBytes})
 		if res.IsError {
 			code = 1
 		}

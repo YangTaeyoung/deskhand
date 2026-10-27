@@ -204,6 +204,7 @@ step_build() {
   log "== build"
   scripts/build.sh &&
     CGO_ENABLED=0 go build -o build/apicall ./scripts/e2e/apicall &&
+    CGO_ENABLED=0 go build -o build/mcpprobe ./scripts/e2e/mcpprobe &&
     CGO_ENABLED=0 go build -o build/e2ehost ./scripts/e2e/e2ehost &&
     CGO_ENABLED=0 go build -o build/ptyprobe ./scripts/e2e/ptyprobe &&
     CGO_ENABLED=0 go build -o build/udprelay ./scripts/e2e/udprelay &&
