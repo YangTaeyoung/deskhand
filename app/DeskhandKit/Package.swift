@@ -25,9 +25,10 @@ let package = Package(
         // Views, design system and view state shared by the app and the snapshot renderer.
         .target(
             name: "DeskhandUI",
-            dependencies: ["DeskhandClient", "DeskhandMedia", "DeskhandRDP", .product(name: "SwiftTerm", package: "SwiftTerm")],
+            dependencies: ["DeskhandClient", "DeskhandMedia", "DeskhandRDP", "DeskhandKeychain", .product(name: "SwiftTerm", package: "SwiftTerm")],
             resources: [.process("Resources")]
         ),
+        .target(name: "DeskhandKeychain", linkerSettings: [.linkedFramework("Security")]),
         // Renders registered scenes to PNG offscreen, in light and dark mode.
         .executableTarget(name: "DeskhandSnapshots", dependencies: ["DeskhandUI", "DeskhandMedia"]),
         // In-process mock daemon shared by the client and UI tests.

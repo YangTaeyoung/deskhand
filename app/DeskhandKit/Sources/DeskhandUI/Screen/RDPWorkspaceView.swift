@@ -25,6 +25,10 @@ public struct RDPWorkspaceView: View {
     @State private var retry = 0
     @State private var inputRetry = 0
     @State private var captured = false
+    @State private var hasAutoConnected = false
+    @State private var recovery = RDPReconnectPolicy()
+    @State private var screenRecoveryID: UUID?
+    @State private var credentialGeneration = UUID()
     private let standIn: RDPEndpoint?
 
     /// `standIn` renders the real login layout without network requests or authentication.
@@ -69,14 +73,14 @@ public struct RDPWorkspaceView: View {
                         .font(DS.Font.caption).foregroundStyle(.secondary)
                 }
                 if live, savedLogin {
-                    Button("저장한 로그인 삭제") { forgetLogin() }.buttonStyle(.bordered)
+                    Button("저장한 로그인 삭제") { Task { await forgetLogin() } }.buttonStyle(.bordered)
                 }
-                if connecting || live {
-                    Button(connecting ? "취소" : "화면 연결 끊기") { disconnect() }
+                if connecting || live || screenRecoveryID != nil {
+                    Button(screenRecoveryID != nil ? "자동 연결 중단" : (connecting ? "취소" : "화면 연결 끊기")) { disconnect() }
                         .buttonStyle(.bordered)
                 }
             }
-            .padding(.horizontal, DS.Space.l).padding(.vertical, DS.Space.m)
+            .padding(.horizontal, DS.Space.l).padding(.vertical, DS.Space.s)
             Divider()
             if live, let credentialNotice {
                 Label(credentialNotice, systemImage: "key")
@@ -95,6 +99,9 @@ public struct RDPWorkspaceView: View {
             }
         }
         .task(id: retry) { await loadEndpoint() }
+        .task(id: RecoveryKey(phase: connection.phase, address: host.address, generation: host.connectionGeneration)) {
+            if case .failed(let code) = connection.phase { await recoverScreen(after: code) }
+        }
         .task(id: InputKey(enabled: permitsInput, retry: inputRetry, generation: host.connectionGeneration, sessionID: connection.serverSessionID, sid: endpoint?.sid ?? "")) {
             guard permitsInput, let sessionID = connection.serverSessionID, let sid = endpoint?.sid else { input.close(); return }
             await input.run(backend: store.backend, hostID: host.hostID, sessionID: sessionID, sid: sid, connectionGeneration: host.connectionGeneration)
@@ -108,10 +115,18 @@ public struct RDPWorkspaceView: View {
         .onChange(of: connection.phase) { _, phase in
             switch phase {
             case .live:
-                do {
-                    if try loginMemory.connected() { savedLogin = true; credentialNotice = nil }
-                } catch {
-                    credentialNotice = "연결됐지만 이번 로그인 정보를 저장하지 못했습니다. 다음 연결 전에 저장 상태를 확인하세요."
+                recovery.connected()
+                let generation = credentialGeneration
+                Task {
+                    do {
+                        let stored = try await loginMemory.connected()
+                        guard live, rememberLogin, credentialGeneration == generation else { return }
+                        if stored { savedLogin = true; credentialNotice = nil }
+                    } catch {
+                        if live, credentialGeneration == generation {
+                            credentialNotice = "연결됐지만 이번 로그인 정보를 저장하지 못했습니다. 다음 연결 전에 저장 상태를 확인하세요."
+                        }
+                    }
                 }
             case .failed, .stopped: loginMemory.failed()
             default: break
@@ -122,6 +137,10 @@ public struct RDPWorkspaceView: View {
 
     private struct InputKey: Equatable {
         let enabled: Bool; let retry: Int; let generation: Int; let sessionID: UInt32?; let sid: String
+    }
+
+    private struct RecoveryKey: Equatable {
+        let phase: NativeRDPConnection.Phase; let address: String; let generation: Int
     }
 
     private var login: some View {
@@ -137,6 +156,8 @@ public struct RDPWorkspaceView: View {
                 }
                 if loadingEndpoint {
                     ProgressView("PC 연결 정보를 확인하는 중…")
+                } else if screenRecoveryID != nil {
+                    ProgressView("Windows 화면에 다시 연결하는 중…")
                 } else if let endpointError {
                     Label(endpointError.message, systemImage: "exclamationmark.triangle")
                         .font(DS.Font.body).fixedSize(horizontal: false, vertical: true)
@@ -167,7 +188,7 @@ public struct RDPWorkspaceView: View {
                         .onChange(of: rememberLogin) { _, enabled in
                             guard standIn == nil else { return }
                             UserDefaults.standard.set(enabled, forKey: "rdp.remember.\(host.hostID)")
-                            if !enabled { forgetLogin(clearPassword: false) }
+                            if !enabled { Task { await forgetLogin(clearPassword: false) } }
                         }
                     Text("사용자 이름과 암호를 이 Mac의 키체인에 저장합니다. 해제하면 저장한 정보도 삭제합니다.")
                         .font(DS.Font.caption).foregroundStyle(DS.Status.neutralText)
@@ -177,9 +198,9 @@ public struct RDPWorkspaceView: View {
                             Label(password.isEmpty ? "이 PC의 로그인 정보가 저장돼 있습니다." : "저장한 로그인 정보를 불러왔습니다.", systemImage: "key.fill")
                             Spacer()
                             if password.isEmpty {
-                                Button("불러오기") { restoreLogin() }.buttonStyle(.bordered).disabled(connecting)
+                                Button("불러오기") { Task { await restoreLogin() } }.buttonStyle(.bordered).disabled(connecting)
                             }
-                            Button("삭제") { forgetLogin() }.buttonStyle(.bordered).disabled(connecting)
+                            Button("삭제") { Task { await forgetLogin() } }.buttonStyle(.bordered).disabled(connecting)
                         }
                         .font(DS.Font.caption)
                     }
@@ -196,7 +217,7 @@ public struct RDPWorkspaceView: View {
                             Button("PC 신원 다시 확인") { retry += 1 }.buttonStyle(.bordered)
                         }
                     }
-                    Button(action: connect) {
+                    Button { connect() } label: {
                         HStack {
                             if connecting { ProgressView().controlSize(.small) }
                             Text(connecting ? "Windows에 연결하는 중…" : "Windows에 연결")
@@ -239,7 +260,7 @@ public struct RDPWorkspaceView: View {
                                     display: targetDisplay?.index ?? 0, preferences: store.screenPreferences,
                                     onEvent: { event in input.send(event, gen: store.control(for: host.hostID)?.gen ?? 0) },
                                     onCaptureChange: { captured = $0 },
-                                    onTakeover: { store.controlActions.takeOver(host.hostID) })
+                                    onTakeover: { store.controlActions.forceTakeOver(host.hostID) })
                 } else {
                     ProgressView("Windows 화면을 불러오는 중…").tint(.white).foregroundStyle(.white)
                 }
@@ -269,12 +290,13 @@ public struct RDPWorkspaceView: View {
 
     private func loadEndpoint() async {
         guard standIn == nil else { return }
+        let generation = credentialGeneration
         loadingEndpoint = true
         endpointError = nil
         defer { loadingEndpoint = false }
         do {
             let value = try await store.backend.rdpEndpoint(hostID: host.hostID)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, credentialGeneration == generation else { return }
             endpoint = value
             if username.isEmpty { username = value.user }
             let key = RDPLoginMemory.key(hostID: host.hostID, certificate: value.certificateSHA256)
@@ -284,10 +306,13 @@ public struct RDPWorkspaceView: View {
                 do {
                     let indexKey = "rdp.saved-key.\(host.hostID)"
                     if let previous = UserDefaults.standard.string(forKey: indexKey), previous != key {
-                        try loginMemory.forget(key: previous)
+                        try await loginMemory.forget(key: previous)
+                        guard !Task.isCancelled else { return }
                     }
                     UserDefaults.standard.set(key, forKey: indexKey)
-                    if let saved = try loginMemory.restore(key: key),
+                    let restored = rememberLogin ? try await loginMemory.restore(key: key) : nil
+                    guard !Task.isCancelled, loadedCredentialKey == key, credentialGeneration == generation else { return }
+                    if let saved = restored,
                        password.isEmpty, username == value.user || username == saved.username {
                         username = saved.username
                         password = saved.password
@@ -297,16 +322,22 @@ public struct RDPWorkspaceView: View {
                     credentialNotice = "저장한 로그인 정보를 불러오지 못했습니다. 계정 암호를 입력해 연결하세요."
                 }
             }
+            if rememberLogin && savedLogin && !password.isEmpty && value.enabled && !hasAutoConnected && !connecting && !live {
+                hasAutoConnected = true
+                connect()
+            }
         } catch {
             if !Task.isCancelled { endpointError = OperationError(error); endpoint = nil }
         }
     }
 
-    private func connect() {
+    private func connect(recovering: Bool = false) {
         guard standIn == nil, !connecting, let endpoint, endpoint.enabled, !password.isEmpty,
               let port = UInt16(exactly: endpoint.port) else { return }
         let account = username.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !account.isEmpty else { return }
+        credentialGeneration = UUID()
+        if !recovering { recovery.requested(remembered: savedLogin) }
         let parts = account.split(separator: "\\", maxSplits: 1, omittingEmptySubsequences: false)
         let domain = parts.count == 2 ? String(parts[0]) : ""
         let user = parts.count == 2 ? String(parts[1]) : account
@@ -326,10 +357,52 @@ public struct RDPWorkspaceView: View {
         }
     }
 
-    private func restoreLogin() {
+    private func recoverScreen(after code: UInt32) async {
+        guard standIn == nil, let previous = endpoint, let key = loadedCredentialKey else { return }
+        let address = host.address
+        let account = username, typedPassword = password
+        let recoveryID = UUID()
+        defer { if screenRecoveryID == recoveryID { screenRecoveryID = nil } }
+        while let delay = recovery.nextDelayMS(error: code, remembered: savedLogin && rememberLogin) {
+            screenRecoveryID = recoveryID
+            do {
+                try await Task.sleep(for: .milliseconds(delay))
+                let refreshed = try await store.backend.rdpEndpoint(hostID: host.hostID)
+                guard !Task.isCancelled, recovery.wanted, savedLogin, rememberLogin,
+                      loadedCredentialKey == key, host.address == address,
+                      username == account, password == typedPassword else { return }
+                guard RDPReconnectPolicy.sameTarget(previous, refreshed) else {
+                    recovery.disconnected()
+                    endpointError = OperationError(code: "STALE_TARGET", message: "PC의 인증서·계정 또는 세션이 바뀌어 자동 연결을 멈췄습니다. 연결 정보를 다시 확인하세요.")
+                    return
+                }
+                let restored = try await loginMemory.restore(key: key)
+                guard !Task.isCancelled, recovery.wanted, savedLogin, rememberLogin,
+                      loadedCredentialKey == key, username == account, password == typedPassword else { return }
+                guard let saved = restored, saved.username == account,
+                      !saved.password.isEmpty else { return }
+                endpoint = refreshed
+                username = saved.username
+                password = saved.password
+                connect(recovering: true)
+                return
+            } catch {
+                if Task.isCancelled { return }
+                endpointError = OperationError(error)
+            }
+        }
+    }
+
+    private func restoreLogin() async {
         guard let loadedCredentialKey, standIn == nil else { return }
+        let generation = credentialGeneration
+        let account = username, typedPassword = password
         do {
-            if let saved = try loginMemory.restore(key: loadedCredentialKey) {
+            let restored = try await loginMemory.restore(key: loadedCredentialKey)
+            guard !Task.isCancelled, self.loadedCredentialKey == loadedCredentialKey,
+                  credentialGeneration == generation, !live, !connecting else { return }
+            guard username == account, password == typedPassword else { return }
+            if let saved = restored {
                 username = saved.username
                 password = saved.password
                 savedLogin = true
@@ -343,17 +416,22 @@ public struct RDPWorkspaceView: View {
         }
     }
 
-    private func forgetLogin(clearPassword: Bool = true) {
+    private func forgetLogin(clearPassword: Bool = true) async {
         guard let loadedCredentialKey, standIn == nil else { return }
+        credentialGeneration = UUID()
+        let generation = credentialGeneration
+        recovery.disconnected()
+        savedLogin = false
+        if clearPassword { password = "" }
         do {
             let indexKey = "rdp.saved-key.\(host.hostID)"
             if let previous = UserDefaults.standard.string(forKey: indexKey), previous != loadedCredentialKey {
-                try loginMemory.forget(key: previous)
+                try await loginMemory.forget(key: previous)
             }
-            try loginMemory.forget(key: loadedCredentialKey)
+            try await loginMemory.forget(key: loadedCredentialKey)
+            guard self.loadedCredentialKey == loadedCredentialKey, credentialGeneration == generation else { return }
             UserDefaults.standard.removeObject(forKey: indexKey)
             savedLogin = false
-            if clearPassword { password = "" }
             credentialNotice = clearPassword ? "저장한 로그인 정보를 삭제했습니다." : "로그인 정보를 저장하지 않습니다."
         } catch {
             credentialNotice = "저장한 로그인 정보를 삭제하지 못했습니다. 키체인 접근 상태를 확인한 뒤 다시 시도하세요."
@@ -361,6 +439,10 @@ public struct RDPWorkspaceView: View {
     }
 
     private func disconnect() {
+        credentialGeneration = UUID()
+        recovery.disconnected()
+        screenRecoveryID = nil
+        hasAutoConnected = false
         loginMemory.failed()
         password = ""
         input.close()

@@ -204,7 +204,7 @@ private struct ProcessesToolbar: View {
         let hasChildren = pid.map { !model.forest.children(of: $0).isEmpty } ?? false
         let busy = pid.map { model.killing.contains($0) } ?? false
         Button(role: .destructive) {
-            if let pid { model.requestKill(pid: pid, tree: false) }
+            if let pid { Task { await model.killDirectly(pid: pid, tree: false) } }
         } label: {
             Label(String.ui("processes.kill.button", "종료"), systemImage: "xmark.octagon")
         }
@@ -212,7 +212,7 @@ private struct ProcessesToolbar: View {
         .help(single?.reason ?? (pid == nil ? String.ui("processes.kill.select", "종료할 프로세스를 선택하세요")
                                              : String.ui("processes.kill.help", "선택한 프로세스를 종료합니다 (⌘⌫)")))
         Button(role: .destructive) {
-            if let pid { model.requestKill(pid: pid, tree: true) }
+            if let pid { Task { await model.killDirectly(pid: pid, tree: true) } }
         } label: {
             Label(String.ui("processes.killTree.button", "트리 종료"), systemImage: "xmark.octagon.fill")
         }
@@ -289,7 +289,7 @@ private struct ProcessDetailBar: View {
                 }
                 .help(String.ui("processes.copy.help", "이름, PID, 경로와 명령줄을 복사합니다"))
                 Button(role: .destructive) {
-                    model.requestKill(pid: process.pid, tree: false)
+                    Task { await model.killDirectly(pid: process.pid, tree: false) }
                 } label: {
                     Text(String.ui("processes.kill", "종료…"))
                 }

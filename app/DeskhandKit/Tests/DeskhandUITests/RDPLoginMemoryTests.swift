@@ -15,7 +15,7 @@ final class RDPLoginMemoryTests: XCTestCase {
         func remove(key: String) throws { values[key] = nil }
     }
 
-    func testFailedAttemptNeverReplacesPreviouslyWorkingPassword() throws {
+    func testFailedAttemptNeverReplacesPreviouslyWorkingPassword() async throws {
         let vault = Vault()
         let memory = RDPLoginMemory(vault: vault)
         let key = RDPLoginMemory.key(hostID: "one", certificate: "AAA")
@@ -23,27 +23,32 @@ final class RDPLoginMemoryTests: XCTestCase {
         vault.values[key] = old
         memory.prepare(key: key, username: "wrong", password: "wrong-test-only", remember: true)
         memory.failed()
-        try memory.connected()
+        try await memory.connected()
         XCTAssertEqual(vault.values[key], old)
         XCTAssertEqual(vault.writes, 0)
     }
 
-    func testOnlySuccessfulConnectionPersistsAndForgetRemovesIt() throws {
+    func testOnlySuccessfulConnectionPersistsAndForgetRemovesIt() async throws {
         let vault = Vault()
         let memory = RDPLoginMemory(vault: vault)
         let key = RDPLoginMemory.key(hostID: "one", certificate: "AAA")
         memory.prepare(key: key, username: "PC\\user", password: "test-only", remember: true)
-        XCTAssertNil(try memory.restore(key: key))
-        XCTAssertTrue(try memory.connected())
-        XCTAssertEqual(try memory.restore(key: key)?.username, "PC\\user")
+        let before = try await memory.restore(key: key)
+        XCTAssertNil(before)
+        let stored = try await memory.connected()
+        XCTAssertTrue(stored)
+        let restored = try await memory.restore(key: key)
+        XCTAssertEqual(restored?.username, "PC\\user")
         XCTAssertEqual(vault.writes, 1)
-        XCTAssertFalse(try memory.connected())
+        let storedAgain = try await memory.connected()
+        XCTAssertFalse(storedAgain)
         XCTAssertEqual(vault.writes, 1)
-        try memory.forget(key: key)
-        XCTAssertNil(try memory.restore(key: key))
+        try await memory.forget(key: key)
+        let removed = try await memory.restore(key: key)
+        XCTAssertNil(removed)
     }
 
-    func testHostAndCertificateIsolationAndOptOut() throws {
+    func testHostAndCertificateIsolationAndOptOut() async throws {
         let vault = Vault()
         let memory = RDPLoginMemory(vault: vault)
         let key = RDPLoginMemory.key(hostID: "one", certificate: "AAA")
@@ -51,17 +56,18 @@ final class RDPLoginMemoryTests: XCTestCase {
         XCTAssertNotEqual(key, RDPLoginMemory.key(hostID: "two", certificate: "AAA"))
         XCTAssertNotEqual(key, RDPLoginMemory.key(hostID: "one", certificate: "BBB"))
         memory.prepare(key: key, username: "user", password: "test-only", remember: false)
-        try memory.connected()
+        try await memory.connected()
         XCTAssertEqual(vault.writes, 0)
     }
 
-    func testWriteFailureDoesNotKeepPendingPasswordForFutureSessions() {
+    func testWriteFailureDoesNotKeepPendingPasswordForFutureSessions() async throws {
         let vault = Vault(); vault.failWrites = true
         let memory = RDPLoginMemory(vault: vault)
         memory.prepare(key: "key", username: "user", password: "test-only", remember: true)
-        XCTAssertThrowsError(try memory.connected())
+        do { _ = try await memory.connected(); XCTFail("expected failed write") }
+        catch RDPCredentialError.unavailable {}
         vault.failWrites = false
-        XCTAssertNoThrow(try memory.connected())
+        _ = try await memory.connected()
         XCTAssertEqual(vault.writes, 0)
     }
 }

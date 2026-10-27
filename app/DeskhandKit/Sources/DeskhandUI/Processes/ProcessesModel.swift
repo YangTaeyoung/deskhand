@@ -245,6 +245,15 @@ public final class ProcessesModel {
                                   survivors: tree ? 0 : descendants.count)
     }
 
+    /// Kills `pid` directly without showing a confirmation sheet.
+    public func killDirectly(pid: Int, tree: Bool = false) async {
+        guard let process = forest.process(pid), killBlock(pid: pid, tree: tree) == nil, !killing.contains(pid) else { return }
+        let descendants = forest.descendants(of: pid)
+        let request = KillRequest(process: process, tree: tree, descendants: tree ? descendants : [],
+                                  survivors: tree ? 0 : descendants.count)
+        await confirmKill(request)
+    }
+
     public func cancelKill() {
         pendingKill = nil
     }

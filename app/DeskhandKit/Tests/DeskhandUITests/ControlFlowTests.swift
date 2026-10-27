@@ -71,6 +71,18 @@ final class ControlFlowTests: XCTestCase {
         XCTAssertEqual(store.control(for: dev)?.owner, "human")
     }
 
+    func testForceTakeoverDirectlyAcquiresWithoutConfirmation() async throws {
+        let (store, backend) = await startedStore()
+        let dev = PreviewFixtures.devPCID
+
+        let task = store.controlActions.forceTakeOver(dev)
+        await task?.value
+
+        XCTAssertNil(store.controlActions.pendingTakeover(for: dev))
+        XCTAssertEqual(backend.controlCalls, [ControlCall(method: "control.acquire", hostID: dev, owner: .human, force: true)])
+        XCTAssertEqual(store.control(for: dev)?.owner, "human")
+    }
+
     func testGiveBackCallsResumeAI() async throws {
         let (store, backend) = await startedStore()
         let qa = PreviewFixtures.qaLaptopID

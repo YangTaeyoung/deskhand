@@ -92,6 +92,13 @@ public final class ControlActions {
         return acquire(hostID, force: false)
     }
 
+    /// Acquires control directly without asking for confirmation, forcibly preempting any AI lease.
+    @discardableResult
+    public func forceTakeOver(_ hostID: String) -> Task<Void, Never>? {
+        pending.removeValue(forKey: hostID)
+        return acquire(hostID, force: true)
+    }
+
     /// Acquires control for the pending takeover of `hostID` with `force`.
     @discardableResult
     public func confirmTakeover(_ hostID: String) -> Task<Void, Never>? {

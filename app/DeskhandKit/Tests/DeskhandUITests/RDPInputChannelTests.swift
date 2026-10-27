@@ -30,12 +30,20 @@ private actor RDPDeferredBackend: ScreenBackend {
     func complete(_ index: Int, with stream: RDPTestStream) {
         let continuation = pending[index]; pending[index] = nil; continuation?.resume(returning: stream)
     }
+    func fail(_ index: Int, code: String) {
+        let continuation = pending[index]; pending[index] = nil
+        continuation?.resume(throwing: OperationError(code: code, message: "test refusal"))
+    }
+    func disconnect(_ index: Int) {
+        let continuation = pending[index]; pending[index] = nil
+        continuation?.resume(throwing: ClientError.disconnected)
+    }
 }
 
 @MainActor
 final class RDPInputChannelTests: XCTestCase {
     private func waitFor(_ check: () async -> Bool) async throws {
-        let end = ContinuousClock.now + .seconds(2)
+        let end = ContinuousClock.now + .seconds(3)
         while !(await check()) {
             if ContinuousClock.now > end { XCTFail("condition did not become true"); return }
             try await Task.sleep(for: .milliseconds(1))
@@ -75,5 +83,65 @@ final class RDPInputChannelTests: XCTestCase {
         XCTAssertTrue(stream.closed.withLock { $0 })
         XCTAssertEqual(channel.failure?.code, "INPUT_BACKLOG")
         task.cancel(); await task.value
+    }
+
+    func testDroppedInputStreamReconnectsWithoutReplayingInput() async throws {
+        let backend = RDPDeferredBackend(), channel = RDPInputChannel()
+        let old = RDPTestStream(), replacement = RDPTestStream()
+        let task = Task { await channel.run(backend: backend, hostID: "pc", sessionID: 1, sid: "sid", connectionGeneration: 3) }
+        try await waitFor { await backend.pendingCount == 1 }
+        await backend.complete(0, with: old)
+        try await waitFor { channel.ready }
+        channel.send(.text("once"), gen: 1)
+        try await waitFor { old.sent.withLock { $0.count == 1 } }
+        old.close()
+        try await Task.sleep(for: .milliseconds(750))
+        let count = await backend.pendingCount
+        XCTAssertEqual(count, 2, "a dropped input stream should reconnect automatically")
+        guard count == 2 else { task.cancel(); channel.close(); await task.value; return }
+        await backend.complete(1, with: replacement)
+        try await waitFor { channel.ready }
+        XCTAssertTrue(replacement.sent.withLock { $0.isEmpty }, "input from the old stream must never be replayed")
+        task.cancel(); channel.close(); await task.value
+    }
+
+    func testClosingDuringBackoffDoesNotReconnect() async throws {
+        let backend = RDPDeferredBackend(), channel = RDPInputChannel(), stream = RDPTestStream()
+        let task = Task { await channel.run(backend: backend, hostID: "pc", sessionID: 1, sid: "sid", connectionGeneration: 1) }
+        try await waitFor { await backend.pendingCount == 1 }
+        await backend.complete(0, with: stream)
+        try await waitFor { channel.ready }
+        stream.close()
+        try await waitFor { !channel.ready }
+        channel.close()
+        await task.value
+        let count = await backend.pendingCount
+        XCTAssertEqual(count, 1)
+    }
+
+    func testChangedSessionRefusalIsNeverRetried() async throws {
+        let backend = RDPDeferredBackend(), channel = RDPInputChannel()
+        let task = Task { await channel.run(backend: backend, hostID: "pc", sessionID: 1, sid: "sid", connectionGeneration: 1) }
+        try await waitFor { await backend.pendingCount == 1 }
+        await backend.fail(0, code: "STALE_TARGET")
+        await task.value
+        let count = await backend.pendingCount
+        XCTAssertEqual(count, 1)
+        XCTAssertEqual(channel.failure?.code, "STALE_TARGET")
+    }
+
+    func testUnreachableInputStopsAfterThreeRetries() async throws {
+        let backend = RDPDeferredBackend(), channel = RDPInputChannel()
+        let task = Task { await channel.run(backend: backend, hostID: "pc", sessionID: 1, sid: "sid", connectionGeneration: 1) }
+        for i in 0..<4 {
+            try await waitFor { await backend.pendingCount == i + 1 }
+            await backend.disconnect(i)
+        }
+        await task.value
+        let count = await backend.pendingCount
+        XCTAssertEqual(count, 4)
+        XCTAssertFalse(channel.ready)
+        XCTAssertEqual(channel.failure?.code, "OFFLINE")
+        XCTAssertTrue(channel.failure?.message.contains("복구하지 못") == true)
     }
 }

@@ -115,7 +115,7 @@ struct ControlBanner: View {
         case .ai:
             BannerBand(style: .solid(DS.Color.aiFill), symbol: ControlOwner.ai.symbol, title: kind.title,
                        message: ControlBannerKind.aiMessage(stopFailed: actions.failures(for: host.hostID).contains { $0.action == .stop })) {
-                Button { actions.takeOver(host.hostID) } label: {
+                Button { actions.forceTakeOver(host.hostID) } label: {
                     ControlActionLabel(action: .takeOver, running: actions.isRunning(.takeOver, on: host.hostID))
                 }
                 .buttonStyle(BandButtonStyle(text: DS.Color.aiFill))
@@ -273,15 +273,15 @@ struct BannerBand<Actions: View>: View {
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: DS.Space.m) {
+            HStack(spacing: DS.Space.s) {
                 icon
                 text
                     .frame(minWidth: 0, idealWidth: Self.textIdealWidth, maxWidth: .infinity, alignment: .leading)
                 actionRow
             }
-            HStack(alignment: .top, spacing: DS.Space.m) {
+            HStack(alignment: .top, spacing: DS.Space.s) {
                 icon
-                VStack(alignment: .leading, spacing: DS.Space.s) {
+                VStack(alignment: .leading, spacing: DS.Space.xs) {
                     text
                     actionRow
                 }
@@ -289,7 +289,7 @@ struct BannerBand<Actions: View>: View {
             }
         }
         .padding(.horizontal, DS.Space.l)
-        .padding(.vertical, DS.Space.m)
+        .padding(.vertical, 6)
         .environment(\.colorScheme, isSolid ? .dark : colorScheme)
         .background(background)
         .overlay(alignment: .bottom) {
@@ -303,16 +303,29 @@ struct BannerBand<Actions: View>: View {
     @Environment(\.colorScheme) private var colorScheme
 
     private var text: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(title)
-                .font(DS.Font.headline)
-                .foregroundStyle(isSolid ? DS.Color.onFill : SwiftUI.Color.primary)
-                .lineLimit(2)
-            Text(message)
-                .font(DS.Font.caption)
-                .foregroundStyle(isSolid ? DS.Color.onFill : DS.Status.secondaryOnTint)
-                .lineLimit(2)
-                .help(message)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: DS.Space.s) {
+                Text(title)
+                    .font(DS.Font.body.weight(.semibold))
+                    .foregroundStyle(isSolid ? DS.Color.onFill : SwiftUI.Color.primary)
+                    .lineLimit(1)
+                Text(message)
+                    .font(DS.Font.caption)
+                    .foregroundStyle(isSolid ? DS.Color.onFill.opacity(0.85) : DS.Status.secondaryOnTint)
+                    .lineLimit(1)
+                    .help(message)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(DS.Font.body.weight(.semibold))
+                    .foregroundStyle(isSolid ? DS.Color.onFill : SwiftUI.Color.primary)
+                    .lineLimit(1)
+                Text(message)
+                    .font(DS.Font.caption)
+                    .foregroundStyle(isSolid ? DS.Color.onFill.opacity(0.85) : DS.Status.secondaryOnTint)
+                    .lineLimit(1)
+                    .help(message)
+            }
         }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
@@ -322,7 +335,7 @@ struct BannerBand<Actions: View>: View {
         HStack(spacing: DS.Space.s) {
             actions
         }
-        .controlSize(.regular)
+        .controlSize(.small)
         .fixedSize()
     }
 
@@ -338,17 +351,17 @@ struct BannerBand<Actions: View>: View {
     }
 
     private var icon: some View {
-        Circle()
+        RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous)
             .fill(isSolid ? AnyShapeStyle(.white.opacity(0.18)) : AnyShapeStyle(tint.opacity(0.16)))
-            .frame(width: 28, height: 28)
+            .frame(width: 22, height: 22)
             .overlay {
                 if let symbol {
                     Image(systemName: symbol)
-                        .font(.system(.body, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(isSolid ? AnyShapeStyle(.white) : AnyShapeStyle(tint))
                 } else {
                     ProgressView()
-                        .controlSize(.small)
+                        .controlSize(.mini)
                 }
             }
             .accessibilityHidden(true)
