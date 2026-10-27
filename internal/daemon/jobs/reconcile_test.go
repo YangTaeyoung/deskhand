@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -178,5 +179,53 @@ func TestAReadyHostFinishesTheJobsItsAgentEnded(t *testing.T) {
 			t.Fatalf("exec.list ran %d times after the reconnect", n)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestGetSettlesAJobTheConnectedAgentNoLongerLists(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "d.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	now := time.Now()
+	if err := st.CreateJob(store.Job{JobID: "j-old", HostID: "pc", Kind: KindExec, Status: model.StatusRunning,
+		RemoteJob: "j1", Summary: "old command", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	missing := false
+	firstList := make(chan struct{})
+	var first sync.Once
+	agent := &scriptAgent{handle: func(req proto.Message) []proto.Message {
+		if req.String("op") != "exec.list" {
+			return nil
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		list := []any{}
+		if !missing {
+			list = append(list, map[string]any{"job": "j1", "state": "running"})
+		}
+		first.Do(func() { close(firstList) })
+		return []proto.Message{ok(proto.Message{"jobs": list})}
+	}}
+	e := connectAgentEnv(t, st, agent)
+	select {
+	case <-firstList:
+	case <-time.After(5 * time.Second):
+		t.Fatal("initial reconnect reconciliation never read exec.list")
+	}
+	mu.Lock()
+	missing = true
+	mu.Unlock()
+	got, err := e.r.Get(context.Background(), "j-old")
+	if err != nil || got.Status != model.StatusUnknown || got.FinishedAt == "" || resultOf(t, got)["state"] != "lost" {
+		t.Fatalf("missing remote job after polling: %+v, %v", got, err)
+	}
+	for _, op := range agent.requests() {
+		if wire.Journaled(op) {
+			t.Fatalf("missing command was acted on again through %s", op)
+		}
 	}
 }

@@ -432,6 +432,25 @@ steps:
 		}
 	})
 
+	t.Run("wait_window timeout includes a machine readable error", func(t *testing.T) {
+		for _, gone := range []bool{false, true} {
+			pc := fixturePC()
+			title := "Missing"
+			if gone {
+				title = "Deskhand Fixture"
+			}
+			e := newEnv(t, pc, testOpts{})
+			run := e.run(t, fmt.Sprintf("name: timeout\nsteps:\n  - wait_window: {title: '%s', gone: %t}\n    timeout_ms: 25\n", title, gone))
+			s := run.Steps[0]
+			if run.Status != RunFailed || s.Error == nil || s.Error.Code != wire.CodeTimeout || s.Error.Message != s.Message {
+				t.Fatalf("gone=%t run %s step %+v", gone, run.Status, s)
+			}
+			if len(s.Assertions) != 1 || s.Assertions[0].Passed {
+				t.Fatalf("timeout lost its window assertion: %+v", s.Assertions)
+			}
+		}
+	})
+
 	t.Run("exec checks the exit code and output and keeps them as evidence", func(t *testing.T) {
 		pc := fixturePC()
 		pc.exec = func(p proto.Message) (proto.Message, error) {
@@ -1235,5 +1254,98 @@ func TestWriterOpIsBlockedWhenTheWriterChangesBeforeItGoesOut(t *testing.T) {
 		if c.params["gen"] != nil {
 			t.Fatalf("ui.find %+v", c)
 		}
+	}
+}
+
+func TestCloseOfAWindowlessLaunchOnlyEndsItsIdentifiedRoot(t *testing.T) {
+	pc := newFakePC()
+	pc.setCap("uia", "unsupported")
+	pc.launch = func(proto.Message) (proto.Message, error) {
+		return proto.Message{"pid": float64(4242), "started": "2026-10-27T00:00:00.123Z"}, nil
+	}
+	e := newEnv(t, pc, testOpts{})
+	run := e.run(t, "name: cleanup\nsteps:\n  - launch: fixture.exe\nteardown:\n  - close:\n")
+	if run.Status != RunPassed || statuses(run) != "pass pass" {
+		t.Fatalf("windowless cleanup %s %+v", run.Status, run.Steps)
+	}
+	kills := pc.callsOf("proc.kill")
+	if len(kills) != 1 || kills[0].params.Int("pid") != 4242 || kills[0].params.String("started") != "2026-10-27T00:00:00.123Z" || kills[0].params["tree"] == true || !kills[0].params.Has("gen") {
+		t.Fatalf("cleanup must identify just its root: %+v", kills)
+	}
+	if len(pc.callsOf("win.action")) != 0 || run.Steps[1].Result["killed"] != float64(1) {
+		t.Fatalf("cleanup result %+v", run.Steps[1])
+	}
+}
+
+func TestWindowlessCleanupNeverGuessesAnUnconfirmedProcess(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		res  proto.Message
+		err  error
+	}{
+		{"no creation time", proto.Message{"pid": float64(4242)}, nil},
+		{"invalid creation time", proto.Message{"pid": float64(4242), "started": "bad"}, nil},
+		{"no pid", proto.Message{"started": "2026-10-27T00:00:00.123Z"}, nil},
+		{"unknown launch", nil, apierr.New(wire.CodeExecutionOutcomeUnknown, "launch outcome unknown", false, apierr.NextCheckState)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pc := newFakePC()
+			pc.launch = func(proto.Message) (proto.Message, error) { return tc.res, tc.err }
+			e := newEnv(t, pc, testOpts{})
+			run := e.run(t, "name: cleanup\nsteps:\n  - launch: fixture.exe\nteardown:\n  - close:\n")
+			if run.Status == RunPassed || len(pc.callsOf("proc.kill")) != 0 || len(pc.callsOf("win.action")) != 0 {
+				t.Fatalf("unconfirmed launch caused cleanup: %s %+v", run.Status, pc.calls)
+			}
+		})
+	}
+}
+
+func TestAnUnknownLaterLaunchDoesNotCleanUpTheEarlierLaunch(t *testing.T) {
+	pc := newFakePC()
+	n := 0
+	pc.launch = func(proto.Message) (proto.Message, error) {
+		n++
+		if n == 1 {
+			return proto.Message{"pid": float64(4242), "started": "2026-10-27T00:00:00.123Z"}, nil
+		}
+		return nil, apierr.New(wire.CodeExecutionOutcomeUnknown, "launch outcome unknown", false, apierr.NextCheckState)
+	}
+	e := newEnv(t, pc, testOpts{})
+	e.run(t, "name: cleanup\nsteps:\n  - launch: earlier.exe\n  - launch: later.exe\nteardown:\n  - close:\n")
+	if len(pc.callsOf("proc.kill")) != 0 {
+		t.Fatalf("an unknown launch reused an earlier target: %+v", pc.callsOf("proc.kill"))
+	}
+}
+
+func TestWindowlessCleanupRechecksHumanControlBeforeSending(t *testing.T) {
+	pc := newFakePC()
+	held := false
+	pc.launch = func(proto.Message) (proto.Message, error) {
+		held = true
+		return proto.Message{"pid": float64(4242), "started": "2026-10-27T00:00:00.123Z"}, nil
+	}
+	control := fakeControl{gen: 7, recheck: func() error {
+		if held {
+			return apierr.New(wire.CodeControlHeldByHuman, "a person took control", false, "")
+		}
+		return nil
+	}}
+	e := newEnv(t, pc, testOpts{control: control})
+	run := e.run(t, "name: cleanup\nsteps:\n  - launch: fixture.exe\nteardown:\n  - close:\n")
+	if run.Status != RunBlocked || run.Steps[1].Error == nil || run.Steps[1].Error.Code != wire.CodeControlHeldByHuman || len(pc.callsOf("proc.kill")) != 0 {
+		t.Fatalf("cleanup after takeover: %+v kills %+v", run, pc.callsOf("proc.kill"))
+	}
+}
+
+func TestWindowlessCleanupDoesNotRetryAReusedPID(t *testing.T) {
+	pc := newFakePC()
+	pc.launch = func(proto.Message) (proto.Message, error) {
+		return proto.Message{"pid": float64(4242), "started": "2026-10-27T00:00:00.123Z"}, nil
+	}
+	pc.fail["proc.kill"] = apierr.New(wire.CodeStaleTarget, "pid now identifies another process", false, "")
+	e := newEnv(t, pc, testOpts{})
+	run := e.run(t, "name: cleanup\nsteps:\n  - launch: fixture.exe\nteardown:\n  - close:\n")
+	if run.Status != RunFailed || run.Steps[1].Error == nil || run.Steps[1].Error.Code != wire.CodeStaleTarget || len(pc.callsOf("proc.kill")) != 1 {
+		t.Fatalf("reused pid cleanup: %+v kills %+v", run, pc.callsOf("proc.kill"))
 	}
 }

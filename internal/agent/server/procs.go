@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/agent/diag"
+	"github.com/YangTaeyoung/deskhand/internal/agent/input"
 	"github.com/YangTaeyoung/deskhand/internal/proto"
 	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
@@ -32,7 +33,35 @@ type procInfo struct {
 
 func (s *Server) registerProcs() {
 	s.register("proc.list", true, s.procList)
-	s.register("proc.kill", true, s.procKill)
+	s.register("proc.kill", true, s.procKillWithWriter)
+}
+
+// procKillWithWriter optionally fences the short termination of one
+// identified process with writer changes. Ordinary process tools omit gen
+// and retain their existing contract. Tree termination may wait for child
+// exits, so it is never performed while holding the writer fence.
+func (s *Server) procKillWithWriter(ctx context.Context, req proto.Message) (proto.Message, error) {
+	if !req.Has("gen") {
+		return s.procKill(ctx, req)
+	}
+	gen, ok := wholeGen(req["gen"])
+	if !ok {
+		return nil, invalidArgument("proc.kill gen must be a whole number of 0 or more")
+	}
+	if req.Int("pid") <= 0 || req.String("started") == "" || req.String("name") != "" || req["tree"] != nil && req["tree"] != false {
+		return nil, invalidArgument("proc.kill with gen needs pid and started, without name or tree")
+	}
+	var result proto.Message
+	err := s.input.WithWriter(gen, func() error {
+		var err error
+		result, err = s.procKill(ctx, req)
+		return err
+	})
+	var inErr *input.Error
+	if errors.As(err, &inErr) {
+		return nil, inputError(err)
+	}
+	return result, err
 }
 
 // procList lists the processes sampled over diag.SampleGap, marking the
@@ -169,11 +198,10 @@ func (t *startedTable) list() []startedRoot {
 	return append([]startedRoot(nil), t.roots...)
 }
 
-// trackStarted records pid, started by the agent after notBefore, as a
-// process of started_by_deskhand.
-func (s *Server) trackStarted(pid int, notBefore time.Time) {
+func (s *Server) trackStarted(pid int, notBefore time.Time) time.Time {
 	created, _ := pidCreation(pid)
 	s.started.add(pid, created, notBefore)
+	return created
 }
 
 // startedByDeskhand returns the pids of procs that are a root or descend

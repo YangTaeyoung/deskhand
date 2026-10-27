@@ -117,8 +117,10 @@ func (st *jobStore) load() []*job {
 		}
 		j, err := st.loadJob(e.Name())
 		if err != nil {
-			st.lg.Printf("jobs: the job %s cannot be read (%v); it is left out", e.Name(), err)
-			continue
+			st.lg.Printf("jobs: the job %s cannot be read (%v); its outcome is unknown", e.Name(), err)
+			j = &job{id: e.Name(), out: newRing(jobBufferBytes), err: newRing(jobBufferBytes),
+				done: make(chan struct{}), stdinOff: true, running: true, exited: true, lost: true, code: -1}
+			close(j.done)
 		}
 		jobs = append(jobs, j)
 	}

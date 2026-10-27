@@ -163,8 +163,9 @@ type Injector struct {
 	opt Options
 	sys system
 
-	gen    atomic.Uint64
-	owners atomic.Uint64
+	gen      atomic.Uint64
+	owners   atomic.Uint64
+	writerMu sync.Mutex
 
 	// mu orders the injections and guards held.
 	mu   sync.Mutex
@@ -221,16 +222,19 @@ func (j *Injector) Gen() uint64 { return j.gen.Load() }
 // after it. A rise releases every held key and button and then runs
 // Options.Preempted; a gen that is not higher changes nothing.
 func (j *Injector) SetWriter(gen uint64) uint64 {
+	j.writerMu.Lock()
 	var prev uint64
 	for {
 		prev = j.gen.Load()
 		if gen <= prev {
+			j.writerMu.Unlock()
 			return prev
 		}
 		if j.gen.CompareAndSwap(prev, gen) {
 			break
 		}
 	}
+	j.writerMu.Unlock()
 	released, err := j.ReleaseAll()
 	if err != nil {
 		j.opt.Logger.Printf("input: releasing the held input of writer generation %d: %v", prev, err)
@@ -256,6 +260,22 @@ func (j *Injector) Admit(gen uint64) error {
 		}
 	}
 	return nil
+}
+
+// WithWriter runs a short action while its writer generation is current.
+// A writer change waits for an action already admitted, and an action
+// queued behind a newer writer is refused. The action must not call back
+// into the injector, wait for process exit, or perform UI operations.
+func (j *Injector) WithWriter(gen uint64, action func() error) error {
+	if err := j.Admit(gen); err != nil {
+		return err
+	}
+	j.writerMu.Lock()
+	defer j.writerMu.Unlock()
+	if cur := j.gen.Load(); gen < cur {
+		return preempted(gen, cur)
+	}
+	return action()
 }
 
 func preempted(gen, cur uint64) *Error {

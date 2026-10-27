@@ -111,6 +111,8 @@ type fakePC struct {
 	utf16        map[string]bool
 	// exec answers exec.run; nil answers code 0 with stdout "ok\n".
 	exec func(p proto.Message) (proto.Message, error)
+	// launch overrides app.launch for launch outcome and cleanup tests.
+	launch func(p proto.Message) (proto.Message, error)
 	// fail makes an op answer the error.
 	fail map[string]error
 	// onAct runs after a ui.act.
@@ -335,10 +337,15 @@ func (pc *fakePC) Call(ctx context.Context, op string, params proto.Message, opt
 		pc.windows = kept
 		return proto.Message{"window": nil}, nil
 	case "app.launch":
+		if pc.launch != nil {
+			return pc.launch(params)
+		}
 		w := map[string]any{"id": "0x10", "title": "Deskhand Fixture", "process": "deskhand-fixture.exe", "pid": float64(4242),
 			"x": float64(100), "y": float64(50), "w": float64(720), "h": float64(520)}
 		pc.windows = append(pc.windows, w)
 		return proto.Message{"pid": float64(4242), "window": w}, nil
+	case "proc.kill":
+		return proto.Message{"killed": float64(1)}, nil
 	case "ui.find":
 		found, err := pc.match(params, true)
 		if err != nil {
@@ -484,9 +491,15 @@ type fakeControl struct {
 	gen        uint64
 	gens       *[]uint64
 	recheckErr error
+	recheck    func() error
 }
 
-func (c fakeControl) Recheck(string, model.Caller, uint64) error { return c.recheckErr }
+func (c fakeControl) Recheck(string, model.Caller, uint64) error {
+	if c.recheck != nil {
+		return c.recheck()
+	}
+	return c.recheckErr
+}
 
 func (c fakeControl) Check(context.Context, string, model.Caller) (uint64, error) {
 	if c.err != nil {

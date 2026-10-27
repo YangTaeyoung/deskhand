@@ -100,7 +100,7 @@ func (s *Server) debugElectronLaunch(_ context.Context, req proto.Message) (prot
 	if err != nil {
 		return nil, err
 	}
-	pid, _, err := s.startChild(c, started, func(code int) { s.debug.exited(c.Process.Pid, code) })
+	pid, _, _, err := s.startChild(c, started, func(code int) { s.debug.exited(c.Process.Pid, code) })
 	if err != nil {
 		return nil, fmt.Errorf("cannot start '%s': %v; check the path with fs.stat", path, err)
 	}

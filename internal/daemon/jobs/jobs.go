@@ -226,13 +226,16 @@ func mergeResult(j store.Job, extra map[string]any) map[string]any {
 	return out
 }
 
-// finishExit finishes j after its process exited with code: cancelled
-// while a cancel of j is under way, failed with TIMEOUT while its timeout
-// kill is, else by ExitStatus.
 func (r *Registry) finishExit(j store.Job, code int) (model.Job, error) {
+	if cur, err := r.st.GetJob(j.JobID); err == nil {
+		j = cur
+	}
 	r.mu.Lock()
 	reason := r.cancelling[j.JobID]
 	r.mu.Unlock()
+	if started, _ := mergeResult(j, nil)["timeout_started"].(bool); started && reason != reasonCancel {
+		reason = reasonTimeout
+	}
 	extra := map[string]any{"state": "exited", "code": code}
 	status := ExitStatus(code)
 	switch reason {
@@ -272,7 +275,7 @@ func deadline(j store.Job) (time.Time, bool) {
 func timeoutResult(j store.Job) map[string]any {
 	limit := time.Duration(timeoutMS(j)) * time.Millisecond
 	return map[string]any{"timed_out": true, "error": apierr.New(wire.CodeTimeout,
-		fmt.Sprintf("명령이 %s 안에 끝나지 않아 종료했습니다. timeout_ms를 늘리거나 timeout_ms 없이 다시 실행하세요", limit), true, apierr.NextRetry)}
+		fmt.Sprintf("명령이 %s 제한 시간을 초과했습니다. timeout_ms를 늘리거나 timeout_ms 없이 다시 실행하세요", limit), true, apierr.NextRetry)}
 }
 
 // ArmTimeout starts the timer of a running remote exec job with timeout_ms:
@@ -329,9 +332,34 @@ func (r *Registry) expire(jobID string) {
 	if r.readyHost(j.HostID) == nil {
 		return
 	}
+	marked := mergeResult(j, map[string]any{"timeout_started": true})
+	if err := r.st.SetJobRunning(jobID, j.RemoteJob, raw(marked), time.Now()); err != nil {
+		if !errors.Is(err, store.ErrJobFinished) {
+			r.retryTimeout(jobID)
+		}
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.base, killTimeout)
 	defer cancel()
-	_, _ = r.kill(ctx, j, reasonTimeout, nil)
+	if _, err := r.kill(ctx, j, reasonTimeout, nil); err != nil {
+		r.retryTimeout(jobID)
+	}
+}
+
+func (r *Registry) retryTimeout(jobID string) {
+	j, err := r.st.GetJob(jobID)
+	if err != nil || j.FinishedAt != nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return
+	}
+	if t := r.timers[jobID]; t != nil {
+		t.Stop()
+	}
+	r.timers[jobID] = time.AfterFunc(time.Second, func() { r.expire(jobID) })
 }
 
 // killTimeout bounds the exec.kill of a timeout.
@@ -528,7 +556,8 @@ func (r *Registry) refresh(ctx context.Context, h *conn.Host, j store.Job) (mode
 		}
 		return model.JobFrom(j), true
 	}
-	return model.JobFrom(j), true
+	mj, err := r.Finish(j.JobID, model.StatusUnknown, mergeResult(j, map[string]any{"state": "lost"}))
+	return mj, err == nil
 }
 
 // Output returns the output of a job from cursor: chunks of

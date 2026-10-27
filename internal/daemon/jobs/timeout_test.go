@@ -186,3 +186,161 @@ func TestCloseStopsTheTimers(t *testing.T) {
 		t.Fatalf("job %+v, %d kills after Close", got, k.kills())
 	}
 }
+
+func TestTimeoutRetriesAFailedKillWithoutAReconnect(t *testing.T) {
+	k := newKillableAgent()
+	handle := k.agent.handle
+	kills := 0
+	k.agent.handle = func(req proto.Message) []proto.Message {
+		if req.String("op") == "exec.kill" {
+			kills++
+			if kills == 1 {
+				return []proto.Message{{"t": "res", "ok": false, "code": wire.CodeInternal, "error": "temporary termination failure", "retryable": true}}
+			}
+		}
+		return handle(req)
+	}
+	e := newAgentEnv(t, k.agent)
+	j := startTimed(t, e.r, 50)
+	e.r.ArmTimeout(j.JobID)
+	got := waitStatus(t, e.r, j.JobID, model.StatusFailed)
+	if res := resultOf(t, got); res["timed_out"] != true {
+		t.Fatalf("result %v", res)
+	}
+	if n := k.kills(); n != 2 {
+		t.Fatalf("exec.kill sent %d times, want failed attempt and retry", n)
+	}
+}
+
+func TestTimeoutRetryStopsAfterCloseOrExit(t *testing.T) {
+	for _, end := range []string{"close", "exit"} {
+		t.Run(end, func(t *testing.T) {
+			firstKill := make(chan struct{})
+			var first sync.Once
+			agent := &scriptAgent{handle: func(req proto.Message) []proto.Message {
+				if req.String("op") == "exec.kill" {
+					first.Do(func() { close(firstKill) })
+					return []proto.Message{{"t": "res", "ok": false, "code": wire.CodeInternal, "error": "temporary termination failure", "retryable": true}}
+				}
+				return nil
+			}}
+			e := newAgentEnv(t, agent)
+			j := startTimed(t, e.r, 50)
+			e.r.ArmTimeout(j.JobID)
+			select {
+			case <-firstKill:
+			case <-time.After(5 * time.Second):
+				t.Fatal("timeout never attempted the kill")
+			}
+			if end == "close" {
+				e.r.Close()
+			} else {
+				e.r.HandleAgentEvent("pc", proto.Message{"name": "job.exited", "job": "j1", "code": float64(0)})
+			}
+			time.Sleep(1500 * time.Millisecond)
+			kills := 0
+			for _, op := range agent.requests() {
+				if op == "exec.kill" {
+					kills++
+				}
+			}
+			if kills != 1 {
+				t.Fatalf("exec.kill sent %d times after %s, want only the initial failed kill", kills, end)
+			}
+		})
+	}
+}
+
+func TestAnExitBetweenTimeoutKillAttemptsStillFailsWithTimeout(t *testing.T) {
+	firstKill := make(chan struct{})
+	var first sync.Once
+	agent := &scriptAgent{handle: func(req proto.Message) []proto.Message {
+		if req.String("op") == "exec.kill" {
+			first.Do(func() { close(firstKill) })
+			return []proto.Message{{"t": "res", "ok": false, "code": wire.CodeInternal, "error": "temporary termination failure", "retryable": true}}
+		}
+		return nil
+	}}
+	e := newAgentEnv(t, agent)
+	j := startTimed(t, e.r, 30)
+	e.r.ArmTimeout(j.JobID)
+	select {
+	case <-firstKill:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout never attempted the kill")
+	}
+	// Wait until the failed request is no longer in flight, before the
+	// next attempt. The command now exits normally between the attempts.
+	until := time.Now().Add(5 * time.Second)
+	for {
+		e.r.mu.Lock()
+		pending := e.r.cancelling[j.JobID] != ""
+		e.r.mu.Unlock()
+		if !pending {
+			break
+		}
+		if time.Now().After(until) {
+			t.Fatal("failed kill stayed in flight")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	e.r.HandleAgentEvent("pc", proto.Message{"name": "job.exited", "job": "j1", "code": float64(0)})
+	got, _ := e.r.current(j.JobID)
+	res := resultOf(t, got)
+	errObj, _ := res["error"].(map[string]any)
+	if got.Status != model.StatusFailed || res["timed_out"] != true || errObj["code"] != wire.CodeTimeout {
+		t.Fatalf("exit after the timeout attempt: %+v result %v", got, res)
+	}
+}
+
+func TestTimeoutDecisionSurvivesRegistryRestartBeforeTheExit(t *testing.T) {
+	firstKill := make(chan struct{})
+	var first sync.Once
+	var mu sync.Mutex
+	exited := false
+	agent := &scriptAgent{handle: func(req proto.Message) []proto.Message {
+		mu.Lock()
+		defer mu.Unlock()
+		switch req.String("op") {
+		case "exec.kill":
+			first.Do(func() { close(firstKill) })
+			return []proto.Message{{"t": "res", "ok": false, "code": wire.CodeInternal, "error": "temporary termination failure", "retryable": true}}
+		case "exec.list":
+			state := "running"
+			if exited {
+				state = "exited"
+			}
+			return []proto.Message{ok(proto.Message{"jobs": []any{map[string]any{"job": "j1", "state": state, "code": 0}}})}
+		}
+		return nil
+	}}
+	e := newAgentEnv(t, agent)
+	j := startTimed(t, e.r, 30)
+	e.r.ArmTimeout(j.JobID)
+	select {
+	case <-firstKill:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout never attempted the kill")
+	}
+	e.r.Close()
+	mu.Lock()
+	exited = true
+	mu.Unlock()
+	restarted := New(e.st, events.NewBus(e.st, nil), e.mgr)
+	defer restarted.Close()
+	got, err := restarted.Get(context.Background(), j.JobID)
+	if err != nil || got.Status != model.StatusFailed || resultOf(t, got)["timed_out"] != true {
+		t.Fatalf("exit reconciled after registry restart: %+v, %v", got, err)
+	}
+}
+
+func TestPastDeadlineWithoutTimeoutAttemptKeepsTheExitCode(t *testing.T) {
+	r, _ := newRegistry(t)
+	j := startTimed(t, r, 1)
+	time.Sleep(10 * time.Millisecond)
+	r.HandleAgentEvent("pc", proto.Message{"name": "job.exited", "job": "j1", "code": float64(0)})
+	got, _ := r.current(j.JobID)
+	if got.Status != model.StatusSucceeded || resultOf(t, got)["timed_out"] == true {
+		t.Fatalf("late exit without an attempted timeout: %+v", got)
+	}
+}

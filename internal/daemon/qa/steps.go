@@ -52,6 +52,9 @@ func (r *runner) do(ctx context.Context, st Step, i int, timeout int64) stepOut 
 		return blockedOut(wire.CodeCapabilityUnsupported, "이 데몬은 파일을 보낼 수 없습니다. deskhand를 업데이트하세요")
 	}
 	need := caps[st.Action]
+	if c, ok := st.Spec.(*CloseSpec); ok && c.Window == "" && r.window == nil && r.windowlessPID > 0 {
+		need = "exec"
+	}
 	if c, ok := st.Spec.(*CollectSpec); ok {
 		need = "files"
 		if c.File == "" {
@@ -139,7 +142,7 @@ func (r *runner) do(ctx context.Context, st Step, i int, timeout int64) stepOut 
 // Control.Recheck passes.
 func (r *runner) call(ctx context.Context, op string, params proto.Message) (proto.Message, string, error) {
 	opts := conn.CallOpts{}
-	if wire.WriterOp(op) {
+	if wire.WriterOp(op) || op == "proc.kill" && params.Has("gen") {
 		if params == nil {
 			params = proto.Message{}
 		}
@@ -269,6 +272,7 @@ func remoteParent(p string) string {
 }
 
 func (r *runner) launch(ctx context.Context, s *LaunchSpec) stepOut {
+	r.window, r.windowlessPID, r.windowlessStarted = nil, 0, ""
 	params := proto.Message{"path": s.Path}
 	if len(s.Args) > 0 {
 		params["args"] = s.Args
@@ -287,6 +291,10 @@ func (r *runner) launch(ctx context.Context, s *LaunchSpec) stepOut {
 	if w, ok := res["window"].(map[string]any); ok {
 		r.window = w
 		out.message += fmt.Sprintf(", 창 %q", r.sc.Scrub(fmt.Sprint(w["title"])))
+	} else if pid, started := res.Int("pid"), res.String("started"); pid > 0 && started != "" {
+		if _, err := wire.ParseDiagTime(started); err == nil {
+			r.windowlessPID, r.windowlessStarted = pid, started
+		}
 	}
 	out.result = withRID(res, rid)
 	return out
@@ -368,13 +376,13 @@ func (r *runner) waitWindow(ctx context.Context, s *WaitWindowSpec) stepOut {
 	if !listed && lastErr != nil {
 		return fromError(lastErr)
 	}
-	out := failOut("", fmt.Sprintf("%s인 창이 제한 시간 안에 나타나지 않았습니다. 앱이 떴는지 확인하거나 timeout_ms를 늘리세요", want))
+	out := failOut(wire.CodeTimeout, fmt.Sprintf("%s인 창이 제한 시간 안에 나타나지 않았습니다. 앱이 떴는지 확인하거나 timeout_ms를 늘리세요", want))
 	expected, actual := any(want), any("없음")
 	if s.Gone {
 		out.message = fmt.Sprintf("%s인 창이 제한 시간 안에 닫히지 않았습니다. 앱 상태를 확인하거나 timeout_ms를 늘리세요", want)
 		expected, actual = "없음: "+want, "열려 있음"
 	}
-	out.err = nil
+	out.err.Message = out.message
 	out.polled = true
 	out.assertions = []Assertion{{Kind: "window", Expected: expected, Actual: actual, Passed: false}}
 	return out
@@ -975,6 +983,17 @@ func remoteBase(p string) string {
 func (r *runner) close(ctx context.Context, s *CloseSpec) stepOut {
 	window := r.windowRef(s.Window)
 	if window == "" {
+		if s.Window == "" && r.windowlessPID > 0 && r.windowlessStarted != "" {
+			pid := r.windowlessPID
+			res, rid, err := r.call(ctx, "proc.kill", proto.Message{"pid": pid, "started": r.windowlessStarted, "gen": r.writerGen})
+			if err != nil {
+				return fromError(err)
+			}
+			r.windowlessPID, r.windowlessStarted = 0, ""
+			out := pass(fmt.Sprintf("창 없이 실행된 프로세스(pid %d)의 종료를 요청했습니다", pid))
+			out.result = withRID(res, rid)
+			return out
+		}
 		return failOut(wire.CodeInvalidArgument, "닫을 창이 없습니다. window를 주거나 앞에 launch나 wait_window를 두세요")
 	}
 	res, rid, err := r.call(ctx, "win.action", proto.Message{"window": window, "action": "close"})
@@ -983,6 +1002,7 @@ func (r *runner) close(ctx context.Context, s *CloseSpec) stepOut {
 	}
 	if r.window != nil && r.window["id"] == window {
 		r.window = nil
+		r.windowlessPID, r.windowlessStarted = 0, ""
 	}
 	out := pass("창을 닫았습니다")
 	out.result = withRID(res, rid)

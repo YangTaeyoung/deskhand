@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/proto"
+	"github.com/YangTaeyoung/deskhand/internal/wire"
 )
 
 const (
@@ -187,12 +188,15 @@ func (s *Server) appLaunch(ctx context.Context, req proto.Message) (proto.Messag
 		}
 	}
 
-	pid, exited, err := s.startChild(c, started, nil)
+	pid, created, exited, err := s.startChild(c, started, nil)
 	if err != nil {
 		return nil, fmt.Errorf("cannot start '%s': %v; check the path with fs.stat", path, err)
 	}
 
 	res := proto.Message{"pid": pid}
+	if !created.IsZero() {
+		res["started"] = wire.FormatDiagTime(created)
+	}
 	if watch {
 		if w := s.waitLaunchWindow(ctx, pid, before, exited, time.Duration(waitMs)*time.Millisecond); w != nil {
 			res["window"] = w
@@ -254,17 +258,13 @@ func (s *Server) buildChild(path string, args []string, cwd string, env map[stri
 	return c, started, nil
 }
 
-// startChild starts c, tracks the process as started by the agent and
-// spawns a goroutine that records its end, emits process.exited with the
-// file started and calls onExit (when set) with the exit code. It returns
-// the pid and a channel closed when the process ends.
-func (s *Server) startChild(c *exec.Cmd, started string, onExit func(code int)) (int, chan struct{}, error) {
+func (s *Server) startChild(c *exec.Cmd, started string, onExit func(code int)) (int, time.Time, chan struct{}, error) {
 	notBefore := time.Now()
 	if err := startProgram(c); err != nil {
-		return 0, nil, err
+		return 0, time.Time{}, nil, err
 	}
 	pid := c.Process.Pid
-	s.trackStarted(pid, notBefore)
+	created := s.trackStarted(pid, notBefore)
 	exited := make(chan struct{})
 	go func() {
 		_ = c.Wait()
@@ -279,7 +279,7 @@ func (s *Server) startChild(c *exec.Cmd, started string, onExit func(code int)) 
 			onExit(code)
 		}
 	}()
-	return pid, exited, nil
+	return pid, created, exited, nil
 }
 
 // claimWindow picks a window not listed before the launch and not already

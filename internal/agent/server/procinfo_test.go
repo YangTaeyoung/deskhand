@@ -186,32 +186,42 @@ func TestProcListMarksTheAgentAndWhatItStarted(t *testing.T) {
 }
 
 func TestProcKillChecksTheStartTimeOfThePID(t *testing.T) {
-	c, _ := newRPCClient(t, Options{})
-	start := c.ok("exec.start", longCommand())
-	job, pid := start.String("job"), start.Int("pid")
-	t.Cleanup(func() { c.call("exec.kill", proto.Message{"job": job}) })
-	entry := listed(c, pid)
-	if entry == nil {
-		t.Fatalf("pid %d is not listed", pid)
-	}
-	res := c.call("proc.kill", proto.Message{"pid": pid, "started": "2001-01-01T00:00:00.000Z"})
-	if res["ok"] != false || res.String("code") != wire.CodeStaleTarget || !strings.Contains(res.String("error"), "proc.list") {
-		t.Fatalf("stale kill %v", res)
-	}
-	if listed(c, pid) == nil {
-		t.Fatalf("pid %d ended after a stale kill", pid)
-	}
-	for _, bad := range []proto.Message{{"pid": pid, "started": "yesterday"}, {"name": "x", "started": entry["started"]}} {
-		if res := c.call("proc.kill", bad); res.String("code") != wire.CodeInvalidArgument {
-			t.Fatalf("%v: %v", bad, res)
-		}
-	}
-	if res := c.ok("proc.kill", proto.Message{"pid": pid, "started": entry["started"]}); res.Int("killed") != 1 {
-		t.Fatalf("kill %v", res)
-	}
-	waitJobExited(t, c, job)
-	if res := c.call("proc.kill", proto.Message{"pid": pid, "started": entry["started"]}); res.String("code") != wire.CodeStaleTarget {
-		t.Fatalf("kill of an ended process %v", res)
+	for _, guarded := range []bool{false, true} {
+		t.Run(fmt.Sprintf("writer_guarded=%t", guarded), func(t *testing.T) {
+			c, _ := newRPCClient(t, Options{})
+			request := func(params proto.Message) proto.Message {
+				if guarded {
+					params["gen"] = 0
+				}
+				return params
+			}
+			start := c.ok("exec.start", longCommand())
+			job, pid := start.String("job"), start.Int("pid")
+			t.Cleanup(func() { c.call("exec.kill", proto.Message{"job": job}) })
+			entry := listed(c, pid)
+			if entry == nil {
+				t.Fatalf("pid %d is not listed", pid)
+			}
+			res := c.call("proc.kill", request(proto.Message{"pid": pid, "started": "2001-01-01T00:00:00.000Z"}))
+			if res["ok"] != false || res.String("code") != wire.CodeStaleTarget || !strings.Contains(res.String("error"), "proc.list") {
+				t.Fatalf("stale kill %v", res)
+			}
+			if listed(c, pid) == nil {
+				t.Fatalf("pid %d ended after a stale kill", pid)
+			}
+			for _, bad := range []proto.Message{{"pid": pid, "started": "yesterday"}, {"name": "x", "started": entry["started"]}} {
+				if res := c.call("proc.kill", request(bad)); res.String("code") != wire.CodeInvalidArgument {
+					t.Fatalf("%v: %v", bad, res)
+				}
+			}
+			if res := c.ok("proc.kill", request(proto.Message{"pid": pid, "started": entry["started"]})); res.Int("killed") != 1 {
+				t.Fatalf("kill %v", res)
+			}
+			waitJobExited(t, c, job)
+			if res := c.call("proc.kill", request(proto.Message{"pid": pid, "started": entry["started"]})); res.String("code") != wire.CodeStaleTarget {
+				t.Fatalf("kill of an ended process %v", res)
+			}
+		})
 	}
 }
 

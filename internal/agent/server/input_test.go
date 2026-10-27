@@ -58,6 +58,7 @@ func TestUIOpsOfAnOlderWriterArePreempted(t *testing.T) {
 		{"clipboard.set", proto.Message{"text": "new", "gen": 4}},
 		{"app.launch", proto.Message{"path": "notepad", "gen": 0}},
 		{"debug.electron.launch", proto.Message{"path": "deskhand-no-such-electron-app", "gen": 3}},
+		{"proc.kill", proto.Message{"pid": 2147483000, "started": "2001-01-01T00:00:00.000Z", "gen": 4}},
 	} {
 		res := c.call(req.op, req.fields)
 		if res["ok"] != false || res.String("code") != wire.CodeControlPreempted || res["retryable"] != false || res.String("error") == "" {
@@ -84,6 +85,26 @@ func TestUIOpsOfAnOlderWriterArePreempted(t *testing.T) {
 	}
 	if res := c.call("ui.act", proto.Message{"ref": "e1", "gen": "5"}); res.String("code") != wire.CodeInvalidArgument {
 		t.Fatalf("ui.act with a string gen %v", res)
+	}
+}
+
+func TestWriterGuardedKillNeedsAnIdentifiedSingleProcess(t *testing.T) {
+	c, _ := newRPCClient(t, Options{})
+	for _, req := range []proto.Message{
+		{"name": "deskhand-no-such-process", "gen": 0},
+		{"pid": 2147483000, "gen": 0},
+		{"pid": 2147483000, "started": "2001-01-01T00:00:00.000Z", "tree": true, "gen": 0},
+		{"pid": 2147483000, "started": "2001-01-01T00:00:00.000Z", "gen": "0"},
+	} {
+		res := c.call("proc.kill", req)
+		if res.String("code") != wire.CodeInvalidArgument {
+			t.Fatalf("guarded kill %v: %v", req, res)
+		}
+	}
+	// Ordinary process tools keep their original non-UI contract.
+	c.ok("control.set_writer", proto.Message{"gen": 5})
+	if res := c.ok("proc.kill", proto.Message{"name": "deskhand-no-such-process"}); res.Int("killed") != 0 {
+		t.Fatalf("legacy kill: %v", res)
 	}
 }
 

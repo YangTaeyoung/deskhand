@@ -168,6 +168,27 @@ func TestJournalSurvivesRestart(t *testing.T) {
 	waitJobExited(t, b.c, next)
 }
 
+func TestCorruptJobRecordDoesNotReuseItsIDAfterRestart(t *testing.T) {
+	dir := t.TempDir()
+	a := startAgentOn(t, dir)
+	old := a.c.ok("exec.start", proto.Message{"rid": "r-corrupt-job", "cmd": exitWith(0)}).String("job")
+	waitJobExited(t, a.c, old)
+	a.stop()
+	if err := os.WriteFile(filepath.Join(dir, "jobs", old, "meta.json"), []byte("broken record"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	b := startAgentOn(t, dir)
+	next := b.c.ok("exec.start", proto.Message{"cmd": exitWith(0)}).String("job")
+	waitJobExited(t, b.c, next)
+	if next == old {
+		t.Fatalf("a new command reused the unreadable job's id %s", old)
+	}
+	got := b.c.ok("exec.read", proto.Message{"job": old})
+	if got.String("state") != "lost" || got.Has("code") {
+		t.Fatalf("unreadable job outcome must be unknown, got %v", got)
+	}
+}
+
 func TestJournalReplaysAcrossRestart(t *testing.T) {
 	dir := t.TempDir()
 	marks := filepath.Join(t.TempDir(), "marks.txt")
