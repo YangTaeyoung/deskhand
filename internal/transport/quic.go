@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/wire"
@@ -114,6 +116,42 @@ func clientTLS(id Identity, expectedPeer string, mismatch *error) (*tls.Config, 
 	}, nil
 }
 
+// recordingUDP preserves a local routing error that quic-go otherwise converts
+// into an unwrappable INTERNAL_ERROR string. Embedding UDPConn retains its
+// out-of-band packet and syscall capabilities.
+type recordingUDP struct {
+	*net.UDPConn
+	mu          sync.Mutex
+	unreachable error
+}
+
+func (c *recordingUDP) record(err error) {
+	if errors.Is(err, syscall.EHOSTUNREACH) {
+		c.mu.Lock()
+		c.unreachable = err
+		c.mu.Unlock()
+	}
+}
+func (c *recordingUDP) WriteTo(b []byte, addr net.Addr) (int, error) {
+	n, err := c.UDPConn.WriteTo(b, addr)
+	c.record(err)
+	return n, err
+}
+func (c *recordingUDP) WriteMsgUDP(b, oob []byte, addr *net.UDPAddr) (int, int, error) {
+	n, on, err := c.UDPConn.WriteMsgUDP(b, oob, addr)
+	c.record(err)
+	return n, on, err
+}
+func (c *recordingUDP) routeError() error { c.mu.Lock(); defer c.mu.Unlock(); return c.unreachable }
+
+func restoreLocalRouteError(err, routeErr error) error {
+	var te *quic.TransportError
+	if routeErr != nil && errors.As(err, &te) && !te.Remote && te.ErrorCode == quic.InternalError {
+		return errors.Join(err, routeErr)
+	}
+	return err
+}
+
 // Dial connects to addr and keeps the connection only if the server certificate fingerprint equals expectedPeer.
 func Dial(ctx context.Context, addr string, id Identity, expectedPeer string) (*quic.Conn, error) {
 	var mismatch error
@@ -129,7 +167,8 @@ func Dial(ctx context.Context, addr string, id Identity, expectedPeer string) (*
 	if err != nil {
 		return nil, fmt.Errorf("open udp socket: %w", err)
 	}
-	tr := &quic.Transport{Conn: udp}
+	recorded := &recordingUDP{UDPConn: udp}
+	tr := &quic.Transport{Conn: recorded}
 	conn, err := tr.Dial(ctx, udpAddr, tlsConf, quicConfig())
 	if err != nil {
 		tr.Close()
@@ -137,6 +176,7 @@ func Dial(ctx context.Context, addr string, id Identity, expectedPeer string) (*
 		if mismatch != nil {
 			return nil, mismatch
 		}
+		err = restoreLocalRouteError(err, recorded.routeError())
 		return nil, fmt.Errorf("dial %s: %w", addr, err)
 	}
 	go func() {

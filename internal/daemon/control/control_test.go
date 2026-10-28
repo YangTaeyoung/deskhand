@@ -626,3 +626,33 @@ func TestConcurrentChangesKeepGenAndEventsInStep(t *testing.T) {
 	}
 	eventually(t, "the final gen at the agent", func() bool { return r.agent.writerGen() == final })
 }
+
+func TestIdleReleaseHonorsEveryHumanInputStream(t *testing.T) {
+	r := newRig(t, time.Minute)
+	s, err := r.m.Acquire(bg, "pc", OwnerHuman, human, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.m.NoteHumanInput("pc", "viewer-one", true)
+	r.m.NoteHumanInput("pc", "viewer-two", true)
+	r.m.NoteHumanInput("pc", "viewer-one", false)
+	r.m.mu.Lock()
+	r.m.hostLocked("pc").lastHumanInput = time.Now().Add(-6 * time.Second)
+	r.m.mu.Unlock()
+	got, err := r.m.ReleaseIfHuman(bg, "pc", human, s.Gen)
+	if err != nil || got.Owner != "human" {
+		t.Fatalf("released while second viewer holds: %+v %v", got, err)
+	}
+	r.m.NoteHumanInput("pc", "viewer-two", false)
+	got, err = r.m.ReleaseIfHuman(bg, "pc", human, s.Gen)
+	if err != nil || got.Owner != "human" {
+		t.Fatalf("released immediately after input: %+v %v", got, err)
+	}
+	r.m.mu.Lock()
+	r.m.hostLocked("pc").lastHumanInput = time.Now().Add(-6 * time.Second)
+	r.m.mu.Unlock()
+	got, err = r.m.ReleaseIfHuman(bg, "pc", human, s.Gen)
+	if err != nil || got.Owner != "none" {
+		t.Fatalf("did not release after idle: %+v %v", got, err)
+	}
+}

@@ -21,18 +21,30 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
     public var owner: ControlOwner = .none {
         didSet {
             guard owner != oldValue else { return }
+            lastMove = nil
+            lastMoveTime = -.infinity
             if owner == .ai {
-                endCapture(sendRelease: false)
-            } else if owner == .human, let requested = takeoverRequestedAt, clock() - requested < 60 {
-                takeoverRequestedAt = nil
-                beginCapture()
+                if !idleHandoffInFlight { endCapture(sendRelease: false) }
+            } else if owner == .human {
+                if let requested = takeoverRequestedAt, clock() - requested < 60 {
+                    takeoverRequestedAt = nil
+                    beginCapture()
+                    replayTakeoverClick()
+                }
+                if autoHandoffEnabled { reportActivity() }
             }
         }
     }
 
     /// False while the screen is not live; disabling ends the capture.
     public var isInputEnabled = true {
-        didSet { if !isInputEnabled { endCapture() } }
+        didSet {
+            if !isInputEnabled { endCapture() }
+            else if !oldValue, autoHandoffEnabled, owner == .human {
+                if idlePolicy.shouldRelease(at: clock()) { scheduleIdleCheck(after: .milliseconds(500)) }
+                else { reportActivity() }
+            }
+        }
     }
 
     /// Geometry of the remote display in this view.
@@ -67,6 +79,30 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
     public var onEvent: (InputEvent) -> Void = { _ in }
     public var onTakeoverRequest: () -> Void = {}
     public var onCaptureChange: (Bool) -> Void = { _ in }
+    /// Reports input activity and whether any physical button, key, or modifier is held.
+    public var onActivity: (Bool) -> Void = { _ in }
+    public var autoHandoffEnabled = false {
+        didSet {
+            guard autoHandoffEnabled != oldValue else { return }
+            if !autoHandoffEnabled { idleTask?.cancel(); idlePolicy.reset(); pendingTakeoverClick = nil }
+            else if owner == .human { reportActivity() }
+        }
+    }
+    public var onIdleHandoff: (@escaping (Bool) -> Void) -> Void = { done in done(true) }
+    public var onReacquireAfterIdle: (@escaping (Bool) -> Void) -> Void = { done in done(false) }
+    public var onDeferredInputFailure: () -> Void = {}
+    public var onStaleTakeoverClick: () -> Void = {}
+    /// Frame displayed when a takeover click was received.
+    public var visualSequence: UInt64 = 0
+    private(set) var idleHandoffInFlight = false
+    private var deferredInput: [InputEvent] = []
+    private var deferredInputOverflow = false
+    private var deferredInputCancelled = false
+    private var deferredActionSequence: UInt64?
+    private var idlePolicy = AutoHandoffPolicy()
+    private var idleTask: Task<Void, Never>?
+    private var idleHandoffFailed = false
+    private var activityGeneration: UInt64 = 0
     /// The local pointer in view coordinates while captured over the video; nil otherwise.
     public var onPointer: (CGPoint?) -> Void = { _ in }
     /// Text the Mac input method is composing, or nil.
@@ -87,6 +123,111 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
     private var pendingMove: CGPoint?
     private var flushScheduled = false
     private var pressedButtons: Set<MouseButton> = []
+    private struct PendingTakeoverClick {
+        let button: MouseButton
+        let remote: CGPoint
+        let viewPoint: CGPoint
+        let at: TimeInterval
+        let sequence: UInt64
+        var released: Bool
+    }
+    private var pendingTakeoverClick: PendingTakeoverClick?
+    private var activityButtons: Set<MouseButton> = []
+    private var activityKeys: Set<UInt16> = []
+    private var activityModifiers: NSEvent.ModifierFlags = []
+
+    private func reportActivity() {
+        idleHandoffFailed = false
+        activityGeneration &+= 1
+        let held = !activityButtons.isEmpty || !activityKeys.isEmpty || !activityModifiers.isEmpty || markedText != nil
+        if idleHandoffInFlight, markedText != nil, deferredActionSequence == nil {
+            deferredActionSequence = visualSequence
+        }
+        onActivity(held)
+        guard autoHandoffEnabled else { return }
+        idlePolicy.activity(at: clock(), holding: held)
+        idleTask?.cancel()
+        guard !held else { return }
+        scheduleIdleCheck(after: .seconds(5))
+    }
+
+    private func scheduleIdleCheck(after delay: Duration) {
+        idleTask?.cancel()
+        idleTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: delay) } catch { return }
+            self?.evaluateAutoHandoff()
+        }
+    }
+
+    func evaluateAutoHandoff() {
+        guard autoHandoffEnabled, owner == .human, isInputEnabled, !idleHandoffInFlight, !idleHandoffFailed, idlePolicy.shouldRelease(at: clock()) else { return }
+        idleTask?.cancel()
+        idleHandoffInFlight = true
+        // A different owner may move the pointer before an ownership notification arrives.
+        lastMove = nil
+        lastMoveTime = -.infinity
+        let activityAtRelease = activityGeneration
+        onIdleHandoff { [weak self] succeeded in
+            guard let self else { return }
+            self.idleHandoffFailed = !succeeded
+            if self.deferredInputOverflow || self.deferredInputCancelled {
+                let overflow = self.deferredInputOverflow
+                self.deferredInput.removeAll()
+                self.deferredInputOverflow = false
+                self.deferredInputCancelled = false
+                self.deferredActionSequence = nil
+                self.idleHandoffInFlight = false
+                if overflow { self.endCapture(sendRelease: false); self.onDeferredInputFailure() }
+                else if succeeded, self.autoHandoffEnabled, let remaining = self.idlePolicy.remaining(at: self.clock()) {
+                    self.scheduleIdleCheck(after: .milliseconds(max(500, Int((remaining * 1000).rounded(.up)))))
+                }
+                return
+            }
+            guard !self.deferredInput.isEmpty || self.activityGeneration != activityAtRelease else {
+                self.idleHandoffInFlight = false
+                if self.owner == .ai { self.endCapture(sendRelease: false) }
+                else if succeeded && self.owner == .human { self.scheduleIdleCheck(after: .milliseconds(500)) }
+                return
+            }
+            self.onReacquireAfterIdle { [weak self] reacquired in
+                guard let self else { return }
+                let events = self.deferredInput
+                let overflow = self.deferredInputOverflow
+                let screenChanged = self.deferredActionSequence.map { $0 != self.visualSequence } ?? false
+                let deliver = reacquired && !overflow && !screenChanged && !self.deferredInputCancelled && self.isInputEnabled
+                self.deferredInput.removeAll()
+                self.deferredActionSequence = nil
+                self.deferredInputOverflow = false
+                self.deferredInputCancelled = false
+                self.idleHandoffInFlight = false
+                if deliver {
+                    for event in events { self.emit(event) }
+                    if self.autoHandoffEnabled, let remaining = self.idlePolicy.remaining(at: self.clock()) {
+                        self.scheduleIdleCheck(after: .milliseconds(max(500, Int((remaining * 1000).rounded(.up)))))
+                    }
+                } else {
+                    self.endCapture(sendRelease: false)
+                    if overflow { self.onDeferredInputFailure() }
+                    else if screenChanged { self.onStaleTakeoverClick() }
+                }
+            }
+        }
+    }
+    private func emit(_ event: InputEvent) {
+        if idleHandoffInFlight {
+            switch event {
+            case .button, .wheel, .key, .text:
+                if deferredActionSequence == nil { deferredActionSequence = visualSequence }
+            case .move, .releaseAll: break
+            }
+            if case .move = event, let last = deferredInput.last, case .move = last {
+                deferredInput[deferredInput.count - 1] = event
+            } else if deferredInput.count < 256 { deferredInput.append(event) }
+            else { deferredInputOverflow = true }
+        } else {
+            onEvent(event)
+        }
+    }
     /// Keys sent down, by macOS key code, with what was sent.
     private var pressedKeys: [UInt16: KeyTarget] = [:]
     private var heldModifiers: [UInt16: HeldModifier] = [:]
@@ -133,21 +274,34 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
         }
         return true
     }
-    public override var acceptsFirstResponder: Bool { owner != .ai && isInputEnabled }
+    public override var acceptsFirstResponder: Bool { (owner != .ai || idleHandoffInFlight) && isInputEnabled }
     public override func acceptsFirstMouse(for event: NSEvent?) -> Bool { false }
 
     // MARK: Capture
 
     /// Makes the view first responder, which starts capturing input.
     public func beginCapture() {
-        guard !isCaptured, owner != .ai, isInputEnabled, let window else { return }
+        guard !isCaptured, owner != .ai || idleHandoffInFlight, isInputEnabled, let window else { return }
         window.makeFirstResponder(self)
     }
 
     /// Stops capturing: sends `release_all` when `sendRelease`, forgets held keys and buttons and
     /// gives up first responder.
     public func endCapture(sendRelease: Bool = true) {
-        guard isCaptured else { return }
+        if idleHandoffInFlight {
+            deferredInput.removeAll()
+            deferredActionSequence = nil
+            deferredInputCancelled = true
+        }
+        guard isCaptured else {
+            if !activityButtons.isEmpty || !activityKeys.isEmpty || !activityModifiers.isEmpty {
+                activityButtons = []
+                activityKeys = []
+                activityModifiers = []
+                reportActivity()
+            }
+            return
+        }
         isCaptured = false
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = nil
@@ -155,6 +309,10 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
         flushScheduled = false
         pendingMove = nil
         pressedButtons = []
+        activityButtons = []
+        activityKeys = []
+        activityModifiers = []
+        reportActivity()
         pressedKeys = [:]
         heldModifiers = [:]
         escapeChordArmed = false
@@ -167,7 +325,7 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
         lastMove = nil
         lastMoveTime = -.infinity
         systemShortcutTap.stop()
-        if sendRelease { onEvent(.releaseAll) }
+        if sendRelease { emit(.releaseAll) }
         if !resigning, window?.firstResponder === self { window?.makeFirstResponder(nil) }
         onPointer(nil)
         updateCursor()
@@ -175,7 +333,7 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
     }
 
     public override func becomeFirstResponder() -> Bool {
-        guard owner != .ai, isInputEnabled, super.becomeFirstResponder() else { return false }
+        guard (owner != .ai || idleHandoffInFlight), isInputEnabled, super.becomeFirstResponder() else { return false }
         if !isCaptured {
             isCaptured = true
             lastMove = nil
@@ -196,7 +354,7 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
     }
 
     public override func viewWillMove(toWindow newWindow: NSWindow?) {
-        if newWindow !== window { endCapture() }
+        if newWindow !== window { pendingTakeoverClick = nil; endCapture() }
         if let windowObserver { NotificationCenter.default.removeObserver(windowObserver) }
         windowObserver = nil
         super.viewWillMove(toWindow: newWindow)
@@ -208,7 +366,7 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
         windowObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didResignKeyNotification, object: window, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.endCapture() }
+            MainActor.assumeIsolated { self?.pendingTakeoverClick = nil; self?.endCapture() }
         }
     }
 
@@ -289,9 +447,16 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
 
     private func button(_ button: MouseButton, down: Bool, _ event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        guard isInputEnabled else { return }
+        activityModifiers = event.modifierFlags.intersection([.shift, .control, .option, .command])
+        if down { activityButtons.insert(button) } else { activityButtons.remove(button) }
+        reportActivity()
         if down {
-            if owner == .ai {
+            if owner == .ai && !idleHandoffInFlight {
                 takeoverRequestedAt = clock()
+                if autoHandoffEnabled, activityModifiers.isEmpty, let remote = mapper?.remotePoint(from: point) {
+                    pendingTakeoverClick = PendingTakeoverClick(button: button, remote: remote, viewPoint: point, at: clock(), sequence: visualSequence, released: false)
+                } else { pendingTakeoverClick = nil }
                 onTakeoverRequest()
                 return
             }
@@ -304,19 +469,49 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
             flushModifiers()
             sendMove(remote)
             pressedButtons.insert(button)
-            onEvent(.button(button, down: true))
+            emit(.button(button, down: true))
         } else {
+            if !isCaptured, var pending = pendingTakeoverClick, pending.button == button {
+                if hypot(point.x - pending.viewPoint.x, point.y - pending.viewPoint.y) > 8 {
+                    pendingTakeoverClick = nil
+                } else {
+                    pending.released = true
+                    pendingTakeoverClick = pending
+                }
+                return
+            }
             guard isCaptured, pressedButtons.remove(button) != nil, let mapper else { return }
             flushPendingMove()
             sendMove(mapper.clampedRemotePoint(from: point))
-            onEvent(.button(button, down: false))
+            emit(.button(button, down: false))
+        }
+    }
+
+    private func replayTakeoverClick() {
+        guard let pending = pendingTakeoverClick else { return }
+        pendingTakeoverClick = nil
+        guard autoHandoffEnabled, isCaptured, isInputEnabled, clock() - pending.at < 1 else { return }
+        guard visualSequence == pending.sequence else { onStaleTakeoverClick(); return }
+        reportActivity()
+        flushPendingMove()
+        sendMove(pending.remote)
+        pressedButtons.insert(pending.button)
+        emit(.button(pending.button, down: true))
+        if pending.released {
+            pressedButtons.remove(pending.button)
+            emit(.button(pending.button, down: false))
         }
     }
 
     private func moved(_ event: NSEvent, dragging: Bool) {
         let point = convert(event.locationInWindow, from: nil)
+        if dragging, !isCaptured, let pending = pendingTakeoverClick,
+           hypot(point.x - pending.viewPoint.x, point.y - pending.viewPoint.y) > 8 {
+            pendingTakeoverClick = nil
+        }
         updateCursor(at: point)
         guard isCaptured, let mapper else { return }
+        reportActivity()
         let remote = pressedButtons.isEmpty ? mapper.remotePoint(from: point) : mapper.clampedRemotePoint(from: point)
         guard let remote else {
             onPointer(nil)
@@ -329,11 +524,12 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
 
     public override func scrollWheel(with event: NSEvent) {
         guard isCaptured, mapper?.remotePoint(from: convert(event.locationInWindow, from: nil)) != nil else { return }
+        reportActivity()
         guard let step = wheel.add(dx: event.scrollingDeltaX, dy: event.scrollingDeltaY,
                                    precise: event.hasPreciseScrollingDeltas) else { return }
         flushPendingMove()
         flushModifiers()
-        onEvent(.wheel(dx: step.dx, dy: step.dy))
+        emit(.wheel(dx: step.dx, dy: step.dy))
     }
 
     private func queueMove(_ remote: CGPoint) {
@@ -365,7 +561,7 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
         lastMoveTime = clock()
         guard remote != lastMove else { return }
         lastMove = remote
-        onEvent(.move(x: Int(remote.x), y: Int(remote.y), display: display))
+        emit(.move(x: Int(remote.x), y: Int(remote.y), display: display))
     }
 
     // MARK: Keyboard
@@ -390,7 +586,14 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
     /// Sends a key event to the remote PC while captured. Returns false for events left to the
     /// app: local shortcuts, and everything while not captured.
     func handleKeyEvent(_ event: NSEvent) -> Bool {
-        guard isCaptured, isInputEnabled, owner != .ai else { return false }
+        guard isCaptured, isInputEnabled, owner != .ai || idleHandoffInFlight else { return false }
+        switch event.type {
+        case .keyDown: activityKeys.insert(event.keyCode)
+        case .keyUp: activityKeys.remove(event.keyCode)
+        case .flagsChanged: activityModifiers = event.modifierFlags.intersection([.shift, .control, .option, .command])
+        default: break
+        }
+        reportActivity()
         switch event.type {
         case .flagsChanged:
             modifierChanged(event)
@@ -411,11 +614,11 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
             flushPendingMove()
             flushModifiers()
             pressedKeys[event.keyCode] = target
-            onEvent(.key(target, down: true))
+            emit(.key(target, down: true))
             return true
         case .keyUp:
             if let target = pressedKeys.removeValue(forKey: event.keyCode) {
-                onEvent(.key(target, down: false))
+                emit(.key(target, down: false))
                 return true
             }
             return !Self.isLocalShortcut(event, forwardingSystem: forwardsSystemShortcuts)
@@ -489,8 +692,8 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
         let code = event.keyCode
         if code == KeyMap.Mac.capsLock, let target = keyMap.key(for: code) {
             flushModifiers()
-            onEvent(.key(target, down: true))
-            onEvent(.key(target, down: false))
+            emit(.key(target, down: true))
+            emit(.key(target, down: false))
             return
         }
         guard Self.deviceMasks[code] != nil else { return }
@@ -509,11 +712,11 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
             guard let held = heldModifiers.removeValue(forKey: code) else { return }
             switch held {
             case .sent(let target):
-                onEvent(.key(target, down: false))
+                emit(.key(target, down: false))
             case .deferred(let target):
                 guard sendsAloneTap(code, target) else { return }
-                onEvent(.key(target, down: true))
-                onEvent(.key(target, down: false))
+                emit(.key(target, down: true))
+                emit(.key(target, down: false))
             }
         }
     }
@@ -553,7 +756,7 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
         for (code, held) in heldModifiers.sorted(by: { $0.key < $1.key }) {
             guard case .deferred(let target) = held else { continue }
             heldModifiers[code] = .sent(target)
-            onEvent(.key(target, down: true))
+            emit(.key(target, down: true))
         }
     }
 
@@ -564,15 +767,15 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
         let text = (string as? NSAttributedString)?.string ?? (string as? String) ?? ""
         guard isCaptured, !text.isEmpty else { return }
         flushPendingMove()
-        onEvent(.text(text))
+        emit(.text(text))
     }
 
     public override func doCommand(by selector: Selector) {
         guard isCaptured, let event = currentKeyEvent, let target = keyMap.key(for: event.keyCode) else { return }
         flushPendingMove()
         flushModifiers()
-        onEvent(.key(target, down: true))
-        onEvent(.key(target, down: false))
+        emit(.key(target, down: true))
+        emit(.key(target, down: false))
     }
 
     public func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
@@ -580,6 +783,7 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
         markedText = text.isEmpty ? nil : text
         markedSelection = selectedRange
         onMarkedText(markedText)
+        reportActivity()
     }
 
     public func unmarkText() {
@@ -591,13 +795,14 @@ public final class InputCapture: NSView, @MainActor NSTextInputClient {
         guard let text = markedText else { return }
         clearMarkedText(discardingInput: true)
         flushPendingMove()
-        onEvent(.text(text))
+        emit(.text(text))
     }
 
     /// Forgets the composing text; `discardingInput` also tells the input method to drop it.
     private func clearMarkedText(discardingInput: Bool) {
         guard markedText != nil else { return }
         markedText = nil
+        reportActivity()
         markedSelection = NSRange(location: 0, length: 0)
         if discardingInput { inputContext?.discardMarkedText() }
         onMarkedText(nil)

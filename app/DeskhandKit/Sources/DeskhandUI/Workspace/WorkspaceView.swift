@@ -78,6 +78,7 @@ public struct WorkspaceView: View {
             WorkspaceTabBar(layout: store.layout, badges: debugger.openSessions.contains { !$0.pausedTargets.isEmpty } ? [.debugger] : [])
                 .layoutPriority(1)
             ControlBanner(store: store, host: host)
+                .frame(minHeight: store.layout.tab == .screen ? 60 : nil)
                 .layoutPriority(1)
             if let pausedElsewhere {
                 DebuggerPausedBanner(pause: pausedElsewhere) {

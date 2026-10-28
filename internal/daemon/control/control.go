@@ -132,12 +132,15 @@ func (s state) owned(owner Owner, c ClientInfo) state {
 // current connection; pushing is set while the pusher runs, and ackCh is
 // closed whenever acked or pushing changes.
 type host struct {
-	st      state
-	timer   *time.Timer
-	link    *aiLink
-	acked   uint64
-	pushing bool
-	ackCh   chan struct{}
+	lastHumanInput    time.Time
+	humanPhysicalHeld map[string]bool
+	humanWireHeld     map[string]bool
+	st                state
+	timer             *time.Timer
+	link              *aiLink
+	acked             uint64
+	pushing           bool
+	ackCh             chan struct{}
 }
 
 // Manager owns the control state of every host.
@@ -304,6 +307,11 @@ func (m *Manager) apply(hostID string, c ClientInfo, summary string, fn changeFn
 			return cur, false, apierr.Internal(fmt.Sprintf("제어권 상태를 저장하지 못했습니다(%v). 데몬 로그를 확인하세요", err))
 		}
 		h.st = next
+		if changed {
+			// Old writer keys are released on a generation change. Local
+			// physical holds remain tracked until their viewer reports release.
+			clear(h.humanWireHeld)
+		}
 	}
 	m.scheduleLocked(hostID, h)
 	m.mu.Unlock()
@@ -597,6 +605,7 @@ func (m *Manager) adopt(hostID string, gen uint64) {
 		return
 	}
 	h.st = next
+	clear(h.humanWireHeld)
 	m.mu.Unlock()
 	m.lg.Printf("control: %s's agent is at writer generation %d; the host takes it", hostID, gen)
 	m.opt.Bus.Publish(hostID, "", events.ControlChanged, next.fields())
@@ -714,6 +723,73 @@ func (m *Manager) Release(ctx context.Context, hostID string, c ClientInfo) (mod
 			return cur, heldByHuman()
 		case cur.leased(now) && c.Actor == model.ActorAI && cur.clientID != c.ClientID:
 			return cur, heldByAI(cur, m.ttl)
+		}
+		return cur.owned(OwnerNone, model.System), nil
+	})
+}
+
+// NoteHumanInput records a viewer's local physical hold state, including deferred modifiers.
+func (m *Manager) NoteHumanInput(hostID, clientID string, held bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	h := m.hostLocked(hostID)
+	if h.humanPhysicalHeld == nil {
+		h.humanPhysicalHeld = make(map[string]bool)
+	}
+	if held {
+		h.humanPhysicalHeld[clientID] = true
+	} else {
+		delete(h.humanPhysicalHeld, clientID)
+	}
+	h.lastHumanInput = time.Now()
+}
+
+// TouchHumanInput marks activity before arbitration without changing held keys.
+func (m *Manager) TouchHumanInput(hostID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.hostLocked(hostID).lastHumanInput = time.Now()
+}
+
+// NoteHumanWire records forwarded input and keys or buttons held by a viewer.
+func (m *Manager) NoteHumanWire(hostID, clientID string, held bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	h := m.hostLocked(hostID)
+	if h.humanWireHeld == nil {
+		h.humanWireHeld = make(map[string]bool)
+	}
+	if held {
+		h.humanWireHeld[clientID] = true
+	} else {
+		delete(h.humanWireHeld, clientID)
+	}
+	h.lastHumanInput = time.Now()
+}
+
+func (m *Manager) ForgetHumanInput(hostID, clientID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	h := m.hostLocked(hostID)
+	if h.humanPhysicalHeld[clientID] || h.humanWireHeld[clientID] {
+		h.lastHumanInput = time.Now()
+	}
+	delete(h.humanPhysicalHeld, clientID)
+	delete(h.humanWireHeld, clientID)
+}
+
+// ReleaseIfHuman releases only unchanged, unpaused human ownership.
+// Stale idle timers must never release an AI lease or override an emergency stop.
+func (m *Manager) ReleaseIfHuman(ctx context.Context, hostID string, c ClientInfo, expected uint64) (model.ControlState, error) {
+	if c.Actor == model.ActorAI {
+		return m.Get(hostID), apierr.New(wire.CodePermissionDenied, "conditional release requires a human client", false, "")
+	}
+	return m.change(ctx, hostID, c, "사용자 입력이 없어 제어권을 놓았습니다", true, func(cur state, _ time.Time) (state, error) {
+		h := m.hostLocked(hostID) // change invokes this callback while holding m.mu.
+		if cur.owner != OwnerHuman || cur.gen != expected || cur.aiPaused ||
+			len(h.humanPhysicalHeld) != 0 || len(h.humanWireHeld) != 0 ||
+			(!h.lastHumanInput.IsZero() && time.Since(h.lastHumanInput) < 5*time.Second) {
+			return cur, nil
 		}
 		return cur.owned(OwnerNone, model.System), nil
 	})

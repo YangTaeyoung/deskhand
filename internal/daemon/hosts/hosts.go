@@ -88,7 +88,7 @@ func New(opt Options) *Registry {
 }
 
 func target(h store.Host) conn.Target {
-	return conn.Target{HostID: h.HostID, Name: h.Name, Address: h.Address, Port: h.Port, Fingerprint: h.AgentFP}
+	return conn.Target{HostID: h.HostID, Name: h.Name, Address: h.Address, Port: h.Port, Fingerprint: h.AgentFP, SSHAlias: h.SSHAlias, OS: h.OS, Arch: h.Arch}
 }
 
 // Load registers every stored host with the connection manager and starts
@@ -305,7 +305,7 @@ func (r *Registry) Update(ref string, p UpdateParams, c model.Caller) (model.Hos
 	}
 	if h := r.opt.Manager.Get(row.HostID); h != nil {
 		h.SetTarget(target(next))
-		if (next.Address != row.Address || next.Port != row.Port) && h.State() != conn.StateOffline {
+		if (next.Address != row.Address || next.Port != row.Port || next.SSHAlias != row.SSHAlias) && h.State() != conn.StateOffline {
 			h.Disconnect()
 			h.Connect()
 		}

@@ -95,6 +95,42 @@ final class ControlFlowTests: XCTestCase {
         XCTAssertEqual(store.control(for: qa)?.aiPaused, false)
     }
 
+    func testAutomaticReleaseKeepsEmergencyStopEngaged() async throws {
+        let (store, backend) = await startedStore()
+        let dev = PreviewFixtures.devPCID
+        await store.controlActions.stop(dev)?.value
+        await store.controlActions.releaseWhenIdle(dev)?.value
+        XCTAssertEqual(store.control(for: dev)?.owner, "human")
+        XCTAssertEqual(store.control(for: dev)?.aiPaused, true)
+        XCTAssertEqual(backend.controlCalls.map(\.method), ["control.stop"])
+    }
+
+    func testAutomaticReleaseFailureRetryNeverClearsLaterEmergencyStop() async throws {
+        let (store, backend) = await startedStore()
+        let qa = PreviewFixtures.qaLaptopID
+        backend.failControl("control.release", with: OperationError(code: "OFFLINE", message: "offline"))
+        await store.controlActions.releaseWhenIdle(qa)?.value
+        XCTAssertEqual(store.controlActions.failures(for: qa).first?.action, .automaticRelease)
+        backend.failControl("control.release", with: nil)
+        await store.controlActions.stop(qa)?.value
+        await store.controlActions.retry(.automaticRelease, on: qa)?.value
+        XCTAssertEqual(store.control(for: qa)?.aiPaused, true)
+        XCTAssertEqual(store.control(for: qa)?.owner, "human")
+    }
+
+    func testStaleIdleReleaseCannotReleaseANewHumanOwner() async throws {
+        let (store, backend) = await startedStore()
+        let qa = PreviewFixtures.qaLaptopID
+        let oldGen = try XCTUnwrap(store.control(for: qa)?.gen)
+        await store.controlActions.giveBack(qa)?.value
+        await store.controlActions.takeOver(qa)?.value
+        XCTAssertNotEqual(store.control(for: qa)?.gen, oldGen)
+        let before = backend.controlCalls.count
+        await store.controlActions.releaseWhenIdle(qa, expectedGen: oldGen)?.value
+        XCTAssertEqual(store.control(for: qa)?.owner, "human")
+        XCTAssertEqual(backend.controlCalls.count, before)
+    }
+
     // MARK: Takeover
 
     func testTakeoverWhileObservingAcquiresWithoutConfirmation() async throws {

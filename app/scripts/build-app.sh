@@ -46,7 +46,7 @@ app="$build_dir/Deskhand.app"
 rm -rf "$app"
 ditto "$build_dir/DerivedData/Build/Products/$configuration/Deskhand.app" "$app"
 
-for binary in deskhand deskhand-agent-windows-amd64.exe deskhand-agentw-windows-amd64.exe deskhand-agent-windows-arm64.exe deskhand-agentw-windows-arm64.exe; do
+for binary in deskhand deskhand-agent-windows-amd64.exe deskhand-agentw-windows-amd64.exe deskhand-agent-windows-arm64.exe deskhand-agentw-windows-arm64.exe deskhand-ssh-relay-windows-amd64.exe deskhand-ssh-relay-windows-arm64.exe; do
   if [ ! -f "$repo_dir/build/$binary" ]; then
     echo "$repo_dir/build/$binary 이(가) 없습니다. scripts/build.sh를 먼저 실행하세요" >&2
     exit 1
@@ -66,7 +66,7 @@ ditto "$repo_dir/build/rdp/codec/prefix/share/licenses" "$app/Contents/Resources
 ditto "$repo_dir/build/rdp/codec/prefix/share/ffmpeg" "$app/Contents/Resources/rdp-sources"
 
 mkdir -p "$app/Contents/Resources/agents"
-for binary in "$repo_dir"/build/deskhand-agent*-windows-*.exe; do
+for binary in "$repo_dir"/build/deskhand-agent*-windows-*.exe "$repo_dir"/build/deskhand-ssh-relay-windows-*.exe; do
   cp -f "$binary" "$app/Contents/Resources/agents/$(basename "$binary")"
 done
 codesign --force --sign - "$app/Contents/MacOS/deskhand"

@@ -9,10 +9,12 @@ final class RDPInputChannel {
     private(set) var ready = false
     private(set) var failure: OperationError?
     private(set) var denied = false
+    private(set) var notice: String?
     @ObservationIgnored private var stream: (any ScreenStream)?
     @ObservationIgnored private var outbox: AsyncStream<Data>.Continuation?
     @ObservationIgnored private var sequence = 0
     @ObservationIgnored private var runToken = UUID()
+    @ObservationIgnored private var lastPhysicalHolding: Bool?
 
     func run(backend: any ScreenBackend, hostID: String, sessionID: UInt32, sid: String, connectionGeneration: Int) async {
         close()
@@ -44,6 +46,7 @@ final class RDPInputChannel {
             stream = connection
             let (events, continuation) = AsyncStream<Data>.makeStream(bufferingPolicy: .bufferingOldest(256))
             outbox = continuation
+            lastPhysicalHolding = nil
             ready = true
             let sender = Task {
                 do {
@@ -88,15 +91,38 @@ final class RDPInputChannel {
         return OperationError(error)
     }
 
-    func send(_ event: InputEvent, gen: Int) {
+    /// Tell the daemon about held physical keys, including modifiers deferred by macOS.
+    func reportHumanActivity(holding: Bool) {
+        guard ready, lastPhysicalHolding != holding else { return }
+        guard let data = try? JSONSerialization.data(withJSONObject: ["k": "human_activity", "down": holding]) else { return }
+        lastPhysicalHolding = holding
+        enqueue(data)
+    }
+
+    private func enqueue(_ data: Data) {
         guard ready, let outbox else { return }
-        sequence += 1
-        if case .dropped = outbox.yield(event.json(seq: sequence, gen: gen)) {
-            // Dropping a key-up could leave a key held. Closing makes the daemon release keys.
+        if case .dropped = outbox.yield(data) {
             ready = false
             failure = OperationError(code: "INPUT_BACKLOG", message: "입력 처리가 지연돼 연결을 멈췄습니다. 입력 연결을 다시 시도하세요")
             stream?.close()
         }
+    }
+
+    func send(_ event: InputEvent, gen: Int) {
+        guard ready else { return }
+        if event != .releaseAll { notice = nil }
+        sequence += 1
+        enqueue(event.json(seq: sequence, gen: gen))
+    }
+
+    func noticeStaleClick() {
+        notice = "화면이 바뀌어 이전 입력을 취소했습니다. 확인 후 다시 입력하세요."
+    }
+
+    func failDeferredInput() {
+        ready = false
+        failure = OperationError(code: "INPUT_BACKLOG", message: "화면이 바뀌었거나 입력이 지연돼 전송을 중단했습니다. 화면을 확인한 뒤 입력 연결을 다시 시도하세요")
+        stream?.close()
     }
 
     func close() {
@@ -106,5 +132,6 @@ final class RDPInputChannel {
         stream?.close()
         outbox = nil
         stream = nil
+        lastPhysicalHolding = nil
     }
 }

@@ -453,3 +453,38 @@ func TestDoctorLeavesDisconnectedHostOffline(t *testing.T) {
 		t.Fatal("doctor disconnected a host that was connecting")
 	}
 }
+
+func TestUpdatingSSHAliasReconnectsWithNewTarget(t *testing.T) {
+	dials := make(chan conn.Target, 4)
+	fx := newFixture(t, func(_ context.Context, target conn.Target, _ transport.Identity) (conn.Session, error) {
+		dials <- target
+		return nil, errors.New("offline")
+	})
+	row := store.Host{HostID: "pc", Name: "pc", Address: "192.168.0.20", Port: 47600, AgentFP: agentFP, OS: "windows", Arch: "amd64", SSHAlias: "old", CreatedAt: time.Now()}
+	if err := fx.st.PutHost(row); err != nil {
+		t.Fatal(err)
+	}
+	if err := fx.r.Load(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case first := <-dials:
+		if first.SSHAlias != "old" {
+			t.Fatalf("first: %+v", first)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("first dial missing")
+	}
+	next := "new"
+	if _, err := fx.r.Update("pc", UpdateParams{SSHAlias: &next}, model.System); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case second := <-dials:
+		if second.SSHAlias != "new" || second.OS != "windows" || second.Arch != "amd64" {
+			t.Fatalf("new target: %+v", second)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("alias change did not reconnect")
+	}
+}

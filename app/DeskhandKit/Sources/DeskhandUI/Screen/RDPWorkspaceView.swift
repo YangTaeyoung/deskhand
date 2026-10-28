@@ -72,6 +72,10 @@ public struct RDPWorkspaceView: View {
                     Label(captured ? "입력 보내는 중" : "화면 연결됨", systemImage: captured ? "keyboard" : "checkmark.circle")
                         .font(DS.Font.caption).foregroundStyle(.secondary)
                 }
+                if live, owner == .human, store.control(for: host.hostID)?.aiPaused == false {
+                    Text("조작을 멈추면 5초 뒤 AI가 조작할 수 있습니다")
+                        .font(DS.Font.caption).foregroundStyle(.secondary)
+                }
                 if live, savedLogin {
                     Button("저장한 로그인 삭제") { Task { await forgetLogin() } }.buttonStyle(.bordered)
                 }
@@ -250,6 +254,28 @@ public struct RDPWorkspaceView: View {
         .background(DS.Color.screenBackdrop.opacity(0.025))
     }
 
+    private func releaseIdleInput(completion: @escaping (Bool) -> Void) {
+        guard let task = store.controlActions.releaseWhenIdle(host.hostID) else {
+            completion(true)
+            return
+        }
+        Task { @MainActor in
+            await task.value
+            completion(!store.controlActions.failures(for: host.hostID).contains { $0.action == .automaticRelease })
+        }
+    }
+
+    private func reacquireAfterIdle(completion: @escaping (Bool) -> Void) {
+        guard let task = store.controlActions.forceTakeOver(host.hostID) else {
+            completion(false)
+            return
+        }
+        Task { @MainActor in
+            await task.value
+            completion(!store.controlActions.failures(for: host.hostID).contains { $0.action == .takeOver })
+        }
+    }
+
     private var liveScreen: some View {
         VStack(spacing: 0) {
             ZStack {
@@ -257,12 +283,22 @@ public struct RDPWorkspaceView: View {
                 if let frame = connection.frame, let image = frame.image {
                     RDPImageSurface(image: image, sequence: frame.sequence, onFrameSubmitted: { connection.frameSubmitted(sequence: $0) }, size: CGSize(width: frame.width, height: frame.height),
                                     inputEnabled: permitsInput && input.ready, owner: owner,
+                                    autoHandoffEnabled: store.control(for: host.hostID)?.aiPaused == false,
                                     display: targetDisplay?.index ?? 0, preferences: store.screenPreferences,
                                     onEvent: { event in input.send(event, gen: store.control(for: host.hostID)?.gen ?? 0) },
                                     onCaptureChange: { captured = $0 },
+                                    onActivity: { input.reportHumanActivity(holding: $0) },
+                                    onIdleHandoff: { completion in releaseIdleInput(completion: completion) },
+                                    onReacquireAfterIdle: { completion in reacquireAfterIdle(completion: completion) },
+                                    onDeferredInputFailure: { input.failDeferredInput() },
+                                    onStaleTakeoverClick: { input.noticeStaleClick() },
                                     onTakeover: { store.controlActions.forceTakeOver(host.hostID) })
                 } else {
                     ProgressView("Windows 화면을 불러오는 중…").tint(.white).foregroundStyle(.white)
+                }
+                if let notice = input.notice {
+                    VStack { Spacer(); Text(notice).font(DS.Font.caption).padding().background(.regularMaterial, in: Capsule()).padding() }
+                        .allowsHitTesting(false)
                 }
                 if input.denied {
                     VStack { Spacer(); Text("제어권이 바뀌어 입력을 멈췄습니다. 위에서 제어권을 확인하세요.")
@@ -447,6 +483,17 @@ public struct RDPWorkspaceView: View {
         password = ""
         input.close()
         connection.disconnect()
+        // The view may disappear before its input timer fires. Let the daemon
+        // arbitrate after the same idle interval, including other viewers.
+        if let control = store.control(for: host.hostID), control.owner == ControlOwner.human.rawValue, !control.aiPaused {
+            let actions = store.controlActions
+            let hostID = host.hostID
+            let generation = control.gen
+            Task { @MainActor in
+                do { try await Task.sleep(for: .milliseconds(5500)) } catch { return }
+                await actions.releaseWhenIdle(hostID, expectedGen: generation)?.value
+            }
+        }
     }
 
     // Pinned FreeRDP include/freerdp/error.h and native/rdp/deskhand_rdp.h.
@@ -487,10 +534,16 @@ private struct RDPImageSurface: NSViewRepresentable {
     let size: CGSize
     let inputEnabled: Bool
     let owner: ControlOwner
+    let autoHandoffEnabled: Bool
     let display: Int
     let preferences: ScreenPreferences
     let onEvent: (InputEvent) -> Void
     let onCaptureChange: (Bool) -> Void
+    let onActivity: (Bool) -> Void
+    let onIdleHandoff: (@escaping (Bool) -> Void) -> Void
+    let onReacquireAfterIdle: (@escaping (Bool) -> Void) -> Void
+    let onDeferredInputFailure: () -> Void
+    let onStaleTakeoverClick: () -> Void
     let onTakeover: () -> Void
 
     final class Coordinator {
@@ -516,6 +569,8 @@ private struct RDPImageSurface: NSViewRepresentable {
         view.remoteSize = size
         let capture = view.capture
         capture.isInputEnabled = inputEnabled
+        capture.autoHandoffEnabled = autoHandoffEnabled
+        capture.visualSequence = sequence
         capture.owner = owner
         capture.display = display
         capture.keyMap = preferences.keyMap
@@ -524,6 +579,11 @@ private struct RDPImageSurface: NSViewRepresentable {
         capture.showsLocalCursor = true
         capture.onEvent = onEvent
         capture.onCaptureChange = onCaptureChange
+        capture.onActivity = onActivity
+        capture.onIdleHandoff = onIdleHandoff
+        capture.onReacquireAfterIdle = onReacquireAfterIdle
+        capture.onDeferredInputFailure = onDeferredInputFailure
+        capture.onStaleTakeoverClick = onStaleTakeoverClick
         capture.onTakeoverRequest = onTakeover
         capture.setAccessibilityLabel("Windows 원격 화면")
         capture.setAccessibilityHelp("클릭하면 키보드와 마우스를 PC로 보냅니다. ⌃⌥를 눌렀다 떼면 입력을 돌려받습니다")

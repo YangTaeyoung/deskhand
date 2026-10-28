@@ -13,6 +13,8 @@ public final class ControlActions {
         case takeOver
         /// `control.resume_ai`.
         case giveBack
+        /// Conditional release after human input is idle.
+        case automaticRelease
         /// `control.stop`.
         case stop
     }
@@ -116,6 +118,15 @@ public final class ControlActions {
         run(.giveBack, on: hostID) { try await $0.controlResumeAI(hostID: hostID) }
     }
 
+    /// Release only the unchanged human lease. An emergency stop is never resumed here.
+    @discardableResult
+    func releaseWhenIdle(_ hostID: String, expectedGen: Int? = nil) -> Task<Void, Never>? {
+        guard let state = store?.control(for: hostID), state.owner == ControlOwner.human.rawValue,
+              !state.aiPaused, expectedGen == nil || state.gen == expectedGen,
+              !isRunning(.stop, on: hostID) else { return nil }
+        return run(.automaticRelease, on: hostID) { try await $0.controlReleaseIfHuman(hostID: hostID, expectedGen: state.gen) }
+    }
+
     /// Emergency stop: the human takes control and AI input stays paused until `giveBack(_:)`.
     /// Runs even while a takeover, a give-back or another stop is in flight, and on computers
     /// that are offline.
@@ -134,6 +145,8 @@ public final class ControlActions {
             return acquire(hostID, force: owner == ControlOwner.ai.rawValue)
         case .giveBack:
             return giveBack(hostID)
+        case .automaticRelease:
+            return nil // Only the input idle timer may retry this action.
         case .stop:
             return stop(hostID)
         }
@@ -168,7 +181,7 @@ public final class ControlActions {
         _ call: @escaping @Sendable (any Backend) async throws -> ControlState
     ) -> Task<Void, Never>? {
         guard store?.host(hostID) != nil else { return nil }
-        if action != .stop, isRunning(.takeOver, on: hostID) || isRunning(.giveBack, on: hostID) { return nil }
+        if action != .stop, isRunning(.takeOver, on: hostID) || isRunning(.giveBack, on: hostID) || isRunning(.automaticRelease, on: hostID) { return nil }
         running[hostID, default: [:]][action, default: 0] += 1
         dismissFailure(action, for: hostID)
         let backend = self.backend

@@ -97,7 +97,7 @@ struct ControlBanner: View {
             }
             ForEach(actions.failures(for: host.hostID)) { failure in
                 ControlFailureBar(title: failure.action.failureTitle, error: failure.error,
-                                  retry: { actions.retry(failure.action, on: host.hostID) },
+                                  retry: failure.action == .automaticRelease ? nil : { actions.retry(failure.action, on: host.hostID) },
                                   dismiss: { actions.dismissFailure(failure.action, for: host.hostID) })
             }
             if let error = store.repairError(for: host.hostID) {
@@ -123,7 +123,7 @@ struct ControlBanner: View {
             }
         case .human:
             BannerBand(style: .tinted(DS.Color.human), symbol: ControlOwner.human.symbol, title: kind.title,
-                       message: String.ui("banner.human.message", "AI의 입력은 거절됩니다. 작업을 마치면 AI에게 넘기세요.")) {
+                       message: String.ui("banner.human.message", "사용자가 조작하는 동안 AI는 기다립니다.")) {
                 giveBackButton
             }
         case .aiPaused:
@@ -230,7 +230,8 @@ extension ControlActions.Action {
     public var title: String {
         switch self {
         case .takeOver: .ui("control.takeOver", "제어권 가져오기")
-        case .giveBack: .ui("control.giveBack", "AI에게 넘기기")
+        case .giveBack: .ui("control.giveBack", "AI 바로 재개")
+        case .automaticRelease: "자동 복귀"
         case .stop: .ui("control.stop", "긴급 정지")
         }
     }
@@ -238,7 +239,7 @@ extension ControlActions.Action {
     public var symbol: String {
         switch self {
         case .takeOver: "hand.raised.fill"
-        case .giveBack: "sparkles"
+        case .giveBack, .automaticRelease: "sparkles"
         case .stop: "stop.fill"
         }
     }
@@ -248,6 +249,7 @@ extension ControlActions.Action {
         switch self {
         case .takeOver: .ui("control.failed.takeOver", "제어권을 가져오지 못했습니다")
         case .giveBack: .ui("control.failed.giveBack", "AI에게 넘기지 못했습니다")
+        case .automaticRelease: "자동 복귀하지 못했습니다"
         case .stop: .ui("control.failed.stop", "긴급 정지하지 못했습니다")
         }
     }
@@ -419,7 +421,7 @@ struct BandButtonStyle: ButtonStyle {
 struct ControlFailureBar: View {
     let title: String
     let error: OperationError
-    let retry: () -> Void
+    let retry: (() -> Void)?
     let dismiss: () -> Void
     var diagnose: (() -> Void)?
 
@@ -448,11 +450,13 @@ struct ControlFailureBar: View {
                 Button(String.ui("action.doctor", "진단 실행"), action: diagnose)
                     .buttonStyle(.bordered)
             }
-            Button(action: retry) {
-                Label(String.ui("action.retry", "다시 시도"), systemImage: "arrow.clockwise")
+            if let retry {
+                Button(action: retry) {
+                    Label(String.ui("action.retry", "다시 시도"), systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(DS.Status.selectionFill)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(DS.Status.selectionFill)
             Button(action: dismiss) {
                 Image(systemName: "xmark")
                     .font(.system(.subheadline, weight: .bold))

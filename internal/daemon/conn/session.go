@@ -21,6 +21,9 @@ type Target struct {
 	Address     string
 	Port        int
 	Fingerprint string
+	SSHAlias    string
+	OS          string
+	Arch        string
 }
 
 // Addr returns address:port.
@@ -63,6 +66,9 @@ type Dialer func(ctx context.Context, t Target, id transport.Identity) (Session,
 func DialQUIC(ctx context.Context, t Target, id transport.Identity) (Session, error) {
 	c, err := transport.Dial(ctx, t.Addr(), id, t.Fingerprint)
 	if err != nil {
+		if shouldTrySSHFallback(t, err) {
+			return dialOverSSH(ctx, t, id)
+		}
 		return nil, err
 	}
 	return quicSession{c}, nil

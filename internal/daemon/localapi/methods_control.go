@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/YangTaeyoung/deskhand/internal/daemon/apierr"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/control"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/model"
 )
@@ -17,14 +18,16 @@ func (s *Server) registerControl() {
 	s.methods["control.get"] = s.controlGet
 	s.methods["control.acquire"] = s.controlAcquire
 	s.methods["control.release"] = s.controlChange((*control.Manager).Release)
+	s.methods["control.release_idle"] = s.controlReleaseIdle
 	s.methods["control.stop"] = s.controlChange((*control.Manager).Stop)
 	s.methods["control.resume_ai"] = s.controlChange((*control.Manager).ResumeAI)
 }
 
 type controlParams struct {
-	HostID string `json:"host_id"`
-	As     string `json:"as"`
-	Force  bool   `json:"force"`
+	HostID      string  `json:"host_id"`
+	As          string  `json:"as"`
+	Force       bool    `json:"force"`
+	ExpectedGen *uint64 `json:"expected_gen"`
 }
 
 // controlHost decodes the params and resolves their host.
@@ -57,6 +60,17 @@ func (s *Server) controlAcquire(ctx context.Context, sess *session, raw json.Raw
 		return nil, err
 	}
 	return s.d.Control.Acquire(ctx, hostID, control.Owner(p.As), sess.Caller(), p.Force)
+}
+
+func (s *Server) controlReleaseIdle(ctx context.Context, sess *session, raw json.RawMessage) (any, error) {
+	p, hostID, err := s.controlHost(raw)
+	if err != nil {
+		return nil, err
+	}
+	if p.ExpectedGen == nil {
+		return nil, apierr.Invalid("expected_gen is required")
+	}
+	return s.d.Control.ReleaseIfHuman(ctx, hostID, sess.Caller(), *p.ExpectedGen)
 }
 
 // controlChange serves a control method that changes the state with fn.

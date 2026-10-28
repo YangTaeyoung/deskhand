@@ -105,7 +105,7 @@ var errNotReady = apierr.New(wire.CodeOffline, "PC와의 연결이 준비되지 
 // gives c when acquire is set. Right before the write, a person must still
 // hold control at ev's gen, or ev is dropped with CONTROL_PREEMPTED. It
 // returns why ev did not go out.
-func (l *inputLink) send(c model.Caller, ev wire.InputEvent, acquire bool, binding *InputBinding) error {
+func (l *inputLink) send(c model.Caller, ev *wire.InputEvent, acquire bool, binding *InputBinding) error {
 	err := l.sendErr(c, ev, acquire, binding)
 	if err != nil {
 		l.mu.Lock()
@@ -118,7 +118,7 @@ func (l *inputLink) send(c model.Caller, ev wire.InputEvent, acquire bool, bindi
 	return err
 }
 
-func (l *inputLink) sendErr(c model.Caller, ev wire.InputEvent, acquire bool, binding *InputBinding) error {
+func (l *inputLink) sendErr(c model.Caller, ev *wire.InputEvent, acquire bool, binding *InputBinding) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.closed || l.h.base.Err() != nil {

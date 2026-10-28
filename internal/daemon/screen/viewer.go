@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"io"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,7 +27,7 @@ const (
 )
 
 // inputKinds are the input events a viewer may send (docs/protocol.md §6).
-var inputKinds = map[string]bool{"move": true, "button": true, "wheel": true, "key": true, "text": true, "release_all": true}
+var inputKinds = map[string]bool{"move": true, "button": true, "wheel": true, "key": true, "text": true, "release_all": true, "human_activity": true}
 
 // heldKey is a key or button a viewer pressed and has not released.
 type heldKey struct {
@@ -36,14 +37,17 @@ type heldKey struct {
 }
 
 // Viewer is one screen stream of the local API.
+var viewerSequence atomic.Uint64
+
 type Viewer struct {
-	h       *Hub
-	hostID  string
-	caller  model.Caller
-	initial Preset
-	maxFPS  int
-	binding *InputBinding // nil for the legacy screen contract
-	q       *queue
+	h          *Hub
+	hostID     string
+	activityID string
+	caller     model.Caller
+	initial    Preset
+	maxFPS     int
+	binding    *InputBinding // nil for the legacy screen contract
+	q          *queue
 
 	// f, preset, needKey and stale are guarded by f.mu once the viewer
 	// joined f. needKey drops access units until the next keyframe; stale
@@ -59,6 +63,7 @@ type Viewer struct {
 	imu      sync.Mutex
 	opMu     sync.Mutex // serializes input with detach/release
 	held     map[heldKey]bool
+	heldGen  uint64
 	deniedAt time.Time
 
 	emu    sync.Mutex
@@ -69,7 +74,7 @@ type Viewer struct {
 }
 
 func newViewer(h *Hub, hostID string, c model.Caller, p Preset) *Viewer {
-	return &Viewer{h: h, hostID: hostID, caller: c, initial: p, preset: p, q: newQueue(h.opt.QueueFrames, h.opt.QueueBytes),
+	return &Viewer{h: h, hostID: hostID, activityID: strconv.FormatUint(viewerSequence.Add(1), 10), caller: c, initial: p, preset: p, q: newQueue(h.opt.QueueFrames, h.opt.QueueBytes),
 		held: map[heldKey]bool{}}
 }
 
@@ -173,6 +178,9 @@ func (v *Viewer) detach() {
 		delete(v.h.inputs, v)
 		v.h.mu.Unlock()
 		v.release()
+		if t, ok := v.h.opt.Control.(interface{ ForgetHumanInput(string, string) }); ok {
+			t.ForgetHumanInput(v.hostID, v.activityID)
+		}
 		if len(v.h.hostViewers(v.hostID)) == 0 {
 			v.h.closeLink(v.hostID)
 		}
@@ -246,16 +254,31 @@ func (v *Viewer) input(payload []byte) {
 		v.denied(ctl.Get(v.hostID))
 		return
 	}
+	if ev.K == "human_activity" {
+		if t, ok := ctl.(interface{ NoteHumanInput(string, string, bool) }); ok {
+			t.NoteHumanInput(v.hostID, v.activityID, ev.Down)
+		}
+		return
+	}
 	if ev.K == "release_all" {
 		v.imu.Lock()
+		hadHeld, heldGen := len(v.held) > 0, v.heldGen
 		v.held = map[heldKey]bool{}
 		v.imu.Unlock()
+		if hadHeld {
+			if t, ok := ctl.(interface{ NoteHumanWire(string, string, bool) }); ok {
+				t.NoteHumanWire(v.hostID, v.activityID, false)
+			}
+		}
+		if !hadHeld {
+			return
+		}
 		st := ctl.Get(v.hostID)
-		if st.Owner != model.OwnerHuman {
+		if st.Owner != model.OwnerHuman || st.Gen != heldGen {
 			return
 		}
 		ev.Gen = st.Gen
-		if err := v.h.link(v.hostID).send(v.caller, ev, false, v.binding); apierr.CodeOf(err) == wire.CodeSessionChanged {
+		if err := v.h.link(v.hostID).send(v.caller, &ev, false, v.binding); apierr.CodeOf(err) == wire.CodeSessionChanged {
 			v.end()
 		}
 		return
@@ -263,10 +286,14 @@ func (v *Viewer) input(payload []byte) {
 	if a := v.h.agent(v.hostID); a == nil || a.State() != conn.StateReady {
 		return
 	}
+	// Mark recent activity before arbitration; only accepted events change held keys.
+	if t, ok := ctl.(interface{ TouchHumanInput(string) }); ok {
+		t.TouchHumanInput(v.hostID)
+	}
 	gen, err := ctl.CheckHuman(v.hostID, v.caller)
 	if err == nil {
 		ev.Gen = gen
-		err = v.h.link(v.hostID).send(v.caller, ev, true, v.binding)
+		err = v.h.link(v.hostID).send(v.caller, &ev, true, v.binding)
 	}
 	if apierr.CodeOf(err) == wire.CodeSessionChanged {
 		v.end()
@@ -280,10 +307,19 @@ func (v *Viewer) input(payload []byte) {
 		return
 	}
 	v.track(ev)
+	if t, ok := ctl.(interface{ NoteHumanWire(string, string, bool) }); ok {
+		t.NoteHumanWire(v.hostID, v.activityID, v.holds())
+	}
 }
 
 // track records the keys and buttons ev presses and releases.
 func (v *Viewer) track(ev wire.InputEvent) {
+	v.imu.Lock()
+	defer v.imu.Unlock()
+	if v.heldGen != ev.Gen {
+		v.held = map[heldKey]bool{}
+		v.heldGen = ev.Gen
+	}
 	var k heldKey
 	switch ev.K {
 	case "key":
@@ -293,8 +329,6 @@ func (v *Viewer) track(ev wire.InputEvent) {
 	default:
 		return
 	}
-	v.imu.Lock()
-	defer v.imu.Unlock()
 	if ev.Down {
 		v.held[k] = true
 	} else {
@@ -314,7 +348,7 @@ func (v *Viewer) holds() bool {
 // them already.
 func (v *Viewer) release() {
 	v.imu.Lock()
-	held := len(v.held) > 0
+	held, heldGen := len(v.held) > 0, v.heldGen
 	v.held = map[heldKey]bool{}
 	v.imu.Unlock()
 	if v.binding != nil && !v.binding.matches(v.h.agent(v.hostID)) {
@@ -326,10 +360,11 @@ func (v *Viewer) release() {
 		return
 	}
 	st := ctl.Get(v.hostID)
-	if st.Owner != model.OwnerHuman {
+	if st.Owner != model.OwnerHuman || st.Gen != heldGen {
 		return
 	}
-	_ = v.h.link(v.hostID).send(v.caller, wire.InputEvent{K: "release_all", Gen: st.Gen}, false, v.binding)
+	ev := wire.InputEvent{K: "release_all", Gen: st.Gen}
+	_ = v.h.link(v.hostID).send(v.caller, &ev, false, v.binding)
 }
 
 // denied sends the viewer a control_denied notice with the owner of st, at

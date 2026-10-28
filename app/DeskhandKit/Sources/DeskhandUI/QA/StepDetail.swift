@@ -133,7 +133,7 @@ struct StepDetail: View {
             if StepRow.isHumanControl(step) {
                 OutcomeBox(symbol: "hand.raised.fill", tint: DS.Color.human, title: reason.title, detail: nil, code: step.error?.code,
                            next: reason.next, action: giveBack.map { giveBack in
-                               OutcomeAction(title: String.ui("control.giveBack", "AI에게 넘기기"), symbol: "sparkles",
+                               OutcomeAction(title: String.ui("control.giveBack", "AI 바로 재개"), symbol: "sparkles",
                                              help: String.ui("qa.blocked.human.giveBack.help", "이 PC의 제어권을 AI에게 넘깁니다. 그다음 다시 실행하세요."),
                                              perform: giveBack)
                            })

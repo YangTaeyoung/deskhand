@@ -71,9 +71,16 @@ public protocol ControlBackend: Sendable {
     func controlGet(hostID: String) async throws -> ControlState
     func controlAcquire(hostID: String, as owner: ControlOwner, force: Bool) async throws -> ControlState
     func controlRelease(hostID: String) async throws
+    func controlReleaseIfHuman(hostID: String, expectedGen: Int) async throws -> ControlState
     /// Emergency stop: the human takes control and AI input is paused.
     func controlStop(hostID: String) async throws -> ControlState
     func controlResumeAI(hostID: String) async throws -> ControlState
+}
+
+extension ControlBackend {
+    public func controlReleaseIfHuman(hostID: String, expectedGen: Int) async throws -> ControlState {
+        throw OperationError(code: "CAPABILITY_UNSUPPORTED", message: "자동 복귀를 지원하지 않는 연결입니다")
+    }
 }
 
 /// `timeline.list` (local-api.md §3, §6, §7).

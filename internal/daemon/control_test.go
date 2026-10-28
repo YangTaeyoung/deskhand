@@ -401,3 +401,34 @@ func TestLaunchRefusedByAnAgentAheadTakesItsGen(t *testing.T) {
 		t.Fatalf("launch after taking the agent's gen: %v", res)
 	}
 }
+
+func TestConditionalHumanReleaseDoesNotOverrideNewOwnerOrEmergencyStop(t *testing.T) {
+	e := setup(t, setupOpts{trustDaemon: true})
+	e.waitState(t, "ready")
+	app := dialAs(t, "app", "Deskhand")
+	first := mustCall(t, app, "control.acquire", acquireAs("human", false))
+	gen := first["gen"]
+	mustCall(t, app, "control.stop", pc)
+	stopped := mustCall(t, app, "control.release_idle", map[string]any{"host_id": "pc", "expected_gen": gen})
+	if stopped["owner"] != "human" || stopped["ai_paused"] != true {
+		t.Fatalf("stale release changed stop: %v", stopped)
+	}
+	mustCall(t, app, "control.resume_ai", pc)
+	ai := dialAs(t, "mcp", "AI")
+	if _, err := callErr(t, ai, "control.release_idle", map[string]any{"host_id": "pc", "expected_gen": gen}); err == nil || err.Code != wire.CodePermissionDenied {
+		t.Fatalf("AI conditional release: %+v", err)
+	}
+	if _, err := callErr(t, app, "control.release_idle", pc); err == nil || err.Code != wire.CodeInvalidArgument {
+		t.Fatalf("missing expected generation: %+v", err)
+	}
+	active := mustCall(t, ai, "control.acquire", acquireAs("ai", false))
+	after := mustCall(t, app, "control.release_idle", map[string]any{"host_id": "pc", "expected_gen": gen})
+	if after["owner"] != "ai" || after["gen"] != active["gen"] {
+		t.Fatalf("stale release changed AI owner: %v", after)
+	}
+	humanState := mustCall(t, app, "control.acquire", acquireAs("human", true))
+	released := mustCall(t, app, "control.release_idle", map[string]any{"host_id": "pc", "expected_gen": humanState["gen"]})
+	if released["owner"] != "none" || released["ai_paused"] != false {
+		t.Fatalf("matching release failed: %v", released)
+	}
+}

@@ -331,6 +331,13 @@ extension PreviewBackend {
                    actor: "human", client: "Deskhand", summary: "제어권을 놓았습니다")
     }
 
+    public func controlReleaseIfHuman(hostID: String, expectedGen: Int) async throws -> ControlState {
+        let current = try await controlGet(hostID: hostID)
+        guard current.owner == "human", !current.aiPaused, current.gen == expectedGen else { return current }
+        try await controlRelease(hostID: hostID)
+        return try await controlGet(hostID: hostID)
+    }
+
     public func controlStop(hostID: String) async throws -> ControlState {
         let current = try await controlGet(hostID: hostID)
         return update(hostID, ControlState(owner: "human", gen: current.gen + 1, aiPaused: true),

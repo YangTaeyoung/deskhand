@@ -247,6 +247,11 @@ final class GatedBackend: Backend, LocalOverlayProviding {
             try await base.controlRelease(hostID: hostID)
         }
     }
+    func controlReleaseIfHuman(hostID: String, expectedGen: Int) async throws -> ControlState {
+        try await control(ControlCall(method: "control.release", hostID: hostID)) {
+            try await base.controlReleaseIfHuman(hostID: hostID, expectedGen: expectedGen)
+        }
+    }
     func controlStop(hostID: String) async throws -> ControlState {
         try await control(ControlCall(method: "control.stop", hostID: hostID)) {
             try await base.controlStop(hostID: hostID)

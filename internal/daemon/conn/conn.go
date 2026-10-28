@@ -600,7 +600,12 @@ func offline(name string) *apierr.Error {
 // hello/welcome handshake.
 func (h *Host) establish(ctx context.Context) (*rpcClient, Hello, error) {
 	t := h.Target()
-	dctx, cancel := context.WithTimeout(ctx, dialTimeout)
+	timeout := dialTimeout
+	// The first SSH recovery can need host lookup, upload, and hash verification.
+	if t.OS == "windows" && t.SSHAlias != "" {
+		timeout = 30 * time.Second
+	}
+	dctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	sess, err := h.m.opt.Dial(dctx, t, h.m.opt.Identity)
 	if err != nil {

@@ -928,7 +928,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "AI의 입력은 거절됩니다. 작업을 마치면 AI에게 넘기세요."
+            "value": "사용자가 조작하는 동안 AI는 기다립니다."
           }
         }
       }
@@ -1506,7 +1506,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "AI에게 넘기기"
+            "value": "AI 바로 재개"
           }
         }
       }

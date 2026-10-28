@@ -50,6 +50,23 @@ final class RDPInputChannelTests: XCTestCase {
         }
     }
 
+    func testPhysicalHoldTransitionsReachTheDaemonWithoutDuplication() async throws {
+        let backend = RDPDeferredBackend(), channel = RDPInputChannel(), stream = RDPTestStream()
+        let task = Task { await channel.run(backend: backend, hostID: "pc", sessionID: 1, sid: "sid", connectionGeneration: 1) }
+        try await waitFor { await backend.pendingCount == 1 }
+        await backend.complete(0, with: stream)
+        try await waitFor { channel.ready }
+        channel.reportHumanActivity(holding: true)
+        channel.reportHumanActivity(holding: true)
+        channel.reportHumanActivity(holding: false)
+        try await waitFor { stream.sent.withLock { $0.count == 2 } }
+        let payloads = stream.sent.withLock { $0 }
+        let values = try payloads.map { try XCTUnwrap(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
+        XCTAssertEqual(values.map { $0["k"] as? String }, ["human_activity", "human_activity"])
+        XCTAssertEqual(values.map { $0["down"] as? Bool }, [true, false])
+        task.cancel(); channel.close(); await task.value
+    }
+
     func testLateAttachCannotReplaceOrCloseTheNewSession() async throws {
         let backend = RDPDeferredBackend(), channel = RDPInputChannel()
         let old = RDPTestStream(), current = RDPTestStream()

@@ -169,6 +169,13 @@ extension LiveBackend {
         let _: Empty = try await client.call("control.release", HostIDParams(hostID: hostID))
     }
 
+    public func controlReleaseIfHuman(hostID: String, expectedGen: Int) async throws -> ControlState {
+        struct Params: Encodable { let hostID: String; let expectedGen: Int }
+        let value: JSONValue = try await client.call("control.release_idle", Params(hostID: hostID, expectedGen: expectedGen), timeout: .seconds(2))
+        if let state = try? Self.decode(ControlState.self, from: value) { return state }
+        return try await controlGet(hostID: hostID)
+    }
+
     public func controlStop(hostID: String) async throws -> ControlState {
         try await controlChange("control.stop", hostID: hostID, params: HostIDParams(hostID: hostID))
     }

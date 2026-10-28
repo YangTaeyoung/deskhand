@@ -74,6 +74,52 @@ final class InputCaptureTests: XCTestCase {
         XCTAssertEqual(events, [])
     }
 
+    func testClickDuringAIControlIsDeliveredAfterTakeover() {
+        capture.autoHandoffEnabled = true
+        capture.owner = .ai
+        let point = CGPoint(x: 500, y: 400)
+        capture.mouseDown(with: mouse(.leftMouseDown, at: point))
+        capture.mouseUp(with: mouse(.leftMouseUp, at: point))
+        XCTAssertEqual(events, [])
+        capture.owner = .human
+        XCTAssertEqual(events, [.move(x: 1920, y: 1080, display: 0), .button(.left, down: true), .button(.left, down: false)])
+    }
+
+    func testTakeoverDoesNotClickIfDisplayedFrameChanged() {
+        capture.autoHandoffEnabled = true
+        capture.owner = .ai
+        var cancelled = false
+        capture.onStaleTakeoverClick = { cancelled = true }
+        capture.visualSequence = 10
+        capture.mouseDown(with: mouse(.leftMouseDown, at: CGPoint(x: 500, y: 400)))
+        capture.mouseUp(with: mouse(.leftMouseUp, at: CGPoint(x: 500, y: 400)))
+        capture.visualSequence = 11
+        capture.owner = .human
+        XCTAssertEqual(events, [])
+        XCTAssertTrue(cancelled)
+    }
+
+    func testDragDuringTakeoverDoesNotReplayAnAccidentalClick() {
+        capture.autoHandoffEnabled = true
+        capture.owner = .ai
+        capture.mouseDown(with: mouse(.leftMouseDown, at: CGPoint(x: 500, y: 400)))
+        capture.mouseDragged(with: mouse(.leftMouseDragged, at: CGPoint(x: 650, y: 400)))
+        capture.mouseUp(with: mouse(.leftMouseUp, at: CGPoint(x: 650, y: 400)))
+        capture.owner = .human
+        XCTAssertEqual(events, [])
+    }
+
+    func testOldClickIsNotReplayedAfterSlowTakeover() {
+        capture.autoHandoffEnabled = true
+        capture.owner = .ai
+        let point = CGPoint(x: 500, y: 400)
+        capture.mouseDown(with: mouse(.leftMouseDown, at: point))
+        capture.mouseUp(with: mouse(.leftMouseUp, at: point))
+        now += 2
+        capture.owner = .human
+        XCTAssertEqual(events, [])
+    }
+
     func testAccessibilityPressAsksForTakeoverThenCapturesOnceHumanOwns() {
         capture.owner = .ai
         XCTAssertTrue(capture.accessibilityPerformPress())
@@ -98,6 +144,285 @@ final class InputCaptureTests: XCTestCase {
         XCTAssertFalse(capture.isCaptured)
         XCTAssertEqual(events, [])
         XCTAssertEqual(captureChanges, [true, false])
+    }
+
+    func testActivityReportsHeldButtonsAndKeysUntilReleased() {
+        var holding: [Bool] = []
+        capture.onActivity = { holding.append($0) }
+        let point = CGPoint(x: 500, y: 400)
+        capture.mouseDown(with: mouse(.leftMouseDown, at: point))
+        capture.mouseUp(with: mouse(.leftMouseUp, at: point))
+        _ = capture.handleKeyEvent(key(.keyDown, 0x00, "a"))
+        _ = capture.handleKeyEvent(key(.keyUp, 0x00, "a"))
+        XCTAssertEqual(holding, [true, false, true, false])
+    }
+
+    func testInputDuringIdleReleaseWaitsForReacquireBeforeDelivery() {
+        var releaseDone: ((Bool) -> Void)?
+        var reacquireDone: ((Bool) -> Void)?
+        capture.autoHandoffEnabled = true
+        capture.onIdleHandoff = { releaseDone = $0 }
+        capture.onReacquireAfterIdle = { reacquireDone = $0 }
+        captureByClicking()
+        now += 5.1
+        capture.evaluateAutoHandoff()
+        XCTAssertTrue(capture.isInputEnabled)
+        _ = capture.handleKeyEvent(key(.keyDown, 0x00, "a"))
+        _ = capture.handleKeyEvent(key(.keyUp, 0x00, "a"))
+        XCTAssertEqual(events, [])
+        capture.owner = .ai
+        XCTAssertTrue(capture.isCaptured)
+        releaseDone?(true)
+        XCTAssertNotNil(reacquireDone)
+        XCTAssertEqual(events, [])
+        reacquireDone?(true)
+        XCTAssertEqual(events.count, 2)
+    }
+
+    func testBufferedClickIsNotDeliveredAfterFrameChanges() {
+        var releaseDone: ((Bool) -> Void)?
+        var reacquireDone: ((Bool) -> Void)?
+        var failures = 0
+        capture.autoHandoffEnabled = true
+        capture.onIdleHandoff = { releaseDone = $0 }
+        capture.onReacquireAfterIdle = { reacquireDone = $0 }
+        capture.onStaleTakeoverClick = { failures += 1 }
+        captureByClicking()
+        now += 5.1
+        capture.evaluateAutoHandoff()
+        capture.mouseDown(with: mouse(.leftMouseDown, at: CGPoint(x: 500, y: 400)))
+        capture.mouseUp(with: mouse(.leftMouseUp, at: CGPoint(x: 500, y: 400)))
+        releaseDone?(true)
+        capture.visualSequence += 1
+        reacquireDone?(true)
+        XCTAssertEqual(events, [])
+        XCTAssertEqual(failures, 1)
+    }
+
+    func testMarkedTextIsCancelledIfFrameChangesDuringIdleRelease() {
+        var releaseDone: ((Bool) -> Void)?
+        var reacquireDone: ((Bool) -> Void)?
+        var notices = 0
+        capture.autoHandoffEnabled = true
+        capture.onIdleHandoff = { releaseDone = $0 }
+        capture.onReacquireAfterIdle = { reacquireDone = $0 }
+        capture.onStaleTakeoverClick = { notices += 1 }
+        captureByClicking()
+        now += 5.1
+        capture.evaluateAutoHandoff()
+        capture.setMarkedText("하", selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
+        releaseDone?(true)
+        capture.visualSequence += 1
+        reacquireDone?(true)
+        XCTAssertFalse(capture.hasMarkedText())
+        XCTAssertEqual(events, [])
+        XCTAssertEqual(notices, 1)
+    }
+
+    func testBufferedKeysAreNotDeliveredAfterFrameChanges() {
+        var releaseDone: ((Bool) -> Void)?
+        var reacquireDone: ((Bool) -> Void)?
+        var failures = 0
+        capture.autoHandoffEnabled = true
+        capture.onIdleHandoff = { releaseDone = $0 }
+        capture.onReacquireAfterIdle = { reacquireDone = $0 }
+        capture.onStaleTakeoverClick = { failures += 1 }
+        captureByClicking()
+        now += 5.1
+        capture.evaluateAutoHandoff()
+        _ = capture.handleKeyEvent(key(.keyDown, 0x00, "a"))
+        _ = capture.handleKeyEvent(key(.keyUp, 0x00, "a"))
+        releaseDone?(true)
+        capture.visualSequence += 1
+        reacquireDone?(true)
+        XCTAssertEqual(events, [])
+        XCTAssertEqual(failures, 1)
+    }
+
+    func testPendingInputIsDiscardedWhenCaptureEnds() {
+        var releaseDone: ((Bool) -> Void)?
+        var reacquires = 0
+        capture.autoHandoffEnabled = true
+        capture.onIdleHandoff = { releaseDone = $0 }
+        capture.onReacquireAfterIdle = { done in reacquires += 1; done(true) }
+        captureByClicking()
+        now += 5.1
+        capture.evaluateAutoHandoff()
+        _ = capture.handleKeyEvent(key(.keyDown, 0x00, "a"))
+        capture.endCapture()
+        releaseDone?(true)
+        XCTAssertEqual(reacquires, 0)
+        XCTAssertEqual(events, [])
+    }
+
+    func testHeldModifierDuringIdleReleaseReacquiresBeforeAI() {
+        var releaseDone: ((Bool) -> Void)?
+        var reacquires = 0
+        capture.autoHandoffEnabled = true
+        capture.onIdleHandoff = { releaseDone = $0 }
+        capture.onReacquireAfterIdle = { done in reacquires += 1; done(true) }
+        captureByClicking()
+        now += 5.1
+        capture.evaluateAutoHandoff()
+        _ = capture.handleKeyEvent(key(.flagsChanged, 0x38, modifiers: .shift))
+        releaseDone?(true)
+        XCTAssertEqual(reacquires, 1)
+    }
+
+    func testClickDuringReleaseAfterAIClaimsUncapturedScreen() {
+        var releaseDone: ((Bool) -> Void)?
+        var reacquireDone: ((Bool) -> Void)?
+        capture.autoHandoffEnabled = true
+        capture.onIdleHandoff = { releaseDone = $0 }
+        capture.onReacquireAfterIdle = { reacquireDone = $0 }
+        now += 5.1
+        capture.evaluateAutoHandoff()
+        capture.owner = .ai
+        capture.mouseDown(with: mouse(.leftMouseDown, at: CGPoint(x: 500, y: 400)))
+        capture.mouseUp(with: mouse(.leftMouseUp, at: CGPoint(x: 500, y: 400)))
+        releaseDone?(true)
+        XCTAssertNotNil(reacquireDone)
+        reacquireDone?(true)
+        XCTAssertEqual(events, [.move(x: 1920, y: 1080, display: 0), .button(.left, down: true), .button(.left, down: false)])
+    }
+
+    func testClickBufferedBeforeAINoticeIncludesItsPointerPosition() {
+        var releaseDone: ((Bool) -> Void)?
+        var reacquireDone: ((Bool) -> Void)?
+        capture.autoHandoffEnabled = true
+        capture.onIdleHandoff = { releaseDone = $0 }
+        capture.onReacquireAfterIdle = { reacquireDone = $0 }
+        captureByClicking()
+        now += 5.1
+        capture.evaluateAutoHandoff()
+        capture.mouseDown(with: mouse(.leftMouseDown, at: CGPoint(x: 500, y: 400)))
+        capture.mouseUp(with: mouse(.leftMouseUp, at: CGPoint(x: 500, y: 400)))
+        capture.owner = .ai
+        releaseDone?(true)
+        reacquireDone?(true)
+        XCTAssertEqual(events.first, .move(x: 1920, y: 1080, display: 0))
+    }
+
+    func testPointerCacheClearsWhenAIClaimsDuringIdleRelease() {
+        var releaseDone: ((Bool) -> Void)?
+        var reacquireDone: ((Bool) -> Void)?
+        capture.autoHandoffEnabled = true
+        capture.onIdleHandoff = { releaseDone = $0 }
+        capture.onReacquireAfterIdle = { reacquireDone = $0 }
+        captureByClicking()
+        now += 5.1
+        capture.evaluateAutoHandoff()
+        capture.owner = .ai
+        capture.mouseDown(with: mouse(.leftMouseDown, at: CGPoint(x: 500, y: 400)))
+        capture.mouseUp(with: mouse(.leftMouseUp, at: CGPoint(x: 500, y: 400)))
+        releaseDone?(true)
+        reacquireDone?(true)
+        XCTAssertEqual(events.first, .move(x: 1920, y: 1080, display: 0))
+    }
+
+    func testUncapturedTakeoverClearsHeldActivityOnFocusLoss() {
+        var activity: [Bool] = []
+        capture.onActivity = { activity.append($0) }
+        capture.autoHandoffEnabled = true
+        capture.owner = .ai
+        capture.mouseDown(with: mouse(.leftMouseDown, at: CGPoint(x: 500, y: 400)))
+        XCTAssertEqual(activity.last, true)
+        capture.endCapture()
+        XCTAssertEqual(activity.last, false)
+    }
+
+    func testAutoHandoffWaitsUntilButtonReleasedAndFiveSecondsPass() {
+        var handoffs = 0
+        capture.autoHandoffEnabled = true
+        capture.onIdleHandoff = { _ in handoffs += 1 }
+        let point = CGPoint(x: 500, y: 400)
+        capture.mouseDown(with: mouse(.leftMouseDown, at: point))
+        now += 10
+        capture.evaluateAutoHandoff()
+        XCTAssertEqual(handoffs, 0)
+        capture.mouseUp(with: mouse(.leftMouseUp, at: point))
+        now += 4.9
+        capture.evaluateAutoHandoff()
+        XCTAssertEqual(handoffs, 0)
+        now += 0.2
+        capture.evaluateAutoHandoff()
+        XCTAssertEqual(handoffs, 1)
+        XCTAssertTrue(capture.isInputEnabled)
+        XCTAssertTrue(capture.isCaptured)
+    }
+
+    func testDisablingAutoHandoffKeepsHumanCaptureDuringEmergencyStop() {
+        capture.autoHandoffEnabled = true
+        captureByClicking()
+        capture.autoHandoffEnabled = false
+        now += 20
+        capture.evaluateAutoHandoff()
+        XCTAssertTrue(capture.isCaptured)
+        XCTAssertTrue(capture.isInputEnabled)
+    }
+
+    func testIdleHandoffRechecksWhenInputStreamBecomesReady() {
+        var handoffs = 0
+        capture.isInputEnabled = false
+        capture.autoHandoffEnabled = true
+        capture.onIdleHandoff = { _ in handoffs += 1 }
+        now += 6
+        capture.evaluateAutoHandoff()
+        XCTAssertEqual(handoffs, 0)
+        capture.isInputEnabled = true
+        capture.evaluateAutoHandoff()
+        XCTAssertEqual(handoffs, 1)
+    }
+
+    func testIdleHandoffUnfreezesImmediatelyIfNoRequestStarts() {
+        capture.autoHandoffEnabled = true
+        capture.onIdleHandoff = { done in done(true) }
+        captureByClicking()
+        now += 5.1
+        capture.evaluateAutoHandoff()
+        XCTAssertTrue(capture.isInputEnabled)
+        XCTAssertFalse(capture.idleHandoffInFlight)
+    }
+
+    func testFailedIdleHandoffWaitsForNewHumanActivity() {
+        var handoffs = 0
+        capture.autoHandoffEnabled = true
+        capture.onIdleHandoff = { done in handoffs += 1; done(false) }
+        now += 5.1
+        capture.evaluateAutoHandoff()
+        capture.evaluateAutoHandoff()
+        XCTAssertEqual(handoffs, 1)
+        captureByClicking()
+        now += 5.1
+        capture.evaluateAutoHandoff()
+        XCTAssertEqual(handoffs, 2)
+    }
+
+    func testAutoHandoffStartsOnHumanTakeoverWithoutMouseInput() {
+        var handoffs = 0
+        capture.owner = .none
+        capture.autoHandoffEnabled = true
+        capture.onIdleHandoff = { _ in handoffs += 1 }
+        capture.owner = .human
+        now += 5.1
+        capture.evaluateAutoHandoff()
+        XCTAssertEqual(handoffs, 1)
+    }
+
+    func testAutoHandoffWaitsForModifierHeldBeforeClick() {
+        var handoffs = 0
+        capture.autoHandoffEnabled = true
+        capture.onIdleHandoff = { _ in handoffs += 1 }
+        let point = CGPoint(x: 500, y: 400)
+        capture.mouseDown(with: mouse(.leftMouseDown, at: point, modifiers: .shift))
+        capture.mouseUp(with: mouse(.leftMouseUp, at: point, modifiers: .shift))
+        now += 6
+        capture.evaluateAutoHandoff()
+        XCTAssertEqual(handoffs, 0)
+        _ = capture.handleKeyEvent(key(.flagsChanged, 0x38, modifiers: []))
+        now += 5.1
+        capture.evaluateAutoHandoff()
+        XCTAssertEqual(handoffs, 1)
     }
 
     // MARK: Mouse

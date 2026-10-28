@@ -3,6 +3,7 @@ package screen
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/YangTaeyoung/deskhand/internal/daemon/apierr"
 	"github.com/YangTaeyoung/deskhand/internal/daemon/conn"
@@ -279,4 +280,137 @@ func TestInputViewerIdentityChangesDuringOpen(t *testing.T) {
 
 func testInputBinding() InputBinding {
 	return InputBinding{SessionID: 7, SID: "S-1-5-21-1-1001", ConnectionGeneration: 1}
+}
+
+func TestHumanActivityIsNotForwardedOrTreatedAsAIControl(t *testing.T) {
+	r := newRig(t)
+	c := r.attachInput()
+	c.input(map[string]any{"k": "human_activity", "down": true})
+	c.input(map[string]any{"k": "human_activity", "down": false})
+	c.input(map[string]any{"k": "move", "x": 1, "y": 2})
+	eventually(t, "only real input reached agent", func() bool { return len(r.agent.inputEvents()) == 1 })
+	if ev := r.agent.inputEvents()[0]; ev.K != "move" {
+		t.Fatalf("activity forwarded to agent: %+v", ev)
+	}
+}
+
+func TestDeniedInputDoesNotLeaveAKeyHeldInViewer(t *testing.T) {
+	r := newRig(t)
+	if _, err := r.ctl.Acquire(context.Background(), "pc", control.OwnerAI, aiA, false); err != nil {
+		t.Fatal(err)
+	}
+	c := r.attachInput()
+	c.input(map[string]any{"k": "key", "sc": 30, "down": true})
+	c.notice("control_denied")
+	viewers := r.hub.hostViewers("pc")
+	if len(viewers) != 1 || viewers[0].holds() {
+		t.Fatalf("denied input remains held: %v", viewers)
+	}
+}
+
+func TestNewWriterGenerationDoesNotRetainOldHeldKeys(t *testing.T) {
+	r := newRig(t)
+	c := r.attachInput()
+	c.input(map[string]any{"k": "key", "sc": 30, "down": true})
+	eventually(t, "held key sent", func() bool { return len(r.agent.heldKeys()) > 0 })
+	if _, err := r.ctl.Stop(context.Background(), "pc", human); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.ctl.ResumeAI(context.Background(), "pc", human); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.ctl.Acquire(context.Background(), "pc", control.OwnerHuman, human, false); err != nil {
+		t.Fatal(err)
+	}
+	c.input(map[string]any{"k": "move", "x": 1, "y": 2})
+	eventually(t, "new generation input", func() bool { return len(r.agent.inputEvents()) >= 2 })
+	viewers := r.hub.hostViewers("pc")
+	if len(viewers) != 1 || viewers[0].holds() {
+		t.Fatal("old generation key remains held")
+	}
+}
+
+func TestIdleViewerReleaseAllDoesNotReleaseAnotherViewersHeldKey(t *testing.T) {
+	r := newRig(t)
+	a := r.attachInput()
+	other := human
+	other.ClientID = "other-viewer"
+	v, err := r.hub.AttachInput(context.Background(), "pc", testInputBinding(), other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	daemonEnd, clientEnd := duplex()
+	b := &viewerClient{t: t, end: clientEnd, frames: make(chan clientFrame, 32), ran: make(chan struct{})}
+	go func() { defer close(b.ran); v.Run(daemonEnd) }()
+	b.startReading()
+	t.Cleanup(b.close)
+	b.input(map[string]any{"k": "key", "sc": 30, "down": true})
+	eventually(t, "other viewer held key", func() bool { return len(r.agent.heldKeys()) == 1 })
+	a.input(map[string]any{"k": "release_all"})
+	time.Sleep(150 * time.Millisecond)
+	if len(r.agent.heldKeys()) != 1 {
+		t.Fatal("idle viewer released another viewer's key")
+	}
+}
+
+func TestStaleViewerReleaseAllDoesNotReleaseCurrentGenerationKeys(t *testing.T) {
+	r := newRig(t)
+	a := r.attachInput()
+	a.input(map[string]any{"k": "key", "sc": 30, "down": true})
+	eventually(t, "first held key", func() bool { return len(r.agent.heldKeys()) == 1 })
+	if _, err := r.ctl.Stop(context.Background(), "pc", human); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.ctl.ResumeAI(context.Background(), "pc", human); err != nil {
+		t.Fatal(err)
+	}
+	b := r.attachInput()
+	b.input(map[string]any{"k": "key", "sc": 31, "down": true})
+	eventually(t, "new held key", func() bool { return r.agent.heldKeys()["sc:0x1f"] })
+	a.input(map[string]any{"k": "release_all"})
+	time.Sleep(150 * time.Millisecond)
+	if !r.agent.heldKeys()["sc:0x1f"] {
+		t.Fatal("stale viewer released current writer's key")
+	}
+}
+
+func TestResyncedInputCanReleaseItsHeldKey(t *testing.T) {
+	r := newRig(t)
+	c := r.attachInput()
+	r.agent.mu.Lock()
+	r.agent.inputHook = func(stage string) {
+		if stage == "open" {
+			r.agent.mu.Lock()
+			r.agent.raiseLocked(10)
+			r.agent.inputHook = nil
+			r.agent.mu.Unlock()
+		}
+	}
+	r.agent.mu.Unlock()
+	c.input(map[string]any{"k": "key", "sc": 30, "down": true})
+	eventually(t, "resynced key down", func() bool { return r.agent.heldKeys()["sc:0x1e"] })
+	c.input(map[string]any{"k": "release_all"})
+	eventually(t, "resynced key released", func() bool { return len(r.agent.heldKeys()) == 0 })
+}
+
+func TestSameClientViewersKeepIndependentPhysicalActivity(t *testing.T) {
+	r := newRig(t)
+	a := r.attachInput()
+	r.attachInput()
+	a.input(map[string]any{"k": "move", "x": 1, "y": 2})
+	eventually(t, "human owns control", func() bool { return r.ctl.Get("pc").Owner == string(control.OwnerHuman) })
+	viewers := r.hub.hostViewers("pc")
+	viewers[0].input([]byte(`{"k":"human_activity","down":true}`))
+	viewers[1].input([]byte(`{"k":"human_activity","down":false}`))
+	time.Sleep(5200 * time.Millisecond)
+	state := r.ctl.Get("pc")
+	got, err := r.ctl.ReleaseIfHuman(context.Background(), "pc", human, state.Gen)
+	if err != nil || got.Owner != string(control.OwnerHuman) {
+		t.Fatalf("other viewer cleared held input: %+v %v", got, err)
+	}
+	viewers[1].Close()
+	got, err = r.ctl.ReleaseIfHuman(context.Background(), "pc", human, state.Gen)
+	if err != nil || got.Owner != string(control.OwnerHuman) {
+		t.Fatalf("other viewer detach cleared held input: %+v %v", got, err)
+	}
 }

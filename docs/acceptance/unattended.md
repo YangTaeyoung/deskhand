@@ -8,8 +8,8 @@
 
 | 요구 | 확인한 범위 | 아직 필요한 범위 |
 |---|---|---|
-| AI가 가능한 한 사람 개입 없이 작업 | 제한 시간 종료, 연결·데몬 재시작 후 추적, 에이전트 재시작의 unknown 처리, 중복 실행 방지, GUI QA 반복 | Mac 앱 완전 종료 뒤 연결 유지, 장시간 soak와 추가 장애 종류 |
-| 사람이 일반 RDP처럼 접속·조작 | 앱 기동 후 저장된 로그인으로 실제 RDP 접속, 키보드·마우스로 시험 앱 조작, AI에게 제어권 반환 | 화면·입력 자동복구 변경의 최종 설치본 실측, 큰 창·긴 사용 시간의 품질 |
+| AI가 가능한 한 사람 개입 없이 작업 | 제한 시간 종료, 연결·데몬 재시작 후 추적, 에이전트 재시작의 unknown 처리, 중복 실행 방지, GUI QA 반복, Mac 앱 종료 뒤 SSH 중계 자동 복구와 AI 작업 | 장시간 soak와 추가 장애 종류 |
+| 사람이 일반 RDP처럼 접속·조작 | 저장된 로그인으로 실제 RDP 접속, AI 제어 중 첫 클릭, 5초 유휴 자동 해제, 앱 재실행 뒤 RDP 자동 재연결 | 큰 창·긴 사용 시간의 품질 |
 
 사용자는 전용 계정 전체 권한과 RDP 종료 뒤 잠금 없는 콘솔 자동 인계를 선택했다.
 `Deskhand Console Handoff`를 해당 계정에만 설치했다. 활성 세션·다른 SID·Session 0은
@@ -140,7 +140,7 @@ Focused 9개와 전체 655개 테스트, 독립 검수, 실제 새 앱 UI 표시
 Mac 앱의 **완전 종료(⌘Q)** 뒤에는 로컬 네트워크 송신이 EHOSTUNREACH로
 거절되는 별도 문제가 남았다. 서명 변경만으로 해결되지 않았으며 launchd 사용자
 agent 시험도 동일해 시험 등록은 제거했다. 설정에서 네트워크 토글은 모두 on이었다.
-현재 직접 LAN 무인 운용은 Mac 앱을 실행 상태로 유지하는 조건이다. Windows RDP
+당시 직접 LAN 무인 운용은 Mac 앱을 실행 상태로 유지하는 조건이었다. Windows RDP
 연결을 종료하는 것과 Mac 앱을 완전히 종료하는 것을 구분한다.
 [Apple TN3179](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy)
 의 responsible code·서명·다중 설치 설명은 조사 방향이며 이 OS 증상의 확정 원인은 아니다.
@@ -150,3 +150,42 @@ agent 시험도 동일해 시험 등록은 제거했다. 설정에서 네트워�
 UDP 소켓을 만든다. [Apple DTS의 유사 EHOSTUNREACH 사례](https://developer.apple.com/forums/thread/778457)
 는 후속 조사 근거다. Network.framework·정식 SMAppService helper 등은 아직
 시험하지 않았으므로 해결책으로 확정하지 않는다.
+
+## 공유 화면 자동 제어 전환 실측 (2026-10-27)
+
+`~/Applications/Deskhand.app`에 서명된 빌드를 설치해 같은 RDP 화면에서
+AI 소유 중 테스트 창의 Send를 한 번 클릭했다. Windows 테스트 창의 transcript에
+`final first click`과 응답이 기록됐고, 조작 종료 후 제어권은 `none`으로 바뀌었다.
+긴급 정지는 6초 뒤에도 `ai_paused=true`였고 명시적 재개 뒤 해제됐다.
+다시 실행한 앱은 저장된 로그인으로 연결됐으며, 최종 세션은 RDP active,
+locked=false, input/screen ready였다. 테스트 창과 실행 파일은 제거했다.
+
+자동 제어 해제 중 새 입력은 재확보 뒤 처리하며 화면이 바뀐 경우 이전 입력을
+취소하고 안내한다. 손가락을 뗐는지 확인할 때 여러 화면의 입력 상태를 각각
+추적한다. 대기 중 입력 및 IME 조합, 포커스 상실, 재확보 지연, 세대 변경의
+회귀 테스트와 독립 코드 검수를 수행했다.
+
+진단 당시 macOS 앱을 종료한 뒤 Windows 연결이 다시 EHOSTUNREACH로 실패했다.
+별도 셸에서 daemon을 다시 시작해도 재현됐다. macOS 로그의 동일 bundle ID
+복사본 기록은 조사 단서이고 OS 수준의 원인은 확정되지 않았다.
+
+
+## Mac 앱 종료 뒤 데몬 자동 복구 (2026-10-27)
+
+직접 UDP는 EHOSTUNREACH였지만 같은 Windows PC의 새 SSH 연결은 성공했다.
+macOS 로컬 네트워크 설정에서 Deskhand와 Kiln은 모두 허용 상태였다. 기존 QUIC
+인증서 핀을 유지한 SSH 중계 대체 경로를 구현해 `~/Applications/Deskhand.app`에
+설치했다. 직접 경로의 로컬 EHOSTUNREACH에만 적용하고 다른 인증·인증서 오류는
+대체 경로로 숨기지 않는다.
+
+실제 앱을 종료하자 데몬이 기존 Windows 세션을 console active·locked=false로
+복구했고 연결 세대가 1에서 2로 바뀌었다. 앱이 종료된 상태에서 실제 MCP
+`control_request`, `ui_act` 입력과 버튼 실행, `ui_text`를 확인했다. SSH 중계
+프로세스를 강제로 종료했을 때 연결 세대 3으로 자동 복구됐고 Windows 중계
+프로세스가 하나만 남았으며, 그 뒤 같은 GUI 작업을 다시 수행했다. 잘못된 서버
+인증서 지문은 거부됐다. 앱이 종료된 잠금 없는 console 상태에서도 MCP 화면 캡처는 이미지 한 장을
+반환했다. 앱을 다시 열자 저장된 로그인으로 RDP가 연결됐다. 테스트 창과 실행 파일은 제거했다.
+
+중계는 저장된 Windows SSH 별칭과 비대화형 키 인증에 의존한다. SSH가 끊긴 동안
+부분 업로드 정리가 실패하면 다음 접속 시 해당 버전의 오래된 중계 임시 파일을
+정리한다. OS가 직접 UDP를 거절한 이유 자체는 확정하지 않았다.
